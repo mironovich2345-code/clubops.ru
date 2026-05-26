@@ -1,0 +1,23 @@
+import type { AppPage } from "@/lib/auth";
+
+export type NavItem = {
+  page: AppPage;
+  href: string;
+  label: string;
+};
+
+export const NAV_ITEMS: ReadonlyArray<NavItem> = [
+  { page: "dashboard", href: "/dashboard", label: "Дашборд" },
+  { page: "expenses", href: "/expenses", label: "Расходы" },
+  { page: "invoices", href: "/invoices", label: "Счета" },
+  { page: "sales", href: "/sales", label: "Продажи" },
+  { page: "documents", href: "/documents", label: "Документы" },
+  { page: "users", href: "/users", label: "Пользователи" },
+];
+
+export const ROLE_LABELS: Record<string, string> = {
+  owner: "Владелец",
+  regional_director: "Региональный директор",
+  manager: "Менеджер",
+  accountant: "Бухгалтер",
+};
