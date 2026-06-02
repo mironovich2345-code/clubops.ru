@@ -1,0 +1,212 @@
+"use client";
+
+import { useFormState, useFormStatus } from "react-dom";
+import type { InvoiceExtraction } from "@/lib/ai/invoice-analyzer";
+import { uploadAndAnalyzeInvoice, saveInvoice } from "../actions";
+
+type ClubOption = { id: string; name: string; city: string };
+
+type AnalyzeState = {
+  ok: boolean;
+  error?: string;
+  clubId?: string;
+  storageKey?: string;
+  fileName?: string;
+  fileMime?: string;
+  fileSize?: number;
+  extraction?: InvoiceExtraction;
+};
+type SaveState = { ok: boolean; error?: string; invoiceId?: string };
+
+const CONFIDENCE_LABELS: Record<string, string> = {
+  low: "низкая",
+  medium: "средняя",
+  high: "высокая",
+};
+
+const analyzeInitial: AnalyzeState = { ok: false };
+const saveInitial: SaveState = { ok: false };
+
+function Button({ idle, busy }: { idle: string; busy: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
+    >
+      {pending ? busy : idle}
+    </button>
+  );
+}
+
+export function InvoiceUpload({
+  clubs,
+  categories,
+  companyName,
+}: {
+  clubs: ClubOption[];
+  categories: readonly string[];
+  companyName: string;
+}) {
+  const [analyze, analyzeAction] = useFormState(uploadAndAnalyzeInvoice, analyzeInitial);
+  const [saved, saveAction] = useFormState(saveInvoice, saveInitial);
+
+  const extraction = analyze.ok ? analyze.extraction : undefined;
+  const reviewReady = Boolean(analyze.ok && extraction);
+
+  return (
+    <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 text-sm font-semibold text-slate-700">Загрузка счёта (фото / PDF)</div>
+
+      {/* Step 1: upload + analyze */}
+      <form action={analyzeAction} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Field label="Компания">
+          <input value={companyName} disabled className="input bg-slate-50 text-slate-500" />
+        </Field>
+        <Field label="Клуб">
+          <select name="clubId" required defaultValue={clubs.length === 1 ? clubs[0].id : ""} className="input">
+            {clubs.length !== 1 ? <option value="" disabled>Выберите клуб</option> : null}
+            {clubs.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} — {c.city}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="md:col-span-2">
+          <Field label="Файл (JPG, PNG, WEBP, PDF — до 10 МБ)">
+            <input
+              type="file"
+              name="file"
+              required
+              accept=".jpg,.jpeg,.png,.webp,.pdf"
+              className="input file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-sm file:text-slate-700"
+            />
+          </Field>
+        </div>
+        <div className="md:col-span-2 flex items-center justify-between gap-3">
+          {!analyze.ok && analyze.error ? (
+            <span className="text-sm text-rose-600">{analyze.error}</span>
+          ) : (
+            <span />
+          )}
+          <Button idle="Загрузить и распознать" busy="Распознавание..." />
+        </div>
+      </form>
+
+      {/* Step 2: editable review + save */}
+      {reviewReady && extraction ? (
+        <form action={saveAction} className="mt-6 border-t border-slate-200 pt-5">
+          <input type="hidden" name="clubId" value={analyze.clubId} />
+          <input type="hidden" name="storageKey" value={analyze.storageKey} />
+          <input type="hidden" name="fileName" value={analyze.fileName} />
+          <input type="hidden" name="fileMime" value={analyze.fileMime} />
+          <input type="hidden" name="fileSize" value={analyze.fileSize} />
+          <input type="hidden" name="confidence" value={extraction.confidence} />
+          <input type="hidden" name="rawExtractedJson" value={JSON.stringify(extraction)} />
+
+          <div className="mb-3 flex items-center gap-2 text-sm">
+            <span className="font-semibold text-slate-700">Проверьте распознанные поля</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                extraction.confidence === "high"
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  : extraction.confidence === "medium"
+                    ? "bg-amber-50 text-amber-800 ring-amber-200"
+                    : "bg-slate-100 text-slate-600 ring-slate-200"
+              }`}
+            >
+              Уверенность: {CONFIDENCE_LABELS[extraction.confidence] ?? extraction.confidence}
+            </span>
+          </div>
+
+          {extraction.warnings.length > 0 ? (
+            <ul className="mb-4 space-y-1 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
+              {extraction.warnings.map((w, i) => (
+                <li key={i}>• {w}</li>
+              ))}
+            </ul>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Контрагент">
+              <input name="counterpartyName" defaultValue={extraction.counterpartyName ?? ""} className="input" />
+            </Field>
+            <Field label="ИНН">
+              <input name="counterpartyInn" defaultValue={extraction.counterpartyInn ?? ""} className="input" />
+            </Field>
+            <Field label="КПП">
+              <input name="counterpartyKpp" defaultValue={extraction.counterpartyKpp ?? ""} className="input" />
+            </Field>
+            <Field label="Банк">
+              <input name="counterpartyBankName" defaultValue={extraction.counterpartyBankName ?? ""} className="input" />
+            </Field>
+            <Field label="БИК">
+              <input name="counterpartyBankBik" defaultValue={extraction.counterpartyBankBik ?? ""} className="input" />
+            </Field>
+            <Field label="Расчётный счёт">
+              <input name="counterpartyAccount" defaultValue={extraction.counterpartyAccount ?? ""} className="input" />
+            </Field>
+            <Field label="Корр. счёт">
+              <input name="counterpartyCorrAccount" defaultValue={extraction.counterpartyCorrAccount ?? ""} className="input" />
+            </Field>
+            <Field label="Статья расходов">
+              <select name="expenseCategory" defaultValue={extraction.expenseCategory ?? ""} className="input">
+                <option value="">—</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Сумма, ₽">
+              <input name="amount" inputMode="decimal" defaultValue={extraction.amount ?? ""} className="input" />
+            </Field>
+            <Field label="Валюта">
+              <input name="currency" defaultValue={extraction.currency || "RUB"} className="input" />
+            </Field>
+            <Field label="Номер счёта">
+              <input name="invoiceNumber" defaultValue={extraction.invoiceNumber ?? ""} className="input" />
+            </Field>
+            <Field label="Дата счёта">
+              <input type="date" name="invoiceDate" defaultValue={extraction.invoiceDate ?? ""} className="input" />
+            </Field>
+            <Field label="Срок оплаты">
+              <input type="date" name="dueDate" defaultValue={extraction.dueDate ?? ""} className="input" />
+            </Field>
+            <div className="md:col-span-2">
+              <Field label="Примечания">
+                <textarea name="notes" rows={2} className="input" />
+              </Field>
+            </div>
+          </div>
+
+          {saved.ok ? (
+            <div className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">
+              Счёт сохранён как черновик. Он появился в списке ниже.
+            </div>
+          ) : saved.error ? (
+            <div className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
+              {saved.error}
+            </div>
+          ) : null}
+
+          <div className="mt-5 flex justify-end">
+            <Button idle="Сохранить счёт" busy="Сохранение..." />
+          </div>
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
+      {children}
+    </label>
+  );
+}

@@ -159,8 +159,8 @@ export default async function DashboardPage() {
           title="Последние счета"
           items={invoices.slice(0, 5).map((i) => ({
             id: i.id,
-            primary: i.counterpartyName,
-            secondary: i.subject,
+            primary: i.counterpartyName ?? "Без контрагента",
+            secondary: i.expenseCategory ?? i.subject ?? "—",
             amountKopeks: i.amountKopeks,
             date: i.createdAt,
           }))}

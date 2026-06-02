@@ -6,6 +6,12 @@
   color-scheme: light;
 }
 
+@layer components {
+  .input {
+    @apply w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500;
+  }
+}
+
 html,
 body {
   height: 100%;

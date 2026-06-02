@@ -1,12 +1,15 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { requirePageAccess } from "@/lib/access";
-import { formatKopeks } from "@/lib/money";
-import { getInvoicesForScope, summarize, type StatusSummary } from "@/lib/invoices";
-import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
 import { NoCompanyState } from "@/components/NoCompanyState";
-import { CreateInvoiceForm } from "./_components/CreateInvoiceForm";
-import { InvoiceRowActions } from "./_components/InvoiceRowActions";
-import { StatusBadge } from "./_components/StatusBadge";
+import { formatKopeks } from "@/lib/money";
+import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import {
+  getInvoicesForScope,
+  INVOICE_STATUS_LABELS,
+  INVOICE_CONFIDENCE_LABELS,
+} from "@/lib/invoices";
+import { EXPENSE_CATEGORIES } from "@/lib/expenses";
+import { InvoiceUpload } from "./_components/InvoiceUpload";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +19,18 @@ const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
   year: "numeric",
 });
 
+const CONFIDENCE_BADGE: Record<string, string> = {
+  high: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  medium: "bg-amber-50 text-amber-800 ring-amber-200",
+  low: "bg-slate-100 text-slate-600 ring-slate-200",
+};
+
 export default async function InvoicesPage() {
   const user = await requirePageAccess("invoices");
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {
-    return <NoCompanyState title="Счета" description="Контроль счетов, оплат и просрочек" />;
+    return <NoCompanyState title="Счета" description="Загрузка и распознавание счетов" />;
   }
 
   const [clubs, invoices] = await Promise.all([
@@ -29,29 +38,29 @@ export default async function InvoicesPage() {
     getInvoicesForScope(scope),
   ]);
 
-  const summary = summarize(invoices);
-
   return (
     <div>
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <PageHeader title="Счета" description="Контроль счетов, оплат и просрочек" />
-      </div>
+      <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
 
-      <SummarySection summary={summary} />
-
-      <CreateInvoiceForm clubs={clubs} />
+      {clubs.length > 0 ? (
+        <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORIES} companyName={scope.company.name} />
+      ) : (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
+          Нет доступных клубов для создания счёта.
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
-              <Th>Статус</Th>
               <Th>Контрагент</Th>
-              <Th>Назначение</Th>
               <Th className="text-right">Сумма</Th>
-              <Th>Дата счёта</Th>
-              <Th>Срок оплаты</Th>
-              <Th>Комментарий</Th>
+              <Th>Статья</Th>
+              <Th>Статус</Th>
+              <Th>Распознавание</Th>
+              <Th>Клуб</Th>
+              <Th>Создан</Th>
               <Th>Действия</Th>
             </tr>
           </thead>
@@ -59,30 +68,47 @@ export default async function InvoicesPage() {
             {invoices.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
-                  Пока нет счетов. Нажмите «Добавить счёт», чтобы создать первый.
+                  Пока нет счетов. Загрузите документ, чтобы создать первый.
                 </td>
               </tr>
             ) : (
               invoices.map((invoice) => (
                 <tr key={invoice.id} className="hover:bg-slate-50">
                   <Td>
-                    <StatusBadge status={invoice.status} dueDate={invoice.dueDate} />
+                    <div className="font-medium text-slate-900">
+                      {invoice.counterpartyName ?? "— без контрагента —"}
+                    </div>
+                    {invoice.invoiceNumber ? (
+                      <div className="text-xs text-slate-500">№ {invoice.invoiceNumber}</div>
+                    ) : null}
                   </Td>
-                  <Td>
-                    <div className="font-medium text-slate-900">{invoice.counterpartyName}</div>
-                    <div className="text-xs text-slate-500">{invoice.club.name}</div>
-                  </Td>
-                  <Td>{invoice.subject}</Td>
                   <Td className="whitespace-nowrap text-right font-medium text-slate-900">
                     {formatKopeks(invoice.amountKopeks)}
                   </Td>
-                  <Td className="whitespace-nowrap">{dateFormatter.format(invoice.invoiceDate)}</Td>
-                  <Td className="whitespace-nowrap">{dateFormatter.format(invoice.dueDate)}</Td>
-                  <Td className="max-w-xs">
-                    <div className="line-clamp-2 text-slate-600">{invoice.comment ?? "—"}</div>
+                  <Td>{invoice.expenseCategory ?? "—"}</Td>
+                  <Td className="whitespace-nowrap">
+                    {INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}
                   </Td>
                   <Td>
-                    <InvoiceRowActions invoiceId={invoice.id} status={invoice.status} />
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                        CONFIDENCE_BADGE[invoice.confidence] ?? CONFIDENCE_BADGE.low
+                      }`}
+                    >
+                      {INVOICE_CONFIDENCE_LABELS[invoice.confidence] ?? invoice.confidence}
+                    </span>
+                  </Td>
+                  <Td className="whitespace-nowrap text-slate-600">{invoice.club.name}</Td>
+                  <Td className="whitespace-nowrap text-slate-500">
+                    {dateFormatter.format(invoice.createdAt)}
+                  </Td>
+                  <Td>
+                    <Link
+                      href={`/invoices/${invoice.id}`}
+                      className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Открыть
+                    </Link>
                   </Td>
                 </tr>
               ))
@@ -94,44 +120,7 @@ export default async function InvoicesPage() {
   );
 }
 
-function SummarySection({ summary }: { summary: StatusSummary }) {
-  const cards: Array<{
-    key: keyof StatusSummary;
-    label: string;
-    accent: string;
-  }> = [
-    { key: "unpaid", label: "Не оплачено", accent: "text-amber-700" },
-    { key: "overdue", label: "Просрочено", accent: "text-rose-700" },
-    { key: "paid", label: "Оплачено", accent: "text-emerald-700" },
-    { key: "rejected", label: "Отклонено", accent: "text-slate-600" },
-  ];
-  return (
-    <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {cards.map((card) => (
-        <div
-          key={card.key}
-          className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
-        >
-          <div className="text-sm font-medium text-slate-500">{card.label}</div>
-          <div className={`mt-2 text-2xl font-semibold ${card.accent}`}>
-            {formatKopeks(summary[card.key].amountKopeks)}
-          </div>
-          <div className="mt-1 text-xs text-slate-500">
-            Счетов: {summary[card.key].count}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Th({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <th
       scope="col"
@@ -142,12 +131,6 @@ function Th({
   );
 }
 
-function Td({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-3 align-top text-sm text-slate-700 ${className ?? ""}`}>{children}</td>;
 }

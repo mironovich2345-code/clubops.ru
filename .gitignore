@@ -8,6 +8,7 @@ build/
 .env.*.local
 prisma/dev.db
 prisma/dev.db-journal
+uploads/
 *.log
 .DS_Store
 .vscode/

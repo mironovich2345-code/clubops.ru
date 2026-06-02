@@ -216,22 +216,47 @@ model AuditLog {
 // ---------------------------------------------------------------------------
 
 model Invoice {
-  id               String    @id @default(cuid())
-  companyId        String
-  clubId           String
-  legalEntityId    String?
-  createdByUserId  String
-  counterpartyName String
-  amountKopeks     Int
-  subject          String
-  invoiceDate      DateTime
-  dueDate          DateTime
-  paidAt           DateTime?
-  status           String    @default("unpaid")
-  comment          String?
-  fileUrl          String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id              String  @id @default(cuid())
+  companyId       String
+  clubId          String
+  legalEntityId   String?
+  createdByUserId String
+
+  // Counterparty + payment requisites (nullable: filled by AI extraction or by hand)
+  counterpartyName        String?
+  counterpartyInn         String?
+  counterpartyKpp         String?
+  counterpartyBankName    String?
+  counterpartyBankBik     String?
+  counterpartyAccount     String?
+  counterpartyCorrAccount String?
+
+  amountKopeks    Int       @default(0)
+  currency        String    @default("RUB")
+  expenseCategory String?
+  subject         String?
+  invoiceNumber   String?
+  invoiceDate     DateTime?
+  dueDate         DateTime?
+  paidAt          DateTime?
+
+  // draft | needs_review | approved | paid | rejected
+  status String @default("draft")
+  // low | medium | high (document recognition confidence)
+  confidence String @default("low")
+
+  // Uploaded document metadata (binary kept on disk, never in DB)
+  originalFileName       String?
+  originalFileMime       String?
+  originalFileSize       Int?
+  originalFileStorageKey String?
+  rawExtractedJson       String?
+
+  notes     String?
+  comment   String?
+  fileUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
