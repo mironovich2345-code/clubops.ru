@@ -28,6 +28,7 @@ model Company {
   clubs         Club[]
   legalEntities LegalEntity[]
   userAccess    CompanyUserAccess[]
+  invites       Invite[]
   invoices      Invoice[]
   expenses      Expense[]
   sales         Sale[]
@@ -73,6 +74,7 @@ model User {
   companyAccess CompanyUserAccess[]
   clubRoles     ClubUserAccess[]
   sessions      Session[]
+  invitesSent   Invite[]
   invoices      Invoice[]
   expenses      Expense[]
   sales         Sale[]
@@ -104,6 +106,7 @@ model Club {
   userAccess    UserClubAccess[]
   clubRoles     ClubUserAccess[]
   legalEntities ClubLegalEntity[]
+  invites       Invite[]
   invoices      Invoice[]
   expenses      Expense[]
   sales         Sale[]
@@ -162,6 +165,29 @@ model ClubUserAccess {
   @@unique([clubId, userId, role])
   @@index([clubId])
   @@index([userId])
+}
+
+// Pending invitation. Only the token hash is stored; the raw token is shown
+// once at creation time and carried in the accept-invite link.
+model Invite {
+  id              String    @id @default(cuid())
+  tokenHash       String    @unique
+  email           String
+  companyId       String
+  clubId          String?
+  role            String
+  invitedByUserId String
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club      Club?   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  invitedBy User    @relation(fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([email])
 }
 
 // ---------------------------------------------------------------------------

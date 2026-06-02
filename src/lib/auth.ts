@@ -24,7 +24,7 @@ export type CurrentUser = {
 
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
   owner: ["dashboard", "expenses", "invoices", "sales", "imports", "documents", "users"],
-  regional_director: ["dashboard", "expenses", "invoices", "sales", "imports", "documents"],
+  regional_director: ["dashboard", "expenses", "invoices", "sales", "imports", "documents", "users"],
   manager: ["dashboard", "expenses", "sales", "documents"],
   accountant: ["expenses", "invoices", "documents"],
 };
@@ -69,7 +69,8 @@ const SESSION_TTL_DAYS = 30;
 // a usable cookie without the secret. Set it in production (see .env.example).
 const SESSION_SECRET = process.env.SESSION_SECRET ?? "dev-insecure-session-secret";
 
-function hashToken(token: string): string {
+// Exported so invite tokens use the same keyed hash (raw token never stored).
+export function hashToken(token: string): string {
   return createHmac("sha256", SESSION_SECRET).update(token).digest("hex");
 }
 

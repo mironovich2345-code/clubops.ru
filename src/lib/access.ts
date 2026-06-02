@@ -201,6 +201,79 @@ export function canManageClubUsers(userId: string, clubId: string): Promise<bool
   return userHasClubRole(userId, clubId, ["regional_director"]);
 }
 
+// --- Members & invitations ------------------------------------------------
+
+export type CompanyMember = {
+  accessId: string;
+  scope: "company" | "club";
+  role: string;
+  clubId: string | null;
+  clubName: string | null;
+  user: { id: string; name: string; email: string; isActive: boolean };
+};
+
+const MEMBER_USER_SELECT = {
+  select: { id: true, name: true, email: true, isActive: true },
+} as const;
+
+/** All access grants (company-level and club-level) within a company. */
+export async function getCompanyMembers(companyId: string): Promise<CompanyMember[]> {
+  const [companyRows, clubRows] = await Promise.all([
+    prisma.companyUserAccess.findMany({
+      where: { companyId },
+      include: { user: MEMBER_USER_SELECT },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.clubUserAccess.findMany({
+      where: { club: { companyId } },
+      include: { user: MEMBER_USER_SELECT, club: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
+
+  const members: CompanyMember[] = [];
+  for (const r of companyRows) {
+    members.push({ accessId: r.id, scope: "company", role: r.role, clubId: null, clubName: null, user: r.user });
+  }
+  for (const r of clubRows) {
+    members.push({ accessId: r.id, scope: "club", role: r.role, clubId: r.clubId, clubName: r.club.name, user: r.user });
+  }
+  return members;
+}
+
+/**
+ * Roles the user may invite within a company (beta rules):
+ *  - owner -> regional_director, accountant (company-level) and manager (club-level)
+ *  - regional director -> manager only
+ *  - others -> none
+ */
+export async function getInvitableRoles(userId: string, companyId: string): Promise<string[]> {
+  if (await userHasCompanyRole(userId, companyId, ["owner"])) {
+    return ["regional_director", "accountant", "manager"];
+  }
+  if (await userHasCompanyRole(userId, companyId, ["regional_director"])) {
+    return ["manager"];
+  }
+  const rdClub = await prisma.clubUserAccess.findFirst({
+    where: { userId, role: "regional_director", club: { companyId } },
+    select: { id: true },
+  });
+  return rdClub ? ["manager"] : [];
+}
+
+/** Club ids where the user may manage members (owner -> all; RD -> assigned). */
+export async function getManageableClubIds(userId: string, companyId: string): Promise<string[]> {
+  if (await userHasCompanyRole(userId, companyId, ["owner"])) {
+    const clubs = await prisma.club.findMany({ where: { companyId }, select: { id: true } });
+    return clubs.map((c) => c.id);
+  }
+  const rows = await prisma.clubUserAccess.findMany({
+    where: { userId, role: "regional_director", club: { companyId } },
+    select: { clubId: true },
+  });
+  return rows.map((r) => r.clubId);
+}
+
 // --- Audit log ------------------------------------------------------------
 
 export async function recordAudit(entry: {
