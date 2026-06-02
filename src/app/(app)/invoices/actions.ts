@@ -11,9 +11,10 @@ import {
 } from "@/lib/access";
 import {
   getInvoiceForContext,
-  allowedStatusesForRoles,
-  INVOICE_STATUSES,
-  type InvoiceStatus,
+  applyInvoiceAction,
+  canEditInvoice,
+  INVOICE_ACTION_AUDIT,
+  type InvoiceAction,
 } from "@/lib/invoices";
 import {
   analyzeInvoiceDocument,
@@ -214,6 +215,10 @@ export async function updateInvoice(
   const existing = await getInvoiceForContext(ctx, invoiceId);
   if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
 
+  if (!canEditInvoice(existing.status, ctx.effectiveRoles)) {
+    return { ok: false, error: "Оплаченный счёт может редактировать только владелец или бухгалтер" };
+  }
+
   const parsed = parseInvoiceFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
@@ -233,36 +238,35 @@ export async function updateInvoice(
   return { ok: true, invoiceId };
 }
 
-export async function updateInvoiceStatus(formData: FormData): Promise<void> {
+export async function transitionInvoice(formData: FormData): Promise<void> {
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
     throw new Error("Нет доступа");
   }
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
-  const status = String(formData.get("status") ?? "").trim() as InvoiceStatus;
-  if (!INVOICE_STATUSES.includes(status)) throw new Error("Неверный статус");
+  const action = String(formData.get("action") ?? "").trim() as InvoiceAction;
+  if (!(action in INVOICE_ACTION_AUDIT)) throw new Error("Неверное действие");
 
   const existing = await getInvoiceForContext(ctx, invoiceId);
   if (!existing) throw new Error("Счёт не найден или нет доступа");
 
-  if (!allowedStatusesForRoles(ctx.effectiveRoles).includes(status)) {
-    throw new Error("Недостаточно прав для этого статуса");
-  }
+  const result = applyInvoiceAction(action, existing.status, ctx.effectiveRoles);
+  if (!result.ok) throw new Error(result.error);
 
   await prisma.invoice.update({
     where: { id: invoiceId },
-    data: { status, paidAt: status === "paid" ? new Date() : null },
+    data: { status: result.to, paidAt: result.to === "paid" ? new Date() : null },
   });
 
   await recordAudit({
-    action: "invoice.status_changed",
+    action: INVOICE_ACTION_AUDIT[action],
     entityType: "Invoice",
     entityId: invoiceId,
     companyId: existing.companyId,
     clubId: existing.clubId,
     userId: ctx.user.id,
-    metadata: { status },
+    metadata: { from: existing.status, to: result.to, action },
   });
 
   revalidatePath("/invoices");

@@ -3,24 +3,34 @@ import { prisma } from "@/lib/prisma";
 import type { DataScope, AccessContext } from "@/lib/access";
 import type { Role } from "@/lib/auth";
 
-export type InvoiceStatus = "draft" | "needs_review" | "approved" | "paid" | "rejected";
+export type InvoiceStatus =
+  | "draft"
+  | "needs_review"
+  | "approved_by_regional"
+  | "approved_by_owner"
+  | "paid"
+  | "rejected";
+
 export type InvoiceConfidence = "low" | "medium" | "high";
 
 export const INVOICE_STATUSES: InvoiceStatus[] = [
   "draft",
   "needs_review",
-  "approved",
+  "approved_by_regional",
+  "approved_by_owner",
   "paid",
   "rejected",
 ];
 
 export const INVOICE_STATUS_LABELS: Record<string, string> = {
   draft: "Черновик",
-  needs_review: "На проверке",
-  approved: "Утверждён",
-  paid: "Оплачен",
-  rejected: "Отклонён",
+  needs_review: "На согласовании",
+  approved_by_regional: "Согласовано регионалом",
+  approved_by_owner: "Согласовано собственником",
+  paid: "Оплачено",
+  rejected: "Отклонено",
   // legacy values (kept readable)
+  approved: "Согласовано",
   unpaid: "Не оплачен",
   overdue: "Просрочен",
 };
@@ -31,20 +41,90 @@ export const INVOICE_CONFIDENCE_LABELS: Record<string, string> = {
   high: "высокая",
 };
 
-// Statuses a manager (and only a manager) is NOT allowed to set.
-const RESTRICTED_STATUSES: InvoiceStatus[] = ["approved", "paid", "rejected"];
+// --- Workflow: draft -> needs_review -> approved_* -> paid (or rejected) ------
 
-const STATUS_MANAGERS: Role[] = ["owner", "regional_director", "accountant"];
+export type InvoiceAction = "send_to_review" | "approve" | "reject" | "pay";
 
-/** Owner/RD/accountant can change to any status; a manager-only user cannot approve/pay/reject. */
-export function canManageInvoiceStatus(roles: readonly Role[]): boolean {
-  return roles.some((r) => STATUS_MANAGERS.includes(r));
+export const INVOICE_ACTION_LABELS: Record<InvoiceAction, string> = {
+  send_to_review: "Отправить на согласование",
+  approve: "Согласовать",
+  reject: "Отклонить",
+  pay: "Отметить оплачено",
+};
+
+export const INVOICE_ACTION_AUDIT: Record<InvoiceAction, string> = {
+  send_to_review: "invoice.sent_to_review",
+  approve: "invoice.approved",
+  reject: "invoice.rejected",
+  pay: "invoice.paid",
+};
+
+type TransitionResult =
+  | { ok: true; to: InvoiceStatus }
+  | { ok: false; error: string };
+
+function has(roles: readonly Role[], role: Role): boolean {
+  return roles.includes(role);
 }
 
-export function allowedStatusesForRoles(roles: readonly Role[]): InvoiceStatus[] {
-  return canManageInvoiceStatus(roles)
-    ? INVOICE_STATUSES
-    : INVOICE_STATUSES.filter((s) => !RESTRICTED_STATUSES.includes(s));
+/**
+ * Resolves an action against the current status and the actor's effective
+ * roles. Pure function — the single source of truth for who may do what.
+ */
+export function applyInvoiceAction(
+  action: InvoiceAction,
+  status: string,
+  roles: readonly Role[],
+): TransitionResult {
+  const isOwner = has(roles, "owner");
+  const isRegional = has(roles, "regional_director");
+  const isAccountant = has(roles, "accountant");
+  const isManager = has(roles, "manager");
+
+  switch (action) {
+    case "send_to_review":
+      if (status !== "draft") return { ok: false, error: "Отправить на согласование можно только черновик" };
+      if (!(isManager || isRegional || isOwner)) return { ok: false, error: "Недостаточно прав" };
+      return { ok: true, to: "needs_review" };
+
+    case "approve":
+      if (!(isRegional || isOwner)) return { ok: false, error: "Недостаточно прав для согласования" };
+      if (isOwner) {
+        if (status === "needs_review" || status === "approved_by_regional") {
+          return { ok: true, to: "approved_by_owner" };
+        }
+        return { ok: false, error: "Согласовать можно счёт на согласовании" };
+      }
+      if (status === "needs_review") return { ok: true, to: "approved_by_regional" };
+      return { ok: false, error: "Согласовать можно счёт на согласовании" };
+
+    case "reject":
+      if (!(isRegional || isOwner)) return { ok: false, error: "Недостаточно прав для отклонения" };
+      if (status === "needs_review" || status === "approved_by_regional") {
+        return { ok: true, to: "rejected" };
+      }
+      return { ok: false, error: "Отклонить можно счёт на согласовании" };
+
+    case "pay":
+      if (!(isAccountant || isOwner)) return { ok: false, error: "Недостаточно прав для отметки об оплате" };
+      if (status === "approved_by_regional" || status === "approved_by_owner") {
+        return { ok: true, to: "paid" };
+      }
+      return { ok: false, error: "Оплатить можно только согласованный счёт" };
+  }
+}
+
+/** Actions the actor can currently perform — drives which buttons are shown. */
+export function availableInvoiceActions(status: string, roles: readonly Role[]): InvoiceAction[] {
+  return (Object.keys(INVOICE_ACTION_LABELS) as InvoiceAction[]).filter(
+    (action) => applyInvoiceAction(action, status, roles).ok,
+  );
+}
+
+/** Paid invoices are locked except for owner/accountant; others editable. */
+export function canEditInvoice(status: string, roles: readonly Role[]): boolean {
+  if (status !== "paid") return true;
+  return has(roles, "owner") || has(roles, "accountant");
 }
 
 export type InvoiceWithClub = Invoice & {

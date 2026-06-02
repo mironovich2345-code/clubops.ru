@@ -7,7 +7,9 @@ import {
 } from "@/lib/access";
 import {
   getInvoiceForContext,
-  allowedStatusesForRoles,
+  availableInvoiceActions,
+  canEditInvoice,
+  INVOICE_ACTION_LABELS,
   INVOICE_STATUS_LABELS,
   INVOICE_CONFIDENCE_LABELS,
 } from "@/lib/invoices";
@@ -81,8 +83,10 @@ export default async function InvoiceDetailPage({
       <InvoiceEditForm
         invoice={view}
         categories={EXPENSE_CATEGORIES}
-        allowedStatuses={allowedStatusesForRoles(ctx.effectiveRoles)}
-        statusLabels={INVOICE_STATUS_LABELS}
+        availableActions={availableInvoiceActions(invoice.status, ctx.effectiveRoles)}
+        actionLabels={INVOICE_ACTION_LABELS}
+        statusLabel={INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}
+        canEdit={canEditInvoice(invoice.status, ctx.effectiveRoles)}
       />
     </div>
   );
