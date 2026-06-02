@@ -14,6 +14,10 @@ export const DEMO_COMPANY_ID = "demo-company";
  * Safe to call on every request — it's idempotent.
  */
 export async function ensureDemoData(): Promise<void> {
+  // Never touch the database during the production build / static prerender —
+  // on Railway the schema isn't migrated until the pre-deploy step.
+  if (process.env.NEXT_PHASE === "phase-production-build") return;
+
   const current = await getCurrentUser();
 
   await prisma.user.upsert({

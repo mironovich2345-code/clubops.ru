@@ -5,6 +5,11 @@ import { ensureDemoData } from "@/lib/seed";
 import { getUserCompanies, getUserClubs } from "@/lib/access";
 import { NAV_ITEMS } from "@/lib/navigation";
 
+// This layout reads the database (ensureDemoData + company/club context), so the
+// whole (app) subtree must be rendered on demand, never statically prerendered
+// at build time (the DB has no tables yet during a Railway build).
+export const dynamic = "force-dynamic";
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   await ensureDemoData();
