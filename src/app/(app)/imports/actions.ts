@@ -85,6 +85,12 @@ export async function runImport(
     return { ok: false, error: "Нет доступа к выбранному клубу" };
   }
 
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { companyId: true },
+  });
+  if (!club) return { ok: false, error: "Клуб не найден" };
+
   let candidates: ImportCandidate[];
   try {
     candidates = JSON.parse(String(formData.get("candidates") ?? "[]"));
@@ -116,6 +122,7 @@ export async function runImport(
   }
 
   const salesToCreate: Array<{
+    companyId: string;
     clubId: string;
     createdByUserId: string;
     source: string;
@@ -123,6 +130,7 @@ export async function runImport(
     saleDate: Date;
   }> = [];
   const expensesToCreate: Array<{
+    companyId: string;
     clubId: string;
     createdByUserId: string;
     category: string;
@@ -155,6 +163,7 @@ export async function runImport(
     const date = dateFromISO(c.dateISO);
     if (c.kind === "sale") {
       salesToCreate.push({
+        companyId: club.companyId,
         clubId,
         createdByUserId: user.id,
         source: c.label,
@@ -163,6 +172,7 @@ export async function runImport(
       });
     } else {
       expensesToCreate.push({
+        companyId: club.companyId,
         clubId,
         createdByUserId: user.id,
         category: c.label,

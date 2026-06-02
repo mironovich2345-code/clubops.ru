@@ -9,10 +9,50 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// NOTE: SQLite does not support Prisma enums, so `role` and `status` are stored
-// as TEXT. Allowed values are still enforced in application code:
-//   - Role         -> src/lib/auth.ts
-//   - InvoiceStatus -> src/lib/invoices.ts
+// NOTE: SQLite does not support Prisma enums, so roles/status/types are stored
+// as TEXT. Allowed values are enforced in application code:
+//   - Role          -> src/lib/auth.ts
+//   - InvoiceStatus  -> src/lib/invoices.ts
+//   - Company/club roles & legal-entity type -> src/lib/access.ts
+
+// ---------------------------------------------------------------------------
+// Tenancy: Company -> Club, plus legal entities (ООО / ИП)
+// ---------------------------------------------------------------------------
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clubs         Club[]
+  legalEntities LegalEntity[]
+  userAccess    CompanyUserAccess[]
+  invoices      Invoice[]
+  expenses      Expense[]
+  sales         Sale[]
+}
+
+model LegalEntity {
+  id            String   @id @default(cuid())
+  companyId     String
+  type          String // "ООО" | "ИП"
+  name          String
+  inn           String?
+  ogrn          String?
+  bankName      String?
+  accountNumber String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  clubs    ClubLegalEntity[]
+  invoices Invoice[]
+  expenses Expense[]
+  sales    Sale[]
+
+  @@index([companyId])
+}
 
 model User {
   id        String   @id @default(cuid())
@@ -22,28 +62,116 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  clubAccess UserClubAccess[]
-  invoices   Invoice[]
-  expenses   Expense[]
-  sales      Sale[]
+  clubAccess    UserClubAccess[]
+  companyAccess CompanyUserAccess[]
+  clubRoles     ClubUserAccess[]
+  invoices      Invoice[]
+  expenses      Expense[]
+  sales         Sale[]
 }
 
 model Club {
   id        String   @id @default(cuid())
+  companyId String
   name      String
   city      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userAccess UserClubAccess[]
-  invoices   Invoice[]
-  expenses   Expense[]
-  sales      Sale[]
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userAccess    UserClubAccess[]
+  clubRoles     ClubUserAccess[]
+  legalEntities ClubLegalEntity[]
+  invoices      Invoice[]
+  expenses      Expense[]
+  sales         Sale[]
+
+  @@index([companyId])
 }
+
+// A club can be served by multiple legal entities (e.g. ООО + ИП).
+model ClubLegalEntity {
+  id            String   @id @default(cuid())
+  clubId        String
+  legalEntityId String
+  createdAt     DateTime @default(now())
+
+  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, legalEntityId])
+  @@index([clubId])
+  @@index([legalEntityId])
+}
+
+// ---------------------------------------------------------------------------
+// Access: company-scoped and club-scoped role assignments
+// ---------------------------------------------------------------------------
+
+// Company-wide role (owner, regional_director, manager, accountant).
+model CompanyUserAccess {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId, role])
+  @@index([companyId])
+  @@index([userId])
+}
+
+// Club-scoped role (regional_director, manager, accountant).
+model ClubUserAccess {
+  id        String   @id @default(cuid())
+  clubId    String
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId, role])
+  @@index([clubId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit log (decoupled scalar references so deleted entities stay traceable)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  companyId    String?
+  clubId       String?
+  userId       String?
+  action       String
+  entityType   String
+  entityId     String?
+  metadataJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Business records
+// ---------------------------------------------------------------------------
 
 model Invoice {
   id               String    @id @default(cuid())
+  companyId        String
   clubId           String
+  legalEntityId    String?
   createdByUserId  String
   counterpartyName String
   amountKopeks     Int
@@ -57,9 +185,12 @@ model Invoice {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  club      Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  createdBy   User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
 
+  @@index([companyId])
   @@index([clubId])
   @@index([createdByUserId])
   @@index([status])
@@ -68,7 +199,9 @@ model Invoice {
 
 model Expense {
   id              String    @id @default(cuid())
+  companyId       String
   clubId          String
+  legalEntityId   String?
   createdByUserId String
   category        String
   vendorName      String?
@@ -80,9 +213,12 @@ model Expense {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  club      Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  createdBy   User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
 
+  @@index([companyId])
   @@index([clubId])
   @@index([createdByUserId])
   @@index([category])
@@ -91,7 +227,9 @@ model Expense {
 
 model Sale {
   id              String   @id @default(cuid())
+  companyId       String
   clubId          String
+  legalEntityId   String?
   createdByUserId String
   source          String
   amountKopeks    Int
@@ -100,9 +238,12 @@ model Sale {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  club      Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  createdBy   User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
 
+  @@index([companyId])
   @@index([clubId])
   @@index([createdByUserId])
   @@index([source])

@@ -64,8 +64,15 @@ export async function createExpense(
     return { ok: false, error: "Нет доступа к выбранному клубу" };
   }
 
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { companyId: true },
+  });
+  if (!club) return { ok: false, error: "Клуб не найден" };
+
   await prisma.expense.create({
     data: {
+      companyId: club.companyId,
       clubId,
       createdByUserId: user.id,
       category,
