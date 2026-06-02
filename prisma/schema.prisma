@@ -271,20 +271,43 @@ model Invoice {
 }
 
 model Expense {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   companyId       String
   clubId          String
   legalEntityId   String?
   createdByUserId String
-  category        String
-  vendorName      String?
-  amountKopeks    Int
-  expenseDate     DateTime
-  paymentMethod   String?
-  comment         String?
-  fileUrl         String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+
+  // receipt | transfer | manual
+  type String @default("manual")
+
+  // `category` holds the expense category; `expenseDate` is the purchase date.
+  category     String
+  vendorName   String?
+  recipientName String?
+  amountKopeks Int      @default(0)
+  currency     String   @default("RUB")
+  expenseDate  DateTime
+  address      String?
+  itemsJson    String?
+
+  confidence String @default("low")
+  // confirmed (default for now; reserved for future workflow)
+  status String @default("confirmed")
+
+  paymentMethod String?
+  comment       String?
+  notes         String?
+
+  // Uploaded document metadata (binary kept on disk, never in DB)
+  originalFileName       String?
+  originalFileMime       String?
+  originalFileSize       Int?
+  originalFileStorageKey String?
+  rawExtractedJson       String?
+
+  fileUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)

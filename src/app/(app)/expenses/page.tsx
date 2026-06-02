@@ -1,14 +1,17 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { requirePageAccess } from "@/lib/access";
+import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
 import { formatKopeks } from "@/lib/money";
 import {
   getExpensesForScope,
   summarizeExpenses,
+  expenseCategoryLabel,
+  EXPENSE_CATEGORY_OPTIONS,
+  EXPENSE_TYPE_LABELS,
   type ExpenseSummary,
 } from "@/lib/expenses";
-import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
 import { NoCompanyState } from "@/components/NoCompanyState";
-import { CreateExpenseForm } from "./_components/CreateExpenseForm";
+import { ExpenseUpload } from "./_components/ExpenseUpload";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +31,7 @@ export default async function ExpensesPage() {
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {
-    return (
-      <NoCompanyState title="Расходы" description="Учёт расходов клуба и динамика по статьям" />
-    );
+    return <NoCompanyState title="Расходы" description="Чеки, переводы и динамика по статьям" />;
   }
 
   const [clubs, expenses] = await Promise.all([
@@ -47,7 +48,7 @@ export default async function ExpensesPage() {
 
   return (
     <div>
-      <PageHeader title="Расходы" description="Учёт расходов клуба и динамика по статьям" />
+      <PageHeader title="Расходы" description="Чеки, переводы и динамика по статьям" />
 
       <SummarySection
         summary={summary}
@@ -55,7 +56,13 @@ export default async function ExpensesPage() {
         previousMonthLabel={previousMonthLabel}
       />
 
-      <CreateExpenseForm clubs={clubs} />
+      {clubs.length > 0 ? (
+        <ExpenseUpload
+          clubs={clubs}
+          categories={EXPENSE_CATEGORY_OPTIONS}
+          companyName={scope.company.name}
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -63,42 +70,47 @@ export default async function ExpensesPage() {
             <thead className="bg-slate-50">
               <tr>
                 <Th>Дата</Th>
+                <Th>Тип</Th>
                 <Th>Статья</Th>
-                <Th>Поставщик</Th>
+                <Th>Контрагент</Th>
                 <Th className="text-right">Сумма</Th>
-                <Th>Способ оплаты</Th>
-                <Th>Комментарий</Th>
                 <Th>Кто добавил</Th>
+                <Th>Действия</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {expenses.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                    Пока нет расходов. Нажмите «Добавить расход», чтобы создать первый.
+                    Пока нет расходов. Загрузите чек/перевод или заполните вручную.
                   </td>
                 </tr>
               ) : (
                 expenses.map((expense) => (
                   <tr key={expense.id} className="hover:bg-slate-50">
+                    <Td className="whitespace-nowrap">{dateFormatter.format(expense.expenseDate)}</Td>
                     <Td className="whitespace-nowrap">
-                      {dateFormatter.format(expense.expenseDate)}
+                      {EXPENSE_TYPE_LABELS[expense.type] ?? expense.type}
                     </Td>
                     <Td>
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
-                        {expense.category}
+                        {expenseCategoryLabel(expense.category)}
                       </span>
                       <div className="mt-1 text-xs text-slate-500">{expense.club.name}</div>
                     </Td>
-                    <Td>{expense.vendorName ?? "—"}</Td>
+                    <Td>{expense.vendorName ?? expense.recipientName ?? "—"}</Td>
                     <Td className="whitespace-nowrap text-right font-medium text-slate-900">
                       {formatKopeks(expense.amountKopeks)}
                     </Td>
-                    <Td className="whitespace-nowrap">{expense.paymentMethod ?? "—"}</Td>
-                    <Td className="max-w-xs">
-                      <div className="line-clamp-2 text-slate-600">{expense.comment ?? "—"}</div>
-                    </Td>
                     <Td className="whitespace-nowrap text-slate-600">{expense.createdBy.name}</Td>
+                    <Td>
+                      <Link
+                        href={`/expenses/${expense.id}`}
+                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Открыть
+                      </Link>
+                    </Td>
                   </tr>
                 ))
               )}
@@ -158,7 +170,7 @@ function SummarySection({
         }
         accent="text-slate-900"
       >
-        {summary.largestCategory ? summary.largestCategory.category : "—"}
+        {summary.largestCategory ? expenseCategoryLabel(summary.largestCategory.category) : "—"}
       </Card>
     </div>
   );
@@ -190,20 +202,15 @@ function CategoryAnalytics({
             return (
               <li key={item.category} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-slate-700">{item.category}</span>
+                  <span className="text-sm text-slate-700">{expenseCategoryLabel(item.category)}</span>
                   <span className="text-sm font-medium text-slate-900">
                     {formatKopeks(item.amountKopeks)}
                   </span>
                 </div>
                 <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-brand-500"
-                    style={{ width: `${percent}%` }}
-                  />
+                  <div className="h-full rounded-full bg-brand-500" style={{ width: `${percent}%` }} />
                 </div>
-                <div className="mt-1 text-right text-xs text-slate-400">
-                  {percent.toFixed(1)}%
-                </div>
+                <div className="mt-1 text-right text-xs text-slate-400">{percent.toFixed(1)}%</div>
               </li>
             );
           })}
@@ -233,13 +240,7 @@ function Card({
   );
 }
 
-function Th({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <th
       scope="col"
@@ -250,12 +251,6 @@ function Th({
   );
 }
 
-function Td({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-3 align-top text-sm text-slate-700 ${className ?? ""}`}>{children}</td>;
 }

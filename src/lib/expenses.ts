@@ -1,10 +1,8 @@
 import type { Expense } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { DataScope } from "@/lib/access";
+import type { DataScope, AccessContext } from "@/lib/access";
 
-// Recommended categories shown in the create form. `category` is stored as TEXT
-// (SQLite has no enums), so other values are technically allowed — these are the
-// suggested defaults.
+// Legacy Russian category list (manual entries / imports). Kept for readability.
 export const EXPENSE_CATEGORIES = [
   "Аренда",
   "Зарплата",
@@ -18,17 +16,60 @@ export const EXPENSE_CATEGORIES = [
   "Прочее",
 ] as const;
 
-// Optional helper list for the payment-method field (nullable).
-export const PAYMENT_METHODS = [
-  "Наличные",
-  "Карта",
-  "Банковский перевод",
-] as const;
+export const PAYMENT_METHODS = ["Наличные", "Карта", "Банковский перевод"] as const;
+
+// Expense document types (receipt / transfer / manual).
+export const EXPENSE_TYPES = ["receipt", "transfer", "manual"] as const;
+export const EXPENSE_TYPE_LABELS: Record<string, string> = {
+  receipt: "Чек",
+  transfer: "Перевод",
+  manual: "Вручную",
+};
+
+// Category keys used by the receipts/transfers flow, with Russian labels.
+export const EXPENSE_CATEGORY_OPTIONS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "advertising", label: "Реклама" },
+  { key: "household", label: "Хозрасходы" },
+  { key: "builders", label: "Строители" },
+  { key: "investments", label: "Вложения" },
+  { key: "refunds", label: "Возвраты" },
+  { key: "salary", label: "Зарплата" },
+  { key: "other", label: "Прочее" },
+];
+
+export const EXPENSE_CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
+  EXPENSE_CATEGORY_OPTIONS.map((o) => [o.key, o.label]),
+);
+
+/** Human label for a stored category value (key or legacy Russian text). */
+export function expenseCategoryLabel(category: string | null): string {
+  if (!category) return "—";
+  return EXPENSE_CATEGORY_LABELS[category] ?? category;
+}
 
 export type ExpenseWithRelations = Expense & {
   club: { id: string; name: string; city: string };
   createdBy: { id: string; name: string };
 };
+
+/** Single expense, scoped to the current access context (company + allowed clubs). */
+export async function getExpenseForContext(
+  ctx: AccessContext,
+  expenseId: string,
+): Promise<ExpenseWithRelations | null> {
+  if (!ctx.selectedCompanyId) return null;
+  const expense = await prisma.expense.findUnique({
+    where: { id: expenseId },
+    include: {
+      club: { select: { id: true, name: true, city: true } },
+      createdBy: { select: { id: true, name: true } },
+    },
+  });
+  if (!expense) return null;
+  if (expense.companyId !== ctx.selectedCompanyId) return null;
+  if (!ctx.allowedClubIds.includes(expense.clubId)) return null;
+  return expense as ExpenseWithRelations;
+}
 
 export async function getExpensesForScope(
   scope: DataScope,
