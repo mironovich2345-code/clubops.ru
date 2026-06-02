@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: club_ops_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: club_ops
+      POSTGRES_USER: club_ops
+      POSTGRES_PASSWORD: club_ops_password
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - club_ops_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U club_ops -d club_ops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  club_ops_pgdata:

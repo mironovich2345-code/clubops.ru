@@ -3,26 +3,27 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  // Temporarily on SQLite for local beta (no Docker/Postgres required).
+  // Switch back to "postgresql" for staging/production.
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  owner
-  regional_director
-  manager
-  accountant
-}
+// NOTE: SQLite does not support Prisma enums, so `role` and `status` are stored
+// as TEXT. Allowed values are still enforced in application code:
+//   - Role         -> src/lib/auth.ts
+//   - InvoiceStatus -> src/lib/invoices.ts
 
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String
-  role      Role
+  role      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   clubAccess UserClubAccess[]
+  invoices   Invoice[]
 }
 
 model Club {
@@ -33,6 +34,32 @@ model Club {
   updatedAt DateTime @updatedAt
 
   userAccess UserClubAccess[]
+  invoices   Invoice[]
+}
+
+model Invoice {
+  id               String    @id @default(cuid())
+  clubId           String
+  createdByUserId  String
+  counterpartyName String
+  amountKopeks     Int
+  subject          String
+  invoiceDate      DateTime
+  dueDate          DateTime
+  paidAt           DateTime?
+  status           String    @default("unpaid")
+  comment          String?
+  fileUrl          String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  club      Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([clubId])
+  @@index([createdByUserId])
+  @@index([status])
+  @@index([dueDate])
 }
 
 model UserClubAccess {
