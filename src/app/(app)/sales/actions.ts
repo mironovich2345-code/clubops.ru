@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canAccessPage } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
 import { rublesToKopeks } from "@/lib/money";
 import { canAccessClub } from "@/lib/access";
 
@@ -27,10 +26,9 @@ export async function createSale(
   formData: FormData,
 ): Promise<CreateSaleState> {
   const user = await getCurrentUser();
-  if (!canAccessPage(user.role, "sales")) {
+  if (!user || !canAccessPage(user.role, "sales")) {
     return { ok: false, error: "Нет доступа" };
   }
-  await ensureDemoData();
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   const source = String(formData.get("source") ?? "").trim();

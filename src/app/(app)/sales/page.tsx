@@ -1,6 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
 import { formatKopeks } from "@/lib/money";
 import { getSalesForScope, summarizeSales, type SaleSummary } from "@/lib/sales";
 import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
@@ -22,7 +21,6 @@ const monthFormatter = new Intl.DateTimeFormat("ru-RU", {
 
 export default async function SalesPage() {
   const user = await requirePageAccess("sales");
-  await ensureDemoData();
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {

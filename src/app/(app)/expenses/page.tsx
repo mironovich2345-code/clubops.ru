@@ -1,6 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
 import { formatKopeks } from "@/lib/money";
 import {
   getExpensesForScope,
@@ -26,7 +25,6 @@ const monthFormatter = new Intl.DateTimeFormat("ru-RU", {
 
 export default async function ExpensesPage() {
   const user = await requirePageAccess("expenses");
-  await ensureDemoData();
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {

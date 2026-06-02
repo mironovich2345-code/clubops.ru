@@ -17,7 +17,9 @@ export function UserBadge({ user }: { user: CurrentUser }) {
       </div>
       <div className="leading-tight">
         <div className="text-sm font-medium text-slate-900">{user.name}</div>
-        <div className="text-xs text-slate-500">{ROLE_LABELS[user.role] ?? user.role}</div>
+        <div className="text-xs text-slate-500">
+          {user.email} · {ROLE_LABELS[user.role] ?? user.role}
+        </div>
       </div>
     </div>
   );

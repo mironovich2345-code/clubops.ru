@@ -1,6 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
 import { formatKopeks } from "@/lib/money";
 import { getInvoicesForScope, summarize, type StatusSummary } from "@/lib/invoices";
 import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
@@ -19,7 +18,6 @@ const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
 
 export default async function InvoicesPage() {
   const user = await requirePageAccess("invoices");
-  await ensureDemoData();
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {

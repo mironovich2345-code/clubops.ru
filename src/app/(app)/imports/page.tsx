@@ -1,6 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
 import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { ImportForm } from "./_components/ImportForm";
@@ -9,7 +8,6 @@ export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
   const user = await requirePageAccess("imports");
-  await ensureDemoData();
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {

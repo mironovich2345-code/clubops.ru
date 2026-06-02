@@ -1,18 +1,17 @@
 import { Sidebar } from "@/components/Sidebar";
 import { UserBadge } from "@/components/UserBadge";
-import { getCurrentUser, canAccessPage } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
+import { requireUser, canAccessPage } from "@/lib/auth";
 import { getUserCompanies, getUserClubs } from "@/lib/access";
 import { NAV_ITEMS } from "@/lib/navigation";
+import { logoutAction } from "@/app/auth-actions";
 
-// This layout reads the database (ensureDemoData + company/club context), so the
-// whole (app) subtree must be rendered on demand, never statically prerendered
-// at build time (the DB has no tables yet during a Railway build).
+// This layout reads the database and the session, so the whole (app) subtree
+// must be rendered on demand, never statically prerendered at build time.
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await getCurrentUser();
-  await ensureDemoData();
+  // Redirects unauthenticated visitors to /login — protects every (app) page.
+  const user = await requireUser();
 
   const visibleItems = NAV_ITEMS.filter((item) => canAccessPage(user.role, item.page));
 
@@ -35,7 +34,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             clubName={currentClub?.name ?? null}
             clubCount={clubs.length}
           />
-          <UserBadge user={user} />
+          <div className="flex items-center gap-3">
+            <UserBadge user={user} />
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Выйти
+              </button>
+            </form>
+          </div>
         </header>
         <main className="flex-1 px-8 py-8">{children}</main>
       </div>
@@ -54,7 +63,9 @@ function ContextChips({
   clubName: string | null;
   clubCount: number;
 }) {
-  if (!companyName) return <div />;
+  if (!companyName) {
+    return <div className="text-sm text-slate-400">Нет доступной компании</div>;
+  }
   return (
     <div className="flex items-center gap-2 text-sm">
       <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-700">

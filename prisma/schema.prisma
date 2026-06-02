@@ -55,19 +55,41 @@ model LegalEntity {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String
-  role      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String
+  role            String
+  passwordHash    String?
+  firstName       String?
+  lastName        String?
+  phone           String?
+  isActive        Boolean   @default(true)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   clubAccess    UserClubAccess[]
   companyAccess CompanyUserAccess[]
   clubRoles     ClubUserAccess[]
+  sessions      Session[]
   invoices      Invoice[]
   expenses      Expense[]
   sales         Sale[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Club {

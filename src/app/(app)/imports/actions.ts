@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canAccessPage, type Role } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
 import { canAccessClub } from "@/lib/access";
 import {
   parseImportBuffer,
@@ -36,7 +35,7 @@ export async function previewImport(
   formData: FormData,
 ): Promise<PreviewState> {
   const user = await getCurrentUser();
-  if (!canImport(user.role)) return { ok: false, error: "Нет доступа" };
+  if (!user || !canImport(user.role)) return { ok: false, error: "Нет доступа" };
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   if (!clubId) return { ok: false, error: "Выберите клуб" };
@@ -76,8 +75,7 @@ export async function runImport(
   formData: FormData,
 ): Promise<ImportResultState> {
   const user = await getCurrentUser();
-  if (!canImport(user.role)) return { ok: false, error: "Нет доступа" };
-  await ensureDemoData();
+  if (!user || !canImport(user.role)) return { ok: false, error: "Нет доступа" };
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   if (!clubId) return { ok: false, error: "Не указан клуб" };

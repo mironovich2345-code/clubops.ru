@@ -1,6 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
 import { formatKopeks } from "@/lib/money";
 import { getInvoicesForScope, summarize } from "@/lib/invoices";
 import { getExpensesForScope, summarizeExpenses } from "@/lib/expenses";
@@ -34,7 +33,6 @@ function formatPercent(value: number | null): string {
 
 export default async function DashboardPage() {
   const user = await requirePageAccess("dashboard");
-  await ensureDemoData();
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {

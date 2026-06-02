@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canAccessPage } from "@/lib/auth";
-import { ensureDemoData } from "@/lib/seed";
 import { rublesToKopeks } from "@/lib/money";
 import { type InvoiceStatus } from "@/lib/invoices";
 import { canAccessClub } from "@/lib/access";
@@ -28,10 +27,9 @@ export async function createInvoice(
   formData: FormData,
 ): Promise<CreateInvoiceState> {
   const user = await getCurrentUser();
-  if (!canAccessPage(user.role, "invoices")) {
+  if (!user || !canAccessPage(user.role, "invoices")) {
     return { ok: false, error: "Нет доступа" };
   }
-  await ensureDemoData();
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   const counterpartyName = String(formData.get("counterpartyName") ?? "").trim();
@@ -96,7 +94,7 @@ export async function createInvoice(
 
 export async function setInvoiceStatus(invoiceId: string, status: InvoiceStatus): Promise<void> {
   const user = await getCurrentUser();
-  if (!canAccessPage(user.role, "invoices")) {
+  if (!user || !canAccessPage(user.role, "invoices")) {
     throw new Error("Нет доступа");
   }
 
