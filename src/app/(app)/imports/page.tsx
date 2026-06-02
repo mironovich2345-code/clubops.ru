@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
-import { requirePageAccess } from "@/lib/auth";
+import { requirePageAccess } from "@/lib/access";
 import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { ImportForm } from "./_components/ImportForm";

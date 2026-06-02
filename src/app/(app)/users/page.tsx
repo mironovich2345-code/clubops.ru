@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
-import { requirePageAccess } from "@/lib/auth";
 import {
+  requirePageAccess,
   getCurrentCompanyAndClub,
   getCompanyMembers,
   getInvitableRoles,

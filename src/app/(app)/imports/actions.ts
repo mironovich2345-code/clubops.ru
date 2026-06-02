@@ -2,18 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, canAccessPage, type Role } from "@/lib/auth";
-import { canAccessClub } from "@/lib/access";
+import { canAnyRoleAccessPage } from "@/lib/auth";
+import { getCurrentAccessContext, canAccessClub } from "@/lib/access";
 import {
   parseImportBuffer,
   type ImportCandidate,
   type ImportPreview,
 } from "@/lib/import";
-
-// Only owner and regional_director may import historical data.
-function canImport(role: Role): boolean {
-  return canAccessPage(role, "imports");
-}
 
 export type PreviewState = {
   ok: boolean;
@@ -34,8 +29,11 @@ export async function previewImport(
   _prev: PreviewState | undefined,
   formData: FormData,
 ): Promise<PreviewState> {
-  const user = await getCurrentUser();
-  if (!user || !canImport(user.role)) return { ok: false, error: "Нет доступа" };
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "imports")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  const user = ctx.user;
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   if (!clubId) return { ok: false, error: "Выберите клуб" };
@@ -74,8 +72,11 @@ export async function runImport(
   _prev: ImportResultState | undefined,
   formData: FormData,
 ): Promise<ImportResultState> {
-  const user = await getCurrentUser();
-  if (!user || !canImport(user.role)) return { ok: false, error: "Нет доступа" };
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "imports")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  const user = ctx.user;
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   if (!clubId) return { ok: false, error: "Не указан клуб" };

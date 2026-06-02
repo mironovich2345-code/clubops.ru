@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
-import { requirePageAccess } from "@/lib/auth";
+import { requirePageAccess } from "@/lib/access";
 import { formatKopeks } from "@/lib/money";
 import { getSalesForScope, summarizeSales, type SaleSummary } from "@/lib/sales";
 import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";

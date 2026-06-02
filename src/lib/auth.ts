@@ -114,12 +114,24 @@ export async function requireUser(): Promise<CurrentUser> {
   return user;
 }
 
-export async function requirePageAccess(page: AppPage): Promise<CurrentUser> {
-  const user = await requireUser();
-  if (!canAccessPage(user.role, page)) {
-    redirect(`/${landingPageForRole(user.role)}`);
+// Effective-role helpers. Page access is driven by the roles a user actually
+// holds in the selected scope (CompanyUserAccess/ClubUserAccess), never by the
+// global User.role. See getCurrentAccessContext in src/lib/access.ts.
+const ROLE_PRIORITY: readonly Role[] = ["owner", "regional_director", "manager", "accountant"];
+
+export function highestRole(roles: readonly Role[]): Role | null {
+  for (const role of ROLE_PRIORITY) {
+    if (roles.includes(role)) return role;
   }
-  return user;
+  return null;
+}
+
+export function canAnyRoleAccessPage(roles: readonly Role[], page: AppPage): boolean {
+  return roles.some((role) => canAccessPage(role, page));
+}
+
+export function isKnownRole(role: string): role is Role {
+  return role in ROLE_PAGE_ACCESS;
 }
 
 export type AuthResult = { ok: boolean; error?: string };

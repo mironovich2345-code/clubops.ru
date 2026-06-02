@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/PageHeader";
 import { PlaceholderCard } from "@/components/PlaceholderCard";
-import { requirePageAccess } from "@/lib/auth";
+import { requirePageAccess } from "@/lib/access";
 
 export default async function DocumentsPage() {
   await requirePageAccess("documents");

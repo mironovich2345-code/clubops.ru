@@ -1,8 +1,9 @@
+import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { UserBadge } from "@/components/UserBadge";
-import { requireUser, canAccessPage } from "@/lib/auth";
-import { getUserCompanies, getUserClubs } from "@/lib/access";
-import { NAV_ITEMS } from "@/lib/navigation";
+import { canAnyRoleAccessPage } from "@/lib/auth";
+import { getCurrentAccessContext, getUserCompanies, getUserClubs } from "@/lib/access";
+import { NAV_ITEMS, ROLE_LABELS } from "@/lib/navigation";
 import { logoutAction } from "@/app/auth-actions";
 
 // This layout reads the database and the session, so the whole (app) subtree
@@ -10,10 +11,16 @@ import { logoutAction } from "@/app/auth-actions";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  // Redirects unauthenticated visitors to /login — protects every (app) page.
-  const user = await requireUser();
+  // Effective-role gate: unauthenticated -> /login; no effective access -> /no-access.
+  const ctx = await getCurrentAccessContext();
+  if (!ctx) redirect("/login");
+  if (!ctx.selectedCompanyId || ctx.effectiveRoles.length === 0) redirect("/no-access");
+  const user = ctx.user;
 
-  const visibleItems = NAV_ITEMS.filter((item) => canAccessPage(user.role, item.page));
+  const visibleItems = NAV_ITEMS.filter((item) =>
+    canAnyRoleAccessPage(ctx.effectiveRoles, item.page),
+  );
+  const roleLabel = ctx.effectiveRole ? ROLE_LABELS[ctx.effectiveRole] ?? ctx.effectiveRole : "";
 
   const [companies, clubs] = await Promise.all([
     getUserCompanies(user.id),
@@ -35,7 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             clubCount={clubs.length}
           />
           <div className="flex items-center gap-3">
-            <UserBadge user={user} />
+            <UserBadge user={user} roleLabel={roleLabel} />
             <form action={logoutAction}>
               <button
                 type="submit"

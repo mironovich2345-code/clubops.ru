@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, canAccessPage } from "@/lib/auth";
+import { canAnyRoleAccessPage } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { type InvoiceStatus } from "@/lib/invoices";
-import { canAccessClub } from "@/lib/access";
+import { getCurrentAccessContext, canAccessClub } from "@/lib/access";
 
 export type CreateInvoiceState = {
   ok: boolean;
@@ -26,10 +26,11 @@ export async function createInvoice(
   _prev: CreateInvoiceState | undefined,
   formData: FormData,
 ): Promise<CreateInvoiceState> {
-  const user = await getCurrentUser();
-  if (!user || !canAccessPage(user.role, "invoices")) {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
     return { ok: false, error: "Нет доступа" };
   }
+  const user = ctx.user;
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   const counterpartyName = String(formData.get("counterpartyName") ?? "").trim();
@@ -93,10 +94,11 @@ export async function createInvoice(
 }
 
 export async function setInvoiceStatus(invoiceId: string, status: InvoiceStatus): Promise<void> {
-  const user = await getCurrentUser();
-  if (!user || !canAccessPage(user.role, "invoices")) {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
     throw new Error("Нет доступа");
   }
+  const user = ctx.user;
 
   const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
   if (!invoice) throw new Error("Счёт не найден");

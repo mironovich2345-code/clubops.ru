@@ -1,7 +1,6 @@
 import type { CurrentUser } from "@/lib/auth";
-import { ROLE_LABELS } from "@/lib/navigation";
 
-export function UserBadge({ user }: { user: CurrentUser }) {
+export function UserBadge({ user, roleLabel }: { user: CurrentUser; roleLabel?: string }) {
   const initials = user.name
     .split(" ")
     .map((part) => part[0])
@@ -18,7 +17,8 @@ export function UserBadge({ user }: { user: CurrentUser }) {
       <div className="leading-tight">
         <div className="text-sm font-medium text-slate-900">{user.name}</div>
         <div className="text-xs text-slate-500">
-          {user.email} · {ROLE_LABELS[user.role] ?? user.role}
+          {user.email}
+          {roleLabel ? ` · ${roleLabel}` : ""}
         </div>
       </div>
     </div>

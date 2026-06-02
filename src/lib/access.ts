@@ -1,5 +1,15 @@
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import type { CurrentUser } from "@/lib/auth";
+import {
+  getCurrentUser,
+  canAnyRoleAccessPage,
+  highestRole,
+  landingPageForRole,
+  isKnownRole,
+  type CurrentUser,
+  type Role,
+  type AppPage,
+} from "@/lib/auth";
 
 // Company-scoped and club-scoped access live in CompanyUserAccess / ClubUserAccess.
 // The legacy global User.role and UserClubAccess remain in place so existing
@@ -127,6 +137,115 @@ export async function getClubsInScope(scope: DataScope) {
     where: { id: { in: scope.clubIds } },
     orderBy: { name: "asc" },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Effective access context — the single source of truth for navigation and
+// protected page access. Global User.role is NOT used here.
+// ---------------------------------------------------------------------------
+
+export type AccessContext = {
+  user: CurrentUser;
+  selectedCompanyId: string | null;
+  selectedClubId: string | null;
+  effectiveRole: Role | null;
+  effectiveRoles: Role[];
+  allowedCompanyIds: string[];
+  allowedClubIds: string[];
+};
+
+async function listAccessibleCompanyIds(user: CurrentUser): Promise<string[]> {
+  if (isPlatformSuperadmin(user.role)) {
+    const all = await prisma.company.findMany({ select: { id: true } });
+    return all.map((c) => c.id);
+  }
+  const [companyRows, clubRows] = await Promise.all([
+    prisma.companyUserAccess.findMany({ where: { userId: user.id }, select: { companyId: true } }),
+    prisma.clubUserAccess.findMany({
+      where: { userId: user.id },
+      select: { club: { select: { companyId: true } } },
+    }),
+  ]);
+  return [
+    ...new Set([
+      ...companyRows.map((r) => r.companyId),
+      ...clubRows.map((r) => r.club.companyId),
+    ]),
+  ];
+}
+
+async function effectiveRolesInCompany(user: CurrentUser, companyId: string): Promise<Role[]> {
+  if (isPlatformSuperadmin(user.role)) return ["owner"];
+  const [companyRows, clubRows] = await Promise.all([
+    prisma.companyUserAccess.findMany({ where: { userId: user.id, companyId }, select: { role: true } }),
+    prisma.clubUserAccess.findMany({
+      where: { userId: user.id, club: { companyId } },
+      select: { role: true },
+    }),
+  ]);
+  const roles = new Set<string>([...companyRows.map((r) => r.role), ...clubRows.map((r) => r.role)]);
+  return [...roles].filter(isKnownRole);
+}
+
+/**
+ * Resolves the current user's effective access for the selected scope. Returns
+ * null if not authenticated. Effective roles come only from company/club access
+ * grants — the global User.role never grants permissions inside the app.
+ */
+export async function getCurrentAccessContext(): Promise<AccessContext | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const [scope, allowedCompanyIds] = await Promise.all([
+    getCurrentCompanyAndClub(user),
+    listAccessibleCompanyIds(user),
+  ]);
+
+  if (!scope.company) {
+    return {
+      user,
+      selectedCompanyId: null,
+      selectedClubId: null,
+      effectiveRole: null,
+      effectiveRoles: [],
+      allowedCompanyIds,
+      allowedClubIds: [],
+    };
+  }
+
+  const effectiveRoles = await effectiveRolesInCompany(user, scope.company.id);
+  return {
+    user,
+    selectedCompanyId: scope.company.id,
+    selectedClubId: scope.club?.id ?? null,
+    effectiveRole: highestRole(effectiveRoles),
+    effectiveRoles,
+    allowedCompanyIds,
+    allowedClubIds: scope.clubIds,
+  };
+}
+
+/**
+ * Guard for protected (app) pages: redirects unauthenticated users to /login,
+ * users without any effective access to /no-access, and users lacking access to
+ * the requested page to their landing page.
+ */
+export async function requirePageAccess(page: AppPage): Promise<CurrentUser> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx) redirect("/login");
+  if (!ctx.selectedCompanyId || ctx.effectiveRoles.length === 0 || !ctx.effectiveRole) {
+    await recordAudit({
+      action: "access.denied",
+      entityType: "Page",
+      userId: ctx.user.id,
+      metadata: { page, reason: "no_effective_role" },
+    });
+    redirect("/no-access");
+  }
+  if (!canAnyRoleAccessPage(ctx.effectiveRoles, page)) {
+    redirect(`/${landingPageForRole(ctx.effectiveRole)}`);
+  }
+  return ctx.user;
 }
 
 export async function canAccessCompany(userId: string, companyId: string): Promise<boolean> {
