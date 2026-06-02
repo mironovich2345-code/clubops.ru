@@ -24,6 +24,7 @@ model User {
 
   clubAccess UserClubAccess[]
   invoices   Invoice[]
+  expenses   Expense[]
 }
 
 model Club {
@@ -35,6 +36,7 @@ model Club {
 
   userAccess UserClubAccess[]
   invoices   Invoice[]
+  expenses   Expense[]
 }
 
 model Invoice {
@@ -60,6 +62,29 @@ model Invoice {
   @@index([createdByUserId])
   @@index([status])
   @@index([dueDate])
+}
+
+model Expense {
+  id              String    @id @default(cuid())
+  clubId          String
+  createdByUserId String
+  category        String
+  vendorName      String?
+  amountKopeks    Int
+  expenseDate     DateTime
+  paymentMethod   String?
+  comment         String?
+  fileUrl         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  club      Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([clubId])
+  @@index([createdByUserId])
+  @@index([category])
+  @@index([expenseDate])
 }
 
 model UserClubAccess {
