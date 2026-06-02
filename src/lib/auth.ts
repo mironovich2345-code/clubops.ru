@@ -7,6 +7,7 @@ export type AppPage =
   | "expenses"
   | "invoices"
   | "sales"
+  | "imports"
   | "documents"
   | "users";
 
@@ -18,8 +19,8 @@ export type CurrentUser = {
 };
 
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
-  owner: ["dashboard", "expenses", "invoices", "sales", "documents", "users"],
-  regional_director: ["dashboard", "expenses", "invoices", "sales", "documents"],
+  owner: ["dashboard", "expenses", "invoices", "sales", "imports", "documents", "users"],
+  regional_director: ["dashboard", "expenses", "invoices", "sales", "imports", "documents"],
   manager: ["dashboard", "expenses", "sales", "documents"],
   accountant: ["expenses", "invoices", "documents"],
 };
