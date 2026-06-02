@@ -9,7 +9,11 @@
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "prisma:sync-prod": "node scripts/sync-prod-schema.mjs",
+    "prisma:generate:prod": "prisma generate --schema=prisma/production/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema=prisma/production/schema.prisma",
+    "build:prod": "prisma generate --schema=prisma/production/schema.prisma && next build"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
