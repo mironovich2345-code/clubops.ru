@@ -1,6 +1,6 @@
 import type { Sale } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { CurrentUser } from "@/lib/auth";
+import type { DataScope } from "@/lib/access";
 
 // Default sources shown in the create form. `source` is stored as TEXT (SQLite
 // has no enums), so other values are technically allowed — these are the
@@ -19,16 +19,12 @@ export type SaleWithRelations = Sale & {
   createdBy: { id: string; name: string };
 };
 
-export async function getSalesForUser(
-  user: CurrentUser,
+export async function getSalesForScope(
+  scope: DataScope,
 ): Promise<SaleWithRelations[]> {
-  const where =
-    user.role === "owner"
-      ? {}
-      : { club: { userAccess: { some: { userId: user.id } } } };
-
+  if (!scope.company || scope.clubIds.length === 0) return [];
   return prisma.sale.findMany({
-    where,
+    where: { companyId: scope.company.id, clubId: { in: scope.clubIds } },
     orderBy: { saleDate: "desc" },
     include: {
       club: true,

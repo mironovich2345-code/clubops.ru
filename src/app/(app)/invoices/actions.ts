@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canAccessPage } from "@/lib/auth";
 import { ensureDemoData } from "@/lib/seed";
 import { rublesToKopeks } from "@/lib/money";
-import { userHasClubAccess, type InvoiceStatus } from "@/lib/invoices";
+import { type InvoiceStatus } from "@/lib/invoices";
+import { canAccessClub } from "@/lib/access";
 
 export type CreateInvoiceState = {
   ok: boolean;
@@ -64,7 +65,7 @@ export async function createInvoice(
     return { ok: false, error: "Проверьте поля формы", fieldErrors };
   }
 
-  if (!(await userHasClubAccess(user, clubId))) {
+  if (!(await canAccessClub(user.id, clubId))) {
     return { ok: false, error: "Нет доступа к выбранному клубу" };
   }
 
@@ -102,7 +103,7 @@ export async function setInvoiceStatus(invoiceId: string, status: InvoiceStatus)
   const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
   if (!invoice) throw new Error("Счёт не найден");
 
-  if (!(await userHasClubAccess(user, invoice.clubId))) {
+  if (!(await canAccessClub(user.id, invoice.clubId))) {
     throw new Error("Нет доступа к клубу счёта");
   }
 

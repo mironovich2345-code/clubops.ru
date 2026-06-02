@@ -2,8 +2,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
 import { ensureDemoData } from "@/lib/seed";
 import { formatKopeks } from "@/lib/money";
-import { getClubsForUser } from "@/lib/invoices";
-import { getSalesForUser, summarizeSales, type SaleSummary } from "@/lib/sales";
+import { getSalesForScope, summarizeSales, type SaleSummary } from "@/lib/sales";
+import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { NoCompanyState } from "@/components/NoCompanyState";
 import { CreateSaleForm } from "./_components/CreateSaleForm";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +24,14 @@ export default async function SalesPage() {
   const user = await requirePageAccess("sales");
   await ensureDemoData();
 
+  const scope = await getCurrentCompanyAndClub(user);
+  if (!scope.company) {
+    return <NoCompanyState title="Продажи" description="Ручной учёт продаж и динамика выручки" />;
+  }
+
   const [clubs, sales] = await Promise.all([
-    getClubsForUser(user),
-    getSalesForUser(user),
+    getClubsInScope(scope),
+    getSalesForScope(scope),
   ]);
 
   const now = new Date();

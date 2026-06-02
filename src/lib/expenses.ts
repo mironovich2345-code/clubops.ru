@@ -1,6 +1,6 @@
 import type { Expense } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { CurrentUser } from "@/lib/auth";
+import type { DataScope } from "@/lib/access";
 
 // Recommended categories shown in the create form. `category` is stored as TEXT
 // (SQLite has no enums), so other values are technically allowed — these are the
@@ -30,16 +30,12 @@ export type ExpenseWithRelations = Expense & {
   createdBy: { id: string; name: string };
 };
 
-export async function getExpensesForUser(
-  user: CurrentUser,
+export async function getExpensesForScope(
+  scope: DataScope,
 ): Promise<ExpenseWithRelations[]> {
-  const where =
-    user.role === "owner"
-      ? {}
-      : { club: { userAccess: { some: { userId: user.id } } } };
-
+  if (!scope.company || scope.clubIds.length === 0) return [];
   return prisma.expense.findMany({
-    where,
+    where: { companyId: scope.company.id, clubId: { in: scope.clubIds } },
     orderBy: { expenseDate: "desc" },
     include: {
       club: true,

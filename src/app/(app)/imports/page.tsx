@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
 import { ensureDemoData } from "@/lib/seed";
-import { getClubsForUser } from "@/lib/invoices";
+import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { NoCompanyState } from "@/components/NoCompanyState";
 import { ImportForm } from "./_components/ImportForm";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,17 @@ export default async function ImportsPage() {
   const user = await requirePageAccess("imports");
   await ensureDemoData();
 
-  const clubs = await getClubsForUser(user);
+  const scope = await getCurrentCompanyAndClub(user);
+  if (!scope.company) {
+    return (
+      <NoCompanyState
+        title="Импорт данных"
+        description="Загрузка исторических продаж и расходов из Excel/CSV"
+      />
+    );
+  }
+
+  const clubs = await getClubsInScope(scope);
 
   return (
     <div>

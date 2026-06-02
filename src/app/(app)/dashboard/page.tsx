@@ -2,9 +2,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
 import { ensureDemoData } from "@/lib/seed";
 import { formatKopeks } from "@/lib/money";
-import { getClubsForUser, getInvoicesForUser, summarize } from "@/lib/invoices";
-import { getExpensesForUser, summarizeExpenses } from "@/lib/expenses";
-import { getSalesForUser, summarizeSales } from "@/lib/sales";
+import { getInvoicesForScope, summarize } from "@/lib/invoices";
+import { getExpensesForScope, summarizeExpenses } from "@/lib/expenses";
+import { getSalesForScope, summarizeSales } from "@/lib/sales";
+import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { NoCompanyState } from "@/components/NoCompanyState";
 import {
   profitSummary,
   clubComparison,
@@ -34,11 +36,16 @@ export default async function DashboardPage() {
   const user = await requirePageAccess("dashboard");
   await ensureDemoData();
 
+  const scope = await getCurrentCompanyAndClub(user);
+  if (!scope.company) {
+    return <NoCompanyState title="Дашборд" description="Состояние бизнеса" />;
+  }
+
   const [clubs, invoices, expenses, sales] = await Promise.all([
-    getClubsForUser(user),
-    getInvoicesForUser(user),
-    getExpensesForUser(user),
-    getSalesForUser(user),
+    getClubsInScope(scope),
+    getInvoicesForScope(scope),
+    getExpensesForScope(scope),
+    getSalesForScope(scope),
   ]);
 
   const now = new Date();

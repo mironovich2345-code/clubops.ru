@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canAccessPage } from "@/lib/auth";
 import { ensureDemoData } from "@/lib/seed";
 import { rublesToKopeks } from "@/lib/money";
-import { userHasClubAccess } from "@/lib/invoices";
+import { canAccessClub } from "@/lib/access";
 
 export type CreateSaleState = {
   ok: boolean;
@@ -58,7 +58,7 @@ export async function createSale(
     return { ok: false, error: "Проверьте поля формы", fieldErrors };
   }
 
-  if (!(await userHasClubAccess(user, clubId))) {
+  if (!(await canAccessClub(user.id, clubId))) {
     return { ok: false, error: "Нет доступа к выбранному клубу" };
   }
 

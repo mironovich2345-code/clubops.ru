@@ -2,12 +2,13 @@ import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
 import { ensureDemoData } from "@/lib/seed";
 import { formatKopeks } from "@/lib/money";
-import { getClubsForUser } from "@/lib/invoices";
 import {
-  getExpensesForUser,
+  getExpensesForScope,
   summarizeExpenses,
   type ExpenseSummary,
 } from "@/lib/expenses";
+import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { NoCompanyState } from "@/components/NoCompanyState";
 import { CreateExpenseForm } from "./_components/CreateExpenseForm";
 
 export const dynamic = "force-dynamic";
@@ -27,9 +28,16 @@ export default async function ExpensesPage() {
   const user = await requirePageAccess("expenses");
   await ensureDemoData();
 
+  const scope = await getCurrentCompanyAndClub(user);
+  if (!scope.company) {
+    return (
+      <NoCompanyState title="Расходы" description="Учёт расходов клуба и динамика по статьям" />
+    );
+  }
+
   const [clubs, expenses] = await Promise.all([
-    getClubsForUser(user),
-    getExpensesForUser(user),
+    getClubsInScope(scope),
+    getExpensesForScope(scope),
   ]);
 
   const now = new Date();

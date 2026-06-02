@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { CurrentUser } from "@/lib/auth";
 
 // Company-scoped and club-scoped access live in CompanyUserAccess / ClubUserAccess.
 // The legacy global User.role and UserClubAccess remain in place so existing
@@ -74,6 +75,57 @@ export async function getUserClubs(userId: string, companyId?: string) {
     where,
     orderBy: { name: "asc" },
     include: { company: true },
+  });
+}
+
+// Current data scope (company + optional club) used to filter every query and
+// guard every write. There is no UI selector yet — selection is server-side.
+export type DataScope = {
+  company: { id: string; name: string } | null;
+  // Auto-selected when the user has exactly one accessible club in the company.
+  club: { id: string; name: string } | null;
+  // Every club id the user may see in the current company (drives query filters).
+  clubIds: string[];
+};
+
+/**
+ * Resolves the company/club the current user operates in, auto-selecting when
+ * there is only one option:
+ *  - one accessible company -> selected
+ *  - one accessible club    -> selected
+ *
+ * A platform superadmin is scoped to the first company but reaches every club in
+ * it. A regular owner is limited to companies where they hold CompanyUserAccess —
+ * there is no global all-data access.
+ */
+export async function getCurrentCompanyAndClub(user: CurrentUser): Promise<DataScope> {
+  const superadmin = isPlatformSuperadmin(user.role);
+
+  const companies = superadmin
+    ? await prisma.company.findMany({ orderBy: { name: "asc" } })
+    : await getUserCompanies(user.id);
+
+  const company = companies[0] ?? null;
+  if (!company) return { company: null, club: null, clubIds: [] };
+
+  const clubs = superadmin
+    ? await prisma.club.findMany({ where: { companyId: company.id }, orderBy: { name: "asc" } })
+    : await getUserClubs(user.id, company.id);
+
+  const selected = clubs.length === 1 ? clubs[0] : null;
+  return {
+    company: { id: company.id, name: company.name },
+    club: selected ? { id: selected.id, name: selected.name } : null,
+    clubIds: clubs.map((c) => c.id),
+  };
+}
+
+/** Club rows the user may pick/see in the current scope (dropdowns, comparison). */
+export async function getClubsInScope(scope: DataScope) {
+  if (!scope.company || scope.clubIds.length === 0) return [];
+  return prisma.club.findMany({
+    where: { id: { in: scope.clubIds } },
+    orderBy: { name: "asc" },
   });
 }
 

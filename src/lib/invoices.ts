@@ -1,6 +1,6 @@
 import type { Invoice } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { CurrentUser } from "@/lib/auth";
+import type { DataScope } from "@/lib/access";
 
 // SQLite (local beta) has no enum support, so Prisma types `status` as a plain
 // string. We keep the domain union here so call sites stay type-safe.
@@ -13,37 +13,15 @@ export type InvoiceWithClub = Omit<Invoice, "status"> & {
   club: { id: string; name: string; city: string };
 };
 
-export async function getClubsForUser(user: CurrentUser) {
-  if (user.role === "owner") {
-    return prisma.club.findMany({ orderBy: { name: "asc" } });
-  }
-  return prisma.club.findMany({
-    where: { userAccess: { some: { userId: user.id } } },
-    orderBy: { name: "asc" },
-  });
-}
-
-export async function getInvoicesForUser(user: CurrentUser): Promise<InvoiceWithClub[]> {
-  const where =
-    user.role === "owner"
-      ? {}
-      : { club: { userAccess: { some: { userId: user.id } } } };
-
+export async function getInvoicesForScope(scope: DataScope): Promise<InvoiceWithClub[]> {
+  if (!scope.company || scope.clubIds.length === 0) return [];
   const invoices = await prisma.invoice.findMany({
-    where,
+    where: { companyId: scope.company.id, clubId: { in: scope.clubIds } },
     orderBy: { createdAt: "desc" },
     include: { club: true },
   });
   // `status` is TEXT in SQLite; it only ever holds InvoiceStatus values.
   return invoices as InvoiceWithClub[];
-}
-
-export async function userHasClubAccess(user: CurrentUser, clubId: string): Promise<boolean> {
-  if (user.role === "owner") return true;
-  const access = await prisma.userClubAccess.findUnique({
-    where: { userId_clubId: { userId: user.id, clubId } },
-  });
-  return access !== null;
 }
 
 export function isOverdue(invoice: { status: InvoiceStatus; dueDate: Date }): boolean {

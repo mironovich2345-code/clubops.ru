@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canAccessPage, type Role } from "@/lib/auth";
 import { ensureDemoData } from "@/lib/seed";
-import { userHasClubAccess } from "@/lib/invoices";
+import { canAccessClub } from "@/lib/access";
 import {
   parseImportBuffer,
   type ImportCandidate,
@@ -40,7 +40,7 @@ export async function previewImport(
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   if (!clubId) return { ok: false, error: "Выберите клуб" };
-  if (!(await userHasClubAccess(user, clubId))) {
+  if (!(await canAccessClub(user.id, clubId))) {
     return { ok: false, error: "Нет доступа к выбранному клубу" };
   }
 
@@ -81,7 +81,7 @@ export async function runImport(
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   if (!clubId) return { ok: false, error: "Не указан клуб" };
-  if (!(await userHasClubAccess(user, clubId))) {
+  if (!(await canAccessClub(user.id, clubId))) {
     return { ok: false, error: "Нет доступа к выбранному клубу" };
   }
 

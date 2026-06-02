@@ -2,12 +2,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/auth";
 import { ensureDemoData } from "@/lib/seed";
 import { formatKopeks } from "@/lib/money";
-import {
-  getClubsForUser,
-  getInvoicesForUser,
-  summarize,
-  type StatusSummary,
-} from "@/lib/invoices";
+import { getInvoicesForScope, summarize, type StatusSummary } from "@/lib/invoices";
+import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { NoCompanyState } from "@/components/NoCompanyState";
 import { CreateInvoiceForm } from "./_components/CreateInvoiceForm";
 import { InvoiceRowActions } from "./_components/InvoiceRowActions";
 import { StatusBadge } from "./_components/StatusBadge";
@@ -24,9 +21,14 @@ export default async function InvoicesPage() {
   const user = await requirePageAccess("invoices");
   await ensureDemoData();
 
+  const scope = await getCurrentCompanyAndClub(user);
+  if (!scope.company) {
+    return <NoCompanyState title="Счета" description="Контроль счетов, оплат и просрочек" />;
+  }
+
   const [clubs, invoices] = await Promise.all([
-    getClubsForUser(user),
-    getInvoicesForUser(user),
+    getClubsInScope(scope),
+    getInvoicesForScope(scope),
   ]);
 
   const summary = summarize(invoices);
