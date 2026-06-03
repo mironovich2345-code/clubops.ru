@@ -36,6 +36,8 @@ model Company {
   expenses      Expense[]
   sales         Sale[]
   refunds       Refund[]
+  budgets       Budget[]
+  budgetRequests BudgetApprovalRequest[]
 }
 
 model LegalEntity {
@@ -83,6 +85,9 @@ model User {
   expenses      Expense[]
   sales         Sale[]
   refunds       Refund[]
+  budgetsCreated          Budget[]                @relation("BudgetCreatedBy")
+  budgetRequestsRequested BudgetApprovalRequest[] @relation("BudgetReqRequestedBy")
+  budgetRequestsDecided   BudgetApprovalRequest[] @relation("BudgetReqDecidedBy")
 }
 
 model Session {
@@ -116,6 +121,8 @@ model Club {
   expenses      Expense[]
   sales         Sale[]
   refunds       Refund[]
+  budgets       Budget[]
+  budgetRequests BudgetApprovalRequest[]
 
   @@index([companyId])
 }
@@ -235,6 +242,59 @@ model Refund {
   @@index([companyId])
   @@index([clubId])
   @@index([createdByUserId])
+  @@index([status])
+}
+
+// Monthly spending limit per club + category (month = "YYYY-MM").
+model Budget {
+  id                String   @id @default(cuid())
+  companyId         String
+  clubId            String
+  category          String
+  month             String
+  limitAmountKopeks Int
+  createdByUserId   String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club      Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("BudgetCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([clubId, category, month])
+  @@index([companyId])
+  @@index([clubId])
+}
+
+// Approval request raised when an operation would exceed the monthly budget.
+model BudgetApprovalRequest {
+  id                     String    @id @default(cuid())
+  companyId              String
+  clubId                 String
+  category               String
+  month                  String
+  requestedAmountKopeks  Int
+  currentLimitAmountKopeks Int
+  overByAmountKopeks     Int
+  overByPercent          Float
+  sourceType             String
+  sourceId               String?
+  requestedByUserId      String
+  // pending_regional | pending_owner | approved | rejected
+  status                 String    @default("pending_regional")
+  decidedByUserId        String?
+  decidedAt              DateTime?
+  decisionComment        String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club        Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  requestedBy User    @relation("BudgetReqRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  decidedBy   User?   @relation("BudgetReqDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([clubId])
   @@index([status])
 }
 
