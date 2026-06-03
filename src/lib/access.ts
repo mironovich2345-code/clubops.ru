@@ -234,13 +234,8 @@ export async function requirePageAccess(page: AppPage): Promise<CurrentUser> {
   const ctx = await getCurrentAccessContext();
   if (!ctx) redirect("/login");
   if (!ctx.selectedCompanyId || ctx.effectiveRoles.length === 0 || !ctx.effectiveRole) {
-    await recordAudit({
-      action: "access.denied",
-      entityType: "Page",
-      userId: ctx.user.id,
-      metadata: { page, reason: "no_effective_role" },
-    });
-    redirect("/no-access");
+    // No access yet -> let a brand-new user create their first company/club.
+    redirect("/onboarding");
   }
   if (!canAnyRoleAccessPage(ctx.effectiveRoles, page)) {
     redirect(`/${landingPageForRole(ctx.effectiveRole)}`);

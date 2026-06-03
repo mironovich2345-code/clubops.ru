@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Effective-role gate: unauthenticated -> /login; no effective access -> /no-access.
   const ctx = await getCurrentAccessContext();
   if (!ctx) redirect("/login");
-  if (!ctx.selectedCompanyId || ctx.effectiveRoles.length === 0) redirect("/no-access");
+  if (!ctx.selectedCompanyId || ctx.effectiveRoles.length === 0) redirect("/onboarding");
   const user = ctx.user;
 
   const visibleItems = NAV_ITEMS.filter((item) =>

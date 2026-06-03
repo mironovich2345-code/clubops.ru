@@ -7,6 +7,6 @@ export const dynamic = "force-dynamic";
 export default async function RootPage() {
   const ctx = await getCurrentAccessContext();
   if (!ctx) redirect("/login");
-  if (!ctx.effectiveRole) redirect("/no-access");
+  if (!ctx.effectiveRole) redirect("/onboarding");
   redirect(`/${landingPageForRole(ctx.effectiveRole)}`);
 }
