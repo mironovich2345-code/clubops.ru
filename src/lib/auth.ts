@@ -10,6 +10,7 @@ export type AppPage =
   | "dashboard"
   | "expenses"
   | "invoices"
+  | "refunds"
   | "sales"
   | "imports"
   | "documents"
@@ -23,10 +24,10 @@ export type CurrentUser = {
 };
 
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
-  owner: ["dashboard", "expenses", "invoices", "sales", "imports", "documents", "users"],
-  regional_director: ["dashboard", "expenses", "invoices", "sales", "imports", "documents", "users"],
-  manager: ["dashboard", "expenses", "invoices", "sales", "documents"],
-  accountant: ["expenses", "invoices", "documents"],
+  owner: ["dashboard", "expenses", "invoices", "refunds", "sales", "imports", "documents", "users"],
+  regional_director: ["dashboard", "expenses", "invoices", "refunds", "sales", "imports", "documents", "users"],
+  manager: ["dashboard", "expenses", "invoices", "refunds", "sales", "documents"],
+  accountant: ["expenses", "invoices", "refunds", "documents"],
 };
 
 export function canAccessPage(role: Role, page: AppPage): boolean {

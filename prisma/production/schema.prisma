@@ -35,6 +35,7 @@ model Company {
   invoices      Invoice[]
   expenses      Expense[]
   sales         Sale[]
+  refunds       Refund[]
 }
 
 model LegalEntity {
@@ -81,6 +82,7 @@ model User {
   invoices      Invoice[]
   expenses      Expense[]
   sales         Sale[]
+  refunds       Refund[]
 }
 
 model Session {
@@ -113,6 +115,7 @@ model Club {
   invoices      Invoice[]
   expenses      Expense[]
   sales         Sale[]
+  refunds       Refund[]
 
   @@index([companyId])
 }
@@ -191,6 +194,48 @@ model Invite {
 
   @@index([companyId])
   @@index([email])
+}
+
+model Refund {
+  id              String   @id @default(cuid())
+  companyId       String
+  clubId          String
+  createdByUserId String
+
+  clientName     String?
+  clientPhone    String?
+  amountKopeks   Int      @default(0)
+  currency       String   @default("RUB")
+  reason         String?
+  contractNumber String?
+  refundDate     DateTime?
+
+  bankRecipientName String?
+  bankName          String?
+  bankBik           String?
+  bankAccount       String?
+
+  // draft | needs_review | approved_by_regional | approved_by_owner | paid | rejected
+  status     String @default("draft")
+  confidence String @default("low")
+  paidAt     DateTime?
+
+  // Uploaded documents: JSON array of { storageKey, fileName, mime, size, type }
+  documentsJson    String?
+  rawExtractedJson String?
+  notes            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club      Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([createdByUserId])
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------
