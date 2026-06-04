@@ -8,6 +8,7 @@ import {
   bufferToDataUrl,
   callOpenAIVision,
 } from "@/lib/ai/openai-client";
+import { applyExpenseRules } from "@/lib/ai/expense-rules";
 
 export type ExpenseConfidence = "low" | "medium" | "high";
 export type ExpenseDocType = "receipt" | "transfer" | "manual";
@@ -75,19 +76,39 @@ function vCategory(v: unknown, warnings: string[]): string | null {
   return "other";
 }
 
+/** True when the model signals more than one receipt/document in the image. */
+function multipleDocsFlag(json: Record<string, unknown>): boolean {
+  if (json.multipleReceipts === true || json.multipleReceipts === "true") return true;
+  const docs = vNum(json.documentsCount);
+  const receipts = vNum(json.receiptsCount);
+  return (docs !== null && docs > 1) || (receipts !== null && receipts > 1);
+}
+
 export function mapExpenseJson(json: Record<string, unknown>, raw: string): ExpenseExtraction {
   const warnings = vWarnings(json.warnings);
+  const items = vItems(json.items);
+
+  // Deterministic post-recognition guards: fix consumables mislabeled as
+  // investments and cap confidence when multiple receipts are present.
+  const ruled = applyExpenseRules({
+    category: vCategory(json.expenseCategory, warnings),
+    confidence: vConfidence(json.confidence),
+    items,
+    multipleReceipts: multipleDocsFlag(json),
+  });
+  for (const w of ruled.warnings) if (!warnings.includes(w)) warnings.push(w);
+
   return {
     type: vType(json.type),
     vendorName: vStr(json.vendorName),
     recipientName: vStr(json.recipientName),
     amount: vNum(json.amount),
     currency: vStr(json.currency) ?? "RUB",
-    expenseCategory: vCategory(json.expenseCategory, warnings),
+    expenseCategory: ruled.category,
     purchaseDate: vDate(json.purchaseDate),
     address: vStr(json.address),
-    items: vItems(json.items),
-    confidence: vConfidence(json.confidence),
+    items,
+    confidence: ruled.confidence,
     mode: "ai",
     missingFields: [],
     warnings,
@@ -138,10 +159,28 @@ const SYSTEM_PROMPT =
   "Определи type: 'receipt' для чека, 'transfer' для перевода. " +
   "Верни СТРОГО JSON с ключами: type, vendorName (магазин, для чека), recipientName (получатель, для перевода), " +
   "amount (число, рубли), currency, expenseCategory, purchaseDate (YYYY-MM-DD), address, items (массив строк, позиции чека), " +
+  "multipleReceipts (true/false — видно ли на фото больше одного чека/документа), " +
   "confidence (low|medium|high), warnings (массив строк). " +
   "Если поле не видно — null. НИКОГДА не выдумывай суммы, даты, позиции, реквизиты. " +
-  `expenseCategory выбирай ТОЛЬКО из: ${CATEGORY_KEYS.join(", ")}; если не уверен — "other". ` +
-  "confidence=high только если сумма и основные поля чётко видны.";
+  // --- Category rules -------------------------------------------------------
+  `expenseCategory выбирай ТОЛЬКО из: ${CATEGORY_KEYS.join(", ")}. Правила: ` +
+  "advertising — реклама, реклама ВК/VK, Яндекс реклама, таргет, продвижение, рекламные материалы. " +
+  "household — хозтовары, пакеты, майка-пакеты, крышки, стаканы, салфетки, бытовая химия, расходники, уборка, " +
+  "канцелярия, мелкие товары для клуба/офиса. " +
+  "builders — ремонт, стройматериалы, инструменты, подрядчики ремонта, сантехника, электрика. " +
+  "investments — ТОЛЬКО крупные капитальные покупки и долгосрочные активы: тренажёры, оборудование, мебель, " +
+  "техника для клуба, крупные вложения. НЕ используй investments для мелких расходников, упаковки, пакетов, " +
+  "крышек, канцелярии — это household. " +
+  "refunds — возвраты клиентам. salary — зарплата, аванс, премия, выплаты сотрудникам. " +
+  "other — когда не уверен. " +
+  // --- Confidence rules -----------------------------------------------------
+  "confidence=high СТАВЬ ТОЛЬКО ЕСЛИ: на фото ровно один чек/перевод; сумма однозначна; дата однозначна; " +
+  "продавец/получатель однозначен; категория очевидна; нет конкурирующих сумм или других документов. " +
+  "Понижай до medium или low если: на фото несколько чеков; видно несколько итоговых сумм; фото повёрнуто/" +
+  "обрезано/размыто; категория выведена из позиций, а не указана явно; сумма может относиться к другому чеку; " +
+  "распознана только часть документа. " +
+  "Если на фото несколько чеков/документов (multipleReceipts=true) — confidence ОБЯЗАТЕЛЬНО low или medium, " +
+  "НИКОГДА не high, и добавь в warnings: «На фото несколько чеков, проверьте сумму и позиции вручную».";
 
 async function openaiAnalyze(input: ExpenseAnalysisInput): Promise<ExpenseExtraction> {
   if (isPdf(input.mime)) {
