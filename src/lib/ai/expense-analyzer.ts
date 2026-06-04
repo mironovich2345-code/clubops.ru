@@ -170,7 +170,7 @@ function mockAnalyze(input: ExpenseAnalysisInput): ExpenseExtraction {
   return emptyExpense(
     "manual",
     "mock",
-    ["AI-провайдер не настроен (режим ручного заполнения). Заполните поля вручную."],
+    ["ИИ не настроен — заполните поля вручную."],
     `Mock: файл "${input.fileName}" (${input.mime}, ${input.buffer.length} байт).`,
   );
 }
@@ -182,7 +182,7 @@ export async function analyzeExpenseDocument(input: ExpenseAnalysisInput): Promi
     } catch (error) {
       console.error("expense AI analyze failed, using mock", error instanceof Error ? error.message : error);
       const m = mockAnalyze(input);
-      m.warnings.push("ИИ временно недоступен — заполните поля вручную");
+      m.warnings = ["ИИ не смог обработать документ — заполните поля вручную"];
       return finalize(m);
     }
   }

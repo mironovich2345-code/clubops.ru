@@ -12,10 +12,15 @@ import {
   type ExpenseExtraction,
 } from "@/lib/ai/expense-analyzer";
 import { validateExpenseFile, persistExpenseFile } from "@/lib/expense-storage";
+import {
+  UPLOAD_ERROR_MESSAGES,
+  logUploadFailure,
+  type UploadErrorCode,
+} from "@/lib/upload-errors";
 
 type AnalyzeState = {
   ok: boolean;
-  error?: string;
+  errorCode?: UploadErrorCode;
   clubId?: string;
   storageKey?: string;
   fileName?: string;
@@ -95,40 +100,76 @@ export async function uploadAndAnalyzeExpense(
   _prev: AnalyzeState | undefined,
   formData: FormData,
 ): Promise<AnalyzeState> {
+  let ctx: Awaited<ReturnType<typeof getCurrentAccessContext>> = null;
+  const clubId = String(formData.get("clubId") ?? "").trim();
+  const fileEntry = formData.get("file");
+  const file = fileEntry instanceof File && fileEntry.size > 0 ? fileEntry : null;
+  const fileInfo = {
+    fileName: file?.name ?? null,
+    fileMime: file?.type ?? null,
+    fileSize: file?.size ?? null,
+  };
+
+  function fail(code: UploadErrorCode, message = ""): AnalyzeState {
+    logUploadFailure("expense", {
+      code,
+      message,
+      userId: ctx?.user.id ?? null,
+      companyId: ctx?.selectedCompanyId ?? null,
+      clubId: clubId || null,
+      ...fileInfo,
+    });
+    return { ok: false, errorCode: code, clubId: clubId || undefined };
+  }
+
   try {
-    const ctx = await getCurrentAccessContext();
-    if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
-      return { ok: false, error: "Нет доступа" };
+    ctx = await getCurrentAccessContext();
+    if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) return fail("ACCESS_DENIED");
+
+    if (!clubId) return fail("CLUB_REQUIRED");
+    if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
+      return fail("ACCESS_DENIED");
     }
 
-    const clubId = String(formData.get("clubId") ?? "").trim();
-    if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
-      return { ok: false, error: "Нет доступа к выбранному клубу" };
-    }
-
-    const file = formData.get("file");
-    if (!(file instanceof File) || file.size === 0) {
+    if (!file) {
       // Manual entry (no file): return empty structure to fill by hand.
       return { ok: true, clubId, extraction: manualExpenseExtraction() };
     }
 
-    const fileError = validateExpenseFile(file);
-    if (fileError) return { ok: false, error: fileError };
+    const fileCode = validateExpenseFile(file);
+    if (fileCode) return fail(fileCode);
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(await file.arrayBuffer());
+    } catch (readError) {
+      return fail("FILE_READ_FAILED", readError instanceof Error ? readError.message : "read failed");
+    }
 
     // Best-effort persist: recognition still works from the in-memory buffer.
     let storageKey: string | undefined;
     let size = file.size;
+    let storageFailed = false;
     try {
       const stored = await persistExpenseFile(buffer, file.type, file.name);
       storageKey = stored.storageKey;
       size = stored.size;
     } catch (storeError) {
-      console.error("expense file persist failed", storeError instanceof Error ? storeError.message : storeError);
+      storageFailed = true;
+      logUploadFailure("expense", {
+        code: "STORAGE_FAILED",
+        message: storeError instanceof Error ? storeError.message : "store failed",
+        userId: ctx.user.id,
+        companyId: ctx.selectedCompanyId,
+        clubId,
+        ...fileInfo,
+      });
     }
 
     const extraction = await analyzeExpenseDocument({ buffer, mime: file.type, fileName: file.name });
+    if (storageFailed) {
+      extraction.warnings = [UPLOAD_ERROR_MESSAGES.STORAGE_FAILED, ...extraction.warnings];
+    }
 
     try {
       await recordAudit({
@@ -161,8 +202,7 @@ export async function uploadAndAnalyzeExpense(
       extraction,
     };
   } catch (error) {
-    console.error("uploadAndAnalyzeExpense failed", error instanceof Error ? error.message : error);
-    return { ok: false, error: "Не удалось обработать файл. Попробуйте ещё раз или заполните вручную." };
+    return fail("UNKNOWN_ERROR", error instanceof Error ? error.message : "unknown");
   }
 }
 

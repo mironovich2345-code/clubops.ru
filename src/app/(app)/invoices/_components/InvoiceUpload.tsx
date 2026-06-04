@@ -1,14 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import type { InvoiceExtraction } from "@/lib/ai/invoice-analyzer";
+import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors";
 import { uploadAndAnalyzeInvoice, saveInvoice } from "../actions";
 
 type ClubOption = { id: string; name: string; city: string };
 
 type AnalyzeState = {
   ok: boolean;
-  error?: string;
+  errorCode?: UploadErrorCode;
   clubId?: string;
   storageKey?: string;
   fileName?: string;
@@ -51,6 +53,9 @@ export function InvoiceUpload({
 }) {
   const [analyze, analyzeAction] = useFormState(uploadAndAnalyzeInvoice, analyzeInitial);
   const [saved, saveAction] = useFormState(saveInvoice, saveInitial);
+  // Controlled so the selected club survives the form reset React performs after
+  // a form action (otherwise the dropdown would clear on a failed upload).
+  const [clubId, setClubId] = useState(clubs.length === 1 ? clubs[0].id : "");
 
   const extraction = analyze.ok ? analyze.extraction : undefined;
   const reviewReady = Boolean(analyze.ok && extraction);
@@ -65,8 +70,14 @@ export function InvoiceUpload({
           <input value={companyName} disabled className="input bg-slate-50 text-slate-500" />
         </Field>
         <Field label="Клуб">
-          <select name="clubId" required defaultValue={clubs.length === 1 ? clubs[0].id : ""} className="input">
-            {clubs.length !== 1 ? <option value="" disabled>Выберите клуб</option> : null}
+          <select
+            name="clubId"
+            required
+            value={clubId}
+            onChange={(e) => setClubId(e.target.value)}
+            className="input"
+          >
+            <option value="" disabled>Выберите клуб</option>
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} — {c.city}
@@ -86,8 +97,8 @@ export function InvoiceUpload({
           </Field>
         </div>
         <div className="md:col-span-2 flex items-center justify-between gap-3">
-          {!analyze.ok && analyze.error ? (
-            <span className="text-sm text-rose-600">{analyze.error}</span>
+          {!analyze.ok && analyze.errorCode ? (
+            <span className="text-sm text-rose-600">{UPLOAD_ERROR_MESSAGES[analyze.errorCode]}</span>
           ) : (
             <span />
           )}

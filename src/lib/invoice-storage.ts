@@ -1,6 +1,7 @@
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import type { UploadErrorCode } from "@/lib/upload-errors";
 
 // Uploaded invoice documents live on local disk under <cwd>/uploads/invoices.
 // Only metadata + a relative storageKey are kept in the DB; absolute paths are
@@ -19,13 +20,11 @@ const ALLOWED_MIME: Record<string, string> = {
 
 const STORAGE_KEY_RE = /^invoices\/[a-f0-9]{32}\.(jpg|png|webp|pdf)$/;
 
-/** Returns an error message if the file is invalid, otherwise null. */
-export function validateInvoiceFile(file: File): string | null {
-  if (!(file instanceof File) || file.size === 0) return "Выберите файл";
-  if (file.size > MAX_INVOICE_FILE_SIZE) return "Файл больше 10 МБ";
-  if (!ALLOWED_MIME[file.type]) {
-    return "Поддерживаются только JPG, PNG, WEBP и PDF";
-  }
+/** Returns an error code if the file is invalid, otherwise null. */
+export function validateInvoiceFile(file: File): UploadErrorCode | null {
+  if (!(file instanceof File) || file.size === 0) return "FILE_INVALID";
+  if (file.size > MAX_INVOICE_FILE_SIZE) return "FILE_TOO_LARGE";
+  if (!ALLOWED_MIME[file.type]) return "FILE_INVALID";
   return null;
 }
 

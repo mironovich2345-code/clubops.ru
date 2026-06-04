@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import type { ExpenseExtraction } from "@/lib/ai/expense-analyzer";
+import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors";
 import { uploadAndAnalyzeExpense, saveExpense } from "../actions";
 
 type ClubOption = { id: string; name: string; city: string };
@@ -9,7 +11,7 @@ type CategoryOption = { key: string; label: string };
 
 type AnalyzeState = {
   ok: boolean;
-  error?: string;
+  errorCode?: UploadErrorCode;
   clubId?: string;
   storageKey?: string;
   fileName?: string;
@@ -53,6 +55,8 @@ export function ExpenseUpload({
 }) {
   const [analyze, analyzeAction] = useFormState(uploadAndAnalyzeExpense, analyzeInitial);
   const [saved, saveAction] = useFormState(saveExpense, saveInitial);
+  // Controlled so the selected club survives the form reset after a form action.
+  const [clubId, setClubId] = useState(clubs.length === 1 ? clubs[0].id : "");
 
   const extraction = analyze.ok ? analyze.extraction : undefined;
 
@@ -67,8 +71,14 @@ export function ExpenseUpload({
           <input value={companyName} disabled className="input bg-slate-50 text-slate-500" />
         </Field>
         <Field label="Клуб">
-          <select name="clubId" required defaultValue={clubs.length === 1 ? clubs[0].id : ""} className="input">
-            {clubs.length !== 1 ? <option value="" disabled>Выберите клуб</option> : null}
+          <select
+            name="clubId"
+            required
+            value={clubId}
+            onChange={(e) => setClubId(e.target.value)}
+            className="input"
+          >
+            <option value="" disabled>Выберите клуб</option>
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} — {c.city}
@@ -87,8 +97,8 @@ export function ExpenseUpload({
           </Field>
         </div>
         <div className="md:col-span-2 flex items-center justify-between gap-3">
-          {!analyze.ok && analyze.error ? (
-            <span className="text-sm text-rose-600">{analyze.error}</span>
+          {!analyze.ok && analyze.errorCode ? (
+            <span className="text-sm text-rose-600">{UPLOAD_ERROR_MESSAGES[analyze.errorCode]}</span>
           ) : (
             <span />
           )}

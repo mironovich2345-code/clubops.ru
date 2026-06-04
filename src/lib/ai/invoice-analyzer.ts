@@ -190,7 +190,7 @@ async function openaiAnalyze(input: AnalysisInput): Promise<InvoiceExtraction> {
 function mockAnalyze(input: AnalysisInput): InvoiceExtraction {
   return emptyInvoice(
     "mock",
-    ["AI-провайдер не настроен (режим ручного заполнения). Заполните поля вручную."],
+    ["ИИ не настроен — заполните поля вручную."],
     `Mock: файл "${input.fileName}" (${input.mime}, ${input.buffer.length} байт).`,
   );
 }
@@ -202,7 +202,7 @@ export async function analyzeInvoiceDocument(input: AnalysisInput): Promise<Invo
     } catch (error) {
       console.error("invoice AI analyze failed, using mock", error instanceof Error ? error.message : error);
       const m = mockAnalyze(input);
-      m.warnings.push("ИИ временно недоступен — заполните поля вручную");
+      m.warnings = ["ИИ не смог обработать документ — заполните поля вручную"];
       return finalize(m);
     }
   }
