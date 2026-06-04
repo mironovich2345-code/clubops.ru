@@ -455,6 +455,18 @@ model Sale {
   amountKopeks    Int
   saleDate        DateTime
   comment         String?
+
+  // Accountant verification workflow. Only "confirmed" sales are realized
+  // revenue. pending_accountant | confirmed | rejected | canceled.
+  status           String    @default("pending_accountant")
+  submittedByUserId String?
+  verifiedByUserId  String?
+  verifiedAt        DateTime?
+  rejectedByUserId  String?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+  notes             String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -468,6 +480,7 @@ model Sale {
   @@index([createdByUserId])
   @@index([source])
   @@index([saleDate])
+  @@index([status])
 }
 
 model UserClubAccess {

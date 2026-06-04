@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
-import { getCurrentAccessContext, canAccessClub } from "@/lib/access";
+import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
+import {
+  applySaleAction,
+  getSaleForContext,
+  SALE_ACTION_AUDIT,
+  type SaleAction,
+} from "@/lib/sales";
 
 export type CreateSaleState = {
   ok: boolean;
@@ -67,11 +73,13 @@ export async function createSale(
   });
   if (!club) return { ok: false, error: "Клуб не найден" };
 
-  await prisma.sale.create({
+  const sale = await prisma.sale.create({
     data: {
       companyId: club.companyId,
       clubId,
       createdByUserId: user.id,
+      submittedByUserId: user.id,
+      status: "pending_accountant",
       source,
       amountKopeks: rublesToKopeks(amount),
       saleDate: saleDate!,
@@ -79,6 +87,68 @@ export async function createSale(
     },
   });
 
+  await recordAudit({
+    action: "sale.created",
+    entityType: "Sale",
+    entityId: sale.id,
+    companyId: club.companyId,
+    clubId,
+    userId: user.id,
+    metadata: { source, amountKopeks: sale.amountKopeks, status: "pending_accountant" },
+  });
+
   revalidatePath("/sales");
+  revalidatePath("/dashboard");
   return { ok: true };
+}
+
+/**
+ * Accountant verification transition: confirm / reject / cancel a sale. All
+ * authorization runs through getCurrentAccessContext + getSaleForContext (scoped
+ * to the user's company/clubs) and the pure applySaleAction decision table — no
+ * client-provided companyId/clubId is trusted.
+ */
+export async function transitionSale(formData: FormData): Promise<void> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "sales")) {
+    throw new Error("Нет доступа");
+  }
+
+  const saleId = String(formData.get("saleId") ?? "").trim();
+  const action = String(formData.get("action") ?? "").trim() as SaleAction;
+  if (!(action in SALE_ACTION_AUDIT)) throw new Error("Неверное действие");
+
+  const existing = await getSaleForContext(ctx, saleId);
+  if (!existing) throw new Error("Продажа не найдена или нет доступа");
+
+  const isCreator = existing.createdByUserId === ctx.user.id;
+  const result = applySaleAction(action, existing.status, ctx.effectiveRoles, isCreator);
+  if (!result.ok) throw new Error(result.error);
+
+  const reason = String(formData.get("rejectionReason") ?? "").trim() || null;
+  const now = new Date();
+
+  await prisma.sale.update({
+    where: { id: saleId },
+    data: {
+      status: result.to,
+      ...(result.to === "confirmed" ? { verifiedByUserId: ctx.user.id, verifiedAt: now } : {}),
+      ...(result.to === "rejected"
+        ? { rejectedByUserId: ctx.user.id, rejectedAt: now, rejectionReason: reason }
+        : {}),
+    },
+  });
+
+  await recordAudit({
+    action: SALE_ACTION_AUDIT[action],
+    entityType: "Sale",
+    entityId: saleId,
+    companyId: existing.companyId,
+    clubId: existing.clubId,
+    userId: ctx.user.id,
+    metadata: { from: existing.status, to: result.to, action, ...(reason ? { reason } : {}) },
+  });
+
+  revalidatePath("/sales");
+  revalidatePath("/dashboard");
 }

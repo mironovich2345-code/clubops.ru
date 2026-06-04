@@ -29,7 +29,7 @@ const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
   owner: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "imports", "documents", "users", "settings"],
   regional_director: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "imports", "documents", "users"],
   manager: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "documents"],
-  accountant: ["expenses", "invoices", "refunds", "budgets", "documents"],
+  accountant: ["expenses", "invoices", "refunds", "budgets", "sales", "documents"],
 };
 
 export function canAccessPage(role: Role, page: AppPage): boolean {

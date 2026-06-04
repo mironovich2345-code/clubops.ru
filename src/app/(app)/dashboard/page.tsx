@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/access";
 import { formatKopeks } from "@/lib/money";
@@ -149,11 +150,16 @@ export default async function DashboardPage() {
   });
   const totalDebtKopeks = debts.reduce((sum, d) => sum + d.amountKopeks, 0);
 
+  // Revenue = only accountant-confirmed sales. pending/rejected/canceled excluded.
+  const confirmedSales = sales.filter((s) => s.status === "confirmed");
+  const pendingSales = sales.filter((s) => s.status === "pending_accountant");
+  const pendingSalesKopeks = pendingSales.reduce((sum, s) => sum + s.amountKopeks, 0);
+
   const invoiceSummary = summarize(invoices);
-  const salesSum = summarizeSales(sales, now);
+  const salesSum = summarizeSales(confirmedSales, now);
   const expensesSum = summarizeExpenses(expenseEvents, now);
   const profit = profitSummary(salesSum, expensesSum);
-  const clubsFinance = clubComparison(clubs, sales, expenseEvents, now);
+  const clubsFinance = clubComparison(clubs, confirmedSales, expenseEvents, now);
 
   const topExpenseCategories = expensesSum.categoryTotals.slice(0, 5);
   const topSalesSources = salesSum.sourceTotals.slice(0, 5);
@@ -198,6 +204,17 @@ export default async function DashboardPage() {
         />
       </div>
 
+      {pendingSales.length > 0 ? (
+        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+          <span className="font-semibold text-amber-800">Продажи на проверке</span>
+          <span className="font-medium text-amber-900">{formatKopeks(pendingSalesKopeks)}</span>
+          <span className="text-amber-700">· {pendingSales.length} шт.</span>
+          <Link href="/sales?status=pending_accountant" className="ml-auto font-medium text-amber-800 underline">
+            Проверить
+          </Link>
+        </div>
+      ) : null}
+
       {/* 2. Financial health + 6. Alerts */}
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <HealthBlock profit={profit} />
@@ -237,7 +254,7 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <RecentBlock
           title="Последние продажи"
-          items={sales.slice(0, 5).map((s) => ({
+          items={confirmedSales.slice(0, 5).map((s) => ({
             id: s.id,
             primary: s.source,
             secondary: s.club.name,
