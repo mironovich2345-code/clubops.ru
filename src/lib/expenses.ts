@@ -18,12 +18,13 @@ export const EXPENSE_CATEGORIES = [
 
 export const PAYMENT_METHODS = ["Наличные", "Карта", "Банковский перевод"] as const;
 
-// Expense document types (receipt / transfer / manual).
-export const EXPENSE_TYPES = ["receipt", "transfer", "manual"] as const;
+// Expense document types (receipt / transfer / manual / payroll_statement).
+export const EXPENSE_TYPES = ["receipt", "transfer", "manual", "payroll_statement"] as const;
 export const EXPENSE_TYPE_LABELS: Record<string, string> = {
   receipt: "Чек",
   transfer: "Перевод",
   manual: "Вручную",
+  payroll_statement: "Зарплатная ведомость",
 };
 
 // Category keys used by the receipts/transfers flow, with Russian labels.

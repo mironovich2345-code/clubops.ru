@@ -40,6 +40,7 @@ model Company {
   refunds       Refund[]
   budgets       Budget[]
   budgetRequests BudgetApprovalRequest[]
+  payrollStatements PayrollStatement[]
 }
 
 model LegalEntity {
@@ -90,6 +91,7 @@ model User {
   budgetsCreated          Budget[]                @relation("BudgetCreatedBy")
   budgetRequestsRequested BudgetApprovalRequest[] @relation("BudgetReqRequestedBy")
   budgetRequestsDecided   BudgetApprovalRequest[] @relation("BudgetReqDecidedBy")
+  payrollStatements       PayrollStatement[]
 }
 
 model Session {
@@ -129,6 +131,7 @@ model Club {
   refunds       Refund[]
   budgets       Budget[]
   budgetRequests BudgetApprovalRequest[]
+  payrollStatements PayrollStatement[]
 
   @@index([companyId])
 }
@@ -396,13 +399,15 @@ model Expense {
   legalEntityId   String?
   createdByUserId String
 
-  // receipt | transfer | manual
+  // receipt | transfer | manual | payroll_statement
   type String @default("manual")
 
   // `category` holds the expense category; `expenseDate` is the purchase date.
   category     String
   vendorName   String?
   recipientName String?
+  // Transfer purpose / comment (for type=transfer).
+  transferComment String?
   amountKopeks Int      @default(0)
   currency     String   @default("RUB")
   expenseDate  DateTime
@@ -476,5 +481,73 @@ model UserClubAccess {
 
   @@unique([userId, clubId])
   @@index([userId])
+  @@index([clubId])
+}
+
+// Payroll cash statements (зарплатные ведомости). Only rows with a visible
+// signature count as paid; re-uploads add only newly signed rows (dedup by
+// rowHash). Amounts are in kopeks, matching the rest of the app.
+model PayrollStatement {
+  id              String @id @default(cuid())
+  companyId       String
+  clubId          String
+  createdByUserId String
+
+  period String? // e.g. "2026-06" or free-form label
+  // Sum of all signed rows seen in this statement, and the subset newly counted.
+  totalSignedAmountKopeks Int @default(0)
+  newSignedAmountKopeks   Int @default(0)
+
+  status String @default("confirmed")
+
+  originalFileName       String?
+  originalFileMime       String?
+  originalFileSize       Int?
+  originalFileStorageKey String?
+  rawExtractedJson       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club      Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  rows      PayrollStatementRow[]
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([createdByUserId])
+}
+
+// One employee row from a payroll statement. The unique (companyId, clubId,
+// rowHash) lets repeated uploads converge on the same row so an already-counted
+// signed row is never counted twice.
+model PayrollStatementRow {
+  id                 String @id @default(cuid())
+  payrollStatementId String
+  companyId          String
+  clubId             String
+
+  employeeName String?
+  role         String?
+  amountKopeks Int     @default(0)
+
+  isSigned                    Boolean @default(false)
+  // low | medium | high — how sure we are a signature is present.
+  signatureDetectedConfidence String  @default("low")
+
+  // Hash of normalized employeeName + role + amount + period (dedup key).
+  rowHash   String
+  // Set when this row's amount was counted into an expense; null = not counted.
+  countedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  statement PayrollStatement @relation(fields: [payrollStatementId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, clubId, rowHash])
+  @@index([payrollStatementId])
+  @@index([companyId])
   @@index([clubId])
 }

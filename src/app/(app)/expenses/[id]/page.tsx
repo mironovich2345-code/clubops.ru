@@ -49,6 +49,7 @@ export default async function ExpenseDetailPage({
     category: expense.category,
     vendorName: expense.vendorName ?? "",
     recipientName: expense.recipientName ?? "",
+    transferComment: expense.transferComment ?? "",
     amount: (expense.amountKopeks / 100).toString(),
     currency: expense.currency,
     purchaseDate: isoDay(expense.expenseDate),

@@ -9,6 +9,7 @@ type ExpenseView = {
   category: string;
   vendorName: string;
   recipientName: string;
+  transferComment: string;
   amount: string;
   currency: string;
   purchaseDate: string;
@@ -28,6 +29,7 @@ const TYPE_OPTIONS = [
   { value: "receipt", label: "Чек" },
   { value: "transfer", label: "Перевод" },
   { value: "manual", label: "Вручную" },
+  { value: "payroll_statement", label: "Зарплатная ведомость" },
 ];
 
 function SaveButton() {
@@ -97,6 +99,11 @@ export function ExpenseEditForm({
           <Field label="Получатель перевода">
             <input name="recipientName" defaultValue={expense.recipientName} className="input" />
           </Field>
+          <div className="md:col-span-2">
+            <Field label="Комментарий перевода">
+              <input name="transferComment" defaultValue={expense.transferComment} className="input" />
+            </Field>
+          </div>
           <Field label="Сумма, ₽">
             <input name="amount" inputMode="decimal" defaultValue={expense.amount} className="input" />
           </Field>

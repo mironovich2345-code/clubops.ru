@@ -5,6 +5,9 @@
 import {
   applyExpenseRules,
   hasConsumableItems,
+  cleanReceiptItems,
+  isPlaceholderItem,
+  hasFiscalMarkers,
   WARNING_INVESTMENTS_TO_HOUSEHOLD,
   WARNING_MULTIPLE_RECEIPTS,
 } from "./expense-rules";
@@ -68,4 +71,18 @@ export function runExpenseRulesSmokeTest(): void {
   assert("5 household", r5.category === "household");
   assert("5 not high", r5.confidence !== "high");
   assert("5 both warnings", r5.warnings.includes(WARNING_INVESTMENTS_TO_HOUSEHOLD) && r5.warnings.includes(WARNING_MULTIPLE_RECEIPTS));
+
+  // 6. Placeholder items are dropped; real items kept.
+  assert("6 drops placeholders", cleanReceiptItems(["Товар 1", "Item 2", "Молоко"]).items.join(",") === "Молоко");
+  assert("6 all placeholders -> empty", cleanReceiptItems(["Товар 1", "Товар 2"]).items.length === 0);
+  assert("6 reports dropped", cleanReceiptItems(["Товар 1", "Молоко"]).droppedPlaceholders === true);
+  assert("6 real items kept whole", cleanReceiptItems(["Крышка TLS"]).droppedPlaceholders === false);
+  assert("6 placeholder detect", isPlaceholderItem("Позиция 3") === true && isPlaceholderItem("Молоко") === false);
+
+  // 7. Fiscal markers -> receipt signal (Cyrillic-safe).
+  assert("7 кассовый чек", hasFiscalMarkers("Кассовый чек\nИтог 500") === true);
+  assert("7 ФН/ФД/ФП", hasFiscalMarkers("ФН 1 ФД 2 ФП 3") === true);
+  assert("7 ИНН продавца", hasFiscalMarkers("ИНН продавца 7701234567") === true);
+  assert("7 no false positive ФНС", hasFiscalMarkers("платёж в ФНС") === false);
+  assert("7 plain transfer no marker", hasFiscalMarkers("перевод другу") === false);
 }

@@ -8,7 +8,13 @@ import {
   bufferToDataUrl,
   callOpenAIVision,
 } from "@/lib/ai/openai-client";
-import { applyExpenseRules } from "@/lib/ai/expense-rules";
+import {
+  applyExpenseRules,
+  cleanReceiptItems,
+  hasFiscalMarkers,
+  WARNING_ITEMS_UNCLEAR,
+  WARNING_CATEGORY_UNKNOWN,
+} from "@/lib/ai/expense-rules";
 
 export type ExpenseConfidence = "low" | "medium" | "high";
 export type ExpenseDocType = "receipt" | "transfer" | "manual";
@@ -18,6 +24,7 @@ export type ExpenseExtraction = {
   type: ExpenseDocType;
   vendorName: string | null;
   recipientName: string | null;
+  transferComment: string | null;
   amount: number | null; // rubles
   currency: string;
   expenseCategory: string | null; // category key
@@ -86,29 +93,57 @@ function multipleDocsFlag(json: Record<string, unknown>): boolean {
 
 export function mapExpenseJson(json: Record<string, unknown>, raw: string): ExpenseExtraction {
   const warnings = vWarnings(json.warnings);
-  const items = vItems(json.items);
+  const pushWarn = (msg: string) => {
+    if (!warnings.includes(msg)) warnings.push(msg);
+  };
 
-  // Deterministic post-recognition guards: fix consumables mislabeled as
-  // investments and cap confidence when multiple receipts are present.
+  const vendorName = vStr(json.vendorName);
+  const recipientName = vStr(json.recipientName);
+  const transferComment =
+    vStr(json.transferComment) ?? vStr(json.paymentPurpose) ?? vStr(json.purpose);
+  let type = vType(json.type);
+  let confidence = vConfidence(json.confidence);
+
+  // Part 1: never keep fake placeholder items ("Товар 1", "Item 2", …). If the
+  // model only produced placeholders, treat items as unrecognized.
+  const cleaned = cleanReceiptItems(vItems(json.items));
+  const items = cleaned.items;
+  if (cleaned.droppedPlaceholders && items.length === 0) {
+    confidence = "low";
+    pushWarn(WARNING_ITEMS_UNCLEAR);
+  }
+
+  // Fiscal markers (Кассовый чек / ФН / ФД / ФП / ИНН продавца) => receipt.
+  const fiscalText = [vendorName, ...items, vStr(json.address), raw].filter(Boolean).join(" ");
+  if (type !== "transfer" && (json.hasFiscalMarkers === true || hasFiscalMarkers(fiscalText))) {
+    type = "receipt";
+  }
+
+  // Consumable/multi-receipt guards (existing rules).
   const ruled = applyExpenseRules({
     category: vCategory(json.expenseCategory, warnings),
-    confidence: vConfidence(json.confidence),
+    confidence,
     items,
     multipleReceipts: multipleDocsFlag(json),
   });
-  for (const w of ruled.warnings) if (!warnings.includes(w)) warnings.push(w);
+  for (const w of ruled.warnings) pushWarn(w);
+  confidence = ruled.confidence;
+
+  // Part 1/2: uncertain category stays null (do not guess) + warning.
+  if (ruled.category === null) pushWarn(WARNING_CATEGORY_UNKNOWN);
 
   return {
-    type: vType(json.type),
-    vendorName: vStr(json.vendorName),
-    recipientName: vStr(json.recipientName),
+    type,
+    vendorName,
+    recipientName,
+    transferComment,
     amount: vNum(json.amount),
     currency: vStr(json.currency) ?? "RUB",
     expenseCategory: ruled.category,
     purchaseDate: vDate(json.purchaseDate),
     address: vStr(json.address),
     items,
-    confidence: ruled.confidence,
+    confidence,
     mode: "ai",
     missingFields: [],
     warnings,
@@ -121,6 +156,7 @@ function emptyExpense(type: ExpenseDocType, mode: AnalysisMode, warnings: string
     type,
     vendorName: null,
     recipientName: null,
+    transferComment: null,
     amount: null,
     currency: "RUB",
     expenseCategory: null,
@@ -158,10 +194,20 @@ const SYSTEM_PROMPT =
   "Ты извлекаешь данные из фото чека или скриншота банковского перевода (Россия). " +
   "Определи type: 'receipt' для чека, 'transfer' для перевода. " +
   "Верни СТРОГО JSON с ключами: type, vendorName (магазин, для чека), recipientName (получатель, для перевода), " +
+  "transferComment (назначение/комментарий перевода, для type=transfer), " +
   "amount (число, рубли), currency, expenseCategory, purchaseDate (YYYY-MM-DD), address, items (массив строк, позиции чека), " +
   "multipleReceipts (true/false — видно ли на фото больше одного чека/документа), " +
+  "hasFiscalMarkers (true/false — есть ли признаки кассового чека: «Кассовый чек», ФН, ФД, ФП, ИНН продавца), " +
   "confidence (low|medium|high), warnings (массив строк). " +
   "Если поле не видно — null. НИКОГДА не выдумывай суммы, даты, позиции, реквизиты. " +
+  // --- Items rules ----------------------------------------------------------
+  "items: только реально читаемые позиции. НИКОГДА не придумывай «Товар 1», «Товар 2», «Item 1», «Позиция 1» — " +
+  "если позиции не читаются, верни items=[] и понизь confidence. " +
+  // --- Document type rules --------------------------------------------------
+  "Если в документе есть «Кассовый чек», ФН, ФД, ФП или ИНН продавца — type=receipt (не manual). " +
+  "Если документ — подтверждение перевода: type=transfer, заполни recipientName и transferComment (назначение платежа); " +
+  "vendorName можно оставить null. Для перевода категорию определяй ТОЛЬКО по transferComment, если он понятен; " +
+  "если комментарий отсутствует или неясен — expenseCategory=null. " +
   // --- Category rules -------------------------------------------------------
   `expenseCategory выбирай ТОЛЬКО из: ${CATEGORY_KEYS.join(", ")}. Правила: ` +
   "advertising — реклама, реклама ВК/VK, Яндекс реклама, таргет, продвижение, рекламные материалы. " +

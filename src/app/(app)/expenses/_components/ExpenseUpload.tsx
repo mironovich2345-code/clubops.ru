@@ -5,6 +5,7 @@ import { useFormState, useFormStatus } from "react-dom";
 import type { ExpenseExtraction } from "@/lib/ai/expense-analyzer";
 import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors";
 import { uploadAndAnalyzeExpense, saveExpense } from "../actions";
+import { PayrollUpload } from "./PayrollUpload";
 
 type ClubOption = { id: string; name: string; city: string };
 type CategoryOption = { key: string; label: string };
@@ -31,6 +32,15 @@ const TYPE_OPTIONS = [
   { value: "manual", label: "Вручную" },
 ];
 
+// Top-level document kind selector.
+type DocKind = "receipt" | "transfer" | "payroll_statement" | "manual";
+const DOC_KINDS: { value: DocKind; label: string }[] = [
+  { value: "receipt", label: "Чек" },
+  { value: "transfer", label: "Перевод" },
+  { value: "payroll_statement", label: "Зарплатная ведомость" },
+  { value: "manual", label: "Вручную" },
+];
+
 function Button({ idle, busy }: { idle: string; busy: string }) {
   const { pending } = useFormStatus();
   return (
@@ -53,19 +63,67 @@ export function ExpenseUpload({
   categories: readonly CategoryOption[];
   companyName: string;
 }) {
+  const [docKind, setDocKind] = useState<DocKind>("receipt");
+
+  return (
+    <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <div className="mb-2 text-sm font-semibold text-slate-700">Тип документа</div>
+        <div className="flex flex-wrap gap-2">
+          {DOC_KINDS.map((k) => (
+            <button
+              key={k.value}
+              type="button"
+              onClick={() => setDocKind(k.value)}
+              className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+                docKind === k.value
+                  ? "border-brand-300 bg-brand-600 text-white"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {docKind === "payroll_statement" ? (
+        <PayrollUpload clubs={clubs} companyName={companyName} />
+      ) : (
+        <DocumentExpenseForm
+          clubs={clubs}
+          categories={categories}
+          companyName={companyName}
+          docKind={docKind}
+        />
+      )}
+    </div>
+  );
+}
+
+function DocumentExpenseForm({
+  clubs,
+  categories,
+  companyName,
+  docKind,
+}: {
+  clubs: ClubOption[];
+  categories: readonly CategoryOption[];
+  companyName: string;
+  docKind: DocKind;
+}) {
   const [analyze, analyzeAction] = useFormState(uploadAndAnalyzeExpense, analyzeInitial);
   const [saved, saveAction] = useFormState(saveExpense, saveInitial);
   // Controlled so the selected club survives the form reset after a form action.
   const [clubId, setClubId] = useState(clubs.length === 1 ? clubs[0].id : "");
 
   const extraction = analyze.ok ? analyze.extraction : undefined;
+  // Default the review "Тип" to the AI result, falling back to the chosen kind.
+  const typeDefault =
+    extraction && extraction.type !== "manual" ? extraction.type : docKind === "payroll_statement" ? "manual" : docKind;
 
   return (
-    <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 text-sm font-semibold text-slate-700">
-        Добавить расход (чек / перевод — фото, PDF, или вручную)
-      </div>
-
+    <div>
       <form action={analyzeAction} className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Field label="Компания">
           <input value={companyName} disabled className="input bg-slate-50 text-slate-500" />
@@ -150,7 +208,7 @@ export function ExpenseUpload({
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Тип">
-              <select name="type" defaultValue={extraction.type} className="input">
+              <select name="type" defaultValue={typeDefault} className="input">
                 {TYPE_OPTIONS.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
@@ -158,7 +216,7 @@ export function ExpenseUpload({
                 ))}
               </select>
             </Field>
-            <Field label="Статья расходов">
+            <Field label="Статья расхода">
               <select name="category" defaultValue={extraction.expenseCategory ?? ""} className="input">
                 <option value="" disabled>
                   Выберите статью
@@ -176,6 +234,16 @@ export function ExpenseUpload({
             <Field label="Получатель перевода">
               <input name="recipientName" defaultValue={extraction.recipientName ?? ""} className="input" />
             </Field>
+            <div className="md:col-span-2">
+              <Field label="Комментарий перевода">
+                <input
+                  name="transferComment"
+                  defaultValue={extraction.transferComment ?? ""}
+                  placeholder="назначение платежа"
+                  className="input"
+                />
+              </Field>
+            </div>
             <Field label="Сумма, ₽">
               <input name="amount" inputMode="decimal" defaultValue={extraction.amount ?? ""} className="input" />
             </Field>

@@ -32,7 +32,7 @@ type AnalyzeState = {
 
 type SaveState = { ok: boolean; error?: string; expenseId?: string };
 
-const EXPENSE_TYPES = new Set(["receipt", "transfer", "manual"]);
+const EXPENSE_TYPES = new Set(["receipt", "transfer", "manual", "payroll_statement"]);
 
 function str(formData: FormData, key: string): string | null {
   const v = String(formData.get(key) ?? "").trim();
@@ -50,6 +50,7 @@ type ParsedFields = {
   category: string;
   vendorName: string | null;
   recipientName: string | null;
+  transferComment: string | null;
   amountKopeks: number;
   currency: string;
   expenseDate: Date;
@@ -82,6 +83,7 @@ function parseExpenseFields(formData: FormData): { data?: ParsedFields; error?: 
       category,
       vendorName: str(formData, "vendorName"),
       recipientName: str(formData, "recipientName"),
+      transferComment: str(formData, "transferComment"),
       amountKopeks: rublesToKopeks(amount),
       currency: str(formData, "currency") ?? "RUB",
       expenseDate: parseDate(str(formData, "purchaseDate")) ?? new Date(),

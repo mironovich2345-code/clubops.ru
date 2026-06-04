@@ -34,6 +34,50 @@ export const WARNING_INVESTMENTS_TO_HOUSEHOLD =
   "Категория исправлена: мелкие расходники относятся к хозрасходам, а не вложениям";
 export const WARNING_MULTIPLE_RECEIPTS =
   "На фото несколько чеков, проверьте сумму и позиции вручную";
+export const WARNING_ITEMS_UNCLEAR =
+  "ИИ не смог уверенно распознать позиции товара. Проверьте чек вручную.";
+export const WARNING_CATEGORY_UNKNOWN = "Категория расхода не определена";
+
+// Fake placeholder item names the model sometimes invents ("Товар 1", "Item 2",
+// "Позиция 3", dashes, n/a). These must NOT be saved as real items.
+const PLACEHOLDER_ITEM_PATTERNS: RegExp[] = [
+  /^товар\s*№?\s*\d*$/i,
+  /^позици(я|и)\s*№?\s*\d*$/i,
+  /^строка\s*№?\s*\d*$/i,
+  /^наименование\s*№?\s*\d*$/i,
+  /^item\s*#?\s*\d*$/i,
+  /^product\s*#?\s*\d*$/i,
+  /^[—–-]+$/,
+  /^n\/?a$/i,
+  /^нет данных$/i,
+];
+
+/** True when an item is a placeholder / has no real content. */
+export function isPlaceholderItem(item: string): boolean {
+  const t = item.trim();
+  if (!t) return true;
+  return PLACEHOLDER_ITEM_PATTERNS.some((re) => re.test(t));
+}
+
+/** Drops placeholder items. Reports whether any were dropped. */
+export function cleanReceiptItems(items: string[]): { items: string[]; droppedPlaceholders: boolean } {
+  const kept = items.filter((i) => !isPlaceholderItem(i));
+  return { items: kept, droppedPlaceholders: kept.length < items.length };
+}
+
+// Fiscal cash-receipt markers: a document carrying these is a receipt, not manual.
+// NB: JS \b is ASCII-only, so use letter lookarounds for the Cyrillic ФН/ФД/ФП.
+const FISCAL_MARKER_PATTERNS: RegExp[] = [
+  /кассовый\s*чек/i,
+  /(?<![А-Яа-яЁёA-Za-z])Ф[НДП](?![А-Яа-яЁёA-Za-z])/,
+  /ИНН\s*продавца/i,
+];
+
+/** True when text shows fiscal receipt markers (Кассовый чек, ФН, ФД, ФП, ИНН продавца). */
+export function hasFiscalMarkers(text: string): boolean {
+  if (!text) return false;
+  return FISCAL_MARKER_PATTERNS.some((re) => re.test(text));
+}
 
 /** One step down the confidence ladder. */
 export function downgradeConfidence(c: Confidence): Confidence {
