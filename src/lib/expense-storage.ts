@@ -49,6 +49,24 @@ export async function storeExpenseFile(file: File): Promise<StoredFile> {
   return { storageKey, fileName: file.name, mime: file.type, size: file.size, buffer };
 }
 
+/**
+ * Persists an already-read buffer to disk, separated from reading the upload so
+ * the caller can analyze the in-memory buffer even if the disk write fails.
+ */
+export async function persistExpenseFile(
+  buffer: Buffer,
+  mime: string,
+  originalName: string,
+): Promise<{ storageKey: string; fileName: string; mime: string; size: number }> {
+  const ext = ALLOWED_MIME[mime];
+  if (!ext) throw new Error("Unsupported file type");
+  const name = `${randomBytes(16).toString("hex")}.${ext}`;
+  const storageKey = `expenses/${name}`;
+  await mkdir(EXPENSE_DIR, { recursive: true });
+  await writeFile(join(EXPENSE_DIR, name), buffer);
+  return { storageKey, fileName: originalName, mime, size: buffer.length };
+}
+
 /** Reads a stored file by its storageKey. Rejects anything outside the safe pattern. */
 export async function readExpenseFile(storageKey: string): Promise<Buffer | null> {
   if (!STORAGE_KEY_RE.test(storageKey)) return null;

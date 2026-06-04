@@ -57,6 +57,25 @@ export async function storeInvoiceFile(file: File): Promise<StoredFile> {
   };
 }
 
+/**
+ * Persists an already-read buffer to disk. Separated from reading the upload so
+ * the caller can analyze the in-memory buffer even if the disk write fails (e.g.
+ * read-only/ephemeral filesystem on the host). Returns the stored metadata.
+ */
+export async function persistInvoiceFile(
+  buffer: Buffer,
+  mime: string,
+  originalName: string,
+): Promise<{ storageKey: string; fileName: string; mime: string; size: number }> {
+  const ext = ALLOWED_MIME[mime];
+  if (!ext) throw new Error("Unsupported file type");
+  const name = `${randomBytes(16).toString("hex")}.${ext}`;
+  const storageKey = `invoices/${name}`;
+  await mkdir(INVOICE_DIR, { recursive: true });
+  await writeFile(join(INVOICE_DIR, name), buffer);
+  return { storageKey, fileName: originalName, mime, size: buffer.length };
+}
+
 /** Reads a stored file by its storageKey. Rejects anything outside the safe pattern. */
 export async function readInvoiceFile(storageKey: string): Promise<Buffer | null> {
   if (!STORAGE_KEY_RE.test(storageKey)) return null;

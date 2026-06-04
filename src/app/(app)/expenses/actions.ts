@@ -11,7 +11,7 @@ import {
   manualExpenseExtraction,
   type ExpenseExtraction,
 } from "@/lib/ai/expense-analyzer";
-import { validateExpenseFile, storeExpenseFile } from "@/lib/expense-storage";
+import { validateExpenseFile, persistExpenseFile } from "@/lib/expense-storage";
 
 type AnalyzeState = {
   ok: boolean;
@@ -95,60 +95,75 @@ export async function uploadAndAnalyzeExpense(
   _prev: AnalyzeState | undefined,
   formData: FormData,
 ): Promise<AnalyzeState> {
-  const ctx = await getCurrentAccessContext();
-  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
-    return { ok: false, error: "Нет доступа" };
-  }
+  try {
+    const ctx = await getCurrentAccessContext();
+    if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
+      return { ok: false, error: "Нет доступа" };
+    }
 
-  const clubId = String(formData.get("clubId") ?? "").trim();
-  if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
-    return { ok: false, error: "Нет доступа к выбранному клубу" };
-  }
+    const clubId = String(formData.get("clubId") ?? "").trim();
+    if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
+      return { ok: false, error: "Нет доступа к выбранному клубу" };
+    }
 
-  const file = formData.get("file");
-  const hasFile = file instanceof File && file.size > 0;
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      // Manual entry (no file): return empty structure to fill by hand.
+      return { ok: true, clubId, extraction: manualExpenseExtraction() };
+    }
 
-  if (hasFile) {
     const fileError = validateExpenseFile(file);
     if (fileError) return { ok: false, error: fileError };
 
-    const stored = await storeExpenseFile(file);
-    const extraction = await analyzeExpenseDocument({
-      buffer: stored.buffer,
-      mime: stored.mime,
-      fileName: stored.fileName,
-    });
+    const buffer = Buffer.from(await file.arrayBuffer());
 
-    await recordAudit({
-      action: "expense.uploaded",
-      entityType: "Expense",
-      companyId: ctx.selectedCompanyId,
-      clubId,
-      userId: ctx.user.id,
-      metadata: { fileName: stored.fileName, mime: stored.mime, size: stored.size },
-    });
-    await recordAudit({
-      action: "expense.extracted",
-      entityType: "Expense",
-      companyId: ctx.selectedCompanyId,
-      clubId,
-      userId: ctx.user.id,
-      metadata: { confidence: extraction.confidence },
-    });
+    // Best-effort persist: recognition still works from the in-memory buffer.
+    let storageKey: string | undefined;
+    let size = file.size;
+    try {
+      const stored = await persistExpenseFile(buffer, file.type, file.name);
+      storageKey = stored.storageKey;
+      size = stored.size;
+    } catch (storeError) {
+      console.error("expense file persist failed", storeError instanceof Error ? storeError.message : storeError);
+    }
+
+    const extraction = await analyzeExpenseDocument({ buffer, mime: file.type, fileName: file.name });
+
+    try {
+      await recordAudit({
+        action: "expense.uploaded",
+        entityType: "Expense",
+        companyId: ctx.selectedCompanyId,
+        clubId,
+        userId: ctx.user.id,
+        metadata: { fileName: file.name, mime: file.type, size },
+      });
+      await recordAudit({
+        action: "expense.extracted",
+        entityType: "Expense",
+        companyId: ctx.selectedCompanyId,
+        clubId,
+        userId: ctx.user.id,
+        metadata: { confidence: extraction.confidence, mode: extraction.mode },
+      });
+    } catch (auditError) {
+      console.error("expense audit failed", auditError instanceof Error ? auditError.message : auditError);
+    }
 
     return {
       ok: true,
       clubId,
-      storageKey: stored.storageKey,
-      fileName: stored.fileName,
-      fileMime: stored.mime,
-      fileSize: stored.size,
+      storageKey,
+      fileName: file.name,
+      fileMime: file.type,
+      fileSize: size,
       extraction,
     };
+  } catch (error) {
+    console.error("uploadAndAnalyzeExpense failed", error instanceof Error ? error.message : error);
+    return { ok: false, error: "Не удалось обработать файл. Попробуйте ещё раз или заполните вручную." };
   }
-
-  // Manual entry (no file): return empty structure to fill by hand.
-  return { ok: true, clubId, extraction: manualExpenseExtraction() };
 }
 
 export async function saveExpense(

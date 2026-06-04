@@ -20,7 +20,7 @@ import {
   analyzeInvoiceDocument,
   type InvoiceExtraction,
 } from "@/lib/ai/invoice-analyzer";
-import { validateInvoiceFile, storeInvoiceFile } from "@/lib/invoice-storage";
+import { validateInvoiceFile, persistInvoiceFile } from "@/lib/invoice-storage";
 
 type AnalyzeState = {
   ok: boolean;
@@ -98,54 +98,72 @@ export async function uploadAndAnalyzeInvoice(
   _prev: AnalyzeState | undefined,
   formData: FormData,
 ): Promise<AnalyzeState> {
-  const ctx = await getCurrentAccessContext();
-  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
-    return { ok: false, error: "Нет доступа" };
+  try {
+    const ctx = await getCurrentAccessContext();
+    if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
+      return { ok: false, error: "Нет доступа" };
+    }
+
+    const clubId = String(formData.get("clubId") ?? "").trim();
+    if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
+      return { ok: false, error: "Нет доступа к выбранному клубу" };
+    }
+
+    const file = formData.get("file");
+    if (!(file instanceof File)) return { ok: false, error: "Выберите файл" };
+    const fileError = validateInvoiceFile(file);
+    if (fileError) return { ok: false, error: fileError };
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Persisting the document is best-effort: on a read-only/ephemeral host the
+    // write may fail, but recognition must still work from the in-memory buffer.
+    let storageKey: string | undefined;
+    let size = file.size;
+    try {
+      const stored = await persistInvoiceFile(buffer, file.type, file.name);
+      storageKey = stored.storageKey;
+      size = stored.size;
+    } catch (storeError) {
+      console.error("invoice file persist failed", storeError instanceof Error ? storeError.message : storeError);
+    }
+
+    const extraction = await analyzeInvoiceDocument({ buffer, mime: file.type, fileName: file.name });
+
+    try {
+      await recordAudit({
+        action: "invoice.uploaded",
+        entityType: "Invoice",
+        companyId: ctx.selectedCompanyId,
+        clubId,
+        userId: ctx.user.id,
+        metadata: { fileName: file.name, mime: file.type, size },
+      });
+      await recordAudit({
+        action: "invoice.extracted",
+        entityType: "Invoice",
+        companyId: ctx.selectedCompanyId,
+        clubId,
+        userId: ctx.user.id,
+        metadata: { confidence: extraction.confidence, mode: extraction.mode },
+      });
+    } catch (auditError) {
+      console.error("invoice audit failed", auditError instanceof Error ? auditError.message : auditError);
+    }
+
+    return {
+      ok: true,
+      clubId,
+      storageKey,
+      fileName: file.name,
+      fileMime: file.type,
+      fileSize: size,
+      extraction,
+    };
+  } catch (error) {
+    console.error("uploadAndAnalyzeInvoice failed", error instanceof Error ? error.message : error);
+    return { ok: false, error: "Не удалось обработать файл. Попробуйте ещё раз или заполните вручную." };
   }
-
-  const clubId = String(formData.get("clubId") ?? "").trim();
-  if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
-    return { ok: false, error: "Нет доступа к выбранному клубу" };
-  }
-
-  const file = formData.get("file");
-  if (!(file instanceof File)) return { ok: false, error: "Выберите файл" };
-  const fileError = validateInvoiceFile(file);
-  if (fileError) return { ok: false, error: fileError };
-
-  const stored = await storeInvoiceFile(file);
-  const extraction = await analyzeInvoiceDocument({
-    buffer: stored.buffer,
-    mime: stored.mime,
-    fileName: stored.fileName,
-  });
-
-  await recordAudit({
-    action: "invoice.uploaded",
-    entityType: "Invoice",
-    companyId: ctx.selectedCompanyId,
-    clubId,
-    userId: ctx.user.id,
-    metadata: { fileName: stored.fileName, mime: stored.mime, size: stored.size },
-  });
-  await recordAudit({
-    action: "invoice.extracted",
-    entityType: "Invoice",
-    companyId: ctx.selectedCompanyId,
-    clubId,
-    userId: ctx.user.id,
-    metadata: { confidence: extraction.confidence, missingFields: extraction.missingFields },
-  });
-
-  return {
-    ok: true,
-    clubId,
-    storageKey: stored.storageKey,
-    fileName: stored.fileName,
-    fileMime: stored.mime,
-    fileSize: stored.size,
-    extraction,
-  };
 }
 
 export async function saveInvoice(
