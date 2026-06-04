@@ -21,6 +21,13 @@ export async function completeOnboarding(
   ]);
   if (companyAccess || clubAccess) redirect("/dashboard");
 
+  // An invited user must accept their invite, not create a new company here.
+  const pendingInvite = await prisma.invite.findFirst({
+    where: { email: user.email.toLowerCase(), acceptedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  if (pendingInvite) redirect("/accept-invite");
+
   const companyName = String(formData.get("companyName") ?? "").trim();
   const clubName = String(formData.get("clubName") ?? "").trim();
   const city = String(formData.get("city") ?? "").trim();

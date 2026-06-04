@@ -51,16 +51,24 @@ function anyRoleSatisfies(held: string[], required: readonly string[]): boolean 
   return held.some((h) => required.some((r) => roleSatisfies(h, r)));
 }
 
-/** Distinct companies the user has any access to. */
+/**
+ * Distinct companies the user has any access to — via a company-level role OR a
+ * club-level role (a club manager operates inside that club's company). Without
+ * the club-derived companies, an invited club manager would have no scope and be
+ * wrongly sent to onboarding.
+ */
 export async function getUserCompanies(userId: string) {
-  const rows = await prisma.companyUserAccess.findMany({
-    where: { userId },
-    include: { company: true },
-    orderBy: { company: { name: "asc" } },
-  });
-  const byId = new Map<string, (typeof rows)[number]["company"]>();
-  for (const row of rows) byId.set(row.companyId, row.company);
-  return [...byId.values()];
+  const [companyRows, clubRows] = await Promise.all([
+    prisma.companyUserAccess.findMany({ where: { userId }, include: { company: true } }),
+    prisma.clubUserAccess.findMany({
+      where: { userId },
+      include: { club: { include: { company: true } } },
+    }),
+  ]);
+  const byId = new Map<string, (typeof companyRows)[number]["company"]>();
+  for (const row of companyRows) byId.set(row.companyId, row.company);
+  for (const row of clubRows) byId.set(row.club.companyId, row.club.company);
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**

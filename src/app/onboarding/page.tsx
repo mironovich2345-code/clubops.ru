@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getCurrentAccessContext } from "@/lib/access";
+import { prisma } from "@/lib/prisma";
 import { OnboardingForm } from "./OnboardingForm";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,14 @@ export default async function OnboardingPage() {
   // If the user already has access, they don't onboard — send them in.
   const ctx = await getCurrentAccessContext();
   if (ctx?.effectiveRole) redirect("/dashboard");
+
+  // A pending invite takes priority: an invited user must connect to the
+  // company/club from the invite, not create a brand-new company here.
+  const pendingInvite = await prisma.invite.findFirst({
+    where: { email: user.email.toLowerCase(), acceptedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  if (pendingInvite) redirect("/accept-invite");
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">

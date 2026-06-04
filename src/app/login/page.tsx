@@ -2,17 +2,24 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { ensureDevOwner, DEV_DEMO_CREDENTIALS } from "@/lib/seed";
+import { safeNextPath } from "@/lib/safe-redirect";
 import { LoginForm } from "./LoginForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
   // Dev/local only: make sure a demo owner exists so the beta is usable.
   await ensureDevOwner();
 
+  const { next } = await searchParams;
   const user = await getCurrentUser();
-  if (user) redirect("/dashboard");
+  if (user) redirect(safeNextPath(next));
 
+  const registerHref = next ? `/register?next=${encodeURIComponent(next)}` : "/register";
   const devHint = process.env.NODE_ENV !== "production" ? DEV_DEMO_CREDENTIALS : null;
 
   return (
@@ -24,10 +31,10 @@ export default async function LoginPage() {
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="mb-4 text-lg font-semibold text-slate-900">Вход</h1>
-          <LoginForm />
+          <LoginForm next={next} />
           <p className="mt-4 text-center text-sm text-slate-500">
             Нет аккаунта?{" "}
-            <Link href="/register" className="font-medium text-brand-600 hover:text-brand-700">
+            <Link href={registerHref} className="font-medium text-brand-600 hover:text-brand-700">
               Регистрация
             </Link>
           </p>

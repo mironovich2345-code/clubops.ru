@@ -19,11 +19,12 @@ function SubmitButton() {
   );
 }
 
-export function LoginForm() {
+export function LoginForm({ next }: { next?: string }) {
   const [state, formAction] = useFormState(loginAction, initialState);
 
   return (
     <form action={formAction} className="space-y-4">
+      {next ? <input type="hidden" name="next" value={next} /> : null}
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-slate-700">Email</span>
         <input

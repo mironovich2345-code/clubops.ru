@@ -12,8 +12,48 @@ export default async function AcceptInvitePage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const { token } = await searchParams;
+  const user = await getCurrentUser();
 
-  if (!token) return <Shell>{<ErrorText text="Ссылка приглашения недействительна." />}</Shell>;
+  // No token: a logged-in user can still accept invites addressed to their
+  // email (this is where /onboarding redirects a zero-access invited user).
+  if (!token) {
+    if (!user) return <Shell>{<ErrorText text="Ссылка приглашения недействительна." />}</Shell>;
+    const pending = await prisma.invite.findMany({
+      where: { email: user.email.toLowerCase(), acceptedAt: null, expiresAt: { gt: new Date() } },
+      include: { company: true, club: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (pending.length === 0) {
+      return <Shell>{<ErrorText text="Активных приглашений для вашего аккаунта нет." />}</Shell>;
+    }
+    return (
+      <Shell>
+        <p className="mb-4 text-sm text-slate-600">
+          Приглашения для <span className="font-medium">{user.email}</span>:
+        </p>
+        <ul className="space-y-3">
+          {pending.map((inv) => (
+            <li key={inv.id} className="rounded-md border border-slate-200 p-3">
+              <Details
+                email={inv.email}
+                roleLabel={INVITE_ROLE_LABELS[inv.role] ?? inv.role}
+                scopeLabel={inv.club ? `клуб «${inv.club.name}»` : `компания «${inv.company.name}»`}
+              />
+              <form action={acceptInvite} className="mt-3">
+                <input type="hidden" name="inviteId" value={inv.id} />
+                <button
+                  type="submit"
+                  className="w-full rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
+                >
+                  Принять приглашение
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      </Shell>
+    );
+  }
 
   const invite = await prisma.invite.findUnique({
     where: { tokenHash: hashInviteToken(token) },
@@ -28,29 +68,32 @@ export default async function AcceptInvitePage({
     return <Shell>{<ErrorText text="Срок действия приглашения истёк." />}</Shell>;
   }
 
-  const user = await getCurrentUser();
   const roleLabel = INVITE_ROLE_LABELS[invite.role] ?? invite.role;
   const scopeLabel = invite.club
     ? `клуб «${invite.club.name}»`
     : `компания «${invite.company.name}»`;
 
   if (!user) {
+    // Carry the invite link through login/register so the user returns here.
+    const back = `/accept-invite?token=${encodeURIComponent(token)}`;
+    const loginHref = `/login?next=${encodeURIComponent(back)}`;
+    const registerHref = `/register?next=${encodeURIComponent(back)}`;
     return (
       <Shell>
         <Details email={invite.email} roleLabel={roleLabel} scopeLabel={scopeLabel} />
         <p className="mt-4 text-sm text-slate-600">
-          Войдите или зарегистрируйтесь под <span className="font-medium">{invite.email}</span>,
-          затем откройте эту ссылку ещё раз.
+          Войдите или зарегистрируйтесь под <span className="font-medium">{invite.email}</span> —
+          после входа вы вернётесь сюда автоматически.
         </p>
         <div className="mt-4 flex gap-2">
           <Link
-            href="/login"
+            href={loginHref}
             className="flex-1 rounded-md bg-brand-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-brand-700"
           >
             Вход
           </Link>
           <Link
-            href="/register"
+            href={registerHref}
             className="flex-1 rounded-md border border-slate-300 bg-white px-4 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             Регистрация

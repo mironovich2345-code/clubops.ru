@@ -10,6 +10,7 @@ import {
   MIN_PASSWORD_LENGTH,
 } from "@/lib/auth";
 import { isFirstUser, setupDemoCompanyForOwner } from "@/lib/seed";
+import { safeNextPath } from "@/lib/safe-redirect";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -30,7 +31,8 @@ export async function loginAction(
   const result = await signIn(email, password);
   if (!result.ok) return { ok: false, error: result.error ?? "Не удалось войти" };
 
-  redirect("/dashboard");
+  // Honor a safe return URL (e.g. back to an invite link) when present.
+  redirect(safeNextPath(String(formData.get("next") ?? "")));
 }
 
 export async function registerAction(
@@ -73,7 +75,8 @@ export async function registerAction(
   }
 
   await createSession(user.id);
-  redirect("/dashboard");
+  // Honor a safe return URL (e.g. back to an invite link) when present.
+  redirect(safeNextPath(String(formData.get("next") ?? "")));
 }
 
 export async function logoutAction(): Promise<void> {

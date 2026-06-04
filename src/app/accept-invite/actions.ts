@@ -10,14 +10,24 @@ import { hashInviteToken, isInviteExpired } from "@/lib/invites";
 export async function acceptInvite(formData: FormData): Promise<void> {
   const user = await requireUser();
   const token = String(formData.get("token") ?? "");
-  const back = `/accept-invite?token=${encodeURIComponent(token)}`;
+  const inviteId = String(formData.get("inviteId") ?? "");
+  // Token links return to themselves on failure; the no-token (by-id) flow
+  // returns to the email-based list.
+  const back = token ? `/accept-invite?token=${encodeURIComponent(token)}` : "/accept-invite";
 
-  const invite = await prisma.invite.findUnique({
-    where: { tokenHash: hashInviteToken(token) },
-  });
+  // Resolve the invite by token (unauthenticated link) or by id (logged-in user
+  // accepting an invite addressed to their email).
+  const invite = token
+    ? await prisma.invite.findUnique({ where: { tokenHash: hashInviteToken(token) } })
+    : inviteId
+      ? await prisma.invite.findUnique({ where: { id: inviteId } })
+      : null;
+
   if (!invite || invite.acceptedAt || isInviteExpired(invite.expiresAt)) {
     redirect(back);
   }
+  // Email match is the security gate in both flows: a user may only accept an
+  // invite addressed to their own email.
   if (invite.email.toLowerCase() !== user.email.toLowerCase()) {
     redirect(back);
   }

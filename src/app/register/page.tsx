@@ -1,13 +1,21 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { safeNextPath } from "@/lib/safe-redirect";
 import { RegisterForm } from "./RegisterForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function RegisterPage() {
+export default async function RegisterPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
   const user = await getCurrentUser();
-  if (user) redirect("/dashboard");
+  if (user) redirect(safeNextPath(next));
+
+  const loginHref = next ? `/login?next=${encodeURIComponent(next)}` : "/login";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -18,10 +26,10 @@ export default async function RegisterPage() {
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="mb-4 text-lg font-semibold text-slate-900">Регистрация</h1>
-          <RegisterForm />
+          <RegisterForm next={next} />
           <p className="mt-4 text-center text-sm text-slate-500">
             Уже есть аккаунт?{" "}
-            <Link href="/login" className="font-medium text-brand-600 hover:text-brand-700">
+            <Link href={loginHref} className="font-medium text-brand-600 hover:text-brand-700">
               Вход
             </Link>
           </p>
