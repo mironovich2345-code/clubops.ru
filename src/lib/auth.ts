@@ -4,7 +4,15 @@ import { createHmac, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
-export type Role = "owner" | "regional_director" | "manager" | "accountant";
+// Business role hierarchy (highest -> lowest authority):
+// owner > general_director > regional_director > manager > accountant > marketer
+export type Role =
+  | "owner"
+  | "general_director"
+  | "regional_director"
+  | "manager"
+  | "accountant"
+  | "marketer";
 
 export type AppPage =
   | "dashboard"
@@ -25,12 +33,48 @@ export type CurrentUser = {
   role: Role;
 };
 
+// VIEW access per role. Operational create/upload is a separate capability (see
+// ROLE_CAPABILITIES) so an owner/general_director can VIEW invoices/expenses but
+// not create them.
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
-  owner: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "imports", "documents", "users", "settings"],
+  owner: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "users", "settings"],
+  general_director: ["dashboard", "sales", "budgets", "users", "settings"],
   regional_director: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "imports", "documents", "users"],
   manager: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "documents"],
   accountant: ["expenses", "invoices", "refunds", "budgets", "sales", "documents"],
+  // Marketer added for future advertising metrics — minimal access for now
+  // (no marketing page yet; no financial create/edit; no payroll/salary view).
+  marketer: ["dashboard"],
 };
+
+// Capabilities gate actions beyond page visibility (enforced server-side):
+//  - "operational.create": create invoices/expenses/refunds/sales/imports
+//    (managers + regional directors only — NOT owners/GD/accountants/marketers).
+//  - "sales_plan.manage": create/update sales plans (general director only).
+export type Capability = "operational.create" | "sales_plan.manage";
+
+const ROLE_CAPABILITIES: Record<Role, ReadonlyArray<Capability>> = {
+  owner: [],
+  general_director: ["sales_plan.manage"],
+  regional_director: ["operational.create"],
+  manager: ["operational.create"],
+  accountant: [],
+  marketer: [],
+};
+
+export function can(roles: readonly Role[], capability: Capability): boolean {
+  return roles.some((role) => ROLE_CAPABILITIES[role]?.includes(capability));
+}
+
+/** Create/upload operational records (invoices, expenses, refunds, sales, imports). */
+export function canCreateOperational(roles: readonly Role[]): boolean {
+  return can(roles, "operational.create");
+}
+
+/** Create/update sales plans (general director). */
+export function canManageSalesPlans(roles: readonly Role[]): boolean {
+  return can(roles, "sales_plan.manage");
+}
 
 export function canAccessPage(role: Role, page: AppPage): boolean {
   return ROLE_PAGE_ACCESS[role].includes(page);
@@ -120,7 +164,14 @@ export async function requireUser(): Promise<CurrentUser> {
 // Effective-role helpers. Page access is driven by the roles a user actually
 // holds in the selected scope (CompanyUserAccess/ClubUserAccess), never by the
 // global User.role. See getCurrentAccessContext in src/lib/access.ts.
-const ROLE_PRIORITY: readonly Role[] = ["owner", "regional_director", "manager", "accountant"];
+const ROLE_PRIORITY: readonly Role[] = [
+  "owner",
+  "general_director",
+  "regional_director",
+  "manager",
+  "accountant",
+  "marketer",
+];
 
 export function highestRole(roles: readonly Role[]): Role | null {
   for (const role of ROLE_PRIORITY) {

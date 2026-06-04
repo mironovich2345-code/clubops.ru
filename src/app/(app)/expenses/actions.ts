@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage } from "@/lib/auth";
+import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import { getExpenseForContext } from "@/lib/expenses";
@@ -128,6 +128,7 @@ export async function uploadAndAnalyzeExpense(
   try {
     ctx = await getCurrentAccessContext();
     if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) return fail("ACCESS_DENIED");
+    if (!canCreateOperational(ctx.effectiveRoles)) return fail("ACCESS_DENIED");
 
     if (!clubId) return fail("CLUB_REQUIRED");
     if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
@@ -216,6 +217,9 @@ export async function saveExpense(
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
     return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Создавать расходы могут управляющие и региональные директора" };
   }
 
   const clubId = String(formData.get("clubId") ?? "").trim();

@@ -39,6 +39,9 @@ export async function createInvite(
 
   if (!EMAIL_RE.test(email)) return { ok: false, error: "Введите корректный email" };
 
+  // getInvitableRoles is the single source of truth for who may invite which
+  // role (owner -> owner/general_director-if-none; GD -> regional/accountant/
+  // manager/marketer; regional -> manager). No global User.role is trusted.
   const invitable = await getInvitableRoles(user.id, companyId);
   if (!invitable.includes(role)) {
     return { ok: false, error: "Недостаточно прав для приглашения этой роли" };
@@ -46,7 +49,7 @@ export async function createInvite(
 
   let clubId: string | null = null;
   if (isClubScopedRole(role)) {
-    if (!clubIdRaw) return { ok: false, error: "Для менеджера нужно выбрать клуб" };
+    if (!clubIdRaw) return { ok: false, error: "Для управляющего нужно выбрать клуб" };
     const club = await prisma.club.findFirst({
       where: { id: clubIdRaw, companyId },
       select: { id: true },
@@ -56,12 +59,9 @@ export async function createInvite(
       return { ok: false, error: "Нет прав управлять этим клубом" };
     }
     clubId = clubIdRaw;
-  } else {
-    // regional_director / accountant -> company level, owner only
-    if (!(await userHasCompanyRole(user.id, companyId, ["owner"]))) {
-      return { ok: false, error: "Только владелец может назначать роли уровня компании" };
-    }
   }
+  // Company-level roles (owner/general_director/regional_director/accountant/
+  // marketer) are already authorized by getInvitableRoles above.
 
   // Reject if the invited person already has the same access.
   const existingUser = await prisma.user.findUnique({ where: { email }, select: { id: true } });
@@ -109,7 +109,7 @@ export async function createInvite(
   });
 
   await recordAudit({
-    action: "invite.created",
+    action: "role.invited",
     entityType: "Invite",
     entityId: invite.id,
     companyId,
@@ -136,8 +136,13 @@ export async function removeAccess(formData: FormData): Promise<void> {
     const row = await prisma.companyUserAccess.findUnique({ where: { id: accessId } });
     if (!row) throw new Error("Доступ не найден");
     if (row.userId === user.id) throw new Error("Нельзя удалить собственный доступ");
-    if (!(await userHasCompanyRole(user.id, row.companyId, ["owner"]))) {
-      throw new Error("Недостаточно прав");
+    const isOwner = await userHasCompanyRole(user.id, row.companyId, ["owner"]);
+    const isGD = await userHasCompanyRole(user.id, row.companyId, ["general_director"]);
+    if (!isOwner && !isGD) throw new Error("Недостаточно прав");
+    // A general director manages operational roles but may not remove an owner
+    // or another general director — that stays an owner action.
+    if (!isOwner && (row.role === "owner" || row.role === "general_director")) {
+      throw new Error("Только собственник может изменять доступ этого уровня");
     }
     await prisma.companyUserAccess.delete({ where: { id: accessId } });
     await recordAudit({

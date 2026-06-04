@@ -20,8 +20,10 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
 ];
 
 export const ROLE_LABELS: Record<string, string> = {
-  owner: "Владелец",
+  owner: "Собственник",
+  general_director: "Ген.директор",
   regional_director: "Региональный директор",
-  manager: "Менеджер",
+  manager: "Управляющий",
   accountant: "Бухгалтер",
+  marketer: "Маркетолог",
 };

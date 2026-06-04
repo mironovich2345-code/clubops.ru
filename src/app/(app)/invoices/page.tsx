@@ -2,7 +2,13 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
-import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import {
+  requirePageAccess,
+  getCurrentCompanyAndClub,
+  getClubsInScope,
+  getCurrentAccessContext,
+} from "@/lib/access";
+import { canCreateOperational } from "@/lib/auth";
 import {
   getInvoicesForScope,
   INVOICE_STATUS_LABELS,
@@ -33,22 +39,26 @@ export default async function InvoicesPage() {
     return <NoCompanyState title="Счета" description="Загрузка и распознавание счетов" />;
   }
 
-  const [clubs, invoices] = await Promise.all([
+  const [clubs, invoices, ctx] = await Promise.all([
     getClubsInScope(scope),
     getInvoicesForScope(scope),
+    getCurrentAccessContext(),
   ]);
+  const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
   return (
     <div>
       <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
 
-      {clubs.length > 0 ? (
-        <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} />
-      ) : (
-        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
-          Нет доступных клубов для создания счёта.
-        </div>
-      )}
+      {canCreate ? (
+        clubs.length > 0 ? (
+          <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} />
+        ) : (
+          <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
+            Нет доступных клубов для создания счёта.
+          </div>
+        )
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-slate-200">

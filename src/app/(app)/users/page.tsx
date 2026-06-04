@@ -26,13 +26,15 @@ export default async function UsersPage() {
   }
   const companyId = scope.company.id;
 
-  const [members, invitableRoles, clubs, manageableClubIds, isOwner] = await Promise.all([
-    getCompanyMembers(companyId),
-    getInvitableRoles(user.id, companyId),
-    getClubsInScope(scope),
-    getManageableClubIds(user.id, companyId),
-    userHasCompanyRole(user.id, companyId, ["owner"]),
-  ]);
+  const [members, invitableRoles, clubs, manageableClubIds, isOwner, isGeneralDirector] =
+    await Promise.all([
+      getCompanyMembers(companyId),
+      getInvitableRoles(user.id, companyId),
+      getClubsInScope(scope),
+      getManageableClubIds(user.id, companyId),
+      userHasCompanyRole(user.id, companyId, ["owner"]),
+      userHasCompanyRole(user.id, companyId, ["general_director"]),
+    ]);
 
   const manageable = new Set(manageableClubIds);
   const roleOptions = invitableRoles.map((value) => ({
@@ -42,7 +44,11 @@ export default async function UsersPage() {
 
   function canRemove(member: CompanyMember): boolean {
     if (member.user.id === user.id) return false; // no self-lockout
-    if (member.scope === "company") return isOwner;
+    if (member.scope === "company") {
+      if (isOwner) return true;
+      // General director manages operational roles, not owners/GDs.
+      return isGeneralDirector && member.role !== "owner" && member.role !== "general_director";
+    }
     return member.clubId !== null && manageable.has(member.clubId);
   }
 

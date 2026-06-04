@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage } from "@/lib/auth";
+import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
 import { getCurrentAccessContext, canAccessClub } from "@/lib/access";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import {
@@ -33,6 +33,9 @@ export async function previewImport(
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "imports")) {
     return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Импорт доступен управляющим и региональным директорам" };
   }
   const user = ctx.user;
 
@@ -76,6 +79,9 @@ export async function runImport(
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "imports")) {
     return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Импорт доступен управляющим и региональным директорам" };
   }
   const user = ctx.user;
 

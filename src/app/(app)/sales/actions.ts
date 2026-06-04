@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage } from "@/lib/auth";
+import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import {
@@ -34,6 +34,9 @@ export async function createSale(
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "sales")) {
     return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Создавать продажи могут управляющие и региональные директора" };
   }
   const user = ctx.user;
 

@@ -11,6 +11,7 @@ import {
   type SaleSummary,
 } from "@/lib/sales";
 import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { canCreateOperational } from "@/lib/auth";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { CreateSaleForm } from "./_components/CreateSaleForm";
 import { SaleRowActions } from "./_components/SaleRowActions";
@@ -94,7 +95,7 @@ export default async function SalesPage({
         </div>
       ) : null}
 
-      <CreateSaleForm clubs={clubs} />
+      {canCreateOperational(ctx.effectiveRoles) ? <CreateSaleForm clubs={clubs} /> : null}
 
       {/* Status filters */}
       <div className="mb-3 flex flex-wrap gap-2">

@@ -41,6 +41,7 @@ model Company {
   budgets       Budget[]
   budgetRequests BudgetApprovalRequest[]
   payrollStatements PayrollStatement[]
+  salesPlans    SalesPlan[]
 }
 
 model LegalEntity {
@@ -92,6 +93,7 @@ model User {
   budgetRequestsRequested BudgetApprovalRequest[] @relation("BudgetReqRequestedBy")
   budgetRequestsDecided   BudgetApprovalRequest[] @relation("BudgetReqDecidedBy")
   payrollStatements       PayrollStatement[]
+  salesPlans              SalesPlan[]
 }
 
 model Session {
@@ -132,6 +134,7 @@ model Club {
   budgets       Budget[]
   budgetRequests BudgetApprovalRequest[]
   payrollStatements PayrollStatement[]
+  salesPlans    SalesPlan[]
 
   @@index([companyId])
 }
@@ -563,4 +566,25 @@ model PayrollStatementRow {
   @@index([payrollStatementId])
   @@index([companyId])
   @@index([clubId])
+}
+
+// Monthly sales target (план продаж) set by the general director. clubId null =
+// company-wide plan; a club id = per-club plan. month = "YYYY-MM".
+model SalesPlan {
+  id                String   @id @default(cuid())
+  companyId         String
+  clubId            String?
+  month             String
+  targetAmountKopeks Int     @default(0)
+  createdByUserId   String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club      Club?   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([month])
 }

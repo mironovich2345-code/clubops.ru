@@ -6,8 +6,11 @@ import { getInvoicesForScope, summarize, INVOICE_STATUS_LABELS } from "@/lib/inv
 import { getExpensesForScope, summarizeExpenses, expenseCategoryLabel } from "@/lib/expenses";
 import { getSalesForScope, summarizeSales } from "@/lib/sales";
 import { getRefundsForScope } from "@/lib/refunds";
-import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
+import { canManageSalesPlans } from "@/lib/auth";
+import { getSalesPlan, salesPlanProgress, monthKey } from "@/lib/sales-plans";
 import { NoCompanyState } from "@/components/NoCompanyState";
+import { SalesPlanForm } from "./_components/SalesPlanForm";
 import {
   profitSummary,
   clubComparison,
@@ -41,15 +44,21 @@ export default async function DashboardPage() {
     return <NoCompanyState title="Дашборд" description="Состояние бизнеса" />;
   }
 
-  const [clubs, invoices, expenses, sales, refunds] = await Promise.all([
+  const now = new Date();
+  const planMonth = monthKey(now);
+
+  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan] = await Promise.all([
     getClubsInScope(scope),
     getInvoicesForScope(scope),
     getExpensesForScope(scope),
     getSalesForScope(scope),
     getRefundsForScope(scope),
+    getCurrentAccessContext(),
+    getSalesPlan(scope.company.id, scope.club?.id ?? null, planMonth),
   ]);
 
-  const now = new Date();
+  const canEditPlan = ctx ? canManageSalesPlans(ctx.effectiveRoles) : false;
+  const planScopeLabel = scope.club ? scope.club.name : "вся компания";
 
   // Actual monthly expenses = confirmed expenses + paid invoices + paid refunds.
   // Draft/needs_review/approved-unpaid/rejected invoices are NOT actual expenses.
@@ -161,6 +170,10 @@ export default async function DashboardPage() {
   const profit = profitSummary(salesSum, expensesSum);
   const clubsFinance = clubComparison(clubs, confirmedSales, expenseEvents, now);
 
+  // Sales plan vs. confirmed-revenue fact for the current scope/month.
+  const planProgress = salesPlanProgress(salesPlan?.targetAmountKopeks ?? 0, profit.currentSalesKopeks);
+  const planTargetRubles = salesPlan ? (salesPlan.targetAmountKopeks / 100).toString() : "";
+
   const topExpenseCategories = expensesSum.categoryTotals.slice(0, 5);
   const topSalesSources = salesSum.sourceTotals.slice(0, 5);
 
@@ -212,6 +225,54 @@ export default async function DashboardPage() {
           <Link href="/sales?status=pending_accountant" className="ml-auto font-medium text-amber-800 underline">
             Проверить
           </Link>
+        </div>
+      ) : null}
+
+      {/* Sales plan vs. fact (general director sets the plan) */}
+      {planProgress.planKopeks > 0 || canEditPlan ? (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-slate-700">
+              План продаж · {monthFormatter.format(now)} ({planScopeLabel})
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <span className="text-slate-500">
+                План:{" "}
+                <span className="font-medium text-slate-900">{formatKopeks(planProgress.planKopeks)}</span>
+              </span>
+              <span className="text-slate-500">
+                Факт:{" "}
+                <span className="font-medium text-slate-900">{formatKopeks(planProgress.factKopeks)}</span>
+              </span>
+              <span className="text-slate-500">
+                Выполнение:{" "}
+                <span
+                  className={`font-semibold ${
+                    planProgress.percent !== null && planProgress.percent >= 100
+                      ? "text-emerald-700"
+                      : "text-slate-900"
+                  }`}
+                >
+                  {planProgress.percent === null ? "—" : `${planProgress.percent.toFixed(0)}%`}
+                </span>
+              </span>
+            </div>
+          </div>
+          {planProgress.planKopeks > 0 ? (
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-emerald-500"
+                style={{ width: `${Math.min(100, planProgress.percent ?? 0)}%` }}
+              />
+            </div>
+          ) : null}
+          {canEditPlan ? (
+            <SalesPlanForm
+              month={planMonth}
+              scopeLabel={planScopeLabel}
+              currentTargetRubles={planTargetRubles}
+            />
+          ) : null}
         </div>
       ) : null}
 

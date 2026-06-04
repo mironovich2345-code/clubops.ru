@@ -27,7 +27,10 @@ export function isClubScopedRole(role: string): boolean {
 }
 
 export const INVITE_ROLE_LABELS: Record<string, string> = {
+  owner: "Собственник",
+  general_director: "Ген.директор",
   regional_director: "Региональный директор",
-  manager: "Менеджер",
+  manager: "Управляющий",
   accountant: "Бухгалтер",
+  marketer: "Маркетолог",
 };

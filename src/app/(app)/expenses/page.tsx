@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import {
+  requirePageAccess,
+  getCurrentCompanyAndClub,
+  getClubsInScope,
+  getCurrentAccessContext,
+} from "@/lib/access";
+import { canCreateOperational } from "@/lib/auth";
 import { formatKopeks } from "@/lib/money";
 import {
   getExpensesForScope,
@@ -34,10 +40,12 @@ export default async function ExpensesPage() {
     return <NoCompanyState title="Расходы" description="Чеки, переводы и динамика по статьям" />;
   }
 
-  const [clubs, expenses] = await Promise.all([
+  const [clubs, expenses, ctx] = await Promise.all([
     getClubsInScope(scope),
     getExpensesForScope(scope),
+    getCurrentAccessContext(),
   ]);
+  const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
   const now = new Date();
   const summary = summarizeExpenses(expenses, now);
@@ -56,7 +64,7 @@ export default async function ExpensesPage() {
         previousMonthLabel={previousMonthLabel}
       />
 
-      {clubs.length > 0 ? (
+      {canCreate && clubs.length > 0 ? (
         <ExpenseUpload
           clubs={clubs}
           categories={EXPENSE_CATEGORY_OPTIONS}

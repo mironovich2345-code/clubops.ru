@@ -18,9 +18,11 @@ import {
 
 export const COMPANY_ROLES = [
   "owner",
+  "general_director",
   "regional_director",
   "manager",
   "accountant",
+  "marketer",
 ] as const;
 export type CompanyRole = (typeof COMPANY_ROLES)[number];
 
@@ -34,13 +36,18 @@ export function isPlatformSuperadmin(role: string): boolean {
   return role === "superadmin";
 }
 
-// Role hierarchy — higher roles satisfy lower-role checks.
-// Rule 6: a regional director keeps manager functionality.
+// Management-authority hierarchy used by userHasCompanyRole/userHasClubRole.
+// Deliberately NOT mapping owner/general_director onto operational roles: an
+// owner is a strategic viewer, not an operational executor (operational create
+// is gated by the "operational.create" capability, not by role implication).
+// A regional director keeps manager functionality (rule 6).
 const ROLE_IMPLICATIONS: Record<string, readonly string[]> = {
-  owner: ["owner", "regional_director", "manager", "accountant"],
+  owner: ["owner"],
+  general_director: ["general_director"],
   regional_director: ["regional_director", "manager"],
   manager: ["manager"],
   accountant: ["accountant"],
+  marketer: ["marketer"],
 };
 
 function roleSatisfies(held: string, required: string): boolean {
@@ -384,12 +391,14 @@ export async function userHasClubRole(
 // managers for assigned clubs. Managers and accountants cannot invite users.
 
 export function canManageCompanyUsers(userId: string, companyId: string): Promise<boolean> {
-  return userHasCompanyRole(userId, companyId, ["owner"]);
+  // General director is the primary user-management role; owner retains it too.
+  return userHasCompanyRole(userId, companyId, ["owner", "general_director"]);
 }
 
 export function canManageClubUsers(userId: string, clubId: string): Promise<boolean> {
-  // owner (via company role) and regional_director qualify; manager/accountant do not.
-  return userHasClubRole(userId, clubId, ["regional_director"]);
+  // owner / general director (company-level) and regional_director qualify;
+  // manager / accountant / marketer do not.
+  return userHasClubRole(userId, clubId, ["owner", "general_director", "regional_director"]);
 }
 
 // --- Members & invitations ------------------------------------------------
@@ -432,29 +441,47 @@ export async function getCompanyMembers(companyId: string): Promise<CompanyMembe
   return members;
 }
 
-/**
- * Roles the user may invite within a company (beta rules):
- *  - owner -> regional_director, accountant (company-level) and manager (club-level)
- *  - regional director -> manager only
- *  - others -> none
- */
-export async function getInvitableRoles(userId: string, companyId: string): Promise<string[]> {
-  if (await userHasCompanyRole(userId, companyId, ["owner"])) {
-    return ["regional_director", "accountant", "manager"];
-  }
-  if (await userHasCompanyRole(userId, companyId, ["regional_director"])) {
-    return ["manager"];
-  }
-  const rdClub = await prisma.clubUserAccess.findFirst({
-    where: { userId, role: "regional_director", club: { companyId } },
-    select: { id: true },
-  });
-  return rdClub ? ["manager"] : [];
+/** Raw roles the user holds in a company (company-level + club-level), no implications. */
+async function rawRolesInCompany(userId: string, companyId: string): Promise<Set<string>> {
+  const [companyRows, clubRows] = await Promise.all([
+    prisma.companyUserAccess.findMany({ where: { userId, companyId }, select: { role: true } }),
+    prisma.clubUserAccess.findMany({ where: { userId, club: { companyId } }, select: { role: true } }),
+  ]);
+  return new Set<string>([...companyRows.map((r) => r.role), ...clubRows.map((r) => r.role)]);
 }
 
-/** Club ids where the user may manage members (owner -> all; RD -> assigned). */
+/**
+ * Roles the user may invite within a company:
+ *  - owner -> owner (multiple owners), and general_director ONLY if none exists yet
+ *  - general_director -> regional_director, accountant, manager, marketer
+ *  - regional_director -> manager only (for clubs they manage)
+ *  - others -> none
+ * General director replaces owner as the primary user-management role.
+ */
+export async function getInvitableRoles(userId: string, companyId: string): Promise<string[]> {
+  const roles = await rawRolesInCompany(userId, companyId);
+  const set = new Set<string>();
+
+  if (roles.has("owner")) {
+    set.add("owner");
+    const gdExists = await prisma.companyUserAccess.findFirst({
+      where: { companyId, role: "general_director" },
+      select: { id: true },
+    });
+    if (!gdExists) set.add("general_director");
+  }
+  if (roles.has("general_director")) {
+    ["regional_director", "accountant", "manager", "marketer"].forEach((r) => set.add(r));
+  }
+  if (roles.has("regional_director")) {
+    set.add("manager");
+  }
+  return [...set];
+}
+
+/** Club ids where the user may manage members (owner/GD -> all; RD -> assigned). */
 export async function getManageableClubIds(userId: string, companyId: string): Promise<string[]> {
-  if (await userHasCompanyRole(userId, companyId, ["owner"])) {
+  if (await userHasCompanyRole(userId, companyId, ["owner", "general_director"])) {
     const clubs = await prisma.club.findMany({ where: { companyId }, select: { id: true } });
     return clubs.map((c) => c.id);
   }

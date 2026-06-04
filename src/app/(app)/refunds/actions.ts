@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage } from "@/lib/auth";
+import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
@@ -98,6 +98,9 @@ export async function uploadAndAnalyzeRefund(
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "refunds")) {
     return { ok: false, error: "Нет доступа" };
   }
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Создавать возвраты могут управляющие и региональные директора" };
+  }
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
@@ -164,6 +167,9 @@ export async function saveRefund(
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "refunds")) {
     return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Создавать возвраты могут управляющие и региональные директора" };
   }
 
   const clubId = String(formData.get("clubId") ?? "").trim();

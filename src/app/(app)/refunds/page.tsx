@@ -2,7 +2,13 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
-import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import {
+  requirePageAccess,
+  getCurrentCompanyAndClub,
+  getClubsInScope,
+  getCurrentAccessContext,
+} from "@/lib/access";
+import { canCreateOperational } from "@/lib/auth";
 import { getRefundsForScope, REFUND_DOC_TYPES } from "@/lib/refunds";
 import { APPROVAL_STATUS_LABELS } from "@/lib/approval";
 import { RefundUpload } from "./_components/RefundUpload";
@@ -23,16 +29,18 @@ export default async function RefundsPage() {
     return <NoCompanyState title="Возвраты" description="Загрузка и согласование возвратов" />;
   }
 
-  const [clubs, refunds] = await Promise.all([
+  const [clubs, refunds, ctx] = await Promise.all([
     getClubsInScope(scope),
     getRefundsForScope(scope),
+    getCurrentAccessContext(),
   ]);
+  const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
   return (
     <div>
       <PageHeader title="Возвраты" description="Загрузка документов, согласование и оплата возвратов" />
 
-      {clubs.length > 0 ? (
+      {canCreate && clubs.length > 0 ? (
         <RefundUpload clubs={clubs} docTypes={REFUND_DOC_TYPES} companyName={scope.company.name} />
       ) : null}
 

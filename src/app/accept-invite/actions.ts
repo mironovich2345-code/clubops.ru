@@ -70,6 +70,14 @@ export async function acceptInvite(formData: FormData): Promise<void> {
     userId: user.id,
     metadata: { role: invite.role },
   });
+  await recordAudit({
+    action: "access.granted",
+    entityType: invite.clubId ? "ClubUserAccess" : "CompanyUserAccess",
+    companyId: invite.companyId,
+    clubId: invite.clubId,
+    userId: user.id,
+    metadata: { role: invite.role, viaInvite: invite.id },
+  });
 
   redirect("/dashboard");
 }

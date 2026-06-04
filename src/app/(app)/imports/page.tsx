@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/access";
-import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
+import { canCreateOperational } from "@/lib/auth";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { ImportForm } from "./_components/ImportForm";
 
@@ -19,7 +20,8 @@ export default async function ImportsPage() {
     );
   }
 
-  const clubs = await getClubsInScope(scope);
+  const [clubs, ctx] = await Promise.all([getClubsInScope(scope), getCurrentAccessContext()]);
+  const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
   return (
     <div>
@@ -27,7 +29,13 @@ export default async function ImportsPage() {
         title="Импорт данных"
         description="Загрузка исторических продаж и расходов из Excel/CSV"
       />
-      <ImportForm clubs={clubs} />
+      {canCreate ? (
+        <ImportForm clubs={clubs} />
+      ) : (
+        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
+          Импорт доступен управляющим и региональным директорам.
+        </div>
+      )}
     </div>
   );
 }
