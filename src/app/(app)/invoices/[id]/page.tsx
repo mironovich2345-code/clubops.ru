@@ -13,7 +13,7 @@ import {
   INVOICE_STATUS_LABELS,
   INVOICE_CONFIDENCE_LABELS,
 } from "@/lib/invoices";
-import { EXPENSE_CATEGORIES } from "@/lib/expenses";
+import { EXPENSE_CATEGORY_OPTIONS } from "@/lib/expenses";
 import { InvoiceEditForm } from "./_components/InvoiceEditForm";
 
 export const dynamic = "force-dynamic";
@@ -82,7 +82,7 @@ export default async function InvoiceDetailPage({
 
       <InvoiceEditForm
         invoice={view}
-        categories={EXPENSE_CATEGORIES}
+        categories={EXPENSE_CATEGORY_OPTIONS}
         availableActions={availableInvoiceActions(invoice.status, ctx.effectiveRoles)}
         actionLabels={INVOICE_ACTION_LABELS}
         statusLabel={INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}

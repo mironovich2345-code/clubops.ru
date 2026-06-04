@@ -46,7 +46,7 @@ export function InvoiceUpload({
   companyName,
 }: {
   clubs: ClubOption[];
-  categories: readonly string[];
+  categories: readonly { key: string; label: string }[];
   companyName: string;
 }) {
   const [analyze, analyzeAction] = useFormState(uploadAndAnalyzeInvoice, analyzeInitial);
@@ -106,8 +106,17 @@ export function InvoiceUpload({
           <input type="hidden" name="confidence" value={extraction.confidence} />
           <input type="hidden" name="rawExtractedJson" value={JSON.stringify(extraction)} />
 
-          <div className="mb-3 flex items-center gap-2 text-sm">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
             <span className="font-semibold text-slate-700">Проверьте распознанные поля</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                extraction.mode === "ai"
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  : "bg-slate-100 text-slate-600 ring-slate-200"
+              }`}
+            >
+              {extraction.mode === "ai" ? "Распознано с помощью ИИ" : "Режим ручного заполнения"}
+            </span>
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
                 extraction.confidence === "high"
@@ -155,8 +164,8 @@ export function InvoiceUpload({
               <select name="expenseCategory" defaultValue={extraction.expenseCategory ?? ""} className="input">
                 <option value="">—</option>
                 {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                  <option key={c.key} value={c.key}>
+                    {c.label}
                   </option>
                 ))}
               </select>

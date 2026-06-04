@@ -59,7 +59,7 @@ export function InvoiceEditForm({
   canEdit,
 }: {
   invoice: InvoiceView;
-  categories: readonly string[];
+  categories: readonly { key: string; label: string }[];
   availableActions: string[];
   actionLabels: Record<string, string>;
   statusLabel: string;
@@ -140,8 +140,8 @@ export function InvoiceEditForm({
               <select name="expenseCategory" defaultValue={invoice.expenseCategory} className="input">
                 <option value="">—</option>
                 {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                  <option key={c.key} value={c.key}>
+                    {c.label}
                   </option>
                 ))}
               </select>

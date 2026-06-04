@@ -106,8 +106,17 @@ export function ExpenseUpload({
           <input type="hidden" name="confidence" value={extraction.confidence} />
           <input type="hidden" name="rawExtractedJson" value={JSON.stringify(extraction)} />
 
-          <div className="mb-3 flex items-center gap-2 text-sm">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
             <span className="font-semibold text-slate-700">Проверьте поля расхода</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                extraction.mode === "ai"
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  : "bg-slate-100 text-slate-600 ring-slate-200"
+              }`}
+            >
+              {extraction.mode === "ai" ? "Распознано с помощью ИИ" : "Режим ручного заполнения"}
+            </span>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
               Уверенность: {CONFIDENCE_LABELS[extraction.confidence] ?? extraction.confidence}
             </span>

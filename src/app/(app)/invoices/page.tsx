@@ -8,7 +8,7 @@ import {
   INVOICE_STATUS_LABELS,
   INVOICE_CONFIDENCE_LABELS,
 } from "@/lib/invoices";
-import { EXPENSE_CATEGORIES } from "@/lib/expenses";
+import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +43,7 @@ export default async function InvoicesPage() {
       <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
 
       {clubs.length > 0 ? (
-        <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORIES} companyName={scope.company.name} />
+        <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} />
       ) : (
         <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
           Нет доступных клубов для создания счёта.
@@ -85,7 +85,7 @@ export default async function InvoicesPage() {
                   <Td className="whitespace-nowrap text-right font-medium text-slate-900">
                     {formatKopeks(invoice.amountKopeks)}
                   </Td>
-                  <Td>{invoice.expenseCategory ?? "—"}</Td>
+                  <Td>{expenseCategoryLabel(invoice.expenseCategory)}</Td>
                   <Td className="whitespace-nowrap">
                     {INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}
                   </Td>

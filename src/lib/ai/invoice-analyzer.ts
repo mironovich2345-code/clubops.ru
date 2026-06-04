@@ -1,9 +1,17 @@
-// Invoice document analysis. A clean provider interface with a safe mock
-// fallback for local/dev (no AI key). The mock NEVER fabricates business data —
-// it returns the empty structure with low confidence so the user fills fields
-// manually. A real provider can be plugged in later behind the same interface.
+// Invoice document analysis. Real OpenAI Vision when enabled, with a safe mock
+// fallback. Neither path fabricates data: unknown fields are null, and the model
+// is instructed to never invent INN/bank details/amounts/dates. Every AI
+// response is parsed through strict validation.
+
+import {
+  selectedAiProvider,
+  isPdf,
+  bufferToDataUrl,
+  callOpenAIVision,
+} from "@/lib/ai/openai-client";
 
 export type InvoiceConfidence = "low" | "medium" | "high";
+export type AnalysisMode = "ai" | "mock";
 
 export type InvoiceExtraction = {
   counterpartyName: string | null;
@@ -20,6 +28,7 @@ export type InvoiceExtraction = {
   invoiceDate: string | null; // ISO yyyy-mm-dd
   dueDate: string | null; // ISO yyyy-mm-dd
   confidence: InvoiceConfidence;
+  mode: AnalysisMode;
   missingFields: string[];
   warnings: string[];
   rawTextOrModelOutput: string;
@@ -27,12 +36,10 @@ export type InvoiceExtraction = {
 
 export type AnalysisInput = { buffer: Buffer; mime: string; fileName: string };
 
-export interface InvoiceAnalysisProvider {
-  readonly name: string;
-  analyze(input: AnalysisInput): Promise<InvoiceExtraction>;
-}
+// Category keys shared with expenses/budgets.
+const CATEGORY_KEYS = ["advertising", "household", "builders", "investments", "refunds", "salary", "other"];
 
-// Key fields that must all be present (and the document sharp) for high confidence.
+// Key fields required for high confidence (incl. amount + bank details).
 const KEY_FIELDS: Array<keyof InvoiceExtraction> = [
   "counterpartyName",
   "amount",
@@ -40,52 +47,92 @@ const KEY_FIELDS: Array<keyof InvoiceExtraction> = [
   "counterpartyBankBik",
 ];
 
-const EMPTY_FIELDS = {
-  counterpartyName: null,
-  counterpartyInn: null,
-  counterpartyKpp: null,
-  counterpartyBankName: null,
-  counterpartyBankBik: null,
-  counterpartyAccount: null,
-  counterpartyCorrAccount: null,
-  amount: null,
-  expenseCategory: null,
-  invoiceNumber: null,
-  invoiceDate: null,
-  dueDate: null,
-} as const;
+// --- value validation (anti-hallucination normalization) ---------------------
 
-class MockProvider implements InvoiceAnalysisProvider {
-  readonly name = "mock";
-
-  async analyze(input: AnalysisInput): Promise<InvoiceExtraction> {
-    return {
-      ...EMPTY_FIELDS,
-      currency: "RUB",
-      confidence: "low",
-      missingFields: KEY_FIELDS.map(String),
-      warnings: [
-        "AI-провайдер не настроен (режим разработки). Поля не распознаны — заполните вручную.",
-      ],
-      rawTextOrModelOutput:
-        `Mock-анализ: файл "${input.fileName}" (${input.mime}, ${input.buffer.length} байт). ` +
-        "Реальное распознавание не выполнялось.",
-    };
+function vStr(v: unknown): string | null {
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+}
+function vNum(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) && v >= 0 ? v : null;
+  if (typeof v === "string") {
+    const n = Number(v.replace(/[\s ]/g, "").replace(",", "."));
+    return Number.isFinite(n) && n >= 0 ? n : null;
   }
+  return null;
+}
+function vDate(v: unknown): string | null {
+  const s = vStr(v);
+  if (!s) return null;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const dmy = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  return null;
+}
+function vConfidence(v: unknown): InvoiceConfidence {
+  return v === "high" || v === "medium" || v === "low" ? v : "low";
+}
+function vWarnings(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+}
+function vCategory(v: unknown, warnings: string[]): string | null {
+  const s = vStr(v);
+  if (!s) return null;
+  if (CATEGORY_KEYS.includes(s)) return s;
+  warnings.push("Статья расходов определена неточно — выбрано «Прочее»");
+  return "other";
 }
 
-function getProvider(): InvoiceAnalysisProvider {
-  // When a real key is configured, return the real provider here. Until then we
-  // always fall back to the mock so the UI works end-to-end in dev/beta.
-  // e.g. if (process.env.INVOICE_AI_API_KEY) return new OpenAIInvoiceProvider(...)
-  return new MockProvider();
+/** Builds a validated InvoiceExtraction from raw model JSON. */
+export function mapInvoiceJson(json: Record<string, unknown>, raw: string): InvoiceExtraction {
+  const warnings = vWarnings(json.warnings);
+  return {
+    counterpartyName: vStr(json.counterpartyName),
+    counterpartyInn: vStr(json.counterpartyInn),
+    counterpartyKpp: vStr(json.counterpartyKpp),
+    counterpartyBankName: vStr(json.counterpartyBankName),
+    counterpartyBankBik: vStr(json.counterpartyBankBik),
+    counterpartyAccount: vStr(json.counterpartyAccount),
+    counterpartyCorrAccount: vStr(json.counterpartyCorrAccount),
+    amount: vNum(json.amount),
+    currency: vStr(json.currency) ?? "RUB",
+    expenseCategory: vCategory(json.expenseCategory, warnings),
+    invoiceNumber: vStr(json.invoiceNumber),
+    invoiceDate: vDate(json.invoiceDate),
+    dueDate: vDate(json.dueDate),
+    confidence: vConfidence(json.confidence),
+    mode: "ai",
+    missingFields: [],
+    warnings,
+    rawTextOrModelOutput: raw,
+  };
 }
 
-/**
- * Downgrades confidence to match how complete the extraction actually is:
- * high only when every key field is present, otherwise medium/low.
- */
-function finalizeConfidence(extraction: InvoiceExtraction): InvoiceExtraction {
+function emptyInvoice(mode: AnalysisMode, warnings: string[], raw: string): InvoiceExtraction {
+  return {
+    counterpartyName: null,
+    counterpartyInn: null,
+    counterpartyKpp: null,
+    counterpartyBankName: null,
+    counterpartyBankBik: null,
+    counterpartyAccount: null,
+    counterpartyCorrAccount: null,
+    amount: null,
+    currency: "RUB",
+    expenseCategory: null,
+    invoiceNumber: null,
+    invoiceDate: null,
+    dueDate: null,
+    confidence: "low",
+    mode,
+    missingFields: KEY_FIELDS.map(String),
+    warnings,
+    rawTextOrModelOutput: raw,
+  };
+}
+
+/** Recomputes missing key fields and downgrades confidence to match completeness. */
+function finalize(extraction: InvoiceExtraction): InvoiceExtraction {
   const missing = KEY_FIELDS.filter((f) => {
     const v = extraction[f];
     return v === null || v === undefined || v === "";
@@ -95,11 +142,69 @@ function finalizeConfidence(extraction: InvoiceExtraction): InvoiceExtraction {
   if (missing.length > 0 && confidence === "high") confidence = "medium";
   if (missing.length >= KEY_FIELDS.length) confidence = "low";
 
-  return { ...extraction, confidence, missingFields: missing };
+  const warnings = [...extraction.warnings];
+  if (extraction.mode === "ai" && confidence === "low") {
+    const msg = "ИИ не смог уверенно распознать документ — проверьте поля вручную";
+    if (!warnings.includes(msg)) warnings.push(msg);
+  }
+
+  return { ...extraction, confidence, missingFields: missing, warnings };
+}
+
+// --- providers ---------------------------------------------------------------
+
+const SYSTEM_PROMPT =
+  "Ты извлекаешь данные из изображения российского счёта на оплату. " +
+  "Верни СТРОГО JSON-объект с ключами: counterpartyName, counterpartyInn, counterpartyKpp, " +
+  "counterpartyBankName, counterpartyBankBik, counterpartyAccount, counterpartyCorrAccount, " +
+  "amount (число, рубли), currency, expenseCategory, invoiceNumber, invoiceDate (YYYY-MM-DD), " +
+  "dueDate (YYYY-MM-DD), confidence (low|medium|high), warnings (массив строк). " +
+  "Если поле не видно или не уверено — верни null. НИКОГДА не выдумывай ИНН, банковские реквизиты, " +
+  "даты, суммы. Если сумма или банковские реквизиты неточны — confidence не выше medium. " +
+  `expenseCategory выбирай ТОЛЬКО из: ${CATEGORY_KEYS.join(", ")}; если не уверен — "other". ` +
+  "confidence=high только если все ключевые поля чётко видны.";
+
+async function openaiAnalyze(input: AnalysisInput): Promise<InvoiceExtraction> {
+  if (isPdf(input.mime)) {
+    return emptyInvoice(
+      "ai",
+      ["PDF recognition requires conversion or text extraction — заполните поля вручную"],
+      `PDF "${input.fileName}" не распознаётся напрямую.`,
+    );
+  }
+
+  const result = await callOpenAIVision({
+    system: SYSTEM_PROMPT,
+    user: "Извлеки данные счёта из изображения. Верни только JSON.",
+    dataUrl: bufferToDataUrl(input.buffer, input.mime),
+  });
+
+  if (result.ok) return mapInvoiceJson(result.json, result.raw);
+  if (result.reason === "parse") {
+    return emptyInvoice("ai", ["ИИ вернул некорректный ответ — заполните поля вручную"], result.raw);
+  }
+  // config/http/network -> let the caller fall back to mock.
+  throw new Error(result.message);
+}
+
+function mockAnalyze(input: AnalysisInput): InvoiceExtraction {
+  return emptyInvoice(
+    "mock",
+    ["AI-провайдер не настроен (режим ручного заполнения). Заполните поля вручную."],
+    `Mock: файл "${input.fileName}" (${input.mime}, ${input.buffer.length} байт).`,
+  );
 }
 
 export async function analyzeInvoiceDocument(input: AnalysisInput): Promise<InvoiceExtraction> {
-  const provider = getProvider();
-  const raw = await provider.analyze(input);
-  return finalizeConfidence(raw);
+  if (selectedAiProvider() === "openai") {
+    try {
+      return finalize(await openaiAnalyze(input));
+    } catch (error) {
+      console.error("invoice AI analyze failed, using mock", error instanceof Error ? error.message : error);
+      const m = mockAnalyze(input);
+      m.warnings.push("ИИ временно недоступен — заполните поля вручную");
+      return finalize(m);
+    }
+  }
+  return finalize(mockAnalyze(input));
 }
