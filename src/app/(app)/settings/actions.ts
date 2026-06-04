@@ -6,7 +6,7 @@ import { canAnyRoleAccessPage } from "@/lib/auth";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
 
 // Not exported (a "use server" module may only export async functions).
-type State = { ok: boolean; error?: string };
+type State = { ok: boolean; error?: string; needsConfirm?: boolean };
 
 async function requireOwnerOf(companyId: string) {
   const ctx = await getCurrentAccessContext();
@@ -138,5 +138,90 @@ export async function updateClub(
   });
 
   revalidatePath("/settings");
+  return { ok: true };
+}
+
+export async function archiveClub(
+  _prev: State | undefined,
+  formData: FormData,
+): Promise<State> {
+  const clubId = String(formData.get("clubId") ?? "").trim();
+  const confirmed = String(formData.get("confirm") ?? "") === "true";
+
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { companyId: true, isActive: true, name: true },
+  });
+  if (!club) return { ok: false, error: "Клуб не найден" };
+
+  const guard = await requireOwnerOf(club.companyId);
+  if ("error" in guard) return { ok: false, error: guard.error };
+
+  if (!club.isActive) return { ok: false, error: "Клуб уже в архиве" };
+
+  // Guard against archiving the last active club without an explicit confirm.
+  const activeCount = await prisma.club.count({
+    where: { companyId: club.companyId, isActive: true },
+  });
+  if (activeCount <= 1 && !confirmed) {
+    return {
+      ok: false,
+      needsConfirm: true,
+      error: "Это последний активный клуб организации. Подтвердите архивацию.",
+    };
+  }
+
+  await prisma.club.update({
+    where: { id: clubId },
+    data: { isActive: false, archivedAt: new Date() },
+  });
+  await recordAudit({
+    action: "club.archived",
+    entityType: "Club",
+    entityId: clubId,
+    companyId: club.companyId,
+    clubId,
+    userId: guard.ctx.user.id,
+    metadata: { name: club.name, lastActive: activeCount <= 1 },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+export async function restoreClub(
+  _prev: State | undefined,
+  formData: FormData,
+): Promise<State> {
+  const clubId = String(formData.get("clubId") ?? "").trim();
+
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { companyId: true, isActive: true, name: true },
+  });
+  if (!club) return { ok: false, error: "Клуб не найден" };
+
+  const guard = await requireOwnerOf(club.companyId);
+  if ("error" in guard) return { ok: false, error: guard.error };
+
+  if (club.isActive) return { ok: false, error: "Клуб уже активен" };
+
+  await prisma.club.update({
+    where: { id: clubId },
+    data: { isActive: true, archivedAt: null },
+  });
+  await recordAudit({
+    action: "club.restored",
+    entityType: "Club",
+    entityId: clubId,
+    companyId: club.companyId,
+    clubId,
+    userId: guard.ctx.user.id,
+    metadata: { name: club.name },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/", "layout");
   return { ok: true };
 }

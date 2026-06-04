@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/access";
 import { formatKopeks } from "@/lib/money";
-import { getInvoicesForScope, summarize } from "@/lib/invoices";
+import { getInvoicesForScope, summarize, INVOICE_STATUS_LABELS } from "@/lib/invoices";
 import { getExpensesForScope, summarizeExpenses, expenseCategoryLabel } from "@/lib/expenses";
 import { getSalesForScope, summarizeSales } from "@/lib/sales";
 import { getRefundsForScope } from "@/lib/refunds";
@@ -78,6 +78,76 @@ export default async function DashboardPage() {
         expenseDate: r.paidAt ?? r.refundDate ?? r.createdAt,
       })),
   ];
+
+  // Recent actual spending (newest first): confirmed expenses + paid invoices +
+  // paid refunds. Draft/needs_review/rejected/canceled are not spending.
+  const recentSpending = [
+    ...expenses
+      .filter((e) => e.status === "confirmed")
+      .map((e) => ({
+        id: `exp-${e.id}`,
+        primary: expenseCategoryLabel(e.category),
+        secondary: `Расход · ${e.vendorName ?? e.club.name}`,
+        amountKopeks: e.amountKopeks,
+        date: e.expenseDate,
+      })),
+    ...invoices
+      .filter((i) => i.status === "paid")
+      .map((i) => ({
+        id: `inv-${i.id}`,
+        primary: i.counterpartyName ?? "Без контрагента",
+        secondary: `Счёт · ${i.club.name}`,
+        amountKopeks: i.amountKopeks,
+        date: i.paidAt ?? i.invoiceDate ?? i.createdAt,
+      })),
+    ...refunds
+      .filter((r) => r.status === "paid")
+      .map((r) => ({
+        id: `ref-${r.id}`,
+        primary: r.clientName ?? "Возврат клиенту",
+        secondary: `Возврат · ${r.club.name}`,
+        amountKopeks: r.amountKopeks,
+        date: r.paidAt ?? r.refundDate ?? r.createdAt,
+      })),
+  ]
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+    .slice(0, 5);
+
+  // Debts = approved-but-unpaid obligations (invoices + refunds). Draft and
+  // needs_review are still "на согласовании", not debt; rejected/canceled/paid
+  // are excluded entirely.
+  const APPROVED_UNPAID = ["approved_by_regional", "approved_by_owner"];
+  const debts = [
+    ...invoices
+      .filter((i) => APPROVED_UNPAID.includes(i.status))
+      .map((i) => ({
+        id: `inv-${i.id}`,
+        name: i.counterpartyName ?? "Без контрагента",
+        type: "Счёт" as const,
+        amountKopeks: i.amountKopeks,
+        dueDate: i.dueDate,
+        status: i.status,
+        clubName: i.club.name,
+      })),
+    ...refunds
+      .filter((r) => APPROVED_UNPAID.includes(r.status))
+      .map((r) => ({
+        id: `ref-${r.id}`,
+        name: r.clientName ?? "Возврат клиенту",
+        type: "Возврат" as const,
+        amountKopeks: r.amountKopeks,
+        dueDate: r.refundDate,
+        status: r.status,
+        clubName: r.club.name,
+      })),
+  ].sort((a, b) => {
+    // Soonest due date first; rows without a due date go last.
+    const ad = a.dueDate ? a.dueDate.getTime() : Infinity;
+    const bd = b.dueDate ? b.dueDate.getTime() : Infinity;
+    if (ad !== bd) return ad - bd;
+    return b.amountKopeks - a.amountKopeks;
+  });
+  const totalDebtKopeks = debts.reduce((sum, d) => sum + d.amountKopeks, 0);
 
   const invoiceSummary = summarize(invoices);
   const salesSum = summarizeSales(sales, now);
@@ -178,26 +248,10 @@ export default async function DashboardPage() {
         />
         <RecentBlock
           title="Последние расходы"
-          items={expenses.slice(0, 5).map((e) => ({
-            id: e.id,
-            primary: e.category,
-            secondary: e.vendorName ?? e.club.name,
-            amountKopeks: e.amountKopeks,
-            date: e.expenseDate,
-          }))}
+          items={recentSpending}
           emptyText="Расходов пока нет."
         />
-        <RecentBlock
-          title="Последние счета"
-          items={invoices.slice(0, 5).map((i) => ({
-            id: i.id,
-            primary: i.counterpartyName ?? "Без контрагента",
-            secondary: i.expenseCategory ?? i.subject ?? "—",
-            amountKopeks: i.amountKopeks,
-            date: i.createdAt,
-          }))}
-          emptyText="Счетов пока нет."
-        />
+        <DebtBlock rows={debts} totalKopeks={totalDebtKopeks} />
       </div>
     </div>
   );
@@ -446,6 +500,66 @@ function RecentBlock({
                   {formatKopeks(item.amountKopeks)}
                 </div>
                 <div className="text-xs text-slate-400">{dateFormatter.format(item.date)}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// --- Debts ----------------------------------------------------------------
+
+type DebtRow = {
+  id: string;
+  name: string;
+  type: "Счёт" | "Возврат";
+  amountKopeks: number;
+  dueDate: Date | null;
+  status: string;
+  clubName: string;
+};
+
+function DebtBlock({ rows, totalKopeks }: { rows: DebtRow[]; totalKopeks: number }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+        <span className="text-sm font-semibold text-slate-700">Долги</span>
+        {totalKopeks > 0 ? (
+          <span className="text-sm font-semibold text-rose-700">{formatKopeks(totalKopeks)}</span>
+        ) : null}
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-4 py-8 text-center text-sm text-slate-500">Нет неоплаченных обязательств.</div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {rows.map((row) => (
+            <li key={row.id} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-slate-900">{row.name}</span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
+                        row.type === "Счёт"
+                          ? "bg-sky-50 text-sky-700 ring-sky-200"
+                          : "bg-violet-50 text-violet-700 ring-violet-200"
+                      }`}
+                    >
+                      {row.type}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-slate-500">
+                    {row.clubName} · {INVOICE_STATUS_LABELS[row.status] ?? row.status}
+                  </div>
+                </div>
+                <div className="whitespace-nowrap text-right">
+                  <div className="text-sm font-medium text-slate-900">{formatKopeks(row.amountKopeks)}</div>
+                  <div className="text-xs text-slate-400">
+                    {row.dueDate ? `до ${dateFormatter.format(row.dueDate)}` : "без срока"}
+                  </div>
+                </div>
               </div>
             </li>
           ))}

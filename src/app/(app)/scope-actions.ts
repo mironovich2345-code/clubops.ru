@@ -21,12 +21,9 @@ const COOKIE_OPTS = { httpOnly: true, sameSite: "lax", path: "/", maxAge: ONE_YE
  * getCurrentCompanyAndClub independently re-validates on read, so the cookie is
  * a view preference, not an authorization grant.
  */
-export async function setActiveScope(formData: FormData): Promise<void> {
+export async function setActiveScope(companyId: string, clubId: string): Promise<void> {
   const ctx = await getCurrentAccessContext();
   if (!ctx) return;
-
-  const companyId = String(formData.get("companyId") ?? "");
-  const clubId = String(formData.get("clubId") ?? "");
 
   const companies = await getUserCompanies(ctx.user.id);
   const company = companies.find((c) => c.id === companyId);

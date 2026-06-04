@@ -68,7 +68,7 @@ export async function getUserCompanies(userId: string) {
  * Access = company-level access (covers every club in that company)
  *          OR an explicit club-level role.
  */
-export async function getUserClubs(userId: string, companyId?: string) {
+export async function getUserClubs(userId: string, companyId?: string, includeArchived = false) {
   const [companyAccess, clubAccess] = await Promise.all([
     prisma.companyUserAccess.findMany({ where: { userId }, select: { companyId: true } }),
     prisma.clubUserAccess.findMany({ where: { userId }, select: { clubId: true } }),
@@ -80,10 +80,14 @@ export async function getUserClubs(userId: string, companyId?: string) {
   const accessible = {
     OR: [{ companyId: { in: companyIds } }, { id: { in: clubIds } }],
   };
-  const where = companyId ? { AND: [{ companyId }, accessible] } : accessible;
+  // Archived clubs are hidden from normal selectors (scope switcher, new
+  // operations); pass includeArchived for management views like /settings.
+  const filters: Array<Record<string, unknown>> = [accessible];
+  if (companyId) filters.push({ companyId });
+  if (!includeArchived) filters.push({ isActive: true });
 
   return prisma.club.findMany({
-    where,
+    where: { AND: filters },
     orderBy: { name: "asc" },
     include: { company: true },
   });
@@ -127,7 +131,7 @@ export async function getCurrentCompanyAndClub(user: CurrentUser): Promise<DataS
   const company = companies.find((c) => c.id === cookieCompanyId) ?? companies[0];
 
   const clubs = superadmin
-    ? await prisma.club.findMany({ where: { companyId: company.id }, orderBy: { name: "asc" } })
+    ? await prisma.club.findMany({ where: { companyId: company.id, isActive: true }, orderBy: { name: "asc" } })
     : await getUserClubs(user.id, company.id);
 
   // A specific club narrows the scope; otherwise the dashboard is company-level
@@ -150,6 +154,57 @@ export async function getClubsInScope(scope: DataScope) {
   return prisma.club.findMany({
     where: { id: { in: scope.clubIds } },
     orderBy: { name: "asc" },
+  });
+}
+
+export type AccessibleClubRow = {
+  clubId: string;
+  clubName: string;
+  city: string;
+  companyId: string;
+  companyName: string;
+  role: Role | null;
+  isActive: boolean;
+  archivedAt: Date | null;
+};
+
+/**
+ * Every club the user may see (including archived), annotated with the company,
+ * the user's effective role for that club, and active/archived status. Owners
+ * see all clubs in their companies; club-scoped roles see only assigned clubs.
+ * Drives the "Доступные клубы" overview in /settings.
+ */
+export async function getAccessibleClubsDetailed(user: CurrentUser): Promise<AccessibleClubRow[]> {
+  const [clubs, companyRows, clubRows] = await Promise.all([
+    getUserClubs(user.id, undefined, true),
+    prisma.companyUserAccess.findMany({ where: { userId: user.id }, select: { companyId: true, role: true } }),
+    prisma.clubUserAccess.findMany({ where: { userId: user.id }, select: { clubId: true, role: true } }),
+  ]);
+
+  const companyRoles = new Map<string, string[]>();
+  for (const r of companyRows) {
+    companyRoles.set(r.companyId, [...(companyRoles.get(r.companyId) ?? []), r.role]);
+  }
+  const clubRoleMap = new Map<string, string[]>();
+  for (const r of clubRows) {
+    clubRoleMap.set(r.clubId, [...(clubRoleMap.get(r.clubId) ?? []), r.role]);
+  }
+
+  return clubs.map((c) => {
+    const roles = [
+      ...(companyRoles.get(c.companyId) ?? []),
+      ...(clubRoleMap.get(c.id) ?? []),
+    ].filter(isKnownRole);
+    return {
+      clubId: c.id,
+      clubName: c.name,
+      city: c.city,
+      companyId: c.companyId,
+      companyName: c.company.name,
+      role: highestRole(roles),
+      isActive: c.isActive,
+      archivedAt: c.archivedAt,
+    };
   });
 }
 

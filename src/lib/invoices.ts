@@ -9,7 +9,8 @@ export type InvoiceStatus =
   | "approved_by_regional"
   | "approved_by_owner"
   | "paid"
-  | "rejected";
+  | "rejected"
+  | "canceled";
 
 export type InvoiceConfidence = "low" | "medium" | "high";
 
@@ -20,6 +21,7 @@ export const INVOICE_STATUSES: InvoiceStatus[] = [
   "approved_by_owner",
   "paid",
   "rejected",
+  "canceled",
 ];
 
 export const INVOICE_STATUS_LABELS: Record<string, string> = {
@@ -29,11 +31,18 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   approved_by_owner: "Согласовано собственником",
   paid: "Оплачено",
   rejected: "Отклонено",
+  canceled: "Отменено",
   // legacy values (kept readable)
   approved: "Согласовано",
   unpaid: "Не оплачен",
   overdue: "Просрочен",
 };
+
+// Statuses that are not real obligations or spending — excluded from dashboard
+// expenses, debts, budgets and analytics.
+export function isDeadInvoiceStatus(status: string): boolean {
+  return status === "rejected" || status === "canceled";
+}
 
 export const INVOICE_CONFIDENCE_LABELS: Record<string, string> = {
   low: "низкая",
@@ -43,13 +52,14 @@ export const INVOICE_CONFIDENCE_LABELS: Record<string, string> = {
 
 // --- Workflow: draft -> needs_review -> approved_* -> paid (or rejected) ------
 
-export type InvoiceAction = "send_to_review" | "approve" | "reject" | "pay";
+export type InvoiceAction = "send_to_review" | "approve" | "reject" | "pay" | "cancel";
 
 export const INVOICE_ACTION_LABELS: Record<InvoiceAction, string> = {
   send_to_review: "Отправить на согласование",
   approve: "Согласовать",
   reject: "Отклонить",
   pay: "Отметить оплачено",
+  cancel: "Отменить счёт",
 };
 
 export const INVOICE_ACTION_AUDIT: Record<InvoiceAction, string> = {
@@ -57,7 +67,11 @@ export const INVOICE_ACTION_AUDIT: Record<InvoiceAction, string> = {
   approve: "invoice.approved",
   reject: "invoice.rejected",
   pay: "invoice.paid",
+  cancel: "invoice.canceled",
 };
+
+/** Actions that need an explicit "are you sure?" confirmation in the UI. */
+export const INVOICE_DESTRUCTIVE_ACTIONS: InvoiceAction[] = ["reject", "cancel"];
 
 type TransitionResult =
   | { ok: true; to: InvoiceStatus }
@@ -99,11 +113,24 @@ export function applyInvoiceAction(
       return { ok: false, error: "Согласовать можно счёт на согласовании" };
 
     case "reject":
+      // Regional/owner may reject anything under review or already approved, as
+      // long as it has not been paid.
       if (!(isRegional || isOwner)) return { ok: false, error: "Недостаточно прав для отклонения" };
-      if (status === "needs_review" || status === "approved_by_regional") {
+      if (
+        status === "needs_review" ||
+        status === "approved_by_regional" ||
+        status === "approved_by_owner"
+      ) {
         return { ok: true, to: "rejected" };
       }
-      return { ok: false, error: "Отклонить можно счёт на согласовании" };
+      return { ok: false, error: "Отклонить можно счёт на согласовании или согласованный (до оплаты)" };
+
+    case "cancel":
+      // A draft may be canceled by the people working on it. Paid invoices can
+      // never be canceled — only a note may be added.
+      if (!(isManager || isRegional || isOwner)) return { ok: false, error: "Недостаточно прав для отмены" };
+      if (status === "draft") return { ok: true, to: "canceled" };
+      return { ok: false, error: "Отменить можно только черновик" };
 
     case "pay":
       if (!(isAccountant || isOwner)) return { ok: false, error: "Недостаточно прав для отметки об оплате" };
@@ -160,7 +187,7 @@ export async function getInvoiceForContext(
 // --- Dashboard helpers (kept; null-safe for the new nullable dueDate) ---------
 
 export function isOverdue(invoice: { status: string; dueDate: Date | null }): boolean {
-  if (invoice.status === "paid" || invoice.status === "rejected") return false;
+  if (invoice.status === "paid" || isDeadInvoiceStatus(invoice.status)) return false;
   if (!invoice.dueDate) return false;
   return invoice.dueDate.getTime() < Date.now();
 }
@@ -186,7 +213,8 @@ export function summarize(
     if (inv.status === "paid") {
       summary.paid.count += 1;
       summary.paid.amountKopeks += inv.amountKopeks;
-    } else if (inv.status === "rejected") {
+    } else if (isDeadInvoiceStatus(inv.status)) {
+      // rejected + canceled — not a debt, not an expense.
       summary.rejected.count += 1;
       summary.rejected.amountKopeks += inv.amountKopeks;
     } else if (inv.dueDate && inv.dueDate.getTime() < now) {

@@ -34,7 +34,21 @@ const ACTION_CLASS: Record<string, string> = {
   send_to_review: "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
   approve: "border-emerald-300 bg-emerald-600 text-white hover:bg-emerald-700",
   reject: "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100",
+  cancel: "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100",
   pay: "border-brand-300 bg-brand-600 text-white hover:bg-brand-700",
+};
+
+// Irreversible actions require an explicit confirmation.
+const CONFIRM_ACTIONS: Record<string, string> = {
+  reject: "Отклонить счёт? Действие нельзя отменить.",
+  cancel: "Отменить счёт? Действие нельзя отменить.",
+};
+
+// Status badge tone.
+const STATUS_TONE: Record<string, string> = {
+  paid: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  rejected: "bg-rose-50 text-rose-700 ring-rose-200",
+  canceled: "bg-amber-50 text-amber-800 ring-amber-200",
 };
 
 function SaveButton() {
@@ -74,7 +88,15 @@ export function InvoiceEditForm({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-slate-700">Статус</div>
-            <div className="mt-1 text-base font-medium text-slate-900">{statusLabel}</div>
+            <div className="mt-1">
+              <span
+                className={`inline-flex rounded-full px-2.5 py-0.5 text-sm font-medium ring-1 ring-inset ${
+                  STATUS_TONE[invoice.status] ?? "bg-slate-100 text-slate-700 ring-slate-200"
+                }`}
+              >
+                {statusLabel}
+              </span>
+            </div>
           </div>
           {invoice.hasFile ? (
             <a
@@ -91,7 +113,14 @@ export function InvoiceEditForm({
         {availableActions.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {availableActions.map((action) => (
-              <form key={action} action={transitionInvoice}>
+              <form
+                key={action}
+                action={transitionInvoice}
+                onSubmit={(e) => {
+                  const confirmText = CONFIRM_ACTIONS[action];
+                  if (confirmText && !window.confirm(confirmText)) e.preventDefault();
+                }}
+              >
                 <input type="hidden" name="invoiceId" value={invoice.id} />
                 <input type="hidden" name="action" value={action} />
                 <button

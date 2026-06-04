@@ -108,6 +108,10 @@ model Club {
   companyId String
   name      String
   city      String
+  // Soft-archive: archived clubs are hidden from selectors and reject new
+  // operations, but their financial history is preserved.
+  isActive   Boolean   @default(true)
+  archivedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
