@@ -9,6 +9,7 @@ import {
   bufferToDataUrl,
   callOpenAIVision,
 } from "@/lib/ai/openai-client";
+import { resolveCounterparty } from "@/lib/ai/invoice-party";
 
 export type InvoiceConfidence = "low" | "medium" | "high";
 export type AnalysisMode = "ai" | "mock";
@@ -86,8 +87,21 @@ function vCategory(v: unknown, warnings: string[]): string | null {
 /** Builds a validated InvoiceExtraction from raw model JSON. */
 export function mapInvoiceJson(json: Record<string, unknown>, raw: string): InvoiceExtraction {
   const warnings = vWarnings(json.warnings);
-  return {
+
+  // Counterparty must be the supplier/recipient, not the payer.
+  const party = resolveCounterparty({
     counterpartyName: vStr(json.counterpartyName),
+    supplierName: vStr(json.supplierName),
+    payerName: vStr(json.payerName),
+  });
+  let confidence = vConfidence(json.confidence);
+  if (party.payerConflict) {
+    warnings.push("Возможно, ИИ выбрал плательщика вместо поставщика");
+    confidence = "low";
+  }
+
+  return {
+    counterpartyName: party.counterpartyName,
     counterpartyInn: vStr(json.counterpartyInn),
     counterpartyKpp: vStr(json.counterpartyKpp),
     counterpartyBankName: vStr(json.counterpartyBankName),
@@ -100,7 +114,7 @@ export function mapInvoiceJson(json: Record<string, unknown>, raw: string): Invo
     invoiceNumber: vStr(json.invoiceNumber),
     invoiceDate: vDate(json.invoiceDate),
     dueDate: vDate(json.dueDate),
-    confidence: vConfidence(json.confidence),
+    confidence,
     mode: "ai",
     missingFields: [],
     warnings,
@@ -154,8 +168,16 @@ function finalize(extraction: InvoiceExtraction): InvoiceExtraction {
 // --- providers ---------------------------------------------------------------
 
 const SYSTEM_PROMPT =
-  "Ты извлекаешь данные из изображения российского счёта на оплату. " +
-  "Верни СТРОГО JSON-объект с ключами: counterpartyName, counterpartyInn, counterpartyKpp, " +
+  "Ты извлекаешь данные из изображения российского счёта на оплату для учёта РАСХОДА. " +
+  "ВАЖНО: counterpartyName — это ПОСТАВЩИК / получатель оплаты (кому платят), " +
+  "НЕ плательщик, НЕ покупатель, НЕ наша компания. " +
+  "Бери counterparty и ВСЕ банковские реквизиты (ИНН, КПП, банк, БИК, р/с, корр/с) ТОЛЬКО из полей: " +
+  "Поставщик, Получатель, Исполнитель, Продавец, Организация-получатель, Реквизиты получателя. " +
+  "НИКОГДА не бери как counterparty поля: Плательщик, Покупатель, Заказчик, Клиент, Наша организация. " +
+  "Если в документе есть и Поставщик, и Плательщик — counterpartyName и реквизиты бери у ПОСТАВЩИКА/ПОЛУЧАТЕЛЯ, " +
+  "а Плательщика игнорируй для полей counterparty. " +
+  "Дополнительно верни отдельно supplierName (Поставщик/Получатель) и payerName (Плательщик) — для проверки. " +
+  "Верни СТРОГО JSON-объект с ключами: counterpartyName, supplierName, payerName, counterpartyInn, counterpartyKpp, " +
   "counterpartyBankName, counterpartyBankBik, counterpartyAccount, counterpartyCorrAccount, " +
   "amount (число, рубли), currency, expenseCategory, invoiceNumber, invoiceDate (YYYY-MM-DD), " +
   "dueDate (YYYY-MM-DD), confidence (low|medium|high), warnings (массив строк). " +

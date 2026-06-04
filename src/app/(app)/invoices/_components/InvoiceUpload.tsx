@@ -152,6 +152,7 @@ export function InvoiceUpload({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Контрагент">
               <input name="counterpartyName" defaultValue={extraction.counterpartyName ?? ""} className="input" />
+              <span className="mt-1 block text-xs text-slate-400">Поставщик / получатель оплаты</span>
             </Field>
             <Field label="ИНН">
               <input name="counterpartyInn" defaultValue={extraction.counterpartyInn ?? ""} className="input" />
