@@ -2,8 +2,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/access";
 import { formatKopeks } from "@/lib/money";
 import { getInvoicesForScope, summarize } from "@/lib/invoices";
-import { getExpensesForScope, summarizeExpenses } from "@/lib/expenses";
+import { getExpensesForScope, summarizeExpenses, expenseCategoryLabel } from "@/lib/expenses";
 import { getSalesForScope, summarizeSales } from "@/lib/sales";
+import { getRefundsForScope } from "@/lib/refunds";
 import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import {
@@ -39,19 +40,50 @@ export default async function DashboardPage() {
     return <NoCompanyState title="Дашборд" description="Состояние бизнеса" />;
   }
 
-  const [clubs, invoices, expenses, sales] = await Promise.all([
+  const [clubs, invoices, expenses, sales, refunds] = await Promise.all([
     getClubsInScope(scope),
     getInvoicesForScope(scope),
     getExpensesForScope(scope),
     getSalesForScope(scope),
+    getRefundsForScope(scope),
   ]);
 
   const now = new Date();
+
+  // Actual monthly expenses = confirmed expenses + paid invoices + paid refunds.
+  // Draft/needs_review/approved-unpaid/rejected invoices are NOT actual expenses.
+  const expenseEvents = [
+    ...expenses
+      .filter((e) => e.status === "confirmed")
+      .map((e) => ({
+        clubId: e.clubId,
+        category: e.category,
+        amountKopeks: e.amountKopeks,
+        expenseDate: e.expenseDate,
+      })),
+    ...invoices
+      .filter((i) => i.status === "paid")
+      .map((i) => ({
+        clubId: i.clubId,
+        category: i.expenseCategory ?? "other",
+        amountKopeks: i.amountKopeks,
+        expenseDate: i.paidAt ?? i.invoiceDate ?? i.createdAt,
+      })),
+    ...refunds
+      .filter((r) => r.status === "paid")
+      .map((r) => ({
+        clubId: r.clubId,
+        category: "refunds",
+        amountKopeks: r.amountKopeks,
+        expenseDate: r.paidAt ?? r.refundDate ?? r.createdAt,
+      })),
+  ];
+
   const invoiceSummary = summarize(invoices);
   const salesSum = summarizeSales(sales, now);
-  const expensesSum = summarizeExpenses(expenses, now);
+  const expensesSum = summarizeExpenses(expenseEvents, now);
   const profit = profitSummary(salesSum, expensesSum);
-  const clubsFinance = clubComparison(clubs, sales, expenses, now);
+  const clubsFinance = clubComparison(clubs, sales, expenseEvents, now);
 
   const topExpenseCategories = expensesSum.categoryTotals.slice(0, 5);
   const topSalesSources = salesSum.sourceTotals.slice(0, 5);
@@ -109,7 +141,7 @@ export default async function DashboardPage() {
         <BreakdownBlock
           title="Топ статей расходов"
           subtitle={monthFormatter.format(now)}
-          rows={topExpenseCategories.map((c) => ({ label: c.category, amountKopeks: c.amountKopeks }))}
+          rows={topExpenseCategories.map((c) => ({ label: expenseCategoryLabel(c.category), amountKopeks: c.amountKopeks }))}
           totalKopeks={profit.currentExpensesKopeks}
           barClass="bg-rose-400"
           emptyText="Нет расходов в этом месяце."

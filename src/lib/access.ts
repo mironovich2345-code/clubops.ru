@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import {
   getCurrentUser,
@@ -108,6 +109,9 @@ export type DataScope = {
  * it. A regular owner is limited to companies where they hold CompanyUserAccess —
  * there is no global all-data access.
  */
+export const SCOPE_COMPANY_COOKIE = "scope_company";
+export const SCOPE_CLUB_COOKIE = "scope_club";
+
 export async function getCurrentCompanyAndClub(user: CurrentUser): Promise<DataScope> {
   const superadmin = isPlatformSuperadmin(user.role);
 
@@ -115,18 +119,28 @@ export async function getCurrentCompanyAndClub(user: CurrentUser): Promise<DataS
     ? await prisma.company.findMany({ orderBy: { name: "asc" } })
     : await getUserCompanies(user.id);
 
-  const company = companies[0] ?? null;
-  if (!company) return { company: null, club: null, clubIds: [] };
+  if (companies.length === 0) return { company: null, club: null, clubIds: [] };
+
+  const store = await cookies();
+  // Selected company from the scope switcher (falls back to the first accessible).
+  const cookieCompanyId = store.get(SCOPE_COMPANY_COOKIE)?.value;
+  const company = companies.find((c) => c.id === cookieCompanyId) ?? companies[0];
 
   const clubs = superadmin
     ? await prisma.club.findMany({ where: { companyId: company.id }, orderBy: { name: "asc" } })
     : await getUserClubs(user.id, company.id);
 
-  const selected = clubs.length === 1 ? clubs[0] : null;
+  // A specific club narrows the scope; otherwise the dashboard is company-level
+  // (all accessible clubs). A single accessible club is auto-selected.
+  const cookieClubId = store.get(SCOPE_CLUB_COOKIE)?.value;
+  const selected =
+    clubs.find((c) => c.id === cookieClubId) ?? (clubs.length === 1 ? clubs[0] : null);
+  const clubIds = selected ? [selected.id] : clubs.map((c) => c.id);
+
   return {
     company: { id: company.id, name: company.name },
     club: selected ? { id: selected.id, name: selected.name } : null,
-    clubIds: clubs.map((c) => c.id),
+    clubIds,
   };
 }
 

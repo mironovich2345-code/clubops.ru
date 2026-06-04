@@ -22,6 +22,8 @@ datasource db {
 model Company {
   id        String   @id @default(cuid())
   name      String
+  inn       String?
+  kpp       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -335,6 +337,11 @@ model Invoice {
   counterpartyBankBik     String?
   counterpartyAccount     String?
   counterpartyCorrAccount String?
+
+  // Payer (Плательщик) — the company paying; kept separate from the counterparty.
+  payerName String?
+  payerInn  String?
+  payerKpp  String?
 
   amountKopeks    Int       @default(0)
   currency        String    @default("RUB")

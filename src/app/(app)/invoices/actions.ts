@@ -20,6 +20,7 @@ import {
   analyzeInvoiceDocument,
   type InvoiceExtraction,
 } from "@/lib/ai/invoice-analyzer";
+import { comparePayer, type PayerMatch } from "@/lib/ai/invoice-party";
 import { validateInvoiceFile, persistInvoiceFile } from "@/lib/invoice-storage";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import {
@@ -37,6 +38,8 @@ type AnalyzeState = {
   fileMime?: string;
   fileSize?: number;
   extraction?: InvoiceExtraction;
+  payerName?: string | null;
+  payerCheck?: PayerMatch;
 };
 
 type SaveState = { ok: boolean; error?: string; invoiceId?: string };
@@ -173,6 +176,23 @@ export async function uploadAndAnalyzeInvoice(
       extraction.warnings = [UPLOAD_ERROR_MESSAGES.STORAGE_FAILED, ...extraction.warnings];
     }
 
+    // Payer-vs-selected-company check (warning only — never blocks the save).
+    let payerCheck: PayerMatch = "unknown";
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: ctx.selectedCompanyId ?? "" },
+        select: { name: true, inn: true, kpp: true },
+      });
+      if (company) {
+        payerCheck = comparePayer(
+          { name: extraction.payerName, inn: extraction.payerInn, kpp: extraction.payerKpp },
+          { name: company.name, inn: company.inn, kpp: company.kpp },
+        );
+      }
+    } catch (payerError) {
+      console.error("payer check failed", payerError instanceof Error ? payerError.message : payerError);
+    }
+
     try {
       await recordAudit({
         action: "invoice.uploaded",
@@ -202,6 +222,8 @@ export async function uploadAndAnalyzeInvoice(
       fileMime: file.type,
       fileSize: size,
       extraction,
+      payerName: extraction.payerName,
+      payerCheck,
     };
   } catch (error) {
     return fail("UNKNOWN_ERROR", error instanceof Error ? error.message : "unknown");
@@ -240,6 +262,9 @@ export async function saveInvoice(
       ...parsed.data,
       status: "draft",
       confidence,
+      payerName: str(formData, "payerName"),
+      payerInn: str(formData, "payerInn"),
+      payerKpp: str(formData, "payerKpp"),
       originalFileName: str(formData, "fileName"),
       originalFileMime: str(formData, "fileMime"),
       originalFileSize: Number(formData.get("fileSize")) || null,

@@ -59,3 +59,29 @@ export function resolveCounterparty(input: {
 
   return { counterpartyName: counterparty ?? null, payerConflict };
 }
+
+export type PayerMatch = "match" | "mismatch" | "unknown";
+
+function normalizeInn(inn: string | null | undefined): string {
+  return (inn ?? "").replace(/\D/g, "");
+}
+
+/**
+ * Compares the invoice payer with the selected company. Prefers INN/KPP when
+ * both sides have an INN; otherwise falls back to normalized name comparison.
+ * Returns "unknown" when the payer could not be identified.
+ */
+export function comparePayer(
+  payer: { name: string | null; inn: string | null; kpp: string | null },
+  company: { name: string; inn: string | null; kpp: string | null },
+): PayerMatch {
+  const payerInn = normalizeInn(payer.inn);
+  const companyInn = normalizeInn(company.inn);
+  if (payerInn && companyInn) {
+    return payerInn === companyInn ? "match" : "mismatch";
+  }
+  if (payer.name) {
+    return namesEqual(payer.name, company.name) ? "match" : "mismatch";
+  }
+  return "unknown";
+}

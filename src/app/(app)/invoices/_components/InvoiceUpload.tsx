@@ -17,6 +17,8 @@ type AnalyzeState = {
   fileMime?: string;
   fileSize?: number;
   extraction?: InvoiceExtraction;
+  payerName?: string | null;
+  payerCheck?: "match" | "mismatch" | "unknown";
 };
 type SaveState = { ok: boolean; error?: string; invoiceId?: string };
 
@@ -116,6 +118,9 @@ export function InvoiceUpload({
           <input type="hidden" name="fileSize" value={analyze.fileSize} />
           <input type="hidden" name="confidence" value={extraction.confidence} />
           <input type="hidden" name="rawExtractedJson" value={JSON.stringify(extraction)} />
+          <input type="hidden" name="payerName" value={extraction.payerName ?? ""} />
+          <input type="hidden" name="payerInn" value={extraction.payerInn ?? ""} />
+          <input type="hidden" name="payerKpp" value={extraction.payerKpp ?? ""} />
 
           <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
             <span className="font-semibold text-slate-700">Проверьте распознанные поля</span>
@@ -148,6 +153,29 @@ export function InvoiceUpload({
               ))}
             </ul>
           ) : null}
+
+          <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div>
+              <span className="text-slate-500">Плательщик из счёта: </span>
+              <span className="font-medium text-slate-800">
+                {extraction.payerName ?? "— не распознан —"}
+              </span>
+            </div>
+            <div className="mt-1">
+              <span className="text-slate-500">Проверка плательщика: </span>
+              {analyze.payerCheck === "match" ? (
+                <span className="font-medium text-emerald-700">
+                  Плательщик совпадает с выбранной компанией
+                </span>
+              ) : analyze.payerCheck === "mismatch" ? (
+                <span className="font-medium text-amber-700">
+                  Плательщик в счёте не совпадает с выбранной компанией
+                </span>
+              ) : (
+                <span className="text-slate-500">плательщик не распознан</span>
+              )}
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Контрагент">

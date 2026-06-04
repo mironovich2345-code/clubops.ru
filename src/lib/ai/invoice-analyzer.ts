@@ -22,6 +22,9 @@ export type InvoiceExtraction = {
   counterpartyBankBik: string | null;
   counterpartyAccount: string | null;
   counterpartyCorrAccount: string | null;
+  payerName: string | null;
+  payerInn: string | null;
+  payerKpp: string | null;
   amount: number | null; // rubles
   currency: string;
   expenseCategory: string | null;
@@ -108,6 +111,9 @@ export function mapInvoiceJson(json: Record<string, unknown>, raw: string): Invo
     counterpartyBankBik: vStr(json.counterpartyBankBik),
     counterpartyAccount: vStr(json.counterpartyAccount),
     counterpartyCorrAccount: vStr(json.counterpartyCorrAccount),
+    payerName: vStr(json.payerName),
+    payerInn: vStr(json.payerInn),
+    payerKpp: vStr(json.payerKpp),
     amount: vNum(json.amount),
     currency: vStr(json.currency) ?? "RUB",
     expenseCategory: vCategory(json.expenseCategory, warnings),
@@ -131,6 +137,9 @@ function emptyInvoice(mode: AnalysisMode, warnings: string[], raw: string): Invo
     counterpartyBankBik: null,
     counterpartyAccount: null,
     counterpartyCorrAccount: null,
+    payerName: null,
+    payerInn: null,
+    payerKpp: null,
     amount: null,
     currency: "RUB",
     expenseCategory: null,
@@ -176,8 +185,11 @@ const SYSTEM_PROMPT =
   "НИКОГДА не бери как counterparty поля: Плательщик, Покупатель, Заказчик, Клиент, Наша организация. " +
   "Если в документе есть и Поставщик, и Плательщик — counterpartyName и реквизиты бери у ПОСТАВЩИКА/ПОЛУЧАТЕЛЯ, " +
   "а Плательщика игнорируй для полей counterparty. " +
-  "Дополнительно верни отдельно supplierName (Поставщик/Получатель) и payerName (Плательщик) — для проверки. " +
-  "Верни СТРОГО JSON-объект с ключами: counterpartyName, supplierName, payerName, counterpartyInn, counterpartyKpp, " +
+  "Дополнительно верни отдельно данные ПЛАТЕЛЬЩИКА: supplierName (Поставщик/Получатель), " +
+  "payerName (Плательщик), payerInn (ИНН плательщика), payerKpp (КПП плательщика) — для проверки. " +
+  "Реквизиты плательщика (payerInn/payerKpp) НЕ путай с реквизитами counterparty. " +
+  "Верни СТРОГО JSON-объект с ключами: counterpartyName, supplierName, payerName, payerInn, payerKpp, " +
+  "counterpartyInn, counterpartyKpp, " +
   "counterpartyBankName, counterpartyBankBik, counterpartyAccount, counterpartyCorrAccount, " +
   "amount (число, рубли), currency, expenseCategory, invoiceNumber, invoiceDate (YYYY-MM-DD), " +
   "dueDate (YYYY-MM-DD), confidence (low|medium|high), warnings (массив строк). " +
