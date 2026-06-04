@@ -1,14 +1,12 @@
-import { mkdir, writeFile, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { UploadErrorCode } from "@/lib/upload-errors";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
+import { getStorage } from "@/lib/storage";
 
-// Uploaded expense documents live on local disk under <cwd>/uploads/expenses.
-// Only metadata + a relative storageKey are kept in the DB; absolute paths are
-// never exposed to the client. (Note: on Railway the FS is ephemeral.)
-const UPLOAD_ROOT = join(process.cwd(), "uploads");
-const EXPENSE_DIR = join(UPLOAD_ROOT, "expenses");
+// Expense documents are addressed by a relative storageKey ("expenses/<hex>.ext")
+// and persisted through the storage abstraction: local disk in dev (default) or
+// S3-compatible object storage in production (STORAGE_PROVIDER=s3).
+const KEY_PREFIX = "expenses";
 
 export const MAX_EXPENSE_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -37,23 +35,24 @@ export type StoredFile = {
   buffer: Buffer;
 };
 
+function newKey(ext: string): string {
+  return `${KEY_PREFIX}/${randomBytes(16).toString("hex")}.${ext}`;
+}
+
 export async function storeExpenseFile(file: UploadedFile): Promise<StoredFile> {
   const ext = ALLOWED_MIME[file.type];
   if (!ext) throw new Error("Unsupported file type");
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const name = `${randomBytes(16).toString("hex")}.${ext}`;
-  const storageKey = `expenses/${name}`;
-
-  await mkdir(EXPENSE_DIR, { recursive: true });
-  await writeFile(join(EXPENSE_DIR, name), buffer);
+  const storageKey = newKey(ext);
+  await getStorage().put(storageKey, buffer, file.type);
 
   return { storageKey, fileName: file.name, mime: file.type, size: file.size, buffer };
 }
 
 /**
- * Persists an already-read buffer to disk, separated from reading the upload so
- * the caller can analyze the in-memory buffer even if the disk write fails.
+ * Persists an already-read buffer, separated from reading the upload so the
+ * caller can analyze the in-memory buffer even if the write fails.
  */
 export async function persistExpenseFile(
   buffer: Buffer,
@@ -62,20 +61,13 @@ export async function persistExpenseFile(
 ): Promise<{ storageKey: string; fileName: string; mime: string; size: number }> {
   const ext = ALLOWED_MIME[mime];
   if (!ext) throw new Error("Unsupported file type");
-  const name = `${randomBytes(16).toString("hex")}.${ext}`;
-  const storageKey = `expenses/${name}`;
-  await mkdir(EXPENSE_DIR, { recursive: true });
-  await writeFile(join(EXPENSE_DIR, name), buffer);
+  const storageKey = newKey(ext);
+  await getStorage().put(storageKey, buffer, mime);
   return { storageKey, fileName: originalName, mime, size: buffer.length };
 }
 
 /** Reads a stored file by its storageKey. Rejects anything outside the safe pattern. */
 export async function readExpenseFile(storageKey: string): Promise<Buffer | null> {
   if (!STORAGE_KEY_RE.test(storageKey)) return null;
-  const relative = storageKey.slice("expenses/".length);
-  try {
-    return await readFile(join(EXPENSE_DIR, relative));
-  } catch {
-    return null;
-  }
+  return getStorage().get(storageKey);
 }

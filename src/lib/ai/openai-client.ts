@@ -4,11 +4,38 @@
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4o-mini";
 
-export type AiProvider = "openai" | "mock";
+// "openai" — dev/test only (data leaves RU jurisdiction; see COMPLIANCE_RU.md).
+// "ru_ai" — production placeholder for a Russian AI/OCR provider (not yet
+//           implemented; analyzers fall back to mock until it is wired up).
+// "mock"  — safe default, no external calls.
+export type AiProvider = "openai" | "ru_ai" | "mock";
 
-/** Real AI only when explicitly enabled and a key is present; otherwise mock. */
+let warnedOpenAiInProd = false;
+
+/** Logs the legal-basis warning once when OpenAI is enabled in production. */
+function warnOpenAiInProduction(): void {
+  if (warnedOpenAiInProd) return;
+  if (process.env.NODE_ENV === "production") {
+    console.warn("OpenAI is enabled. Do not process personal data without legal basis.");
+    warnedOpenAiInProd = true;
+  }
+}
+
+/**
+ * Selects the AI provider from the environment:
+ *  - "openai" only when AI_PROVIDER=openai and OPENAI_API_KEY is set (dev/test).
+ *  - "ru_ai"  when AI_PROVIDER=ru_ai with RU_AI_ENDPOINT + RU_AI_API_KEY set
+ *    (production target; currently a placeholder — see ru-ai-client notes).
+ *  - "mock"   otherwise (safe default).
+ */
 export function selectedAiProvider(): AiProvider {
-  if (process.env.AI_PROVIDER === "openai" && process.env.OPENAI_API_KEY) return "openai";
+  if (process.env.AI_PROVIDER === "openai" && process.env.OPENAI_API_KEY) {
+    warnOpenAiInProduction();
+    return "openai";
+  }
+  if (process.env.AI_PROVIDER === "ru_ai" && process.env.RU_AI_ENDPOINT && process.env.RU_AI_API_KEY) {
+    return "ru_ai";
+  }
   return "mock";
 }
 

@@ -1,0 +1,22 @@
+node_modules
+.next
+out
+build
+.git
+.gitignore
+.github
+.env
+.env.*
+!.env.example
+!.env.production.example
+uploads
+*.db
+*.db-journal
+prisma/dev.db*
+npm-debug.log*
+*.log
+.DS_Store
+.vscode
+.idea
+.claude
+Текстовый документ.txt

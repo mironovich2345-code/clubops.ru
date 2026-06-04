@@ -1,0 +1,76 @@
+# Production-like stack for self-hosted / RU deployment.
+#
+#   cp .env.production.example .env.production   # fill in real values
+#   docker compose -f docker-compose.production.yml up -d --build
+#
+# Add the optional nginx reverse proxy (TLS termination) with:
+#   docker compose -f docker-compose.production.yml --profile nginx up -d --build
+#
+# For managed Postgres / S3 (Yandex Cloud, Selectel, VK Cloud), point
+# DATABASE_URL / S3_* in .env.production at the managed services and you can
+# remove the local `postgres` service.
+name: club-ops
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-club_ops}
+      POSTGRES_USER: ${POSTGRES_USER:-club_ops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - club_ops_pgdata:/var/lib/postgresql/data
+    # Not published to the host by default — only the app reaches it over the
+    # internal network. Uncomment to expose for admin tools.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-club_ops} -d ${POSTGRES_DB:-club_ops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # uploads/ persists only when STORAGE_PROVIDER=local. Prefer S3 in prod.
+    volumes:
+      - club_ops_uploads:/app/uploads
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  # Optional reverse proxy / TLS termination. Enable with `--profile nginx`.
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    profiles: ["nginx"]
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Mount real certificates here for TLS (see docker/nginx/nginx.conf).
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
+
+volumes:
+  club_ops_pgdata:
+  club_ops_uploads:
