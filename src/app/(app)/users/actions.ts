@@ -27,6 +27,8 @@ export async function createInvite(
   formData: FormData,
 ): Promise<InviteState> {
   const user = await requireUser();
+
+  try {
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) return { ok: false, error: "Нет доступной компании" };
   const companyId = scope.company.id;
@@ -118,6 +120,11 @@ export async function createInvite(
 
   revalidatePath("/users");
   return { ok: true, invitePath: `/accept-invite?token=${token}` };
+  } catch (error) {
+    // Surface a friendly message but keep the real error in the server logs.
+    console.error("createInvite failed", error);
+    return { ok: false, error: "Не удалось создать приглашение. Попробуйте ещё раз." };
+  }
 }
 
 export async function removeAccess(formData: FormData): Promise<void> {

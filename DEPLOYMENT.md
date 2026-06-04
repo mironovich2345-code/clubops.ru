@@ -130,3 +130,30 @@ prisma db push --schema prisma/production/schema.prisma
 ```
 
 `migrate deploy` (the configured default) is preferred for anything persistent.
+
+---
+
+## Migrations must apply on every deploy (important)
+
+Railway runs `deploy.preDeployCommand` (`npm run prisma:migrate:deploy`) before
+starting the app. That command invokes the **`prisma` CLI**, so `prisma` is a
+runtime **dependency** (not devDependency) — otherwise it is pruned from the
+production image and `migrate deploy` silently fails, leaving the database
+behind the schema (missing tables/columns) and causing server-side exceptions
+on pages that select the new columns (e.g. `/invoices`, `/expenses`).
+
+If a deploy ever lands with an out-of-date database, apply migrations manually:
+
+```bash
+railway run npm run prisma:migrate:deploy
+# or, with DATABASE_URL exported to the Postgres connection string:
+npm run prisma:migrate:deploy
+```
+
+Verify the local SQLite migration history matches the schema (should print an
+empty migration):
+
+```bash
+npx prisma migrate diff --from-migrations prisma/migrations \
+  --to-schema-datamodel prisma/schema.prisma --script
+```

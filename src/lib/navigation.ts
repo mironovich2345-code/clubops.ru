@@ -16,6 +16,7 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "imports", href: "/imports", label: "Импорт" },
   { page: "documents", href: "/documents", label: "Документы" },
   { page: "users", href: "/users", label: "Пользователи" },
+  { page: "settings", href: "/settings", label: "Настройки" },
 ];
 
 export const ROLE_LABELS: Record<string, string> = {
