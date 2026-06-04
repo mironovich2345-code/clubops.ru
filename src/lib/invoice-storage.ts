@@ -2,6 +2,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { UploadErrorCode } from "@/lib/upload-errors";
+import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 
 // Uploaded invoice documents live on local disk under <cwd>/uploads/invoices.
 // Only metadata + a relative storageKey are kept in the DB; absolute paths are
@@ -21,8 +22,8 @@ const ALLOWED_MIME: Record<string, string> = {
 const STORAGE_KEY_RE = /^invoices\/[a-f0-9]{32}\.(jpg|png|webp|pdf)$/;
 
 /** Returns an error code if the file is invalid, otherwise null. */
-export function validateInvoiceFile(file: File): UploadErrorCode | null {
-  if (!(file instanceof File) || file.size === 0) return "FILE_INVALID";
+export function validateInvoiceFile(file: UploadedFile): UploadErrorCode | null {
+  if (!isUploadedFile(file) || file.size === 0) return "FILE_INVALID";
   if (file.size > MAX_INVOICE_FILE_SIZE) return "FILE_TOO_LARGE";
   if (!ALLOWED_MIME[file.type]) return "FILE_INVALID";
   return null;
@@ -36,7 +37,7 @@ export type StoredFile = {
   buffer: Buffer;
 };
 
-export async function storeInvoiceFile(file: File): Promise<StoredFile> {
+export async function storeInvoiceFile(file: UploadedFile): Promise<StoredFile> {
   const ext = ALLOWED_MIME[file.type];
   if (!ext) throw new Error("Unsupported file type");
 

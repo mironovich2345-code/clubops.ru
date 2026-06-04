@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage } from "@/lib/auth";
 import { getCurrentAccessContext, canAccessClub } from "@/lib/access";
+import { isUploadedFile } from "@/lib/uploaded-file";
 import {
   parseImportBuffer,
   type ImportCandidate,
@@ -42,7 +43,7 @@ export async function previewImport(
   }
 
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
+  if (!isUploadedFile(file) || file.size === 0) {
     return { ok: false, error: "Выберите файл .xlsx или .csv" };
   }
 

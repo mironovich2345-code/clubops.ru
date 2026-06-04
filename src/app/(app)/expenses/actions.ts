@@ -12,6 +12,7 @@ import {
   type ExpenseExtraction,
 } from "@/lib/ai/expense-analyzer";
 import { validateExpenseFile, persistExpenseFile } from "@/lib/expense-storage";
+import { isUploadedFile } from "@/lib/uploaded-file";
 import {
   UPLOAD_ERROR_MESSAGES,
   logUploadFailure,
@@ -103,7 +104,7 @@ export async function uploadAndAnalyzeExpense(
   let ctx: Awaited<ReturnType<typeof getCurrentAccessContext>> = null;
   const clubId = String(formData.get("clubId") ?? "").trim();
   const fileEntry = formData.get("file");
-  const file = fileEntry instanceof File && fileEntry.size > 0 ? fileEntry : null;
+  const file = isUploadedFile(fileEntry) && fileEntry.size > 0 ? fileEntry : null;
   const fileInfo = {
     fileName: file?.name ?? null,
     fileMime: file?.type ?? null,

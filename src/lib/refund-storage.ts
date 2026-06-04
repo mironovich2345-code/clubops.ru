@@ -1,6 +1,7 @@
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 
 // Uploaded refund documents live on local disk under <cwd>/uploads/refunds.
 // Only metadata + relative storageKeys are kept in the DB (documentsJson);
@@ -20,8 +21,8 @@ const ALLOWED_MIME: Record<string, string> = {
 
 const STORAGE_KEY_RE = /^refunds\/[a-f0-9]{32}\.(jpg|png|webp|pdf)$/;
 
-export function validateRefundFile(file: File): string | null {
-  if (!(file instanceof File) || file.size === 0) return "Файл пустой";
+export function validateRefundFile(file: UploadedFile): string | null {
+  if (!isUploadedFile(file) || file.size === 0) return "Файл пустой";
   if (file.size > MAX_REFUND_FILE_SIZE) return "Файл больше 10 МБ";
   if (!ALLOWED_MIME[file.type]) return "Поддерживаются только JPG, PNG, WEBP и PDF";
   return null;
@@ -35,7 +36,7 @@ export type StoredRefundFile = {
   buffer: Buffer;
 };
 
-export async function storeRefundFile(file: File): Promise<StoredRefundFile> {
+export async function storeRefundFile(file: UploadedFile): Promise<StoredRefundFile> {
   const ext = ALLOWED_MIME[file.type];
   if (!ext) throw new Error("Unsupported file type");
 

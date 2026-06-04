@@ -21,6 +21,7 @@ import {
   type InvoiceExtraction,
 } from "@/lib/ai/invoice-analyzer";
 import { validateInvoiceFile, persistInvoiceFile } from "@/lib/invoice-storage";
+import { isUploadedFile } from "@/lib/uploaded-file";
 import {
   UPLOAD_ERROR_MESSAGES,
   logUploadFailure,
@@ -106,7 +107,7 @@ export async function uploadAndAnalyzeInvoice(
   let ctx: Awaited<ReturnType<typeof getCurrentAccessContext>> = null;
   const clubId = String(formData.get("clubId") ?? "").trim();
   const fileEntry = formData.get("file");
-  const file = fileEntry instanceof File ? fileEntry : null;
+  const file = isUploadedFile(fileEntry) ? fileEntry : null;
   const fileInfo = {
     fileName: file?.name ?? null,
     fileMime: file?.type ?? null,

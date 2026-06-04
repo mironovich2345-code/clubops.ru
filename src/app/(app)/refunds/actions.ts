@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
+import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { getRefundForContext, REFUND_ACTION_AUDIT, type RefundDocument } from "@/lib/refunds";
 import {
   applyApprovalAction,
@@ -106,7 +107,10 @@ export async function uploadAndAnalyzeRefund(
   const docTypeRaw = String(formData.get("docType") ?? "other").trim();
   const docType = DOC_TYPES.has(docTypeRaw) ? docTypeRaw : "other";
 
-  const rawFiles = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  const rawFiles: UploadedFile[] = [];
+  for (const entry of formData.getAll("files")) {
+    if (isUploadedFile(entry) && entry.size > 0) rawFiles.push(entry);
+  }
   if (rawFiles.length > MAX_REFUND_FILES) {
     return { ok: false, error: `Не более ${MAX_REFUND_FILES} файлов за раз` };
   }
