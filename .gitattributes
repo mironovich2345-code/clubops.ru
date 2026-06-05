@@ -1,0 +1,5 @@
+# Shell scripts and the Dockerfile must use LF endings so they run on Linux
+# (a CRLF shebang/line breaks `sh` inside the container).
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile text eol=lf

@@ -40,11 +40,14 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/next.config.mjs ./next.config.mjs
+COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 # uploads/ is only used when STORAGE_PROVIDER=local; mount a volume in prod.
 RUN mkdir -p /app/uploads && chown -R nodejs:nodejs /app/uploads
 USER nodejs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${PORT:-3000}/api/health" >/dev/null 2>&1 || exit 1
-# Apply DB migrations, then start the server. PORT is provided by the platform.
-CMD ["sh", "-c", "npm run prisma:migrate:deploy && npm run start -- -p ${PORT:-3000} -H 0.0.0.0"]
+# Single deterministic startup: migrate, then `exec next start` on $PORT/0.0.0.0.
+# (railway.json no longer sets a startCommand, so this CMD is what actually runs.)
+CMD ["sh", "/app/docker-entrypoint.sh"]
