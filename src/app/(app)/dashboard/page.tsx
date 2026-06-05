@@ -16,7 +16,8 @@ import {
 } from "@/lib/budgets";
 import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
-import { canManageSalesPlans, type Role } from "@/lib/auth";
+import { canManageSalesPlans, canAnyRoleAccessPage, type Role } from "@/lib/auth";
+import { getRecentActivity, type ActivityRow } from "@/lib/activity";
 import { getSalesPlan, getSalesPlansForCompanyMonth, salesPlanProgress, monthKey } from "@/lib/sales-plans";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { SalesPlanForm } from "./_components/SalesPlanForm";
@@ -144,6 +145,12 @@ export default async function DashboardPage() {
   const budgetPerfRows = factReport.slice(0, 10);
   const budgetAlerts = budgetFactAlerts(factReport, 5);
 
+  // Recent activity (scoped to the viewer's roles/clubs; marketer has no access).
+  const recentActivity =
+    ctx && canAnyRoleAccessPage(roles, "activity")
+      ? await getRecentActivity(ctx, scope.company.name, 5)
+      : [];
+
   const notifications = buildNotifications({
     financials,
     overdueCount,
@@ -266,6 +273,45 @@ export default async function DashboardPage() {
 
       {/* Block 6: последние расходы */}
       {financials ? <RecentExpensesBlock rows={recentExpenseRows} /> : null}
+
+      {/* Recent activity */}
+      {recentActivity.length > 0 ? (
+        <div className="mt-6">
+          <RecentActivityBlock rows={recentActivity} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// --- Recent activity -------------------------------------------------------
+
+function RecentActivityBlock({ rows }: { rows: ActivityRow[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+        <span className="text-sm font-semibold text-slate-700">Последние действия</span>
+        <Link href="/activity" className="text-xs font-medium text-brand-600 hover:text-brand-700">
+          Смотреть все
+        </Link>
+      </div>
+      <ul className="divide-y divide-slate-100">
+        {rows.map((r) => (
+          <li key={r.id} className="flex items-start justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-slate-900">{r.actionLabel}</div>
+              <div className="truncate text-xs text-slate-500">
+                {r.userName}
+                {r.roleLabel !== "—" ? ` · ${r.roleLabel}` : ""}
+                {r.clubName !== "—" ? ` · ${r.clubName}` : ""}
+              </div>
+            </div>
+            <div className="whitespace-nowrap text-right text-xs text-slate-400">
+              {dateFormatter.format(r.createdAt)}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
