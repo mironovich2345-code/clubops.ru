@@ -4,12 +4,14 @@
 # then on start: prisma migrate deploy -> next start.
 
 FROM node:20-bookworm-slim AS base
-ENV NODE_ENV=production
 WORKDIR /app
 # OpenSSL is required by Prisma engines; wget is used by the healthcheck.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates wget \
   && rm -rf /var/lib/apt/lists/*
+# NOTE: NODE_ENV is intentionally NOT set to "production" in the build stages —
+# that would make `npm ci` omit devDependencies (typescript/tailwindcss/postcss/
+# autoprefixer), which `next build` needs. It is set in the runner stage only.
 
 # --- deps: install all deps (postinstall runs `prisma generate`) -------------
 FROM base AS deps
@@ -27,6 +29,7 @@ RUN npm run build:prod
 
 # --- runner: minimal runtime image -------------------------------------------
 FROM base AS runner
+ENV NODE_ENV=production
 ENV PORT=3000
 # Run as a non-root user.
 RUN useradd --uid 1001 --create-home --shell /usr/sbin/nologin nodejs
