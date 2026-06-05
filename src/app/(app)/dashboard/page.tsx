@@ -9,9 +9,12 @@ import { getRefundsForScope } from "@/lib/refunds";
 import {
   getBudgetsForScope,
   computeBudgetOverruns,
+  computeBudgetFactReport,
+  budgetFactAlerts,
   getPendingBudgetRequestsForScope,
   budgetCategoryLabel,
 } from "@/lib/budgets";
+import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
 import { canManageSalesPlans, type Role } from "@/lib/auth";
 import { getSalesPlan, getSalesPlansForCompanyMonth, salesPlanProgress, monthKey } from "@/lib/sales-plans";
@@ -64,6 +67,8 @@ export default async function DashboardPage() {
 
   const roles = ctx?.effectiveRoles ?? [];
   const financials = canSeeFinancials(roles);
+  // Pure marketer: budget performance is limited to the advertising category.
+  const marketerOnly = roles.includes("marketer") && !financials;
   const canEditPlan = canManageSalesPlans(roles);
   const planScopeLabel = scope.club ? scope.club.name : "вся компания";
 
@@ -129,12 +134,23 @@ export default async function DashboardPage() {
   }));
   const pendingApprovalAmountKopeks = pendingApprovals.reduce((s, r) => s + r.requestedAmountKopeks, 0);
 
+  // Plan vs Fact (settled spend). Marketer sees only the advertising row.
+  const factReport = computeBudgetFactReport(
+    budgets,
+    { expenses, invoices, refunds },
+    planMonth,
+    marketerOnly ? { categories: ["advertising"] } : undefined,
+  );
+  const budgetPerfRows = factReport.slice(0, 10);
+  const budgetAlerts = budgetFactAlerts(factReport, 5);
+
   const notifications = buildNotifications({
     financials,
     overdueCount,
     overrunCount: overruns.length,
     overOver20,
     budgetApprovalCount: pendingApprovals.length,
+    budgetAlerts,
     planPercent: planProgress.percent,
     pendingCount: pendingSales.length,
   });
@@ -216,6 +232,21 @@ export default async function DashboardPage() {
       <div className="mb-6">
         <NotificationsBlock notifications={notifications} />
       </div>
+
+      {/* Budget performance: Plan vs Fact by category */}
+      {budgetPerfRows.length > 0 ? (
+        <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <span className="text-sm font-semibold text-slate-700">
+              Исполнение бюджета · {monthFormatter.format(now)}
+            </span>
+            <Link href="/budgets?view=plan-fact" className="text-xs font-medium text-brand-600 hover:text-brand-700">
+              Подробнее
+            </Link>
+          </div>
+          <BudgetFactTable rows={budgetPerfRows} />
+        </div>
+      ) : null}
 
       {/* Block 3: рейтинг клубов */}
       {clubs.length > 1 ? (
@@ -304,10 +335,13 @@ function buildNotifications(input: {
   overrunCount: number;
   overOver20: number;
   budgetApprovalCount: number;
+  budgetAlerts: string[];
   planPercent: number | null;
   pendingCount: number;
 }): Notification[] {
   const out: Notification[] = [];
+  // Category exceeded 120% of plan — highest-priority budget alert.
+  for (const text of input.budgetAlerts) out.push({ tone: "red", text });
   if (input.financials) {
     if (input.budgetApprovalCount > 0)
       out.push({

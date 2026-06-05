@@ -12,13 +12,16 @@ import {
 import {
   getBudgetOverview,
   getBudgetRequestsForScope,
+  getBudgetFactReportForScope,
   BUDGET_CATEGORIES,
   budgetCategoryLabel,
   currentMonthKey,
   isValidMonth,
   isBudgetRequestPending,
   BUDGET_REQUEST_STATUS_LABELS,
+  type BudgetFactReport,
 } from "@/lib/budgets";
+import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { BudgetLimitForm } from "./_components/BudgetForms";
 import { RequestActions } from "./_components/RequestActions";
 
@@ -32,10 +35,17 @@ const REQUEST_TABS = [
 
 type RequestTab = (typeof REQUEST_TABS)[number]["key"];
 
+const PAGE_VIEWS = [
+  { key: "budgets", label: "Бюджеты" },
+  { key: "plan-fact", label: "План / Факт" },
+] as const;
+
+type PageView = (typeof PAGE_VIEWS)[number]["key"];
+
 export default async function BudgetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ clubId?: string; month?: string; tab?: string }>;
+  searchParams: Promise<{ clubId?: string; month?: string; tab?: string; view?: string }>;
 }) {
   const user = await requirePageAccess("budgets");
   const scope = await getCurrentCompanyAndClub(user);
@@ -57,6 +67,9 @@ export default async function BudgetsPage({
   const tab: RequestTab = REQUEST_TABS.some((t) => t.key === sp.tab)
     ? (sp.tab as RequestTab)
     : "pending";
+  const view: PageView = PAGE_VIEWS.some((v) => v.key === sp.view)
+    ? (sp.view as PageView)
+    : "budgets";
 
   const [overview, requests, manageableClubIds] = await Promise.all([
     getBudgetOverview(selectedClubId, month),
@@ -65,6 +78,12 @@ export default async function BudgetsPage({
   ]);
   const manageable = new Set(manageableClubIds);
   const canManageSelected = manageable.has(selectedClubId);
+
+  // Plan vs Fact for the selected club (loaded only when that tab is open).
+  const factReport: BudgetFactReport =
+    view === "plan-fact"
+      ? await getBudgetFactReportForScope(scope.company.id, [selectedClubId], month)
+      : [];
 
   // Approval rights: owner/GD -> all clubs, RD -> assigned clubs (encoded by
   // getManageableClubIds); the requester may never decide their own request.
@@ -86,9 +105,14 @@ export default async function BudgetsPage({
   );
 
   const tabHref = (t: RequestTab) => {
-    const params = new URLSearchParams({ clubId: selectedClubId, month, tab: t });
+    const params = new URLSearchParams({ clubId: selectedClubId, month, tab: t, view: "budgets" });
     return `/budgets?${params.toString()}`;
   };
+  const viewHref = (v: PageView) => {
+    const params = new URLSearchParams({ clubId: selectedClubId, month, view: v });
+    return `/budgets?${params.toString()}`;
+  };
+  const selectedClubName = clubs.find((c) => c.id === selectedClubId)?.name ?? "";
 
   return (
     <div>
@@ -109,11 +133,38 @@ export default async function BudgetsPage({
           <input type="month" name="month" defaultValue={month} className="input" />
         </label>
         <input type="hidden" name="tab" value={tab} />
+        <input type="hidden" name="view" value={view} />
         <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Показать
         </button>
       </form>
 
+      {/* Page view tabs */}
+      <div className="mb-6 flex flex-wrap gap-2">
+        {PAGE_VIEWS.map((v) => (
+          <Link
+            key={v.key}
+            href={viewHref(v.key)}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition ${
+              v.key === view
+                ? "bg-brand-600 text-white"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {v.label}
+          </Link>
+        ))}
+      </div>
+
+      {view === "plan-fact" ? (
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+            План / Факт · {selectedClubName} · {month}
+          </div>
+          <BudgetFactTable rows={factReport} />
+        </div>
+      ) : (
+      <>
       {canManageSelected ? (
         <div className="mb-6">
           <BudgetLimitForm clubId={selectedClubId} month={month} categories={BUDGET_CATEGORIES} />
@@ -227,6 +278,8 @@ export default async function BudgetsPage({
           </tbody>
         </table>
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -210,6 +210,157 @@ export async function getBudgetsForScope(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Plan vs Fact report.
+//
+// Plan  = sum of Budget.limitAmountKopeks for the scope's clubs in the month.
+// Fact  = realized (paid) financial impact only:
+//           confirmed expenses + paid invoices + paid refunds.
+//         Excludes waiting_budget_approval / budget_rejected / draft / pending /
+//         rejected / approved-but-unpaid — i.e. anything not actually settled.
+// ---------------------------------------------------------------------------
+
+export type BudgetFactStatus = "normal" | "warning" | "over_budget";
+
+export type BudgetFactRow = {
+  category: string;
+  label: string;
+  budgetKopeks: number;
+  actualKopeks: number;
+  differenceKopeks: number; // actual - budget (positive = over)
+  completionPercent: number; // actual / budget * 100
+  status: BudgetFactStatus;
+};
+
+export type BudgetFactReport = BudgetFactRow[];
+
+/** normal: <90% · warning: 90-100% · over_budget: >100%. */
+export function budgetFactStatus(completionPercent: number): BudgetFactStatus {
+  if (completionPercent > 100) return "over_budget";
+  if (completionPercent >= 90) return "warning";
+  return "normal";
+}
+
+type FactExpense = { category: string; amountKopeks: number; expenseDate: Date; status: string };
+type FactInvoice = {
+  expenseCategory: string | null;
+  amountKopeks: number;
+  paidAt: Date | null;
+  invoiceDate: Date | null;
+  createdAt: Date;
+  status: string;
+};
+type FactRefund = {
+  amountKopeks: number;
+  paidAt: Date | null;
+  refundDate: Date | null;
+  createdAt: Date;
+  status: string;
+};
+
+/**
+ * Plan vs Fact per category from already-loaded scope data (pure; no queries).
+ * Only categories that have a plan (limit > 0) appear. Sorted by completion
+ * desc (most exceeded first). `opts.categories` restricts the output (e.g. a
+ * marketer only sees the "advertising" row).
+ */
+export function computeBudgetFactReport(
+  budgets: Array<{ category: string; limitAmountKopeks: number }>,
+  data: { expenses: FactExpense[]; invoices: FactInvoice[]; refunds: FactRefund[] },
+  month: string,
+  opts?: { categories?: readonly string[] },
+): BudgetFactReport {
+  const range = monthRange(month);
+  if (!range) return [];
+  const inR = (d: Date) => {
+    const t = d.getTime();
+    return t >= range.start && t < range.end;
+  };
+  const allow = opts?.categories ? new Set(opts.categories) : null;
+
+  const plan = new Map<string, number>();
+  for (const b of budgets) {
+    if (allow && !allow.has(b.category)) continue;
+    plan.set(b.category, (plan.get(b.category) ?? 0) + b.limitAmountKopeks);
+  }
+
+  const fact = new Map<string, number>();
+  const add = (category: string, v: number) => {
+    if (allow && !allow.has(category)) return;
+    fact.set(category, (fact.get(category) ?? 0) + v);
+  };
+  for (const e of data.expenses) {
+    if (e.status === "confirmed" && inR(e.expenseDate)) add(e.category, e.amountKopeks);
+  }
+  for (const i of data.invoices) {
+    if (i.status === "paid" && i.expenseCategory && inR(i.paidAt ?? i.invoiceDate ?? i.createdAt)) {
+      add(i.expenseCategory, i.amountKopeks);
+    }
+  }
+  for (const r of data.refunds) {
+    if (r.status === "paid" && inR(r.paidAt ?? r.refundDate ?? r.createdAt)) add("refunds", r.amountKopeks);
+  }
+
+  const rows: BudgetFactRow[] = [];
+  for (const [category, budgetKopeks] of plan) {
+    if (budgetKopeks <= 0) continue;
+    const actualKopeks = fact.get(category) ?? 0;
+    const completionPercent = (actualKopeks / budgetKopeks) * 100;
+    rows.push({
+      category,
+      label: budgetCategoryLabel(category),
+      budgetKopeks,
+      actualKopeks,
+      differenceKopeks: actualKopeks - budgetKopeks,
+      completionPercent,
+      status: budgetFactStatus(completionPercent),
+    });
+  }
+  rows.sort((a, b) => b.completionPercent - a.completionPercent);
+  return rows;
+}
+
+/**
+ * Plan vs Fact report for specific clubs in a month. Filters to settled rows at
+ * the DB layer (confirmed expenses / paid invoices / paid refunds) so we don't
+ * pull unrelated records into memory, then aggregates with computeBudgetFactReport.
+ */
+export async function getBudgetFactReportForScope(
+  companyId: string,
+  clubIds: string[],
+  month: string,
+  opts?: { categories?: readonly string[] },
+): Promise<BudgetFactReport> {
+  if (clubIds.length === 0) return [];
+  const [budgets, expenses, invoices, refunds] = await Promise.all([
+    prisma.budget.findMany({
+      where: { companyId, clubId: { in: clubIds }, month },
+      select: { category: true, limitAmountKopeks: true },
+    }),
+    prisma.expense.findMany({
+      where: { clubId: { in: clubIds }, status: "confirmed" },
+      select: { category: true, amountKopeks: true, expenseDate: true, status: true },
+    }),
+    prisma.invoice.findMany({
+      where: { clubId: { in: clubIds }, status: "paid" },
+      select: { expenseCategory: true, amountKopeks: true, paidAt: true, invoiceDate: true, createdAt: true, status: true },
+    }),
+    prisma.refund.findMany({
+      where: { clubId: { in: clubIds }, status: "paid" },
+      select: { amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true },
+    }),
+  ]);
+  return computeBudgetFactReport(budgets, { expenses, invoices, refunds }, month, opts);
+}
+
+/** Dashboard alerts for categories exceeding 120% of plan (max `max`). */
+export function budgetFactAlerts(report: BudgetFactReport, max = 5): string[] {
+  return report
+    .filter((r) => r.completionPercent > 120)
+    .slice(0, max)
+    .map((r) => `Категория ${r.label} превышена на ${Math.round(r.completionPercent - 100)}%`);
+}
+
 export type ExpenseBudgetEval = {
   hasLimit: boolean;
   budgetId: string | null;
