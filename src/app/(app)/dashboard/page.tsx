@@ -68,18 +68,19 @@ export default async function DashboardPage() {
     ...refunds.filter((r) => r.status === "paid").map((r) => ({ clubId: r.clubId, category: "refunds", amountKopeks: r.amountKopeks, expenseDate: r.paidAt ?? r.refundDate ?? r.createdAt })),
   ];
 
-  // Block 6: recent realized spending (table rows).
+  // Block 6: recent realized spending (table rows). Each row links to its source.
   const recentExpenseRows = [
-    ...expenses.filter((e) => e.status === "confirmed").map((e) => ({ id: `exp-${e.id}`, date: e.expenseDate, clubName: e.club.name, category: expenseCategoryLabel(e.category), amountKopeks: e.amountKopeks, type: "Расход" as const })),
-    ...invoices.filter((i) => i.status === "paid").map((i) => ({ id: `inv-${i.id}`, date: i.paidAt ?? i.invoiceDate ?? i.createdAt, clubName: i.club.name, category: expenseCategoryLabel(i.expenseCategory ?? "other"), amountKopeks: i.amountKopeks, type: "Счёт" as const })),
-    ...refunds.filter((r) => r.status === "paid").map((r) => ({ id: `ref-${r.id}`, date: r.paidAt ?? r.refundDate ?? r.createdAt, clubName: r.club.name, category: "Возвраты", amountKopeks: r.amountKopeks, type: "Возврат" as const })),
+    ...expenses.filter((e) => e.status === "confirmed").map((e) => ({ id: `exp-${e.id}`, href: `/expenses/${e.id}`, date: e.expenseDate, clubName: e.club.name, category: expenseCategoryLabel(e.category), amountKopeks: e.amountKopeks, type: "Расход" as const })),
+    ...invoices.filter((i) => i.status === "paid").map((i) => ({ id: `inv-${i.id}`, href: `/invoices/${i.id}`, date: i.paidAt ?? i.invoiceDate ?? i.createdAt, clubName: i.club.name, category: expenseCategoryLabel(i.expenseCategory ?? "other"), amountKopeks: i.amountKopeks, type: "Счёт" as const })),
+    ...refunds.filter((r) => r.status === "paid").map((r) => ({ id: `ref-${r.id}`, href: `/refunds/${r.id}`, date: r.paidAt ?? r.refundDate ?? r.createdAt, clubName: r.club.name, category: "Возвраты", amountKopeks: r.amountKopeks, type: "Возврат" as const })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 8);
 
   // Block 4: debts = approved-but-unpaid invoices + refunds, with overdue days.
+  // Each row links to its source document.
   const APPROVED_UNPAID = ["approved_by_regional", "approved_by_owner"];
   const debts = [
-    ...invoices.filter((i) => APPROVED_UNPAID.includes(i.status)).map((i) => ({ id: `inv-${i.id}`, kind: "Счёт" as const, name: i.counterpartyName ?? "Без контрагента", amountKopeks: i.amountKopeks, dueDate: i.dueDate, clubName: i.club.name })),
-    ...refunds.filter((r) => APPROVED_UNPAID.includes(r.status)).map((r) => ({ id: `ref-${r.id}`, kind: "Возврат" as const, name: r.clientName ?? "Возврат клиенту", amountKopeks: r.amountKopeks, dueDate: r.refundDate, clubName: r.club.name })),
+    ...invoices.filter((i) => APPROVED_UNPAID.includes(i.status)).map((i) => ({ id: `inv-${i.id}`, href: `/invoices/${i.id}`, kind: "Счёт" as const, name: i.counterpartyName ?? "Без контрагента", amountKopeks: i.amountKopeks, dueDate: i.dueDate, clubName: i.club.name })),
+    ...refunds.filter((r) => APPROVED_UNPAID.includes(r.status)).map((r) => ({ id: `ref-${r.id}`, href: `/refunds/${r.id}`, kind: "Возврат" as const, name: r.clientName ?? "Возврат клиенту", amountKopeks: r.amountKopeks, dueDate: r.refundDate, clubName: r.club.name })),
   ]
     .map((d) => ({ ...d, overdueDays: d.dueDate && d.dueDate.getTime() < now.getTime() ? Math.floor((now.getTime() - d.dueDate.getTime()) / 86_400_000) : 0 }))
     .sort((a, b) => b.overdueDays - a.overdueDays || (a.dueDate ? a.dueDate.getTime() : Infinity) - (b.dueDate ? b.dueDate.getTime() : Infinity) || b.amountKopeks - a.amountKopeks);
@@ -231,25 +232,33 @@ function CriticalBlock({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <CriticalCard label="Продажи на проверке" main={`${pending.count} шт`} sub={formatKopeks(pending.kopeks)} tone={pending.count > 0 ? "amber" : "slate"} />
-          <CriticalCard label="Счета к оплате" main={`${debtInvoices.count} шт`} sub={formatKopeks(debtInvoices.kopeks)} tone={debtInvoices.count > 0 ? "rose" : "slate"} />
-          <CriticalCard label="Возвраты к оплате" main={`${debtRefunds.count} шт`} sub={formatKopeks(debtRefunds.kopeks)} tone={debtRefunds.count > 0 ? "rose" : "slate"} />
-          <CriticalCard label="Превышен бюджет" main={`${budgetOverCount} ${budgetOverCount === 1 ? "статья" : "статей"}`} sub={budgetOverCount > 0 ? "проверьте лимиты" : "в пределах"} tone={budgetOverCount > 0 ? "rose" : "slate"} />
+          <CriticalCard label="Продажи на проверке" main={`${pending.count} шт`} sub={formatKopeks(pending.kopeks)} tone={pending.count > 0 ? "amber" : "slate"} href={pending.count > 0 ? "/sales?status=pending_accountant" : undefined} />
+          <CriticalCard label="Счета к оплате" main={`${debtInvoices.count} шт`} sub={formatKopeks(debtInvoices.kopeks)} tone={debtInvoices.count > 0 ? "rose" : "slate"} href={debtInvoices.count > 0 ? "#debts" : undefined} />
+          <CriticalCard label="Возвраты к оплате" main={`${debtRefunds.count} шт`} sub={formatKopeks(debtRefunds.kopeks)} tone={debtRefunds.count > 0 ? "rose" : "slate"} href={debtRefunds.count > 0 ? "#debts" : undefined} />
+          <CriticalCard label="Превышен бюджет" main={`${budgetOverCount} ${budgetOverCount === 1 ? "статья" : "статей"}`} sub={budgetOverCount > 0 ? "проверьте лимиты" : "в пределах"} tone={budgetOverCount > 0 ? "rose" : "slate"} href={budgetOverCount > 0 ? "/budgets" : undefined} />
         </div>
       )}
     </div>
   );
 }
 
-function CriticalCard({ label, main, sub, tone }: { label: string; main: string; sub: string; tone: "rose" | "amber" | "slate" }) {
+function CriticalCard({ label, main, sub, tone, href }: { label: string; main: string; sub: string; tone: "rose" | "amber" | "slate"; href?: string }) {
   const ring = tone === "rose" ? "border-rose-200 bg-rose-50" : tone === "amber" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50";
   const text = tone === "rose" ? "text-rose-800" : tone === "amber" ? "text-amber-800" : "text-slate-700";
-  return (
-    <div className={`rounded-md border px-3 py-2 ${ring}`}>
+  const inner = (
+    <>
       <div className="text-xs text-slate-500">{label}</div>
       <div className={`mt-0.5 text-base font-semibold ${text}`}>{main}</div>
       <div className="text-xs text-slate-500">{sub}</div>
-    </div>
+    </>
+  );
+  if (!href) return <div className={`rounded-md border px-3 py-2 ${ring}`}>{inner}</div>;
+  // Same-page anchors (#debts) use a plain <a>; route links use Next <Link>.
+  const className = `block rounded-md border px-3 py-2 transition hover:shadow-sm ${ring}`;
+  return href.startsWith("#") ? (
+    <a href={href} className={className}>{inner}</a>
+  ) : (
+    <Link href={href} className={className}>{inner}</Link>
   );
 }
 
@@ -370,6 +379,7 @@ function ClubRatingBlock({ rows, financials }: { rows: ClubRankRow[]; financials
 
 type DebtRow = {
   id: string;
+  href: string;
   name: string;
   kind: "Счёт" | "Возврат";
   amountKopeks: number;
@@ -380,7 +390,7 @@ type DebtRow = {
 
 function DebtBlock({ rows, totalKopeks }: { rows: DebtRow[]; totalKopeks: number }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div id="debts" className="scroll-mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
         <span className="text-sm font-semibold text-slate-700">Долги</span>
         {totalKopeks > 0 ? <span className="text-sm font-semibold text-rose-700">{formatKopeks(totalKopeks)}</span> : null}
@@ -390,8 +400,8 @@ function DebtBlock({ rows, totalKopeks }: { rows: DebtRow[]; totalKopeks: number
       ) : (
         <ul className="divide-y divide-slate-100">
           {rows.map((row) => (
-            <li key={row.id} className="px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
+            <li key={row.id}>
+              <Link href={row.href} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium text-slate-900">{row.name}</span>
@@ -414,7 +424,7 @@ function DebtBlock({ rows, totalKopeks }: { rows: DebtRow[]; totalKopeks: number
                     <div className="text-xs text-slate-400">в срок</div>
                   )}
                 </div>
-              </div>
+              </Link>
             </li>
           ))}
         </ul>
@@ -467,7 +477,7 @@ function PendingSalesBlock({
 function RecentExpensesBlock({
   rows,
 }: {
-  rows: Array<{ id: string; date: Date; clubName: string; category: string; amountKopeks: number; type: "Расход" | "Счёт" | "Возврат" }>;
+  rows: Array<{ id: string; href: string; date: Date; clubName: string; category: string; amountKopeks: number; type: "Расход" | "Счёт" | "Возврат" }>;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -483,6 +493,7 @@ function RecentExpensesBlock({
               <Th>Статья</Th>
               <Th>Тип</Th>
               <Th className="text-right">Сумма</Th>
+              <Th className="text-right"></Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -495,6 +506,9 @@ function RecentExpensesBlock({
                   <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">{r.type}</span>
                 </Td>
                 <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
+                <Td className="whitespace-nowrap text-right">
+                  <Link href={r.href} className="text-xs font-medium text-brand-600 hover:text-brand-700">Открыть</Link>
+                </Td>
               </tr>
             ))}
           </tbody>
@@ -516,7 +530,7 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
   );
 }
 
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
   return (
     <th scope="col" className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 ${className ?? ""}`}>
       {children}
