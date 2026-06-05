@@ -41,7 +41,7 @@ const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
   general_director: ["dashboard", "sales", "budgets", "users", "settings"],
   regional_director: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "imports", "documents", "users"],
   manager: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "documents"],
-  accountant: ["expenses", "invoices", "refunds", "budgets", "sales", "documents"],
+  accountant: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "documents"],
   // Marketer added for future advertising metrics — minimal access for now
   // (no marketing page yet; no financial create/edit; no payroll/salary view).
   marketer: ["dashboard"],

@@ -120,6 +120,84 @@ export async function getBudgetOverview(clubId: string, month: string): Promise<
   return rows;
 }
 
+export type BudgetOverrun = {
+  clubId: string;
+  category: string;
+  label: string;
+  limitKopeks: number;
+  usedKopeks: number;
+  overPercent: number;
+};
+
+/**
+ * Budget overruns for the current month, computed from already-loaded scope data
+ * (no extra per-club queries). "Used" mirrors computeUsedKopeks: confirmed
+ * expenses + approved/paid invoices (by category) + approved/paid refunds (for
+ * the "refunds" category). Returns only categories where used > limit, worst first.
+ */
+export function computeBudgetOverruns(
+  budgets: Array<{ clubId: string; category: string; limitAmountKopeks: number }>,
+  data: {
+    expenses: Array<{ clubId: string; category: string; amountKopeks: number; expenseDate: Date; status: string }>;
+    invoices: Array<{ clubId: string; expenseCategory: string | null; amountKopeks: number; invoiceDate: Date | null; createdAt: Date; status: string }>;
+    refunds: Array<{ clubId: string; amountKopeks: number; refundDate: Date | null; createdAt: Date; status: string }>;
+  },
+  month: string,
+): BudgetOverrun[] {
+  const range = monthRange(month);
+  if (!range) return [];
+  const inR = (d: Date) => {
+    const t = d.getTime();
+    return t >= range.start && t < range.end;
+  };
+  const key = (clubId: string, category: string) => `${clubId}|${category}`;
+  const used = new Map<string, number>();
+  const add = (k: string, v: number) => used.set(k, (used.get(k) ?? 0) + v);
+
+  for (const e of data.expenses) {
+    if (e.status === "confirmed" && inR(e.expenseDate)) add(key(e.clubId, e.category), e.amountKopeks);
+  }
+  for (const i of data.invoices) {
+    if (i.expenseCategory && APPROVED_INVOICE_STATUSES.includes(i.status) && inR(i.invoiceDate ?? i.createdAt)) {
+      add(key(i.clubId, i.expenseCategory), i.amountKopeks);
+    }
+  }
+  for (const r of data.refunds) {
+    if (APPROVED_REFUND_STATUSES.includes(r.status) && inR(r.refundDate ?? r.createdAt)) {
+      add(key(r.clubId, "refunds"), r.amountKopeks);
+    }
+  }
+
+  const out: BudgetOverrun[] = [];
+  for (const b of budgets) {
+    if (b.limitAmountKopeks <= 0) continue;
+    const u = used.get(key(b.clubId, b.category)) ?? 0;
+    if (u > b.limitAmountKopeks) {
+      out.push({
+        clubId: b.clubId,
+        category: b.category,
+        label: budgetCategoryLabel(b.category),
+        limitKopeks: b.limitAmountKopeks,
+        usedKopeks: u,
+        overPercent: (u / b.limitAmountKopeks - 1) * 100,
+      });
+    }
+  }
+  return out.sort((a, b) => b.overPercent - a.overPercent);
+}
+
+/** Budgets (club + category limits) for the scope's clubs in a month. */
+export async function getBudgetsForScope(
+  scope: DataScope,
+  month: string,
+): Promise<Array<{ clubId: string; category: string; limitAmountKopeks: number }>> {
+  if (!scope.company || scope.clubIds.length === 0) return [];
+  return prisma.budget.findMany({
+    where: { companyId: scope.company.id, clubId: { in: scope.clubIds }, month },
+    select: { clubId: true, category: true, limitAmountKopeks: true },
+  });
+}
+
 export type BudgetRequestWithRelations = BudgetApprovalRequest & {
   club: { id: string; name: string };
   requestedBy: { id: string; name: string };

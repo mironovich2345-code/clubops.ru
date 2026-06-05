@@ -30,6 +30,17 @@ export async function getSalesPlan(
   return plan;
 }
 
+/** All plans (company-wide + per-club) for a company in a month. */
+export async function getSalesPlansForCompanyMonth(
+  companyId: string,
+  month: string,
+): Promise<Array<{ clubId: string | null; targetAmountKopeks: number }>> {
+  return prisma.salesPlan.findMany({
+    where: { companyId, month },
+    select: { clubId: true, targetAmountKopeks: true },
+  });
+}
+
 export type SalesPlanProgress = {
   planKopeks: number;
   factKopeks: number;
