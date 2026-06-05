@@ -7,6 +7,11 @@ import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import { getExpenseForContext } from "@/lib/expenses";
 import {
+  evaluateExpenseBudget,
+  currentMonthKey,
+  SOURCE_STATUS_WAITING,
+} from "@/lib/budgets";
+import {
   analyzeExpenseDocument,
   manualExpenseExtraction,
   type ExpenseExtraction,
@@ -30,7 +35,7 @@ type AnalyzeState = {
   extraction?: ExpenseExtraction;
 };
 
-type SaveState = { ok: boolean; error?: string; expenseId?: string };
+type SaveState = { ok: boolean; error?: string; expenseId?: string; budgetPending?: boolean };
 
 const EXPENSE_TYPES = new Set(["receipt", "transfer", "manual", "payroll_statement"]);
 
@@ -237,6 +242,18 @@ export async function saveExpense(
   const confidenceRaw = String(formData.get("confidence") ?? "low");
   const confidence = ["low", "medium", "high"].includes(confidenceRaw) ? confidenceRaw : "low";
 
+  // Budget-overrun gate: if this expense would push the category's monthly spend
+  // over its budget, it does NOT auto-count. Create it as waiting and raise a
+  // budget-approval request; it stays out of dashboards/budgets until approved.
+  const month = currentMonthKey(parsed.data.expenseDate);
+  const evalBudget = await evaluateExpenseBudget(
+    clubId,
+    parsed.data.category,
+    month,
+    parsed.data.amountKopeks,
+  );
+  const overBudget = evalBudget.hasLimit && evalBudget.projectedKopeks > evalBudget.limitKopeks;
+
   const expense = await prisma.expense.create({
     data: {
       companyId,
@@ -244,7 +261,7 @@ export async function saveExpense(
       createdByUserId: ctx.user.id,
       ...parsed.data,
       confidence,
-      status: "confirmed",
+      status: overBudget ? SOURCE_STATUS_WAITING : "confirmed",
       originalFileName: str(formData, "fileName"),
       originalFileMime: str(formData, "fileMime"),
       originalFileSize: Number(formData.get("fileSize")) || null,
@@ -260,11 +277,55 @@ export async function saveExpense(
     companyId,
     clubId,
     userId: ctx.user.id,
-    metadata: { type: expense.type, amountKopeks: expense.amountKopeks },
+    metadata: { type: expense.type, amountKopeks: expense.amountKopeks, status: expense.status },
   });
 
+  if (overBudget) {
+    const request = await prisma.budgetApprovalRequest.create({
+      data: {
+        companyId,
+        clubId,
+        category: parsed.data.category,
+        month,
+        sourceType: "expense",
+        sourceId: expense.id,
+        budgetId: evalBudget.budgetId,
+        requestedAmountKopeks: parsed.data.amountKopeks,
+        budgetAmountKopeks: evalBudget.limitKopeks,
+        currentSpentKopeks: evalBudget.usedKopeks,
+        projectedSpentKopeks: evalBudget.projectedKopeks,
+        overrunKopeks: evalBudget.overrunKopeks,
+        reason: parsed.data.notes,
+        status: "pending",
+        requestedByUserId: ctx.user.id,
+        // Legacy (non-null) columns kept consistent with the new fields.
+        currentLimitAmountKopeks: evalBudget.limitKopeks,
+        overByAmountKopeks: evalBudget.overrunKopeks,
+        overByPercent:
+          evalBudget.limitKopeks > 0 ? (evalBudget.overrunKopeks / evalBudget.limitKopeks) * 100 : 0,
+      },
+    });
+    await recordAudit({
+      action: "budget_approval.created",
+      entityType: "BudgetApprovalRequest",
+      entityId: request.id,
+      companyId,
+      clubId,
+      userId: ctx.user.id,
+      metadata: {
+        sourceType: "expense",
+        sourceId: expense.id,
+        category: parsed.data.category,
+        month,
+        overrunKopeks: evalBudget.overrunKopeks,
+      },
+    });
+    revalidatePath("/budgets");
+    revalidatePath("/dashboard");
+  }
+
   revalidatePath("/expenses");
-  return { ok: true, expenseId: expense.id };
+  return { ok: true, expenseId: expense.id, budgetPending: overBudget };
 }
 
 export async function updateExpense(

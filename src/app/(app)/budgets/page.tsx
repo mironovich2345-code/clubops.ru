@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
@@ -7,7 +8,6 @@ import {
   getCurrentAccessContext,
   getClubsInScope,
   getManageableClubIds,
-  userHasCompanyRole,
 } from "@/lib/access";
 import {
   getBudgetOverview,
@@ -16,18 +16,26 @@ import {
   budgetCategoryLabel,
   currentMonthKey,
   isValidMonth,
+  isBudgetRequestPending,
   BUDGET_REQUEST_STATUS_LABELS,
-  OWNER_DOUBLE_CONFIRM_PERCENT,
 } from "@/lib/budgets";
-import { BudgetLimitForm, RequestForm } from "./_components/BudgetForms";
+import { BudgetLimitForm } from "./_components/BudgetForms";
 import { RequestActions } from "./_components/RequestActions";
 
 export const dynamic = "force-dynamic";
 
+const REQUEST_TABS = [
+  { key: "pending", label: "Ожидают" },
+  { key: "approved", label: "Согласованы" },
+  { key: "rejected", label: "Отклонены" },
+] as const;
+
+type RequestTab = (typeof REQUEST_TABS)[number]["key"];
+
 export default async function BudgetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ clubId?: string; month?: string }>;
+  searchParams: Promise<{ clubId?: string; month?: string; tab?: string }>;
 }) {
   const user = await requirePageAccess("budgets");
   const scope = await getCurrentCompanyAndClub(user);
@@ -46,27 +54,41 @@ export default async function BudgetsPage({
     sp.clubId && clubs.some((c) => c.id === sp.clubId) ? sp.clubId : scope.club?.id ?? clubs[0].id;
   const now = new Date();
   const month = sp.month && isValidMonth(sp.month) ? sp.month : currentMonthKey(now);
+  const tab: RequestTab = REQUEST_TABS.some((t) => t.key === sp.tab)
+    ? (sp.tab as RequestTab)
+    : "pending";
 
-  const [overview, requests, isOwner, manageableClubIds] = await Promise.all([
+  const [overview, requests, manageableClubIds] = await Promise.all([
     getBudgetOverview(selectedClubId, month),
     getBudgetRequestsForScope(scope),
-    userHasCompanyRole(user.id, scope.company.id, ["owner"]),
     getManageableClubIds(user.id, scope.company.id),
   ]);
   const manageable = new Set(manageableClubIds);
   const canManageSelected = manageable.has(selectedClubId);
 
-  function decisionFlags(req: (typeof requests)[number]) {
-    const pending = req.status === "pending_regional" || req.status === "pending_owner";
-    if (!pending) return { canApprove: false, canReject: false, requiresDoubleConfirm: false };
-    const isClubManager = manageable.has(req.clubId);
-    const allowed = req.status === "pending_owner" ? isOwner : isClubManager;
-    return {
-      canApprove: allowed,
-      canReject: allowed,
-      requiresDoubleConfirm: isOwner && req.overByPercent > OWNER_DOUBLE_CONFIRM_PERCENT,
-    };
+  // Approval rights: owner/GD -> all clubs, RD -> assigned clubs (encoded by
+  // getManageableClubIds); the requester may never decide their own request.
+  function canDecide(req: (typeof requests)[number]): boolean {
+    return (
+      isBudgetRequestPending(req.status) &&
+      manageable.has(req.clubId) &&
+      req.requestedByUserId !== user.id
+    );
   }
+
+  const counts = {
+    pending: requests.filter((r) => isBudgetRequestPending(r.status)).length,
+    approved: requests.filter((r) => r.status === "approved").length,
+    rejected: requests.filter((r) => r.status === "rejected").length,
+  };
+  const tabRequests = requests.filter((r) =>
+    tab === "pending" ? isBudgetRequestPending(r.status) : r.status === tab,
+  );
+
+  const tabHref = (t: RequestTab) => {
+    const params = new URLSearchParams({ clubId: selectedClubId, month, tab: t });
+    return `/budgets?${params.toString()}`;
+  };
 
   return (
     <div>
@@ -86,17 +108,17 @@ export default async function BudgetsPage({
           <span className="mb-1 block text-sm font-medium text-slate-700">Месяц</span>
           <input type="month" name="month" defaultValue={month} className="input" />
         </label>
+        <input type="hidden" name="tab" value={tab} />
         <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Показать
         </button>
       </form>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {canManageSelected ? (
+      {canManageSelected ? (
+        <div className="mb-6">
           <BudgetLimitForm clubId={selectedClubId} month={month} categories={BUDGET_CATEGORIES} />
-        ) : null}
-        <RequestForm clubId={selectedClubId} month={month} categories={BUDGET_CATEGORIES} />
-      </div>
+        </div>
+      ) : null}
 
       {/* Overview */}
       <div className="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -134,58 +156,73 @@ export default async function BudgetsPage({
         </table>
       </div>
 
-      {/* Requests */}
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      {/* Budget approval requests */}
+      <div id="approvals" className="scroll-mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
           Запросы на согласование перерасхода
+        </div>
+        <div className="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-2">
+          {REQUEST_TABS.map((t) => (
+            <Link
+              key={t.key}
+              href={tabHref(t.key)}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                t.key === tab
+                  ? "bg-brand-600 text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {t.label} ({counts[t.key]})
+            </Link>
+          ))}
         </div>
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
               <Th>Клуб</Th>
               <Th>Статья</Th>
-              <Th>Месяц</Th>
-              <Th>Источник</Th>
               <Th className="text-right">Сумма</Th>
+              <Th className="text-right">Бюджет</Th>
+              <Th className="text-right">Прогноз</Th>
               <Th className="text-right">Перерасход</Th>
+              <Th>Причина</Th>
+              <Th>Запросил</Th>
               <Th>Статус</Th>
               <Th>Действия</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {requests.length === 0 ? (
+            {tabRequests.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
-                  Запросов на согласование пока нет.
+                <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-500">
+                  Запросов в этой вкладке нет.
                 </td>
               </tr>
             ) : (
-              requests.map((req) => {
-                const flags = decisionFlags(req);
-                return (
-                  <tr key={req.id} className="hover:bg-slate-50">
-                    <Td className="whitespace-nowrap">{req.club.name}</Td>
-                    <Td>{budgetCategoryLabel(req.category)}</Td>
-                    <Td className="whitespace-nowrap">{req.month}</Td>
-                    <Td>{req.sourceType}</Td>
-                    <Td className="whitespace-nowrap text-right">{formatKopeks(req.requestedAmountKopeks)}</Td>
-                    <Td className="whitespace-nowrap text-right text-rose-700">
-                      +{req.overByPercent.toFixed(0)}%
-                    </Td>
-                    <Td className="whitespace-nowrap">
-                      {BUDGET_REQUEST_STATUS_LABELS[req.status] ?? req.status}
-                    </Td>
-                    <Td>
-                      <RequestActions
-                        requestId={req.id}
-                        canApprove={flags.canApprove}
-                        canReject={flags.canReject}
-                        requiresDoubleConfirm={flags.requiresDoubleConfirm}
-                      />
-                    </Td>
-                  </tr>
-                );
-              })
+              tabRequests.map((req) => (
+                <tr key={req.id} className="hover:bg-slate-50">
+                  <Td className="whitespace-nowrap">{req.club.name}</Td>
+                  <Td>{budgetCategoryLabel(req.category)}</Td>
+                  <Td className="whitespace-nowrap text-right">{formatKopeks(req.requestedAmountKopeks)}</Td>
+                  <Td className="whitespace-nowrap text-right">
+                    {req.budgetAmountKopeks > 0 ? formatKopeks(req.budgetAmountKopeks) : "—"}
+                  </Td>
+                  <Td className="whitespace-nowrap text-right">
+                    {req.projectedSpentKopeks > 0 ? formatKopeks(req.projectedSpentKopeks) : "—"}
+                  </Td>
+                  <Td className="whitespace-nowrap text-right font-medium text-rose-700">
+                    {formatKopeks(req.overrunKopeks > 0 ? req.overrunKopeks : req.overByAmountKopeks)}
+                  </Td>
+                  <Td className="max-w-[16rem] truncate">{req.reason ?? "—"}</Td>
+                  <Td className="whitespace-nowrap">{req.requestedBy.name}</Td>
+                  <Td className="whitespace-nowrap">
+                    {BUDGET_REQUEST_STATUS_LABELS[req.status] ?? req.status}
+                  </Td>
+                  <Td>
+                    <RequestActions requestId={req.id} canDecide={canDecide(req)} />
+                  </Td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -194,7 +231,7 @@ export default async function BudgetsPage({
   );
 }
 
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
   return (
     <th
       scope="col"

@@ -48,7 +48,12 @@ export default async function ExpensesPage() {
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
   const now = new Date();
-  const summary = summarizeExpenses(expenses, now);
+  // Analytics/totals reflect realized spend only — expenses waiting for or
+  // rejected by budget approval do not count.
+  const summary = summarizeExpenses(
+    expenses.filter((e) => e.status === "confirmed"),
+    now,
+  );
   const currentMonthLabel = monthFormatter.format(now);
   const previousMonthLabel = monthFormatter.format(
     new Date(now.getFullYear(), now.getMonth() - 1, 1),
@@ -105,6 +110,7 @@ export default async function ExpensesPage() {
                         {expenseCategoryLabel(expense.category)}
                       </span>
                       <div className="mt-1 text-xs text-slate-500">{expense.club.name}</div>
+                      <ExpenseStatusBadge status={expense.status} />
                     </Td>
                     <Td>{expense.vendorName ?? expense.recipientName ?? "—"}</Td>
                     <Td className="whitespace-nowrap text-right font-medium text-slate-900">
@@ -261,4 +267,22 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-3 align-top text-sm text-slate-700 ${className ?? ""}`}>{children}</td>;
+}
+
+function ExpenseStatusBadge({ status }: { status: string }) {
+  if (status === "waiting_budget_approval") {
+    return (
+      <div className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+        Ожидает согласования бюджета
+      </div>
+    );
+  }
+  if (status === "budget_rejected") {
+    return (
+      <div className="mt-1 inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200">
+        Отклонён (бюджет)
+      </div>
+    );
+  }
+  return null;
 }

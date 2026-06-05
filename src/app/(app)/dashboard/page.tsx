@@ -6,7 +6,12 @@ import { getInvoicesForScope } from "@/lib/invoices";
 import { getExpensesForScope, summarizeExpenses, expenseCategoryLabel } from "@/lib/expenses";
 import { getSalesForScope, summarizeSales } from "@/lib/sales";
 import { getRefundsForScope } from "@/lib/refunds";
-import { getBudgetsForScope, computeBudgetOverruns } from "@/lib/budgets";
+import {
+  getBudgetsForScope,
+  computeBudgetOverruns,
+  getPendingBudgetRequestsForScope,
+  budgetCategoryLabel,
+} from "@/lib/budgets";
 import { getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
 import { canManageSalesPlans, type Role } from "@/lib/auth";
 import { getSalesPlan, getSalesPlansForCompanyMonth, salesPlanProgress, monthKey } from "@/lib/sales-plans";
@@ -43,7 +48,7 @@ export default async function DashboardPage() {
   const now = new Date();
   const planMonth = monthKey(now);
 
-  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets] =
+  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets, budgetRequests] =
     await Promise.all([
       getClubsInScope(scope),
       getInvoicesForScope(scope),
@@ -54,6 +59,7 @@ export default async function DashboardPage() {
       getSalesPlan(scope.company.id, scope.club?.id ?? null, planMonth),
       getSalesPlansForCompanyMonth(scope.company.id, planMonth),
       getBudgetsForScope(scope, planMonth),
+      getPendingBudgetRequestsForScope(scope),
     ]);
 
   const roles = ctx?.effectiveRoles ?? [];
@@ -110,11 +116,25 @@ export default async function DashboardPage() {
   const overruns = financials ? computeBudgetOverruns(budgets, { expenses, invoices, refunds }, planMonth) : [];
   const overOver20 = overruns.filter((o) => o.overPercent > 20).length;
 
+  // Budget-overrun approval requests pending a decision (financial roles only).
+  const pendingApprovals = financials ? budgetRequests : [];
+  const pendingApprovalRows = pendingApprovals.slice(0, 5).map((r) => ({
+    id: r.id,
+    clubName: r.club.name,
+    category: budgetCategoryLabel(r.category),
+    amountKopeks: r.requestedAmountKopeks,
+    overrunKopeks: r.overrunKopeks > 0 ? r.overrunKopeks : r.overByAmountKopeks,
+    by: r.requestedBy.name,
+    date: r.createdAt,
+  }));
+  const pendingApprovalAmountKopeks = pendingApprovals.reduce((s, r) => s + r.requestedAmountKopeks, 0);
+
   const notifications = buildNotifications({
     financials,
     overdueCount,
     overrunCount: overruns.length,
     overOver20,
+    budgetApprovalCount: pendingApprovals.length,
     planPercent: planProgress.percent,
     pendingCount: pendingSales.length,
   });
@@ -179,6 +199,17 @@ export default async function DashboardPage() {
           debtRefunds={{ count: debtRefunds.length, kopeks: debtRefunds.reduce((s, d) => s + d.amountKopeks, 0) }}
           budgetOverCount={overruns.length}
         />
+      ) : null}
+
+      {/* Budget-overrun approvals awaiting a decision */}
+      {financials && pendingApprovals.length > 0 ? (
+        <div className="mb-6">
+          <BudgetApprovalsBlock
+            rows={pendingApprovalRows}
+            total={pendingApprovals.length}
+            amountKopeks={pendingApprovalAmountKopeks}
+          />
+        </div>
       ) : null}
 
       {/* Block 7: уведомления (приоритеты) */}
@@ -272,11 +303,17 @@ function buildNotifications(input: {
   overdueCount: number;
   overrunCount: number;
   overOver20: number;
+  budgetApprovalCount: number;
   planPercent: number | null;
   pendingCount: number;
 }): Notification[] {
   const out: Notification[] = [];
   if (input.financials) {
+    if (input.budgetApprovalCount > 0)
+      out.push({
+        tone: "red",
+        text: `${input.budgetApprovalCount} ${pluralOverrun(input.budgetApprovalCount)} бюджета ожидают согласования`,
+      });
     if (input.overdueCount > 0) out.push({ tone: "red", text: `Просроченные долги: ${input.overdueCount}` });
     if (input.overOver20 > 0) out.push({ tone: "red", text: `Превышение бюджета более чем на 20%: ${input.overOver20} стат.` });
   }
@@ -296,6 +333,15 @@ function buildNotifications(input: {
   return out.slice(0, 5);
 }
 
+/** Russian plural for "превышение" (overrun): 1→ение, 2-4→ения, else→ений. */
+function pluralOverrun(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "превышение";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "превышения";
+  return "превышений";
+}
+
 function NotificationsBlock({ notifications }: { notifications: Notification[] }) {
   const cls: Record<NoteTone, string> = {
     red: "bg-rose-50 text-rose-700 ring-rose-200",
@@ -312,6 +358,58 @@ function NotificationsBlock({ notifications }: { notifications: Notification[] }
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// --- Budget approvals (overrun requests) ----------------------------------
+
+function BudgetApprovalsBlock({
+  rows,
+  total,
+  amountKopeks,
+}: {
+  rows: Array<{ id: string; clubName: string; category: string; amountKopeks: number; overrunKopeks: number; by: string; date: Date }>;
+  total: number;
+  amountKopeks: number;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-rose-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-3">
+        <span className="text-sm font-semibold text-rose-800">
+          Согласование бюджета · ожидают: {total}
+        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-rose-800">{formatKopeks(amountKopeks)}</span>
+          <Link href="/budgets#approvals" className="text-xs font-medium text-brand-600 hover:text-brand-700">
+            Открыть согласования
+          </Link>
+        </div>
+      </div>
+      <table className="min-w-full divide-y divide-slate-200">
+        <thead className="bg-white">
+          <tr>
+            <Th>Клуб</Th>
+            <Th>Статья</Th>
+            <Th className="text-right">Сумма</Th>
+            <Th className="text-right">Перерасход</Th>
+            <Th>Запросил</Th>
+            <Th className="text-right">Дата</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((r) => (
+            <tr key={r.id} className="hover:bg-slate-50">
+              <Td className="whitespace-nowrap">{r.clubName}</Td>
+              <Td>{r.category}</Td>
+              <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
+              <Td className="whitespace-nowrap text-right font-medium text-rose-700">{formatKopeks(r.overrunKopeks)}</Td>
+              <Td className="whitespace-nowrap">{r.by}</Td>
+              <Td className="whitespace-nowrap text-right text-slate-500">{dateFormatter.format(r.date)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

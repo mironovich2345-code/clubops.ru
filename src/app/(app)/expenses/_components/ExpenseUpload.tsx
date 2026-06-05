@@ -20,7 +20,7 @@ type AnalyzeState = {
   fileSize?: number;
   extraction?: ExpenseExtraction;
 };
-type SaveState = { ok: boolean; error?: string; expenseId?: string };
+type SaveState = { ok: boolean; error?: string; expenseId?: string; budgetPending?: boolean };
 
 const analyzeInitial: AnalyzeState = { ok: false };
 const saveInitial: SaveState = { ok: false };
@@ -268,7 +268,11 @@ function DocumentExpenseForm({
             </div>
           </div>
 
-          {saved.ok ? (
+          {saved.ok && saved.budgetPending ? (
+            <div className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
+              Расход превышает бюджет и отправлен на согласование. Он не учитывается до подтверждения.
+            </div>
+          ) : saved.ok ? (
             <div className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">
               Расход сохранён. Он появился в списке ниже.
             </div>

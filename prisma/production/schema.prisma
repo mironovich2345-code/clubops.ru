@@ -292,8 +292,20 @@ model BudgetApprovalRequest {
   sourceType             String
   sourceId               String?
   requestedByUserId      String
-  // pending_regional | pending_owner | approved | rejected
-  status                 String    @default("pending_regional")
+  // Automatic overrun workflow: pending | approved | rejected.
+  // (Legacy manual workflow used pending_regional | pending_owner.)
+  status                 String    @default("pending")
+  // New automatic-overrun fields (legacy fields above kept for back-compat).
+  budgetId               String?
+  budgetAmountKopeks     Int       @default(0)
+  currentSpentKopeks     Int       @default(0)
+  projectedSpentKopeks   Int       @default(0)
+  overrunKopeks          Int       @default(0)
+  reason                 String?
+  approvedByUserId       String?
+  approvedAt             DateTime?
+  rejectedByUserId       String?
+  rejectedAt             DateTime?
   decidedByUserId        String?
   decidedAt              DateTime?
   decisionComment        String?

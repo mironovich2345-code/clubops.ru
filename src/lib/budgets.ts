@@ -15,11 +15,23 @@ export const REGIONAL_MAX_OVER_PERCENT = 5; // RD may approve up to +5%
 export const OWNER_DOUBLE_CONFIRM_PERCENT = 20; // owner approving >20% needs double confirm
 
 export const BUDGET_REQUEST_STATUS_LABELS: Record<string, string> = {
+  pending: "Ожидает согласования",
+  // Legacy manual-workflow statuses (still rendered if any old rows exist).
   pending_regional: "Ожидает регионального директора",
   pending_owner: "Ожидает собственника",
   approved: "Согласовано",
   rejected: "Отклонено",
 };
+
+/** A request is "pending" while it has not been approved or rejected. */
+export function isBudgetRequestPending(status: string): boolean {
+  return status !== "approved" && status !== "rejected";
+}
+
+// Source-record statuses driven by the budget-overrun workflow. A source that
+// is waiting (or rejected) must NOT count as realized spending anywhere.
+export const SOURCE_STATUS_WAITING = "waiting_budget_approval";
+export const SOURCE_STATUS_REJECTED = "budget_rejected";
 
 export function currentMonthKey(reference: Date): string {
   const y = reference.getFullYear();
@@ -198,10 +210,68 @@ export async function getBudgetsForScope(
   });
 }
 
+export type ExpenseBudgetEval = {
+  hasLimit: boolean;
+  budgetId: string | null;
+  limitKopeks: number;
+  usedKopeks: number;
+  projectedKopeks: number;
+  overrunKopeks: number;
+};
+
+/**
+ * Evaluate whether adding `addKopeks` to a club+category+month would exceed the
+ * monthly budget. `usedKopeks` is current realized spend (excluding the pending
+ * operation). When `hasLimit` is false there is no limit to enforce.
+ */
+export async function evaluateExpenseBudget(
+  clubId: string,
+  category: string,
+  month: string,
+  addKopeks: number,
+): Promise<ExpenseBudgetEval> {
+  const budget = await prisma.budget.findUnique({
+    where: { clubId_category_month: { clubId, category, month } },
+    select: { id: true, limitAmountKopeks: true },
+  });
+  const usedKopeks = await computeUsedKopeks(clubId, category, month);
+  const projectedKopeks = usedKopeks + addKopeks;
+  const limitKopeks = budget?.limitAmountKopeks ?? 0;
+  const hasLimit = !!budget && limitKopeks > 0;
+  return {
+    hasLimit,
+    budgetId: budget?.id ?? null,
+    limitKopeks,
+    usedKopeks,
+    projectedKopeks,
+    overrunKopeks: Math.max(0, projectedKopeks - limitKopeks),
+  };
+}
+
 export type BudgetRequestWithRelations = BudgetApprovalRequest & {
   club: { id: string; name: string };
   requestedBy: { id: string; name: string };
 };
+
+/** Pending budget-overrun requests for the scope (dashboard widget). */
+export async function getPendingBudgetRequestsForScope(
+  scope: DataScope,
+): Promise<BudgetRequestWithRelations[]> {
+  if (!scope.company || scope.clubIds.length === 0) return [];
+  const rows = await prisma.budgetApprovalRequest.findMany({
+    where: {
+      companyId: scope.company.id,
+      clubId: { in: scope.clubIds },
+      status: { notIn: ["approved", "rejected"] },
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      club: { select: { id: true, name: true } },
+      requestedBy: { select: { id: true, name: true } },
+    },
+  });
+  return rows as BudgetRequestWithRelations[];
+}
 
 export async function getBudgetRequestsForScope(
   scope: DataScope,
