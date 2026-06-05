@@ -1,0 +1,415 @@
+import { prisma } from "@/lib/prisma";
+import { expenseCategoryLabel } from "@/lib/expenses";
+import {
+  computeBudgetFactReport,
+  type BudgetFactReport,
+} from "@/lib/budgets";
+
+// ---------------------------------------------------------------------------
+// Network analytics. Period-aware aggregation built from settled financial
+// events:
+//   sales  = confirmed sales
+//   spend  = confirmed expenses + paid invoices + paid refunds
+// (everything else — draft / pending / rejected / waiting_budget_approval — is
+// excluded.) All money in kopeks. Scope (companyId + clubIds) is resolved by the
+// caller from effective roles; these helpers never widen it.
+// ---------------------------------------------------------------------------
+
+export type AnalyticsPeriodKey = "current_month" | "previous_month" | "custom";
+
+export type ResolvedPeriod = {
+  key: AnalyticsPeriodKey;
+  label: string;
+  start: Date;
+  end: Date; // exclusive
+  prevStart: Date;
+  prevEnd: Date; // exclusive
+  months: string[]; // "YYYY-MM" months overlapping [start, end)
+  primaryMonth: string; // month of `start` (used for monthly budget/plan blocks)
+};
+
+function monthStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthsBetween(start: Date, end: Date): string[] {
+  const out: string[] = [];
+  const cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cur.getTime() < end.getTime()) {
+    out.push(monthStr(cur));
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return out.length ? out : [monthStr(start)];
+}
+
+export function resolvePeriod(
+  key: AnalyticsPeriodKey,
+  now: Date,
+  from?: Date,
+  to?: Date,
+): ResolvedPeriod {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  if (key === "previous_month") {
+    const start = new Date(y, m - 1, 1);
+    const end = new Date(y, m, 1);
+    const prevStart = new Date(y, m - 2, 1);
+    return { key, label: "Прошлый месяц", start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+  }
+  if (key === "custom" && from && to) {
+    const start = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    const end = new Date(to.getFullYear(), to.getMonth(), to.getDate() + 1); // inclusive `to`
+    const span = end.getTime() - start.getTime();
+    const prevEnd = start;
+    const prevStart = new Date(start.getTime() - span);
+    return { key, label: "Период", start, end, prevStart, prevEnd, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+  }
+  // current_month (default)
+  const start = new Date(y, m, 1);
+  const end = new Date(y, m + 1, 1);
+  const prevStart = new Date(y, m - 1, 1);
+  return { key: "current_month", label: "Текущий месяц", start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+}
+
+// --- raw data --------------------------------------------------------------
+
+const APPROVED_UNPAID = ["approved_by_regional", "approved_by_owner"];
+
+export type AnalyticsData = {
+  clubs: Array<{ id: string; name: string }>;
+  sales: Array<{ clubId: string; amountKopeks: number; saleDate: Date }>;
+  expenses: Array<{ clubId: string; category: string; amountKopeks: number; expenseDate: Date; status: string }>;
+  invoices: Array<{ clubId: string; expenseCategory: string | null; amountKopeks: number; paidAt: Date | null; invoiceDate: Date | null; createdAt: Date; status: string }>;
+  refunds: Array<{ clubId: string; amountKopeks: number; paidAt: Date | null; refundDate: Date | null; createdAt: Date; status: string }>;
+  budgets: Array<{ clubId: string; category: string; limitAmountKopeks: number }>;
+  plans: Array<{ clubId: string | null; targetAmountKopeks: number }>;
+  pendingSalesCount: number;
+  debtKopeks: number;
+};
+
+/**
+ * Load settled financial rows for the scope, bounded to [prevStart, end) for
+ * trend/comparison. Status filters at the DB layer keep the dataset small.
+ */
+export async function loadAnalyticsData(
+  companyId: string,
+  clubIds: string[],
+  period: ResolvedPeriod,
+): Promise<AnalyticsData> {
+  if (clubIds.length === 0) {
+    return { clubs: [], sales: [], expenses: [], invoices: [], refunds: [], budgets: [], plans: [], pendingSalesCount: 0, debtKopeks: 0 };
+  }
+  const lo = period.prevStart;
+  const hi = period.end;
+  const inClubs = { in: clubIds };
+
+  const [clubs, sales, expenses, invoices, refunds, budgets, plans, pendingSalesCount, debtInvoices, debtRefunds] =
+    await Promise.all([
+      prisma.club.findMany({ where: { id: inClubs }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      prisma.sale.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", saleDate: { gte: lo, lt: hi } }, select: { clubId: true, amountKopeks: true, saleDate: true } }),
+      prisma.expense.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", expenseDate: { gte: lo, lt: hi } }, select: { clubId: true, category: true, amountKopeks: true, expenseDate: true, status: true } }),
+      prisma.invoice.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, expenseCategory: true, amountKopeks: true, paidAt: true, invoiceDate: true, createdAt: true, status: true } }),
+      prisma.refund.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true } }),
+      prisma.budget.findMany({ where: { companyId, clubId: inClubs, month: { in: period.months } }, select: { clubId: true, category: true, limitAmountKopeks: true } }),
+      prisma.salesPlan.findMany({ where: { companyId, month: { in: period.months } }, select: { clubId: true, targetAmountKopeks: true } }),
+      prisma.sale.count({ where: { companyId, clubId: inClubs, status: "pending_accountant" } }),
+      prisma.invoice.aggregate({ where: { companyId, clubId: inClubs, status: { in: APPROVED_UNPAID } }, _sum: { amountKopeks: true } }),
+      prisma.refund.aggregate({ where: { companyId, clubId: inClubs, status: { in: APPROVED_UNPAID } }, _sum: { amountKopeks: true } }),
+    ]);
+
+  return {
+    clubs,
+    sales,
+    expenses,
+    invoices,
+    refunds,
+    budgets,
+    plans,
+    pendingSalesCount,
+    debtKopeks: (debtInvoices._sum.amountKopeks ?? 0) + (debtRefunds._sum.amountKopeks ?? 0),
+  };
+}
+
+// --- events ----------------------------------------------------------------
+
+type SalesEvent = { clubId: string; amountKopeks: number; date: Date };
+type SpendEvent = { clubId: string; category: string; amountKopeks: number; date: Date };
+
+function salesEvents(data: AnalyticsData): SalesEvent[] {
+  return data.sales.map((s) => ({ clubId: s.clubId, amountKopeks: s.amountKopeks, date: s.saleDate }));
+}
+
+function spendEvents(data: AnalyticsData): SpendEvent[] {
+  return [
+    ...data.expenses.map((e) => ({ clubId: e.clubId, category: e.category, amountKopeks: e.amountKopeks, date: e.expenseDate })),
+    ...data.invoices.map((i) => ({ clubId: i.clubId, category: i.expenseCategory ?? "other", amountKopeks: i.amountKopeks, date: i.paidAt ?? i.invoiceDate ?? i.createdAt })),
+    ...data.refunds.map((r) => ({ clubId: r.clubId, category: "refunds", amountKopeks: r.amountKopeks, date: r.paidAt ?? r.refundDate ?? r.createdAt })),
+  ];
+}
+
+function inRange(d: Date, start: Date, end: Date): boolean {
+  const t = d.getTime();
+  return t >= start.getTime() && t < end.getTime();
+}
+
+function sumInRange(events: Array<{ amountKopeks: number; date: Date }>, start: Date, end: Date): number {
+  let s = 0;
+  for (const e of events) if (inRange(e.date, start, end)) s += e.amountKopeks;
+  return s;
+}
+
+function changePercent(cur: number, prev: number): number | null {
+  if (prev <= 0) return null;
+  return ((cur - prev) / prev) * 100;
+}
+
+// --- blocks ----------------------------------------------------------------
+
+export type ExecutiveSummary = {
+  salesKopeks: number;
+  expensesKopeks: number;
+  profitKopeks: number;
+  prevProfitKopeks: number;
+  planTargetKopeks: number;
+  planPercent: number | null;
+};
+
+export type TrendGranularity = "day" | "week" | "month";
+
+export type TrendBucket = { label: string; valueKopeks: number };
+
+export type Trend = {
+  buckets: TrendBucket[];
+  currentKopeks: number;
+  previousKopeks: number;
+  changePercent: number | null;
+};
+
+export type ClubRankRow = {
+  clubId: string;
+  clubName: string;
+  salesKopeks: number;
+  expensesKopeks: number;
+  profitKopeks: number;
+  planPercent: number | null;
+  budgetPercent: number | null;
+};
+
+export type PlanStatus = "ahead" | "near" | "behind";
+
+export type PlanPerfRow = {
+  clubId: string;
+  clubName: string;
+  planKopeks: number;
+  factKopeks: number;
+  differenceKopeks: number;
+  completionPercent: number | null;
+  status: PlanStatus;
+};
+
+export type TopExpenseRow = { category: string; label: string; amountKopeks: number; sharePercent: number };
+
+export type CriticalZone = { tone: "red" | "amber"; text: string };
+
+export type AnalyticsReport = {
+  period: ResolvedPeriod;
+  granularity: TrendGranularity;
+  summary: ExecutiveSummary;
+  salesTrend: Trend;
+  expenseTrend: Trend;
+  profitTrend: Trend;
+  clubRanking: ClubRankRow[];
+  planPerformance: PlanPerfRow[];
+  budgetPerformance: BudgetFactReport;
+  topExpenses: TopExpenseRow[];
+  criticalZones: CriticalZone[];
+};
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** Ordered time buckets covering [start, end) at the given granularity. */
+function makeBuckets(start: Date, end: Date, gran: TrendGranularity): Array<{ label: string; start: Date; end: Date }> {
+  const out: Array<{ label: string; start: Date; end: Date }> = [];
+  if (gran === "month") {
+    const cur = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (cur.getTime() < end.getTime()) {
+      const next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+      out.push({ label: `${pad(cur.getMonth() + 1)}.${cur.getFullYear()}`, start: new Date(cur), end: next });
+      cur.setMonth(cur.getMonth() + 1);
+    }
+    return out;
+  }
+  const step = gran === "week" ? 7 : 1;
+  const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  while (cur.getTime() < end.getTime()) {
+    const next = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + step);
+    const bEnd = next.getTime() < end.getTime() ? next : end;
+    out.push({ label: `${pad(cur.getDate())}.${pad(cur.getMonth() + 1)}`, start: new Date(cur), end: bEnd });
+    cur.setDate(cur.getDate() + step);
+  }
+  return out;
+}
+
+function buildTrend(events: SalesEvent[] | SpendEvent[], period: ResolvedPeriod, gran: TrendGranularity): Trend {
+  const buckets = makeBuckets(period.start, period.end, gran).map((b) => ({
+    label: b.label,
+    valueKopeks: sumInRange(events, b.start, b.end),
+  }));
+  const currentKopeks = sumInRange(events, period.start, period.end);
+  const previousKopeks = sumInRange(events, period.prevStart, period.prevEnd);
+  return { buckets, currentKopeks, previousKopeks, changePercent: changePercent(currentKopeks, previousKopeks) };
+}
+
+function buildProfitTrend(sales: SalesEvent[], spend: SpendEvent[], period: ResolvedPeriod, gran: TrendGranularity): Trend {
+  const buckets = makeBuckets(period.start, period.end, gran).map((b) => ({
+    label: b.label,
+    valueKopeks: sumInRange(sales, b.start, b.end) - sumInRange(spend, b.start, b.end),
+  }));
+  const cur = sumInRange(sales, period.start, period.end) - sumInRange(spend, period.start, period.end);
+  const prev = sumInRange(sales, period.prevStart, period.prevEnd) - sumInRange(spend, period.prevStart, period.prevEnd);
+  return { buckets, currentKopeks: cur, previousKopeks: prev, changePercent: changePercent(cur, prev) };
+}
+
+function planStatus(pct: number | null): PlanStatus {
+  if (pct === null) return "behind";
+  if (pct > 100) return "ahead";
+  if (pct >= 80) return "near";
+  return "behind";
+}
+
+/** Per-club plan targets across the period months (per-club plans only). */
+function planByClub(data: AnalyticsData): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const p of data.plans) {
+    if (!p.clubId) continue;
+    m.set(p.clubId, (m.get(p.clubId) ?? 0) + p.targetAmountKopeks);
+  }
+  return m;
+}
+
+function budgetByClub(data: AnalyticsData): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const b of data.budgets) m.set(b.clubId, (m.get(b.clubId) ?? 0) + b.limitAmountKopeks);
+  return m;
+}
+
+/**
+ * Compute the full analytics report. `opts.categories` restricts budget/expense
+ * category output (marketer => ["advertising"]); `opts.financial` toggles the
+ * money-heavy blocks for non-financial viewers.
+ */
+export function buildAnalyticsReport(
+  data: AnalyticsData,
+  period: ResolvedPeriod,
+  granularity: TrendGranularity,
+  opts?: { categories?: readonly string[] },
+): AnalyticsReport {
+  const sales = salesEvents(data);
+  const spend = spendEvents(data);
+  const allowed = opts?.categories ? new Set(opts.categories) : null;
+  const spendForCats = allowed ? spend.filter((e) => allowed.has(e.category)) : spend;
+
+  // Block 1: executive summary
+  const curSales = sumInRange(sales, period.start, period.end);
+  const curSpend = sumInRange(spendForCats, period.start, period.end);
+  const prevSales = sumInRange(sales, period.prevStart, period.prevEnd);
+  const prevSpend = sumInRange(spendForCats, period.prevStart, period.prevEnd);
+  const planMap = planByClub(data);
+  const sumPerClubPlan = [...planMap.values()].reduce((a, b) => a + b, 0);
+  const companyWidePlan = data.plans.filter((p) => !p.clubId).reduce((a, b) => a + b.targetAmountKopeks, 0);
+  const planTargetKopeks = sumPerClubPlan > 0 ? sumPerClubPlan : companyWidePlan;
+  const summary: ExecutiveSummary = {
+    salesKopeks: curSales,
+    expensesKopeks: curSpend,
+    profitKopeks: curSales - curSpend,
+    prevProfitKopeks: prevSales - prevSpend,
+    planTargetKopeks,
+    planPercent: planTargetKopeks > 0 ? (curSales / planTargetKopeks) * 100 : null,
+  };
+
+  // Blocks 2/3/4: trends
+  const salesTrend = buildTrend(sales, period, granularity);
+  const expenseTrend = buildTrend(spendForCats, period, granularity);
+  const profitTrend = buildProfitTrend(sales, spendForCats, period, granularity);
+
+  // Block 5: club ranking
+  const budgetMap = budgetByClub(data);
+  const clubRanking: ClubRankRow[] = data.clubs
+    .map((c) => {
+      const cs = sumInRange(sales.filter((e) => e.clubId === c.id), period.start, period.end);
+      const ce = sumInRange(spend.filter((e) => e.clubId === c.id), period.start, period.end);
+      const plan = planMap.get(c.id) ?? 0;
+      const budget = budgetMap.get(c.id) ?? 0;
+      return {
+        clubId: c.id,
+        clubName: c.name,
+        salesKopeks: cs,
+        expensesKopeks: ce,
+        profitKopeks: cs - ce,
+        planPercent: plan > 0 ? (cs / plan) * 100 : null,
+        budgetPercent: budget > 0 ? (ce / budget) * 100 : null,
+      };
+    })
+    .sort((a, b) => b.profitKopeks - a.profitKopeks);
+
+  // Block 6: sales plan performance
+  const planPerformance: PlanPerfRow[] = data.clubs
+    .map((c) => {
+      const plan = planMap.get(c.id) ?? 0;
+      const fact = sumInRange(sales.filter((e) => e.clubId === c.id), period.start, period.end);
+      const completion = plan > 0 ? (fact / plan) * 100 : null;
+      return { clubId: c.id, clubName: c.name, planKopeks: plan, factKopeks: fact, differenceKopeks: fact - plan, completionPercent: completion, status: planStatus(completion) };
+    })
+    .filter((r) => r.planKopeks > 0 || r.factKopeks > 0)
+    .sort((a, b) => (b.completionPercent ?? -1) - (a.completionPercent ?? -1));
+
+  // Block 7: budget performance (reuse existing budget report for the period's month)
+  const budgetPerformance = computeBudgetFactReport(
+    data.budgets,
+    { expenses: data.expenses, invoices: data.invoices, refunds: data.refunds },
+    period.primaryMonth,
+    opts?.categories ? { categories: opts.categories } : undefined,
+  );
+
+  // Block 8: top expenses by category
+  const byCat = new Map<string, number>();
+  for (const e of spendForCats) if (inRange(e.date, period.start, period.end)) byCat.set(e.category, (byCat.get(e.category) ?? 0) + e.amountKopeks);
+  const totalSpend = [...byCat.values()].reduce((a, b) => a + b, 0);
+  const topExpenses: TopExpenseRow[] = [...byCat.entries()]
+    .map(([category, amountKopeks]) => ({ category, label: expenseCategoryLabel(category), amountKopeks, sharePercent: totalSpend > 0 ? (amountKopeks / totalSpend) * 100 : 0 }))
+    .sort((a, b) => b.amountKopeks - a.amountKopeks)
+    .slice(0, 10);
+
+  // Block 9: critical zones
+  const criticalZones: CriticalZone[] = [];
+  for (const r of planPerformance) {
+    if (r.completionPercent !== null && r.completionPercent < 50) {
+      criticalZones.push({ tone: "red", text: `${r.clubName}: ${r.completionPercent.toFixed(0)}% плана` });
+    }
+  }
+  for (const b of budgetPerformance) {
+    if (b.completionPercent > 100) {
+      criticalZones.push({ tone: "red", text: `${b.label}: ${b.completionPercent.toFixed(0)}% бюджета` });
+    }
+  }
+  if (!allowed) {
+    if (data.debtKopeks > 0) criticalZones.push({ tone: "amber", text: `Задолженность по сети: ${Math.round(data.debtKopeks / 100).toLocaleString("ru-RU")} ₽` });
+    if (data.pendingSalesCount >= 3) criticalZones.push({ tone: "amber", text: `Продаж на проверке: ${data.pendingSalesCount}` });
+  }
+
+  return {
+    period,
+    granularity,
+    summary,
+    salesTrend,
+    expenseTrend,
+    profitTrend,
+    clubRanking,
+    planPerformance,
+    budgetPerformance,
+    topExpenses,
+    criticalZones,
+  };
+}

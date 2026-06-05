@@ -16,6 +16,7 @@ export type Role =
 
 export type AppPage =
   | "dashboard"
+  | "analytics"
   | "expenses"
   | "invoices"
   | "refunds"
@@ -38,14 +39,14 @@ export type CurrentUser = {
 // ROLE_CAPABILITIES) so an owner/general_director can VIEW invoices/expenses but
 // not create them.
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
-  owner: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "activity", "users", "settings"],
-  general_director: ["dashboard", "sales", "budgets", "activity", "users", "settings"],
-  regional_director: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "imports", "documents", "activity", "users"],
-  manager: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "documents", "activity"],
-  accountant: ["dashboard", "expenses", "invoices", "refunds", "budgets", "sales", "documents", "activity"],
-  // Marketer added for future advertising metrics — minimal access for now
-  // (no marketing page yet; no financial create/edit; no payroll/salary view).
-  marketer: ["dashboard"],
+  owner: ["dashboard", "analytics", "expenses", "invoices", "refunds", "budgets", "sales", "activity", "users", "settings"],
+  general_director: ["dashboard", "analytics", "sales", "budgets", "activity", "users", "settings"],
+  regional_director: ["dashboard", "analytics", "expenses", "invoices", "refunds", "budgets", "sales", "imports", "documents", "activity", "users"],
+  manager: ["dashboard", "analytics", "expenses", "invoices", "refunds", "budgets", "sales", "documents", "activity"],
+  accountant: ["dashboard", "analytics", "expenses", "invoices", "refunds", "budgets", "sales", "documents", "activity"],
+  // Marketer: limited analytics (sales / plans / advertising only); no other
+  // financial pages.
+  marketer: ["dashboard", "analytics"],
 };
 
 // Capabilities gate actions beyond page visibility (enforced server-side):

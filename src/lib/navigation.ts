@@ -8,6 +8,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "dashboard", href: "/dashboard", label: "Дашборд" },
+  { page: "analytics", href: "/analytics", label: "Аналитика" },
   { page: "expenses", href: "/expenses", label: "Расходы" },
   { page: "invoices", href: "/invoices", label: "Счета" },
   { page: "refunds", href: "/refunds", label: "Возвраты" },
