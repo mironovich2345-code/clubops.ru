@@ -2,7 +2,7 @@
 
 import { useFormStatus } from "react-dom";
 import { uploadSalesReportDocuments } from "../report-actions";
-import { REPORT_ACCEPT_ATTR } from "@/lib/sales-report-rows";
+import { REPORT_ACCEPT_ATTR, SALES_REPORT_DOC_TYPES } from "@/lib/sales-report-rows";
 
 function Submit() {
   const { pending } = useFormStatus();
@@ -21,6 +21,14 @@ export function SalesReportDocUpload({ reportId }: { reportId: string }) {
   return (
     <form action={uploadSalesReportDocuments} className="flex flex-wrap items-end gap-3">
       <input type="hidden" name="reportId" value={reportId} />
+      <label className="block">
+        <span className="mb-1 block text-sm font-medium text-slate-700">Тип документа</span>
+        <select name="docType" defaultValue="encashment" className="input">
+          {SALES_REPORT_DOC_TYPES.map((t) => (
+            <option key={t.key} value={t.key}>{t.label}</option>
+          ))}
+        </select>
+      </label>
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-slate-700">Документы (фото, PDF, Excel, CSV)</span>
         <input

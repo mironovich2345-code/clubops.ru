@@ -16,6 +16,7 @@ import {
   INVOICE_ACTION_AUDIT,
   type InvoiceAction,
 } from "@/lib/invoices";
+import { getClubLegalEntities } from "@/lib/legal-entities";
 import {
   analyzeInvoiceDocument,
   type InvoiceExtraction,
@@ -255,6 +256,14 @@ export async function saveInvoice(
   const parsed = parseInvoiceFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
+  // Legal entity: only honour one that is attached to this club.
+  let legalEntityId: string | null = null;
+  const requestedEntityId = str(formData, "legalEntityId");
+  if (requestedEntityId) {
+    const attached = await getClubLegalEntities(clubId);
+    legalEntityId = attached.some((e) => e.id === requestedEntityId) ? requestedEntityId : null;
+  }
+
   const confidenceRaw = String(formData.get("confidence") ?? "low");
   const confidence = ["low", "medium", "high"].includes(confidenceRaw) ? confidenceRaw : "low";
 
@@ -264,6 +273,7 @@ export async function saveInvoice(
       clubId,
       createdByUserId: ctx.user.id,
       ...parsed.data,
+      legalEntityId,
       status: "draft",
       confidence,
       payerName: str(formData, "payerName"),

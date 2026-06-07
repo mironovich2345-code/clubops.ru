@@ -7,6 +7,12 @@ import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors
 import { uploadAndAnalyzeInvoice, saveInvoice } from "../actions";
 
 type ClubOption = { id: string; name: string; city: string };
+type EntityOption = { id: string; name: string; type: string; inn: string | null; kpp: string | null };
+type EntitiesByClub = Record<string, EntityOption[]>;
+
+function norm(v: string | null | undefined): string {
+  return String(v ?? "").replace(/\s/g, "").toLowerCase();
+}
 
 type AnalyzeState = {
   ok: boolean;
@@ -48,19 +54,29 @@ export function InvoiceUpload({
   clubs,
   categories,
   companyName,
+  legalEntitiesByClub,
 }: {
   clubs: ClubOption[];
   categories: readonly { key: string; label: string }[];
   companyName: string;
+  legalEntitiesByClub: EntitiesByClub;
 }) {
   const [analyze, analyzeAction] = useFormState(uploadAndAnalyzeInvoice, analyzeInitial);
   const [saved, saveAction] = useFormState(saveInvoice, saveInitial);
   // Controlled so the selected club survives the form reset React performs after
   // a form action (otherwise the dropdown would clear on a failed upload).
   const [clubId, setClubId] = useState(clubs.length === 1 ? clubs[0].id : "");
+  const [legalEntityId, setLegalEntityId] = useState("");
 
   const extraction = analyze.ok ? analyze.extraction : undefined;
   const reviewReady = Boolean(analyze.ok && extraction);
+  const entities = legalEntitiesByClub[analyze.clubId ?? ""] ?? [];
+  const selectedEntity = entities.find((e) => e.id === legalEntityId);
+  // Payer-vs-entity check is a warning only (never blocks save).
+  const payerMismatch =
+    selectedEntity != null &&
+    ((norm(extraction?.payerInn) && selectedEntity.inn && norm(extraction?.payerInn) !== norm(selectedEntity.inn)) ||
+      (norm(extraction?.payerName) && norm(extraction?.payerName) !== norm(selectedEntity.name)));
 
   return (
     <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -209,6 +225,26 @@ export function InvoiceUpload({
                   </option>
                 ))}
               </select>
+            </Field>
+            <Field label="Юрлицо">
+              <select
+                name="legalEntityId"
+                value={legalEntityId}
+                onChange={(e) => setLegalEntityId(e.target.value)}
+                className="input"
+              >
+                <option value="">— не выбрано —</option>
+                {entities.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name} ({e.type === "ip" ? "ИП" : "ООО"})
+                  </option>
+                ))}
+              </select>
+              {payerMismatch ? (
+                <span className="mt-1 block text-xs text-amber-700">
+                  Плательщик в счёте не совпадает с выбранным юрлицом
+                </span>
+              ) : null}
             </Field>
             <Field label="Сумма, ₽">
               <input name="amount" inputMode="decimal" defaultValue={extraction.amount ?? ""} className="input" />

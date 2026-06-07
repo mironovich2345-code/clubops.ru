@@ -2,7 +2,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
 import { requirePageAccess, getAccessibleClubsDetailed, type AccessibleClubRow } from "@/lib/access";
 import { ROLE_LABELS } from "@/lib/navigation";
+import { getCompanyLegalEntitiesWithClubs } from "@/lib/legal-entities";
 import { AddCompanyForm, CompanyEditor } from "./_components/SettingsClient";
+import { LegalEntities } from "./_components/LegalEntities";
 
 export const dynamic = "force-dynamic";
 
@@ -10,15 +12,29 @@ export default async function SettingsPage() {
   const user = await requirePageAccess("settings");
 
   // Companies where the user is an owner (no cross-company leakage).
-  const [access, accessibleClubs] = await Promise.all([
+  const [access, accessibleClubs, leAccess] = await Promise.all([
     prisma.companyUserAccess.findMany({
       where: { userId: user.id, role: "owner" },
       include: { company: { include: { clubs: { orderBy: { name: "asc" } } } } },
       orderBy: { company: { name: "asc" } },
     }),
     getAccessibleClubsDetailed(user),
+    // Legal entities are managed by owner OR general director.
+    prisma.companyUserAccess.findMany({
+      where: { userId: user.id, role: { in: ["owner", "general_director"] } },
+      include: { company: { include: { clubs: { where: { isActive: true }, orderBy: { name: "asc" } } } } },
+      orderBy: { company: { name: "asc" } },
+    }),
   ]);
   const companies = [...new Map(access.map((a) => [a.companyId, a.company])).values()];
+
+  const leCompanies = [...new Map(leAccess.map((a) => [a.companyId, a.company])).values()];
+  const legalEntitySections = await Promise.all(
+    leCompanies.map(async (company) => ({
+      company,
+      entities: await getCompanyLegalEntitiesWithClubs(company.id),
+    })),
+  );
 
   return (
     <div>
@@ -27,6 +43,36 @@ export default async function SettingsPage() {
       <div className="mb-8">
         <AvailableClubsSection clubs={accessibleClubs} />
       </div>
+
+      {legalEntitySections.length > 0 ? (
+        <div className="mb-8 space-y-4">
+          {legalEntitySections.map(({ company, entities }) => (
+            <div key={company.id}>
+              {legalEntitySections.length > 1 ? (
+                <div className="mb-2 text-sm font-semibold text-slate-700">{company.name}</div>
+              ) : null}
+              <LegalEntities
+                companyId={company.id}
+                canManage
+                clubs={company.clubs.map((c) => ({ id: c.id, name: c.name }))}
+                entities={entities.map((e) => ({
+                  id: e.id,
+                  name: e.name,
+                  type: e.type,
+                  inn: e.inn,
+                  kpp: e.kpp,
+                  bankName: e.bankName,
+                  bankBik: e.bankBik,
+                  accountNumber: e.accountNumber,
+                  corrAccount: e.corrAccount,
+                  isActive: e.isActive,
+                  clubs: e.clubs.map((c) => ({ clubId: c.clubId, clubName: c.clubName })),
+                }))}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="mb-6">
         <AddCompanyForm />

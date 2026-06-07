@@ -58,6 +58,18 @@ export const CALC_HINT = "рассчитывается автоматическ�
 export const REVENUE_LINE_KEY = "total_revenue";
 export const ENCASHMENT_KEY = "encashment_ooo";
 
+// Document types for sales-report attachments.
+export const SALES_REPORT_DOC_TYPES: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "encashment", label: "Инкассация" },
+  { key: "cash_report", label: "Кассовый отчёт" },
+  { key: "acquiring_report", label: "Отчёт эквайринга" },
+  { key: "other", label: "Прочее" },
+];
+export const SALES_REPORT_DOC_TYPE_KEYS = SALES_REPORT_DOC_TYPES.map((t) => t.key);
+export const SALES_REPORT_DOC_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  SALES_REPORT_DOC_TYPES.map((t) => [t.key, t.label]),
+);
+
 // Accepted upload formats (client-safe; the server validates by MIME/extension).
 export const REPORT_ACCEPT_ATTR = ".jpg,.jpeg,.png,.webp,.heic,.pdf,.xls,.xlsx,.csv";
 
@@ -132,13 +144,21 @@ export function linesToMap(lines: Array<{ key: string; amountKopeks: number }>):
 }
 
 /**
- * Non-formula warnings (calculated totals are automatic, so no mismatch checks).
- * Currently: cash collection (инкассация) recorded but no supporting document.
+ * Non-formula warnings (calculated totals are automatic, so no mismatch checks):
+ *  - инкассация recorded but no encashment-type document attached,
+ *  - some entity-bound rows have no matching club legal entity.
  */
-export function salesReportWarnings(opts: { encashmentKopeks: number; documentCount: number }): string[] {
+export function salesReportWarnings(opts: {
+  encashmentKopeks: number;
+  encashmentDocCount: number;
+  unmappedEntityRows: number;
+}): string[] {
   const warnings: string[] = [];
-  if (opts.encashmentKopeks > 0 && opts.documentCount === 0) {
-    warnings.push("Указана инкассация, но не приложен документ инкассации");
+  if (opts.encashmentKopeks > 0 && opts.encashmentDocCount === 0) {
+    warnings.push("Для инкассации необходимо приложить документ");
+  }
+  if (opts.unmappedEntityRows > 0) {
+    warnings.push("Для части строк не найдено привязанное юрлицо");
   }
   return warnings;
 }

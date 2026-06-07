@@ -58,7 +58,7 @@ export async function setupDemoCompanyForOwner(userId: string): Promise<void> {
         data: {
           id: DEMO_LEGAL_ENTITY_ID,
           companyId: DEMO_COMPANY_ID,
-          type: "ООО",
+          type: "ooo",
           name: "ООО «Демо»",
         },
       });

@@ -11,6 +11,8 @@ import {
   currentMonthKey,
   SOURCE_STATUS_WAITING,
 } from "@/lib/budgets";
+import { PAYMENT_METHOD_KEYS } from "@/lib/expenses";
+import { getClubEntityByType, getClubLegalEntities } from "@/lib/legal-entities";
 import {
   analyzeExpenseDocument,
   manualExpenseExtraction,
@@ -62,6 +64,7 @@ type ParsedFields = {
   address: string | null;
   itemsJson: string | null;
   notes: string | null;
+  paymentMethod: string | null;
 };
 
 function parseExpenseFields(formData: FormData): { data?: ParsedFields; error?: string } {
@@ -95,6 +98,7 @@ function parseExpenseFields(formData: FormData): { data?: ParsedFields; error?: 
       address: str(formData, "address"),
       itemsJson: items.length > 0 ? JSON.stringify(items) : null,
       notes: str(formData, "notes"),
+      paymentMethod: PAYMENT_METHOD_KEYS.includes(String(formData.get("paymentMethod") ?? "")) ? String(formData.get("paymentMethod")) : null,
     },
   };
 }
@@ -239,6 +243,23 @@ export async function saveExpense(
   const parsed = parseExpenseFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
+  // Legal-entity routing. Cash expenses MUST belong to the club's active ИП
+  // (auto-assigned, ООО blocked); non-cash may use any active club entity.
+  let legalEntityId: string | null = null;
+  if (parsed.data.paymentMethod === "cash") {
+    const ip = await getClubEntityByType(clubId, "ip");
+    if (!ip) {
+      return { ok: false, error: "Для наличного расхода необходимо привязать ИП к клубу" };
+    }
+    legalEntityId = ip.id;
+  } else {
+    const requested = str(formData, "legalEntityId");
+    if (requested) {
+      const attached = await getClubLegalEntities(clubId);
+      legalEntityId = attached.some((e) => e.id === requested) ? requested : null;
+    }
+  }
+
   const confidenceRaw = String(formData.get("confidence") ?? "low");
   const confidence = ["low", "medium", "high"].includes(confidenceRaw) ? confidenceRaw : "low";
 
@@ -260,6 +281,7 @@ export async function saveExpense(
       clubId,
       createdByUserId: ctx.user.id,
       ...parsed.data,
+      legalEntityId,
       confidence,
       status: overBudget ? SOURCE_STATUS_WAITING : "confirmed",
       originalFileName: str(formData, "fileName"),

@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getInvoicesForScope } from "@/lib/invoices";
 import { getExpensesForScope, summarizeExpenses, expenseCategoryLabel } from "@/lib/expenses";
 import { getSalesForScope, summarizeSales } from "@/lib/sales";
-import { getConfirmedReportRevenue } from "@/lib/sales-reports";
+import { getConfirmedReportRevenue, getPendingSalesReports } from "@/lib/sales-reports";
 import { getRefundsForScope } from "@/lib/refunds";
 import {
   getBudgetsForScope,
@@ -56,7 +56,7 @@ export default async function DashboardPage() {
   const now = new Date();
   const planMonth = monthKey(now);
 
-  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets, budgetRequests, reportRevenue] =
+  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets, budgetRequests, reportRevenue, pendingReports] =
     await Promise.all([
       getClubsInScope(scope),
       getInvoicesForScope(scope),
@@ -69,6 +69,7 @@ export default async function DashboardPage() {
       getBudgetsForScope(scope, planMonth),
       getPendingBudgetRequestsForScope(scope),
       getConfirmedReportRevenue(scope),
+      getPendingSalesReports(scope),
     ]);
 
   const roles = ctx?.effectiveRoles ?? [];
@@ -110,7 +111,16 @@ export default async function DashboardPage() {
   // pilot). Disjoint per club in practice, so no double counting.
   const confirmedSales = sales.filter((s) => s.status === "confirmed");
   const pendingSales = sales.filter((s) => s.status === "pending_accountant");
-  const pendingSalesKopeks = pendingSales.reduce((s, x) => s + x.amountKopeks, 0);
+  // "На проверке" = pending legacy sales + pending daily reports (disjoint per
+  // club, so no double counting).
+  const pendingCount = pendingSales.length + pendingReports.length;
+  const pendingSalesKopeks =
+    pendingSales.reduce((s, x) => s + x.amountKopeks, 0) +
+    pendingReports.reduce((s, r) => s + r.totalKopeks, 0);
+  const pendingRows = [
+    ...pendingSales.map((s) => ({ id: `sale-${s.id}`, clubName: s.club.name, source: s.source, amountKopeks: s.amountKopeks, date: s.saleDate, by: s.createdBy.name })),
+    ...pendingReports.map((r) => ({ id: `rep-${r.id}`, clubName: r.clubName, source: "Сменный отчёт", amountKopeks: r.totalKopeks, date: r.reportDate, by: r.by })),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const confirmedRevenue: Array<{ clubId: string; amountKopeks: number; saleDate: Date; source: string }> = [
     ...confirmedSales.map((s) => ({ clubId: s.clubId, amountKopeks: s.amountKopeks, saleDate: s.saleDate, source: s.source })),
@@ -176,10 +186,10 @@ export default async function DashboardPage() {
     budgetApprovalCount: pendingApprovals.length,
     budgetAlerts,
     planPercent: planProgress.percent,
-    pendingCount: pendingSales.length,
+    pendingCount,
   });
 
-  const allClear = pendingSales.length === 0 && debts.length === 0 && overruns.length === 0;
+  const allClear = pendingCount === 0 && debts.length === 0 && overruns.length === 0;
 
   return (
     <div>
@@ -234,7 +244,7 @@ export default async function DashboardPage() {
       {financials ? (
         <CriticalBlock
           allClear={allClear}
-          pending={{ count: pendingSales.length, kopeks: pendingSalesKopeks }}
+          pending={{ count: pendingCount, kopeks: pendingSalesKopeks }}
           debtInvoices={{ count: debtInvoices.length, kopeks: debtInvoices.reduce((s, d) => s + d.amountKopeks, 0) }}
           debtRefunds={{ count: debtRefunds.length, kopeks: debtRefunds.reduce((s, d) => s + d.amountKopeks, 0) }}
           budgetOverCount={overruns.length}
@@ -283,8 +293,8 @@ export default async function DashboardPage() {
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {financials ? <DebtBlock rows={debts} totalKopeks={totalDebtKopeks} /> : null}
         <PendingSalesBlock
-          rows={pendingSales.slice(0, 5).map((s) => ({ id: s.id, clubName: s.club.name, source: s.source, amountKopeks: s.amountKopeks, date: s.saleDate, by: s.createdBy.name }))}
-          total={pendingSales.length}
+          rows={pendingRows.slice(0, 5)}
+          total={pendingCount}
         />
       </div>
 

@@ -6,9 +6,12 @@ import type { ExpenseExtraction } from "@/lib/ai/expense-analyzer";
 import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors";
 import { uploadAndAnalyzeExpense, saveExpense } from "../actions";
 import { PayrollUpload } from "./PayrollUpload";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/expenses";
 
 type ClubOption = { id: string; name: string; city: string };
 type CategoryOption = { key: string; label: string };
+type EntityOption = { id: string; name: string; type: string };
+type EntitiesByClub = Record<string, EntityOption[]>;
 
 type AnalyzeState = {
   ok: boolean;
@@ -58,10 +61,12 @@ export function ExpenseUpload({
   clubs,
   categories,
   companyName,
+  legalEntitiesByClub,
 }: {
   clubs: ClubOption[];
   categories: readonly CategoryOption[];
   companyName: string;
+  legalEntitiesByClub: EntitiesByClub;
 }) {
   const [docKind, setDocKind] = useState<DocKind>("receipt");
 
@@ -95,6 +100,7 @@ export function ExpenseUpload({
           categories={categories}
           companyName={companyName}
           docKind={docKind}
+          legalEntitiesByClub={legalEntitiesByClub}
         />
       )}
     </div>
@@ -106,16 +112,19 @@ function DocumentExpenseForm({
   categories,
   companyName,
   docKind,
+  legalEntitiesByClub,
 }: {
   clubs: ClubOption[];
   categories: readonly CategoryOption[];
   companyName: string;
   docKind: DocKind;
+  legalEntitiesByClub: EntitiesByClub;
 }) {
   const [analyze, analyzeAction] = useFormState(uploadAndAnalyzeExpense, analyzeInitial);
   const [saved, saveAction] = useFormState(saveExpense, saveInitial);
   // Controlled so the selected club survives the form reset after a form action.
   const [clubId, setClubId] = useState(clubs.length === 1 ? clubs[0].id : "");
+  const [paymentMethod, setPaymentMethod] = useState("");
 
   const extraction = analyze.ok ? analyze.extraction : undefined;
   // Default the review "Тип" to the AI result, falling back to the chosen kind.
@@ -256,6 +265,11 @@ function DocumentExpenseForm({
             <Field label="Адрес">
               <input name="address" defaultValue={extraction.address ?? ""} className="input" />
             </Field>
+            <PaymentEntityFields
+              entities={legalEntitiesByClub[analyze.clubId ?? ""] ?? []}
+              paymentMethod={paymentMethod}
+              onPaymentMethodChange={setPaymentMethod}
+            />
             <div className="md:col-span-2">
               <Field label="Список покупок (по строке на позицию)">
                 <textarea name="items" rows={3} defaultValue={extraction.items.join("\n")} className="input" />
@@ -297,5 +311,72 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
       {children}
     </label>
+  );
+}
+
+// Способ оплаты + Юрлицо. Cash is auto-routed to the club's active ИП; the
+// server enforces the same rule and blocks save when no ИП is attached.
+function PaymentEntityFields({
+  entities,
+  paymentMethod,
+  onPaymentMethodChange,
+}: {
+  entities: EntityOption[];
+  paymentMethod: string;
+  onPaymentMethodChange: (v: string) => void;
+}) {
+  const ip = entities.find((e) => e.type === "ip");
+  const isCash = paymentMethod === "cash";
+
+  return (
+    <>
+      <Field label="Способ оплаты">
+        <select
+          name="paymentMethod"
+          value={paymentMethod}
+          onChange={(e) => onPaymentMethodChange(e.target.value)}
+          className="input"
+        >
+          <option value="">Не указан</option>
+          {PAYMENT_METHOD_OPTIONS.map((m) => (
+            <option key={m.key} value={m.key}>{m.label}</option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Юрлицо">
+        {isCash ? (
+          <>
+            <input
+              value={ip ? `${ip.name} (ИП)` : "ИП не привязан к клубу"}
+              disabled
+              className={`input ${ip ? "bg-slate-50 text-slate-600" : "bg-rose-50 text-rose-700"}`}
+            />
+            {/* Cash -> ИП is decided on the server; this is a convenience hint. */}
+            {ip ? <input type="hidden" name="legalEntityId" value={ip.id} /> : null}
+          </>
+        ) : (
+          <select name="legalEntityId" defaultValue="" className="input">
+            <option value="">— не выбрано —</option>
+            {entities.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name} ({e.type === "ip" ? "ИП" : "ООО"})
+              </option>
+            ))}
+          </select>
+        )}
+      </Field>
+
+      {isCash ? (
+        <div className="md:col-span-2 -mt-2 text-xs text-slate-500">
+          Наличные расходы автоматически относятся к ИП.
+          {!ip ? (
+            <span className="ml-1 font-medium text-rose-600">
+              Для наличного расхода необходимо привязать ИП к клубу.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </>
   );
 }

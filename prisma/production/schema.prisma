@@ -48,20 +48,26 @@ model Company {
 model LegalEntity {
   id            String   @id @default(cuid())
   companyId     String
-  type          String // "ООО" | "ИП"
+  // "ooo" | "ip" (legacy seed data may use "ООО"/"ИП" — normalize in code).
+  type          String
   name          String
   inn           String?
+  kpp           String?
   ogrn          String?
   bankName      String?
+  bankBik       String?
   accountNumber String?
+  corrAccount   String?
+  isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  company  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  clubs    ClubLegalEntity[]
-  invoices Invoice[]
-  expenses Expense[]
-  sales    Sale[]
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  clubs           ClubLegalEntity[]
+  invoices        Invoice[]
+  expenses        Expense[]
+  sales           Sale[]
+  salesReportLines SalesReportLine[]
 
   @@index([companyId])
 }
@@ -147,7 +153,9 @@ model ClubLegalEntity {
   id            String   @id @default(cuid())
   clubId        String
   legalEntityId String
+  isPrimary     Boolean  @default(false)
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
   club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
   legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
@@ -646,17 +654,23 @@ model SalesReportLine {
   label         String
   amountKopeks  Int      @default(0)
   sortOrder     Int      @default(0)
+  // Accounting entity this row belongs to (ООО rows -> ООО, ИП rows -> ИП).
+  legalEntityId String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  report SalesReport @relation(fields: [salesReportId], references: [id], onDelete: Cascade)
+  report      SalesReport  @relation(fields: [salesReportId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
 
   @@index([salesReportId])
+  @@index([legalEntityId])
 }
 
 model SalesReportDocument {
   id               String   @id @default(cuid())
   salesReportId    String
+  // encashment | cash_report | acquiring_report | other
+  type             String   @default("other")
   originalFileName String
   originalFileMime String
   originalFileSize Int

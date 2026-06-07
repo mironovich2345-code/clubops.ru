@@ -17,6 +17,7 @@ import {
   type ExpenseSummary,
 } from "@/lib/expenses";
 import { NoCompanyState } from "@/components/NoCompanyState";
+import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { ExpenseUpload } from "./_components/ExpenseUpload";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,19 @@ export default async function ExpensesPage() {
   ]);
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
+  // Active legal entities per club for the expense form (cash -> ИП routing).
+  const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string }>> = {};
+  if (canCreate) {
+    const lists = await Promise.all(clubs.map((c) => getClubLegalEntities(c.id)));
+    clubs.forEach((c, i) => {
+      legalEntitiesByClub[c.id] = lists[i].map((e) => ({
+        id: e.id,
+        name: e.name,
+        type: normalizeEntityType(e.type) ?? e.type,
+      }));
+    });
+  }
+
   const now = new Date();
   // Analytics/totals reflect realized spend only — expenses waiting for or
   // rejected by budget approval do not count.
@@ -74,6 +88,7 @@ export default async function ExpensesPage() {
           clubs={clubs}
           categories={EXPENSE_CATEGORY_OPTIONS}
           companyName={scope.company.name}
+          legalEntitiesByClub={legalEntitiesByClub}
         />
       ) : null}
 

@@ -147,3 +147,32 @@ export async function getConfirmedReportRevenue(scope: DataScope): Promise<Repor
     source: "Сменный отчёт",
   }));
 }
+
+export type PendingReportRow = {
+  id: string;
+  clubName: string;
+  reportDate: Date;
+  totalKopeks: number;
+  by: string;
+};
+
+/** Pending (awaiting accountant) sales reports for the dashboard. */
+export async function getPendingSalesReports(scope: DataScope): Promise<PendingReportRow[]> {
+  if (!scope.company || scope.clubIds.length === 0) return [];
+  const rows = await prisma.salesReport.findMany({
+    where: { companyId: scope.company.id, clubId: { in: scope.clubIds }, status: "pending_accountant" },
+    orderBy: { reportDate: "desc" },
+    include: {
+      club: { select: { name: true } },
+      createdBy: { select: { name: true } },
+      lines: { where: { key: REVENUE_LINE_KEY }, select: { amountKopeks: true } },
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    clubName: r.club.name,
+    reportDate: r.reportDate,
+    totalKopeks: r.lines[0]?.amountKopeks ?? 0,
+    by: r.createdBy.name,
+  }));
+}

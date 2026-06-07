@@ -15,6 +15,7 @@ import {
   INVOICE_CONFIDENCE_LABELS,
 } from "@/lib/invoices";
 import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
+import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 
 export const dynamic = "force-dynamic";
@@ -46,13 +47,27 @@ export default async function InvoicesPage() {
   ]);
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
+  const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null }>> = {};
+  if (canCreate) {
+    const lists = await Promise.all(clubs.map((c) => getClubLegalEntities(c.id)));
+    clubs.forEach((c, i) => {
+      legalEntitiesByClub[c.id] = lists[i].map((e) => ({
+        id: e.id,
+        name: e.name,
+        type: normalizeEntityType(e.type) ?? e.type,
+        inn: e.inn,
+        kpp: e.kpp,
+      }));
+    });
+  }
+
   return (
     <div>
       <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
 
       {canCreate ? (
         clubs.length > 0 ? (
-          <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} />
+          <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} legalEntitiesByClub={legalEntitiesByClub} />
         ) : (
           <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
             Нет доступных клубов для создания счёта.

@@ -18,6 +18,20 @@ export const EXPENSE_CATEGORIES = [
 
 export const PAYMENT_METHODS = ["Наличные", "Карта", "Банковский перевод"] as const;
 
+// Canonical payment methods (stored as keys). Cash expenses are routed to the
+// club's ИП (see saveExpense).
+export const PAYMENT_METHOD_OPTIONS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "cash", label: "Наличные" },
+  { key: "card", label: "Карта" },
+  { key: "sbp", label: "СБП" },
+  { key: "bank_transfer", label: "Банковский перевод" },
+  { key: "other", label: "Другое" },
+];
+export const PAYMENT_METHOD_KEYS = PAYMENT_METHOD_OPTIONS.map((o) => o.key);
+export const PAYMENT_METHOD_LABELS: Record<string, string> = Object.fromEntries(
+  PAYMENT_METHOD_OPTIONS.map((o) => [o.key, o.label]),
+);
+
 // Expense document types (receipt / transfer / manual / payroll_statement).
 export const EXPENSE_TYPES = ["receipt", "transfer", "manual", "payroll_statement"] as const;
 export const EXPENSE_TYPE_LABELS: Record<string, string> = {

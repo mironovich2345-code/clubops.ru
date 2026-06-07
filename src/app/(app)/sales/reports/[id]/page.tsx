@@ -16,6 +16,7 @@ import {
   REVENUE_LINE_KEY,
   SALES_REPORT_STATUS_LABELS,
   SALES_REPORT_STATUS_TONE,
+  SALES_REPORT_DOC_TYPE_LABELS,
   type ReportSection,
 } from "@/lib/sales-reports";
 import { SalesReportActions } from "../../_components/SalesReportActions";
@@ -41,9 +42,14 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
   const actions = availableSalesReportActions(report.status, ctx.effectiveRoles, isCreator);
   const editable = canEditReport(report.status, ctx.effectiveRoles, isCreator);
   const byKey = linesToMap(report.lines);
+  const encashmentDocCount = report.documents.filter((d) => d.type === "encashment").length;
+  const unmappedEntityRows = report.lines.filter(
+    (l) => (ROW_META.get(l.key)?.section ?? "totals") !== "totals" && l.amountKopeks > 0 && !l.legalEntityId,
+  ).length;
   const warnings = salesReportWarnings({
     encashmentKopeks: byKey[ENCASHMENT_KEY] ?? 0,
-    documentCount: report.documents.length,
+    encashmentDocCount,
+    unmappedEntityRows,
   });
 
   const sectionRows = (section: ReportSection) =>
@@ -120,6 +126,9 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
               <ul className="space-y-1">
                 {report.documents.map((doc) => (
                   <li key={doc.id}>
+                    <span className="mr-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+                      {SALES_REPORT_DOC_TYPE_LABELS[doc.type] ?? doc.type}
+                    </span>
                     <a
                       href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(doc.storageKey ?? "")}`}
                       target="_blank"

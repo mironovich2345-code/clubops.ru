@@ -11,6 +11,7 @@ import {
   SALES_REPORT_ROW_LABELS,
   BASE_ROWS,
   REVENUE_LINE_KEY,
+  SALES_REPORT_DOC_TYPE_KEYS,
   computeSalesReportTotals,
   SALES_REPORT_ACTION_AUDIT,
   applySalesReportAction,
@@ -18,6 +19,7 @@ import {
   getSalesReportForContext,
   type SalesReportAction,
 } from "@/lib/sales-reports";
+import { getClubEntityByType } from "@/lib/legal-entities";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { validateReportFile, storeReportFile, MAX_REPORT_FILES } from "@/lib/sales-report-storage";
 
@@ -75,11 +77,22 @@ export async function createSalesReport(
     baseKopeks[row.key] = rublesToKopeks(parseAmount(String(formData.get(`amount_${row.key}`) ?? "")));
   }
   const allKopeks = computeSalesReportTotals(baseKopeks);
+
+  // Map each row to the club's matching legal entity (ООО rows -> ООО, ИП rows
+  // -> ИП; totals span both -> null). Missing entity -> null (warning on detail).
+  const [oooEntity, ipEntity] = await Promise.all([
+    getClubEntityByType(clubId, "ooo"),
+    getClubEntityByType(clubId, "ip"),
+  ]);
+  const entityForSection = (section: string): string | null =>
+    section === "ooo" ? oooEntity?.id ?? null : section === "ip" ? ipEntity?.id ?? null : null;
+
   const lines = SALES_REPORT_ROWS.map((row, i) => ({
     key: row.key,
     label: SALES_REPORT_ROW_LABELS[row.key] ?? row.label,
     amountKopeks: allKopeks[row.key] ?? 0,
     sortOrder: i,
+    legalEntityId: entityForSection(row.section),
   }));
 
   const report = await prisma.salesReport.create({
@@ -123,6 +136,9 @@ export async function uploadSalesReportDocuments(formData: FormData): Promise<vo
     throw new Error("Загружать документы можно только в свой отчёт на проверке");
   }
 
+  const docTypeRaw = String(formData.get("docType") ?? "other");
+  const docType = SALES_REPORT_DOC_TYPE_KEYS.includes(docTypeRaw) ? docTypeRaw : "other";
+
   const files = [] as UploadedFile[];
   for (const entry of formData.getAll("files")) {
     if (isUploadedFile(entry) && entry.size > 0) files.push(entry);
@@ -139,6 +155,7 @@ export async function uploadSalesReportDocuments(formData: FormData): Promise<vo
     await prisma.salesReportDocument.create({
       data: {
         salesReportId: report.id,
+        type: docType,
         originalFileName: s.fileName,
         originalFileMime: s.mime,
         originalFileSize: s.size,
@@ -151,13 +168,13 @@ export async function uploadSalesReportDocuments(formData: FormData): Promise<vo
   if (stored === 0) throw new Error("Файлы не загружены: проверьте формат и размер");
 
   await recordAudit({
-    action: "sales_report.document_uploaded",
+    action: docType === "encashment" ? "sales_report.encashment_document_uploaded" : "sales_report.document_uploaded",
     entityType: "SalesReport",
     entityId: report.id,
     companyId: report.companyId,
     clubId: report.clubId,
     userId: ctx.user.id,
-    metadata: { count: stored },
+    metadata: { count: stored, type: docType },
   });
 
   revalidatePath(`/sales/reports/${report.id}`);
