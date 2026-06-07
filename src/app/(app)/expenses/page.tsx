@@ -19,6 +19,8 @@ import {
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { ExpenseUpload } from "./_components/ExpenseUpload";
+import { ExportButton } from "@/components/ExportButton";
+import { canExport } from "@/lib/exports";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +77,10 @@ export default async function ExpensesPage() {
 
   return (
     <div>
-      <PageHeader title="Расходы" description="Чеки, переводы и динамика по статьям" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title="Расходы" description="Чеки, переводы и динамика по статьям" />
+        {ctx && canExport(ctx.effectiveRoles, "expenses") ? <div className="pt-1"><ExportButton type="expenses" /></div> : null}
+      </div>
 
       <SummarySection
         summary={summary}

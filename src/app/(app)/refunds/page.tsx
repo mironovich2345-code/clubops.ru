@@ -12,6 +12,8 @@ import { canCreateOperational } from "@/lib/auth";
 import { getRefundsForScope, REFUND_DOC_TYPES } from "@/lib/refunds";
 import { APPROVAL_STATUS_LABELS } from "@/lib/approval";
 import { RefundUpload } from "./_components/RefundUpload";
+import { ExportButton } from "@/components/ExportButton";
+import { canExport } from "@/lib/exports";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,10 @@ export default async function RefundsPage() {
 
   return (
     <div>
-      <PageHeader title="Возвраты" description="Загрузка документов, согласование и оплата возвратов" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title="Возвраты" description="Загрузка документов, согласование и оплата возвратов" />
+        {ctx && canExport(ctx.effectiveRoles, "refunds") ? <div className="pt-1"><ExportButton type="refunds" /></div> : null}
+      </div>
 
       {canCreate && clubs.length > 0 ? (
         <RefundUpload clubs={clubs} docTypes={REFUND_DOC_TYPES} companyName={scope.company.name} />

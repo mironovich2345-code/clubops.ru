@@ -4,6 +4,8 @@ import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
 import { BarChart } from "@/components/BarChart";
 import { BudgetFactTable } from "@/components/BudgetFactTable";
+import { ExportButton } from "@/components/ExportButton";
+import { allowedExportTypes, EXPORT_LABELS } from "@/lib/exports";
 import {
   requirePageAccess,
   getCurrentAccessContext,
@@ -73,6 +75,7 @@ export default async function AnalyticsPage({
   const roles = ctx.effectiveRoles;
   const financials = roles.some((r) => FINANCIAL_ROLES.has(r));
   const marketerOnly = roles.includes("marketer") && !financials;
+  const exportTypes = allowedExportTypes(roles);
 
   const sp = await searchParams;
   const periodKey: AnalyticsPeriodKey = PERIODS.some((p) => p.key === sp.period)
@@ -156,6 +159,18 @@ export default async function AnalyticsPage({
           />
         ) : null}
       </div>
+
+      {/* Выгрузки CSV */}
+      {exportTypes.length > 0 ? (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 text-sm font-semibold text-slate-700">Выгрузки</div>
+          <div className="flex flex-wrap gap-2">
+            {exportTypes.map((t) => (
+              <ExportButton key={t} type={t} label={`${EXPORT_LABELS[t]} (CSV)`} />
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Block 2: sales trend */}
       <TrendCard title="Динамика продаж" trend={report.salesTrend} noun="Продажи" tone="emerald" />

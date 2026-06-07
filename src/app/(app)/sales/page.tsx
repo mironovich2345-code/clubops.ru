@@ -16,6 +16,8 @@ import { NoCompanyState } from "@/components/NoCompanyState";
 import { CreateSaleForm } from "./_components/CreateSaleForm";
 import { SaleRowActions } from "./_components/SaleRowActions";
 import { SalesReportForm } from "./_components/SalesReportForm";
+import { ExportButton } from "@/components/ExportButton";
+import { canExport } from "@/lib/exports";
 import {
   getSalesReportsForScope,
   SALES_REPORT_STATUS_LABELS,
@@ -88,7 +90,10 @@ export default async function SalesPage({
 
   return (
     <div>
-      <PageHeader title="Продажи" description="Сменные отчёты, ручной учёт продаж и динамика выручки" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title="Продажи" description="Сменные отчёты, ручной учёт продаж и динамика выручки" />
+        {canExport(ctx.effectiveRoles, "sales") ? <div className="pt-1"><ExportButton type="sales" /></div> : null}
+      </div>
 
       {/* Daily sales reports (real-club report structure) */}
       {canCreate ? <SalesReportForm clubs={clubs} /> : null}

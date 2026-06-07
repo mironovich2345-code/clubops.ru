@@ -17,6 +17,8 @@ import {
 import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
+import { ExportButton } from "@/components/ExportButton";
+import { canExport } from "@/lib/exports";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +65,10 @@ export default async function InvoicesPage() {
 
   return (
     <div>
-      <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
+        {ctx && canExport(ctx.effectiveRoles, "invoices") ? <div className="pt-1"><ExportButton type="invoices" /></div> : null}
+      </div>
 
       {canCreate ? (
         clubs.length > 0 ? (
