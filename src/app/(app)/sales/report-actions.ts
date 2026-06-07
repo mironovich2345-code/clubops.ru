@@ -95,7 +95,10 @@ export async function createSalesReport(
   // the server (client-sent calculated values are ignored / overwritten).
   const baseKopeks: Record<string, number> = {};
   for (const row of BASE_ROWS) {
-    baseKopeks[row.key] = rublesToKopeks(parseAmount(String(formData.get(`amount_${row.key}`) ?? "")));
+    const rub = parseAmount(String(formData.get(`amount_${row.key}`) ?? ""));
+    // Server is the source of truth: base amounts must be non-negative.
+    if (rub < 0) return { ok: false, error: "Сумма не может быть отрицательной" };
+    baseKopeks[row.key] = rublesToKopeks(rub);
   }
   const allKopeks = computeSalesReportTotals(baseKopeks);
 

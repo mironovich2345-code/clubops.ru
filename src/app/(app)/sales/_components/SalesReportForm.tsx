@@ -27,7 +27,7 @@ function toNum(s: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function Submit({ total }: { total: number }) {
+function Submit({ total, disabled }: { total: number; disabled?: boolean }) {
   const { pending } = useFormStatus();
   return (
     <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
@@ -36,7 +36,7 @@ function Submit({ total }: { total: number }) {
       </div>
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || disabled}
         className="inline-flex items-center justify-center rounded-md bg-brand-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
       >
         {pending ? "Сохранение..." : "Создать отчёт"}
@@ -58,6 +58,11 @@ export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: st
   }, [amounts]);
 
   const encashment = computed[ENCASHMENT_KEY] ?? 0;
+  // Base amounts must be non-negative (server enforces the same rule).
+  const hasNegative = useMemo(
+    () => SALES_REPORT_ROWS.some((r) => !r.calc && toNum(amounts[r.key]) < 0),
+    [amounts],
+  );
 
   return (
     <div className="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -110,6 +115,12 @@ export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: st
           </div>
         ) : null}
 
+        {hasNegative ? (
+          <div className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
+            Сумма не может быть отрицательной
+          </div>
+        ) : null}
+
         {state.error && !state.fieldErrors ? (
           <div className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
             {state.error}
@@ -124,7 +135,7 @@ export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: st
           </div>
         ) : null}
 
-        <Submit total={computed[REVENUE_LINE_KEY] ?? 0} />
+        <Submit total={computed[REVENUE_LINE_KEY] ?? 0} disabled={hasNegative} />
       </form>
     </div>
   );

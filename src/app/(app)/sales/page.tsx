@@ -13,7 +13,6 @@ import {
 import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
 import { canCreateOperational } from "@/lib/auth";
 import { NoCompanyState } from "@/components/NoCompanyState";
-import { CreateSaleForm } from "./_components/CreateSaleForm";
 import { SaleRowActions } from "./_components/SaleRowActions";
 import { SalesReportForm } from "./_components/SalesReportForm";
 import { ExportButton } from "@/components/ExportButton";
@@ -163,7 +162,14 @@ export default async function SalesPage({
         </div>
       ) : null}
 
-      {canCreate ? <CreateSaleForm clubs={clubs} /> : null}
+      {/* Pilot: legacy sale creation is disabled — the daily sales report is the
+          single source of truth for revenue (prevents double counting).
+          Historical sales below remain visible. */}
+      {canCreate ? (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          Для пилотного запуска используется только сменный отчёт продаж.
+        </div>
+      ) : null}
 
       {/* Status filters */}
       <div className="mb-3 flex flex-wrap gap-2">
