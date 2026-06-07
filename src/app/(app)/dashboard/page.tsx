@@ -5,6 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getInvoicesForScope } from "@/lib/invoices";
 import { getExpensesForScope, summarizeExpenses, expenseCategoryLabel } from "@/lib/expenses";
 import { getSalesForScope, summarizeSales } from "@/lib/sales";
+import { getConfirmedReportRevenue } from "@/lib/sales-reports";
 import { getRefundsForScope } from "@/lib/refunds";
 import {
   getBudgetsForScope,
@@ -52,7 +53,7 @@ export default async function DashboardPage() {
   const now = new Date();
   const planMonth = monthKey(now);
 
-  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets, budgetRequests] =
+  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets, budgetRequests, reportRevenue] =
     await Promise.all([
       getClubsInScope(scope),
       getInvoicesForScope(scope),
@@ -64,6 +65,7 @@ export default async function DashboardPage() {
       getSalesPlansForCompanyMonth(scope.company.id, planMonth),
       getBudgetsForScope(scope, planMonth),
       getPendingBudgetRequestsForScope(scope),
+      getConfirmedReportRevenue(scope),
     ]);
 
   const roles = ctx?.effectiveRoles ?? [];
@@ -101,12 +103,18 @@ export default async function DashboardPage() {
   const totalDebtKopeks = debts.reduce((s, d) => s + d.amountKopeks, 0);
   const overdueCount = debts.filter((d) => d.overdueDays > 0).length;
 
-  // Sales: confirmed = revenue; pending = awaiting accountant.
+  // Sales revenue: confirmed legacy sales + confirmed daily reports (real-club
+  // pilot). Disjoint per club in practice, so no double counting.
   const confirmedSales = sales.filter((s) => s.status === "confirmed");
   const pendingSales = sales.filter((s) => s.status === "pending_accountant");
   const pendingSalesKopeks = pendingSales.reduce((s, x) => s + x.amountKopeks, 0);
 
-  const salesSum = summarizeSales(confirmedSales, now);
+  const confirmedRevenue: Array<{ clubId: string; amountKopeks: number; saleDate: Date; source: string }> = [
+    ...confirmedSales.map((s) => ({ clubId: s.clubId, amountKopeks: s.amountKopeks, saleDate: s.saleDate, source: s.source })),
+    ...reportRevenue,
+  ];
+
+  const salesSum = summarizeSales(confirmedRevenue, now);
   const expensesSum = summarizeExpenses(expenseEvents, now);
   const profit = profitSummary(salesSum, expensesSum);
 
@@ -116,7 +124,7 @@ export default async function DashboardPage() {
   // Block 3: club ranking (per-club plan from the company's plans).
   const planByClub = new Map<string, number>();
   for (const p of planRows) if (p.clubId) planByClub.set(p.clubId, p.targetAmountKopeks);
-  const ranking = clubRanking(clubs, confirmedSales, expenseEvents, now, planByClub);
+  const ranking = clubRanking(clubs, confirmedRevenue, expenseEvents, now, planByClub);
 
   // Block 2 / 7: budget overruns + notifications (financial roles only).
   const overruns = financials ? computeBudgetOverruns(budgets, { expenses, invoices, refunds }, planMonth) : [];

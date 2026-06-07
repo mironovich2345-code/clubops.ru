@@ -39,6 +39,7 @@ model Company {
   budgetRequests BudgetApprovalRequest[]
   payrollStatements PayrollStatement[]
   salesPlans    SalesPlan[]
+  salesReports  SalesReport[]
 }
 
 model LegalEntity {
@@ -91,6 +92,7 @@ model User {
   budgetRequestsDecided   BudgetApprovalRequest[] @relation("BudgetReqDecidedBy")
   payrollStatements       PayrollStatement[]
   salesPlans              SalesPlan[]
+  salesReportsCreated     SalesReport[]           @relation("SalesReportCreatedBy")
 }
 
 model Session {
@@ -132,6 +134,7 @@ model Club {
   budgetRequests BudgetApprovalRequest[]
   payrollStatements PayrollStatement[]
   salesPlans    SalesPlan[]
+  salesReports  SalesReport[]
 
   @@index([companyId])
 }
@@ -596,4 +599,69 @@ model SalesPlan {
   @@index([companyId])
   @@index([clubId])
   @@index([month])
+}
+
+// ---------------------------------------------------------------------------
+// Daily sales report (сменный отчёт) — the real-club report structure. A manager
+// submits a report (many named amount lines) for accountant verification; only
+// "confirmed" reports count as realized revenue (their total_revenue line).
+// ---------------------------------------------------------------------------
+model SalesReport {
+  id               String    @id @default(cuid())
+  companyId        String
+  clubId           String
+  reportDate       DateTime
+  managerName      String?
+  createdByUserId  String
+  // pending_accountant | confirmed | rejected | canceled
+  status           String    @default("pending_accountant")
+  verifiedByUserId String?
+  verifiedAt       DateTime?
+  rejectedByUserId String?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club      Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("SalesReportCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  lines     SalesReportLine[]
+  documents SalesReportDocument[]
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([status])
+  @@index([reportDate])
+}
+
+model SalesReportLine {
+  id            String   @id @default(cuid())
+  salesReportId String
+  key           String
+  label         String
+  amountKopeks  Int      @default(0)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  report SalesReport @relation(fields: [salesReportId], references: [id], onDelete: Cascade)
+
+  @@index([salesReportId])
+}
+
+model SalesReportDocument {
+  id               String   @id @default(cuid())
+  salesReportId    String
+  originalFileName String
+  originalFileMime String
+  originalFileSize Int
+  storageKey       String?
+  uploadedByUserId String
+  createdAt        DateTime @default(now())
+
+  report SalesReport @relation(fields: [salesReportId], references: [id], onDelete: Cascade)
+
+  @@index([salesReportId])
 }

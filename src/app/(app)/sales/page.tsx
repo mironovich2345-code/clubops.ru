@@ -15,6 +15,13 @@ import { canCreateOperational } from "@/lib/auth";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { CreateSaleForm } from "./_components/CreateSaleForm";
 import { SaleRowActions } from "./_components/SaleRowActions";
+import { SalesReportForm } from "./_components/SalesReportForm";
+import {
+  getSalesReportsForScope,
+  SALES_REPORT_STATUS_LABELS,
+  SALES_REPORT_STATUS_TONE,
+  REVENUE_LINE_KEY,
+} from "@/lib/sales-reports";
 
 const SALE_STATUS_TONE: Record<string, string> = {
   pending_accountant: "bg-amber-50 text-amber-800 ring-amber-200",
@@ -56,10 +63,12 @@ export default async function SalesPage({
     return <NoCompanyState title="Продажи" description="Ручной учёт продаж и динамика выручки" />;
   }
 
-  const [clubs, sales] = await Promise.all([
+  const [clubs, sales, reports] = await Promise.all([
     getClubsInScope(scope),
     getSalesForScope(scope),
+    getSalesReportsForScope(scope),
   ]);
+  const canCreate = canCreateOperational(ctx.effectiveRoles);
 
   const now = new Date();
   // Revenue cards reflect only confirmed sales — pending/rejected are not revenue.
@@ -79,7 +88,61 @@ export default async function SalesPage({
 
   return (
     <div>
-      <PageHeader title="Продажи" description="Ручной учёт продаж и динамика выручки" />
+      <PageHeader title="Продажи" description="Сменные отчёты, ручной учёт продаж и динамика выручки" />
+
+      {/* Daily sales reports (real-club report structure) */}
+      {canCreate ? <SalesReportForm clubs={clubs} /> : null}
+
+      <div className="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+          Сменные отчёты
+        </div>
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr>
+              <Th>Дата</Th>
+              <Th>Клуб</Th>
+              <Th>Менеджер</Th>
+              <Th className="text-right">Общая выручка</Th>
+              <Th className="text-right">Документы</Th>
+              <Th>Статус</Th>
+              <Th>Действия</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {reports.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
+                  Отчётов пока нет.
+                </td>
+              </tr>
+            ) : (
+              reports.map((r) => {
+                const revenue = r.lines.find((l) => l.key === REVENUE_LINE_KEY)?.amountKopeks ?? 0;
+                return (
+                  <tr key={r.id} className="hover:bg-slate-50">
+                    <Td className="whitespace-nowrap">{dateFormatter.format(r.reportDate)}</Td>
+                    <Td className="whitespace-nowrap">{r.club.name}</Td>
+                    <Td className="whitespace-nowrap">{r.managerName ?? r.createdBy.name}</Td>
+                    <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(revenue)}</Td>
+                    <Td className="text-right text-slate-600">{r._count.documents}</Td>
+                    <Td>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${SALES_REPORT_STATUS_TONE[r.status] ?? "bg-slate-100 text-slate-600 ring-slate-200"}`}>
+                        {SALES_REPORT_STATUS_LABELS[r.status] ?? r.status}
+                      </span>
+                    </Td>
+                    <Td>
+                      <Link href={`/sales/reports/${r.id}`} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                        Открыть
+                      </Link>
+                    </Td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <SummarySection
         summary={summary}
@@ -95,7 +158,7 @@ export default async function SalesPage({
         </div>
       ) : null}
 
-      {canCreateOperational(ctx.effectiveRoles) ? <CreateSaleForm clubs={clubs} /> : null}
+      {canCreate ? <CreateSaleForm clubs={clubs} /> : null}
 
       {/* Status filters */}
       <div className="mb-3 flex flex-wrap gap-2">

@@ -4,6 +4,7 @@ import {
   computeBudgetFactReport,
   type BudgetFactReport,
 } from "@/lib/budgets";
+import { REVENUE_LINE_KEY } from "@/lib/sales-report-rows";
 
 // ---------------------------------------------------------------------------
 // Network analytics. Period-aware aggregation built from settled financial
@@ -103,10 +104,11 @@ export async function loadAnalyticsData(
   const hi = period.end;
   const inClubs = { in: clubIds };
 
-  const [clubs, sales, expenses, invoices, refunds, budgets, plans, pendingSalesCount, debtInvoices, debtRefunds] =
+  const [clubs, sales, reports, expenses, invoices, refunds, budgets, plans, pendingSalesCount, debtInvoices, debtRefunds] =
     await Promise.all([
       prisma.club.findMany({ where: { id: inClubs }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       prisma.sale.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", saleDate: { gte: lo, lt: hi } }, select: { clubId: true, amountKopeks: true, saleDate: true } }),
+      prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, lines: { where: { key: REVENUE_LINE_KEY }, select: { amountKopeks: true } } } }),
       prisma.expense.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", expenseDate: { gte: lo, lt: hi } }, select: { clubId: true, category: true, amountKopeks: true, expenseDate: true, status: true } }),
       prisma.invoice.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, expenseCategory: true, amountKopeks: true, paidAt: true, invoiceDate: true, createdAt: true, status: true } }),
       prisma.refund.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true } }),
@@ -117,9 +119,16 @@ export async function loadAnalyticsData(
       prisma.refund.aggregate({ where: { companyId, clubId: inClubs, status: { in: APPROVED_UNPAID } }, _sum: { amountKopeks: true } }),
     ]);
 
+  // Fold confirmed daily-report revenue (total_revenue line) into sales events.
+  const reportSales = reports.map((r) => ({
+    clubId: r.clubId,
+    amountKopeks: r.lines[0]?.amountKopeks ?? 0,
+    saleDate: r.reportDate,
+  }));
+
   return {
     clubs,
-    sales,
+    sales: [...sales, ...reportSales],
     expenses,
     invoices,
     refunds,
