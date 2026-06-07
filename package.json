@@ -14,6 +14,8 @@
     "prisma:generate:prod": "prisma generate --schema=prisma/production/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema=prisma/production/schema.prisma",
     "build:prod": "prisma generate --schema=prisma/production/schema.prisma && next build",
+    "smoke:manager": "node scripts/smoke-manager-access.mjs",
+    "smoke:manager-dashboard": "node scripts/smoke-manager-dashboard.mjs",
     "docker:build": "docker build -t club-ops:latest .",
     "docker:prod": "docker compose -f docker-compose.production.yml up -d --build"
   },

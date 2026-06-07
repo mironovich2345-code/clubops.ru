@@ -29,8 +29,11 @@ export const dynamic = "force-dynamic";
 const dateFormatter = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" });
 const monthFormatter = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" });
 
-const FINANCIAL_ROLES = new Set<Role>(["owner", "general_director", "regional_director", "manager", "accountant"]);
-/** A pure marketer sees sales/plan/stats only; anyone else sees financials. */
+// Financial dashboard blocks (expenses, profit, debts, budgets, club profit
+// ranking, financial notifications) are for owner / general_director /
+// regional_director / accountant. A manager runs operations + sales and must NOT
+// see profitability; a marketer sees sales + advertising only. Both are excluded.
+const FINANCIAL_ROLES = new Set<Role>(["owner", "general_director", "regional_director", "accountant"]);
 function canSeeFinancials(roles: readonly Role[]): boolean {
   return roles.some((r) => FINANCIAL_ROLES.has(r));
 }
@@ -143,19 +146,25 @@ export default async function DashboardPage() {
   }));
   const pendingApprovalAmountKopeks = pendingApprovals.reduce((s, r) => s + r.requestedAmountKopeks, 0);
 
-  // Plan vs Fact (settled spend). Marketer sees only the advertising row.
-  const factReport = computeBudgetFactReport(
-    budgets,
-    { expenses, invoices, refunds },
-    planMonth,
-    marketerOnly ? { categories: ["advertising"] } : undefined,
-  );
+  // Plan vs Fact (settled spend). Financial roles see all categories; a marketer
+  // sees only advertising; a manager sees no budget data at all.
+  const showBudgetPerformance = financials || marketerOnly;
+  const factReport = showBudgetPerformance
+    ? computeBudgetFactReport(
+        budgets,
+        { expenses, invoices, refunds },
+        planMonth,
+        marketerOnly ? { categories: ["advertising"] } : undefined,
+      )
+    : [];
   const budgetPerfRows = factReport.slice(0, 10);
-  const budgetAlerts = budgetFactAlerts(factReport, 5);
+  // Budget overrun alerts are a financial signal (hidden from manager/marketer).
+  const budgetAlerts = financials ? budgetFactAlerts(factReport, 5) : [];
 
-  // Recent activity (scoped to the viewer's roles/clubs; marketer has no access).
+  // Recent activity is a financial/operational oversight block (owner/GD/RD/
+  // accountant). A manager's dashboard is sales-only.
   const recentActivity =
-    ctx && canAnyRoleAccessPage(roles, "activity")
+    ctx && financials && canAnyRoleAccessPage(roles, "activity")
       ? await getRecentActivity(ctx, scope.company.name, 5)
       : [];
 
@@ -263,8 +272,8 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      {/* Block 3: рейтинг клубов */}
-      {clubs.length > 1 ? (
+      {/* Block 3: рейтинг клубов по прибыли (financial roles only) */}
+      {financials && clubs.length > 1 ? (
         <div className="mb-6">
           <ClubRatingBlock rows={ranking} financials={financials} />
         </div>
