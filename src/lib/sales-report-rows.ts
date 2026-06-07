@@ -125,7 +125,7 @@ export const SALES_REPORT_ACTION_LABELS: Record<SalesReportAction, string> = {
 };
 
 export const SALES_REPORT_ACTION_AUDIT: Record<SalesReportAction, string> = {
-  confirm: "sales_report.confirmed",
+  confirm: "sales_report.verified",
   reject: "sales_report.rejected",
   cancel: "sales_report.canceled",
 };

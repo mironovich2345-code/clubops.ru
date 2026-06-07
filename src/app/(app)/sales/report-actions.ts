@@ -27,7 +27,12 @@ export type CreateReportState = {
   ok: boolean;
   error?: string;
   fieldErrors?: Partial<Record<"clubId" | "reportDate", string>>;
+  /** Set when a duplicate active report already exists — links to it. */
+  existingReportId?: string;
 };
+
+// A report still counts toward revenue / blocks duplicates while active.
+const ACTIVE_REPORT_STATUSES = ["pending_accountant", "confirmed"];
 
 function parseDateInput(value: string): Date | null {
   if (!value) return null;
@@ -69,6 +74,22 @@ export async function createSalesReport(
   }
   const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
   if (!club || club.companyId !== ctx.selectedCompanyId) return { ok: false, error: "Клуб не найден" };
+
+  // One active report per club+date (a rejected/canceled report does not block a
+  // new one). Day window is computed in UTC to match the date parse above.
+  const dayStart = new Date(Date.UTC(reportDate!.getUTCFullYear(), reportDate!.getUTCMonth(), reportDate!.getUTCDate()));
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  const duplicate = await prisma.salesReport.findFirst({
+    where: { clubId, reportDate: { gte: dayStart, lt: dayEnd }, status: { in: ACTIVE_REPORT_STATUSES } },
+    select: { id: true },
+  });
+  if (duplicate) {
+    return {
+      ok: false,
+      error: "За выбранную дату уже существует сменный отчёт для данного клуба.",
+      existingReportId: duplicate.id,
+    };
+  }
 
   // Trust only the base rows from the client; recompute every calculated row on
   // the server (client-sent calculated values are ignored / overwritten).
@@ -196,13 +217,16 @@ export async function transitionSalesReport(formData: FormData): Promise<void> {
   if (!result.ok) throw new Error(result.error);
 
   const reason = String(formData.get("rejectionReason") ?? "").trim() || null;
+  const comment = String(formData.get("accountantComment") ?? "").trim() || null;
+  // Rejection requires a reason; confirmation comment is optional.
+  if (result.to === "rejected" && !reason) throw new Error("Укажите причину отклонения");
   const now = new Date();
 
   await prisma.salesReport.update({
     where: { id: report.id },
     data: {
       status: result.to,
-      ...(result.to === "confirmed" ? { verifiedByUserId: ctx.user.id, verifiedAt: now } : {}),
+      ...(result.to === "confirmed" ? { verifiedByUserId: ctx.user.id, verifiedAt: now, accountantComment: comment } : {}),
       ...(result.to === "rejected" ? { rejectedByUserId: ctx.user.id, rejectedAt: now, rejectionReason: reason } : {}),
     },
   });
@@ -214,8 +238,21 @@ export async function transitionSalesReport(formData: FormData): Promise<void> {
     companyId: report.companyId,
     clubId: report.clubId,
     userId: ctx.user.id,
-    metadata: { from: report.status, to: result.to, ...(reason ? { reason } : {}) },
+    metadata: { from: report.status, to: result.to, ...(reason ? { reason } : {}), ...(comment ? { comment } : {}) },
   });
+
+  // Separate audit event when an accountant leaves a comment on confirmation.
+  if (result.to === "confirmed" && comment) {
+    await recordAudit({
+      action: "sales_report.comment_added",
+      entityType: "SalesReport",
+      entityId: report.id,
+      companyId: report.companyId,
+      clubId: report.clubId,
+      userId: ctx.user.id,
+      metadata: { comment },
+    });
+  }
 
   revalidatePath("/sales");
   revalidatePath(`/sales/reports/${report.id}`);

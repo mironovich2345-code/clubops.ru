@@ -18,6 +18,22 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   // Sales plans
   "sales_plan.created": "Создан план продаж",
   "sales_plan.updated": "Обновлён план продаж",
+  // Sales reports (сменные отчёты)
+  "sales_report.created": "Создан сменный отчёт",
+  "sales_report.verified": "Подтверждён сменный отчёт",
+  "sales_report.confirmed": "Подтверждён сменный отчёт",
+  "sales_report.rejected": "Отклонён сменный отчёт",
+  "sales_report.canceled": "Отменён сменный отчёт",
+  "sales_report.comment_added": "Добавлен комментарий к отчёту",
+  "sales_report.document_uploaded": "Загружен документ к отчёту",
+  "sales_report.encashment_document_uploaded": "Загружен документ инкассации",
+  // Legal entities
+  "legal_entity.created": "Создано юрлицо",
+  "legal_entity.updated": "Обновлено юрлицо",
+  "legal_entity.activated": "Юрлицо активировано",
+  "legal_entity.deactivated": "Юрлицо деактивировано",
+  "legal_entity.attached": "Юрлицо привязано к клубу",
+  "legal_entity.detached": "Юрлицо отвязано от клуба",
   // Invoices
   "invoice.uploaded": "Загружен счёт",
   "invoice.extracted": "Распознан счёт",
@@ -82,6 +98,8 @@ export function auditActionLabel(action: string): string {
 const OBJECT_BY_PREFIX: Record<string, string> = {
   sale: "Продажа",
   sales_plan: "План продаж",
+  sales_report: "Сменный отчёт",
+  legal_entity: "Юрлицо",
   invoice: "Счёт",
   expense: "Расход",
   payroll_statement: "Ведомость",
@@ -116,7 +134,7 @@ export function auditResult(action: string): { label: string; tone: AuditResultT
 
 export const ACTIVITY_TYPES = [
   { key: "all", label: "Все", prefixes: [] as string[] },
-  { key: "sales", label: "Продажи", prefixes: ["sale"] },
+  { key: "sales", label: "Продажи", prefixes: ["sale", "sales_report"] },
   { key: "expenses", label: "Расходы", prefixes: ["expense", "payroll_statement"] },
   { key: "invoices", label: "Счета", prefixes: ["invoice"] },
   { key: "refunds", label: "Возвраты", prefixes: ["refund"] },

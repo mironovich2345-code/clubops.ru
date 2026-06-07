@@ -111,7 +111,17 @@ export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: st
         ) : null}
 
         {state.error && !state.fieldErrors ? (
-          <div className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">{state.error}</div>
+          <div className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
+            {state.error}
+            {state.existingReportId ? (
+              <a
+                href={`/sales/reports/${state.existingReportId}`}
+                className="ml-2 font-medium text-brand-600 underline hover:text-brand-700"
+              >
+                Открыть существующий отчёт
+              </a>
+            ) : null}
+          </div>
         ) : null}
 
         <Submit total={computed[REVENUE_LINE_KEY] ?? 0} />

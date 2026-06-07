@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
+import { prisma } from "@/lib/prisma";
 import { formatKopeks } from "@/lib/money";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
 import {
@@ -25,6 +26,7 @@ import { SalesReportDocUpload } from "../../_components/SalesReportDocUpload";
 export const dynamic = "force-dynamic";
 
 const dtFormatter = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+const dtTimeFormatter = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 // key -> {section, calc} for grouping stored lines (legacy keys fall back).
 const ROW_META = new Map(SALES_REPORT_ROWS.map((r) => [r.key, { section: r.section, calc: r.calc }]));
@@ -51,6 +53,13 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
     encashmentDocCount,
     unmappedEntityRows,
   });
+
+  // Resolve verifier / rejecter names (stored as plain scalar ids).
+  const actorIds = [report.verifiedByUserId, report.rejectedByUserId].filter((x): x is string => !!x);
+  const actors = actorIds.length
+    ? await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
+    : [];
+  const nameOf = (id: string | null) => (id ? actors.find((a) => a.id === id)?.name ?? "—" : "—");
 
   const sectionRows = (section: ReportSection) =>
     report.lines.filter((l) => (ROW_META.get(l.key)?.section ?? "totals") === section);
@@ -158,6 +167,50 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
           <SalesReportActions reportId={report.id} actions={actions} />
         </div>
       ) : null}
+
+      {/* History */}
+      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 text-sm font-semibold text-slate-700">История</div>
+        <ul className="space-y-3 text-sm">
+          <li className="flex gap-2">
+            <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-slate-400" />
+            <div>
+              <div className="font-medium text-slate-800">Создан</div>
+              <div className="text-slate-600">
+                {report.createdBy.name} · {dtTimeFormatter.format(report.createdAt)}
+              </div>
+            </div>
+          </li>
+          {report.status === "confirmed" && report.verifiedAt ? (
+            <li className="flex gap-2">
+              <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+              <div>
+                <div className="font-medium text-emerald-700">Подтверждён</div>
+                <div className="text-slate-600">
+                  {nameOf(report.verifiedByUserId)} · {dtTimeFormatter.format(report.verifiedAt)}
+                </div>
+                {report.accountantComment ? (
+                  <div className="mt-0.5 text-slate-500">Комментарий: {report.accountantComment}</div>
+                ) : null}
+              </div>
+            </li>
+          ) : null}
+          {report.status === "rejected" && report.rejectedAt ? (
+            <li className="flex gap-2">
+              <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-rose-500" />
+              <div>
+                <div className="font-medium text-rose-700">Отклонён</div>
+                <div className="text-slate-600">
+                  {nameOf(report.rejectedByUserId)} · {dtTimeFormatter.format(report.rejectedAt)}
+                </div>
+                {report.rejectionReason ? (
+                  <div className="mt-0.5 text-slate-500">Причина: {report.rejectionReason}</div>
+                ) : null}
+              </div>
+            </li>
+          ) : null}
+        </ul>
+      </div>
     </div>
   );
 }
