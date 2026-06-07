@@ -8,6 +8,10 @@ import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import {
   SALES_REPORT_ROWS,
+  SALES_REPORT_ROW_LABELS,
+  BASE_ROWS,
+  REVENUE_LINE_KEY,
+  computeSalesReportTotals,
   SALES_REPORT_ACTION_AUDIT,
   applySalesReportAction,
   canEditReport,
@@ -64,10 +68,17 @@ export async function createSalesReport(
   const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
   if (!club || club.companyId !== ctx.selectedCompanyId) return { ok: false, error: "Клуб не найден" };
 
+  // Trust only the base rows from the client; recompute every calculated row on
+  // the server (client-sent calculated values are ignored / overwritten).
+  const baseKopeks: Record<string, number> = {};
+  for (const row of BASE_ROWS) {
+    baseKopeks[row.key] = rublesToKopeks(parseAmount(String(formData.get(`amount_${row.key}`) ?? "")));
+  }
+  const allKopeks = computeSalesReportTotals(baseKopeks);
   const lines = SALES_REPORT_ROWS.map((row, i) => ({
     key: row.key,
-    label: row.label,
-    amountKopeks: rublesToKopeks(parseAmount(String(formData.get(`amount_${row.key}`) ?? ""))),
+    label: SALES_REPORT_ROW_LABELS[row.key] ?? row.label,
+    amountKopeks: allKopeks[row.key] ?? 0,
     sortOrder: i,
   }));
 
@@ -91,7 +102,7 @@ export async function createSalesReport(
     companyId: club.companyId,
     clubId,
     userId: ctx.user.id,
-    metadata: { reportDate: reportDateRaw, totalRevenueKopeks: lines.find((l) => l.key === "total_revenue")?.amountKopeks ?? 0 },
+    metadata: { reportDate: reportDateRaw, totalRevenueKopeks: allKopeks[REVENUE_LINE_KEY] ?? 0 },
   });
 
   revalidatePath("/sales");
