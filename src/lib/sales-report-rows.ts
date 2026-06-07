@@ -57,6 +57,13 @@ export const CALC_HINT = "рассчитывается автоматическ�
 
 export const REVENUE_LINE_KEY = "total_revenue";
 export const ENCASHMENT_KEY = "encashment_ooo";
+export const CASH_OOO_KEY = "cash_ooo";
+export const CASH_REMAINING_LABEL = "Остаток наличности ООО";
+
+/** Cash left in the club after collection: cash_ooo − encashment_ooo. */
+export function cashOooRemaining(cashOooKopeks: number, encashmentKopeks: number): number {
+  return cashOooKopeks - encashmentKopeks;
+}
 
 // Document types for sales-report attachments.
 export const SALES_REPORT_DOC_TYPES: ReadonlyArray<{ key: string; label: string }> = [
@@ -149,11 +156,15 @@ export function linesToMap(lines: Array<{ key: string; amountKopeks: number }>):
  *  - some entity-bound rows have no matching club legal entity.
  */
 export function salesReportWarnings(opts: {
+  cashOooKopeks: number;
   encashmentKopeks: number;
   encashmentDocCount: number;
   unmappedEntityRows: number;
 }): string[] {
   const warnings: string[] = [];
+  if (opts.encashmentKopeks > opts.cashOooKopeks) {
+    warnings.push("Инкассация ООО больше наличной выручки ООО");
+  }
   if (opts.encashmentKopeks > 0 && opts.encashmentDocCount === 0) {
     warnings.push("Для инкассации необходимо приложить документ");
   }

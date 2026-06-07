@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getInvoicesForScope } from "@/lib/invoices";
 import { getExpensesForScope, summarizeExpenses, expenseCategoryLabel } from "@/lib/expenses";
 import { getSalesForScope, summarizeSales } from "@/lib/sales";
-import { getConfirmedReportRevenue, getPendingSalesReports } from "@/lib/sales-reports";
+import { getConfirmedReportRevenue, getPendingSalesReports, getConfirmedReportCashControl } from "@/lib/sales-reports";
 import { getRefundsForScope } from "@/lib/refunds";
 import {
   getBudgetsForScope,
@@ -56,7 +56,7 @@ export default async function DashboardPage() {
   const now = new Date();
   const planMonth = monthKey(now);
 
-  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets, budgetRequests, reportRevenue, pendingReports] =
+  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets, budgetRequests, reportRevenue, pendingReports, reportCashControl] =
     await Promise.all([
       getClubsInScope(scope),
       getInvoicesForScope(scope),
@@ -70,6 +70,7 @@ export default async function DashboardPage() {
       getPendingBudgetRequestsForScope(scope),
       getConfirmedReportRevenue(scope),
       getPendingSalesReports(scope),
+      getConfirmedReportCashControl(scope),
     ]);
 
   const roles = ctx?.effectiveRoles ?? [];
@@ -121,6 +122,14 @@ export default async function DashboardPage() {
     ...pendingSales.map((s) => ({ id: `sale-${s.id}`, clubName: s.club.name, source: s.source, amountKopeks: s.amountKopeks, date: s.saleDate, by: s.createdBy.name })),
     ...pendingReports.map((r) => ({ id: `rep-${r.id}`, clubName: r.clubName, source: "Сменный отчёт", amountKopeks: r.totalKopeks, date: r.reportDate, by: r.by })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  // Остаток наличности ООО = sum(cash_ooo − encashment_ooo) over CONFIRMED daily
+  // reports of the current month.
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const cashOooRemainingKopeks = reportCashControl
+    .filter((r) => r.reportDate >= monthStart && r.reportDate < monthEnd)
+    .reduce((s, r) => s + (r.cashOooKopeks - r.encashmentKopeks), 0);
 
   const confirmedRevenue: Array<{ clubId: string; amountKopeks: number; saleDate: Date; source: string }> = [
     ...confirmedSales.map((s) => ({ clubId: s.clubId, amountKopeks: s.amountKopeks, saleDate: s.saleDate, source: s.source })),
@@ -187,6 +196,7 @@ export default async function DashboardPage() {
     budgetAlerts,
     planPercent: planProgress.percent,
     pendingCount,
+    cashOooRemainingKopeks,
   });
 
   const allClear = pendingCount === 0 && debts.length === 0 && overruns.length === 0;
@@ -411,6 +421,7 @@ function buildNotifications(input: {
   budgetAlerts: string[];
   planPercent: number | null;
   pendingCount: number;
+  cashOooRemainingKopeks: number;
 }): Notification[] {
   const out: Notification[] = [];
   // Category exceeded 120% of plan — highest-priority budget alert.
@@ -423,6 +434,8 @@ function buildNotifications(input: {
       });
     if (input.overdueCount > 0) out.push({ tone: "red", text: `Просроченные долги: ${input.overdueCount}` });
     if (input.overOver20 > 0) out.push({ tone: "red", text: `Превышение бюджета более чем на 20%: ${input.overOver20} стат.` });
+    if (input.cashOooRemainingKopeks > 0)
+      out.push({ tone: "yellow", text: `В клубах осталось наличности ООО: ${formatKopeks(input.cashOooRemainingKopeks)}` });
   }
   if (input.planPercent !== null && input.planPercent < 50) {
     out.push({ tone: "red", text: `План выполнен менее чем на 50% (${input.planPercent.toFixed(0)}%)` });

@@ -147,6 +147,14 @@ export default async function AnalyticsPage({
           sub={report.summary.planTargetKopeks > 0 ? `из ${formatKopeks(report.summary.planTargetKopeks)}` : "план не задан"}
           accent={planTone(report.summary.planPercent)}
         />
+        {!marketerOnly ? (
+          <KpiCard
+            label="Остаток наличности ООО"
+            value={formatKopeks(report.summary.cashOooRemainingKopeks)}
+            sub="наличные ООО − инкассация (подтверждённые отчёты)"
+            accent={report.summary.cashOooRemainingKopeks < 0 ? "text-rose-700" : "text-slate-900"}
+          />
+        ) : null}
       </div>
 
       {/* Block 2: sales trend */}

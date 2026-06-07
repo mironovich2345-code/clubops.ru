@@ -10,10 +10,13 @@ import {
   canEditReport,
   salesReportWarnings,
   linesToMap,
+  cashOooRemaining,
   SALES_REPORT_ROWS,
   REPORT_SECTIONS,
   CALC_HINT,
   ENCASHMENT_KEY,
+  CASH_OOO_KEY,
+  CASH_REMAINING_LABEL,
   REVENUE_LINE_KEY,
   SALES_REPORT_STATUS_LABELS,
   SALES_REPORT_STATUS_TONE,
@@ -44,12 +47,17 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
   const actions = availableSalesReportActions(report.status, ctx.effectiveRoles, isCreator);
   const editable = canEditReport(report.status, ctx.effectiveRoles, isCreator);
   const byKey = linesToMap(report.lines);
+  const cashOoo = byKey[CASH_OOO_KEY] ?? 0;
+  const encashment = byKey[ENCASHMENT_KEY] ?? 0;
+  const cashRemaining = cashOooRemaining(cashOoo, encashment);
+  const encashmentDoc = report.documents.find((d) => d.type === "encashment");
   const encashmentDocCount = report.documents.filter((d) => d.type === "encashment").length;
   const unmappedEntityRows = report.lines.filter(
     (l) => (ROW_META.get(l.key)?.section ?? "totals") !== "totals" && l.amountKopeks > 0 && !l.legalEntityId,
   ).length;
   const warnings = salesReportWarnings({
-    encashmentKopeks: byKey[ENCASHMENT_KEY] ?? 0,
+    cashOooKopeks: cashOoo,
+    encashmentKopeks: encashment,
     encashmentDocCount,
     unmappedEntityRows,
   });
@@ -93,6 +101,49 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
           </ul>
         </div>
       ) : null}
+
+      {/* Контроль наличности ООО */}
+      <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Контроль наличности ООО
+        </div>
+        <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-4">
+          <CashCell label="Наличные ООО" value={formatKopeks(cashOoo)} />
+          <CashCell label="Инкассация ООО" value={formatKopeks(encashment)} />
+          <CashCell
+            label={CASH_REMAINING_LABEL}
+            value={formatKopeks(cashRemaining)}
+            accent={cashRemaining < 0 ? "text-rose-700" : "text-slate-900"}
+          />
+          <div className="bg-white px-4 py-3">
+            <div className="text-xs text-slate-500">Документ инкассации</div>
+            {encashmentDoc ? (
+              <a
+                href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(encashmentDoc.storageKey ?? "")}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
+              >
+                Открыть документ
+              </a>
+            ) : encashment > 0 ? (
+              <div className="mt-1 text-sm font-medium text-rose-600">Документ не приложен</div>
+            ) : (
+              <div className="mt-1 text-sm text-slate-400">—</div>
+            )}
+          </div>
+        </div>
+        {encashment > cashOoo ? (
+          <div className="border-t border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">
+            Инкассация ООО больше наличной выручки ООО
+          </div>
+        ) : null}
+        {encashment > 0 && !encashmentDoc ? (
+          <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            Для инкассации необходимо приложить документ
+          </div>
+        ) : null}
+      </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Indicators grouped by section */}
@@ -211,6 +262,15 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
           ) : null}
         </ul>
       </div>
+    </div>
+  );
+}
+
+function CashCell({ label, value, accent }: { label: string; value: string; accent?: string }) {
+  return (
+    <div className="bg-white px-4 py-3">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className={`mt-1 text-sm font-semibold ${accent ?? "text-slate-900"}`}>{value}</div>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import {
   computeBudgetFactReport,
   type BudgetFactReport,
 } from "@/lib/budgets";
-import { REVENUE_LINE_KEY } from "@/lib/sales-report-rows";
+import { REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY } from "@/lib/sales-report-rows";
 
 // ---------------------------------------------------------------------------
 // Network analytics. Period-aware aggregation built from settled financial
@@ -84,6 +84,7 @@ export type AnalyticsData = {
   refunds: Array<{ clubId: string; amountKopeks: number; paidAt: Date | null; refundDate: Date | null; createdAt: Date; status: string }>;
   budgets: Array<{ clubId: string; category: string; limitAmountKopeks: number }>;
   plans: Array<{ clubId: string | null; targetAmountKopeks: number }>;
+  reportCash: Array<{ reportDate: Date; cashOooKopeks: number; encashmentKopeks: number }>;
   pendingSalesCount: number;
   debtKopeks: number;
 };
@@ -98,7 +99,7 @@ export async function loadAnalyticsData(
   period: ResolvedPeriod,
 ): Promise<AnalyticsData> {
   if (clubIds.length === 0) {
-    return { clubs: [], sales: [], expenses: [], invoices: [], refunds: [], budgets: [], plans: [], pendingSalesCount: 0, debtKopeks: 0 };
+    return { clubs: [], sales: [], expenses: [], invoices: [], refunds: [], budgets: [], plans: [], reportCash: [], pendingSalesCount: 0, debtKopeks: 0 };
   }
   const lo = period.prevStart;
   const hi = period.end;
@@ -108,7 +109,7 @@ export async function loadAnalyticsData(
     await Promise.all([
       prisma.club.findMany({ where: { id: inClubs }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       prisma.sale.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", saleDate: { gte: lo, lt: hi } }, select: { clubId: true, amountKopeks: true, saleDate: true } }),
-      prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, lines: { where: { key: REVENUE_LINE_KEY }, select: { amountKopeks: true } } } }),
+      prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, lines: { where: { key: { in: [REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY] } }, select: { key: true, amountKopeks: true } } } }),
       prisma.expense.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", expenseDate: { gte: lo, lt: hi } }, select: { clubId: true, category: true, amountKopeks: true, expenseDate: true, status: true } }),
       prisma.invoice.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, expenseCategory: true, amountKopeks: true, paidAt: true, invoiceDate: true, createdAt: true, status: true } }),
       prisma.refund.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true } }),
@@ -120,10 +121,17 @@ export async function loadAnalyticsData(
     ]);
 
   // Fold confirmed daily-report revenue (total_revenue line) into sales events.
+  const lineOf = (r: (typeof reports)[number], key: string) =>
+    r.lines.find((l) => l.key === key)?.amountKopeks ?? 0;
   const reportSales = reports.map((r) => ({
     clubId: r.clubId,
-    amountKopeks: r.lines[0]?.amountKopeks ?? 0,
+    amountKopeks: lineOf(r, REVENUE_LINE_KEY),
     saleDate: r.reportDate,
+  }));
+  const reportCash = reports.map((r) => ({
+    reportDate: r.reportDate,
+    cashOooKopeks: lineOf(r, CASH_OOO_KEY),
+    encashmentKopeks: lineOf(r, ENCASHMENT_KEY),
   }));
 
   return {
@@ -134,6 +142,7 @@ export async function loadAnalyticsData(
     refunds,
     budgets,
     plans,
+    reportCash,
     pendingSalesCount,
     debtKopeks: (debtInvoices._sum.amountKopeks ?? 0) + (debtRefunds._sum.amountKopeks ?? 0),
   };
@@ -181,6 +190,7 @@ export type ExecutiveSummary = {
   prevProfitKopeks: number;
   planTargetKopeks: number;
   planPercent: number | null;
+  cashOooRemainingKopeks: number;
 };
 
 export type TrendGranularity = "day" | "week" | "month";
@@ -329,6 +339,10 @@ export function buildAnalyticsReport(
   const sumPerClubPlan = [...planMap.values()].reduce((a, b) => a + b, 0);
   const companyWidePlan = data.plans.filter((p) => !p.clubId).reduce((a, b) => a + b.targetAmountKopeks, 0);
   const planTargetKopeks = sumPerClubPlan > 0 ? sumPerClubPlan : companyWidePlan;
+  // Остаток наличности ООО за период: sum(cash_ooo − encashment_ooo) of confirmed reports.
+  const cashOooRemainingKopeks = data.reportCash
+    .filter((r) => inRange(r.reportDate, period.start, period.end))
+    .reduce((s, r) => s + (r.cashOooKopeks - r.encashmentKopeks), 0);
   const summary: ExecutiveSummary = {
     salesKopeks: curSales,
     expensesKopeks: curSpend,
@@ -336,6 +350,7 @@ export function buildAnalyticsReport(
     prevProfitKopeks: prevSales - prevSpend,
     planTargetKopeks,
     planPercent: planTargetKopeks > 0 ? (curSales / planTargetKopeks) * 100 : null,
+    cashOooRemainingKopeks,
   };
 
   // Blocks 2/3/4: trends

@@ -5,6 +5,8 @@ import type { Role } from "@/lib/auth";
 import {
   SALES_REPORT_ACTION_LABELS,
   REVENUE_LINE_KEY,
+  CASH_OOO_KEY,
+  ENCASHMENT_KEY,
   type SalesReportAction,
   type SalesReportStatus,
 } from "@/lib/sales-report-rows";
@@ -145,6 +147,28 @@ export async function getConfirmedReportRevenue(scope: DataScope): Promise<Repor
     amountKopeks: r.lines[0]?.amountKopeks ?? 0,
     saleDate: r.reportDate,
     source: "Сменный отчёт",
+  }));
+}
+
+export type ReportCashControl = { reportDate: Date; cashOooKopeks: number; encashmentKopeks: number };
+
+/**
+ * Cash control (наличные ООО / инкассация ООО) for CONFIRMED reports in the
+ * scope. Callers filter by date and sum (cash − encashment) for the remaining.
+ */
+export async function getConfirmedReportCashControl(scope: DataScope): Promise<ReportCashControl[]> {
+  if (!scope.company || scope.clubIds.length === 0) return [];
+  const rows = await prisma.salesReport.findMany({
+    where: { companyId: scope.company.id, clubId: { in: scope.clubIds }, status: "confirmed" },
+    select: {
+      reportDate: true,
+      lines: { where: { key: { in: [CASH_OOO_KEY, ENCASHMENT_KEY] } }, select: { key: true, amountKopeks: true } },
+    },
+  });
+  return rows.map((r) => ({
+    reportDate: r.reportDate,
+    cashOooKopeks: r.lines.find((l) => l.key === CASH_OOO_KEY)?.amountKopeks ?? 0,
+    encashmentKopeks: r.lines.find((l) => l.key === ENCASHMENT_KEY)?.amountKopeks ?? 0,
   }));
 }
 
