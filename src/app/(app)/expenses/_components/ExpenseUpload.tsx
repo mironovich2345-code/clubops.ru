@@ -10,7 +10,7 @@ import { PAYMENT_METHOD_OPTIONS } from "@/lib/expenses";
 
 type ClubOption = { id: string; name: string; city: string };
 type CategoryOption = { key: string; label: string };
-type EntityOption = { id: string; name: string; type: string };
+type EntityOption = { id: string; name: string; type: string; inn: string | null };
 type EntitiesByClub = Record<string, EntityOption[]>;
 
 type AnalyzeState = {
@@ -327,6 +327,9 @@ function PaymentEntityFields({
 }) {
   const ip = entities.find((e) => e.type === "ip");
   const isCash = paymentMethod === "cash";
+  const [selectedId, setSelectedId] = useState("");
+  // Compact summary helps the manager verify the entity (Часть 5).
+  const summaryEntity = isCash ? ip : entities.find((e) => e.id === selectedId);
 
   return (
     <>
@@ -356,7 +359,12 @@ function PaymentEntityFields({
             {ip ? <input type="hidden" name="legalEntityId" value={ip.id} /> : null}
           </>
         ) : (
-          <select name="legalEntityId" defaultValue="" className="input">
+          <select
+            name="legalEntityId"
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+            className="input"
+          >
             <option value="">— не выбрано —</option>
             {entities.map((e) => (
               <option key={e.id} value={e.id}>
@@ -366,6 +374,14 @@ function PaymentEntityFields({
           </select>
         )}
       </Field>
+
+      {summaryEntity ? (
+        <div className="md:col-span-2 -mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <span className="font-medium text-slate-800">{summaryEntity.name}</span>
+          <span className="ml-2">Тип: {summaryEntity.type === "ip" ? "ИП" : "ООО"}</span>
+          {summaryEntity.inn ? <span className="ml-2">ИНН {summaryEntity.inn}</span> : null}
+        </div>
+      ) : null}
 
       {isCash ? (
         <div className="md:col-span-2 -mt-2 text-xs text-slate-500">

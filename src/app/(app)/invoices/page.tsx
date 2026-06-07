@@ -49,7 +49,7 @@ export default async function InvoicesPage() {
   ]);
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
-  const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null }>> = {};
+  const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null }>> = {};
   if (canCreate) {
     const lists = await Promise.all(clubs.map((c) => getClubLegalEntities(c.id)));
     clubs.forEach((c, i) => {
@@ -59,6 +59,8 @@ export default async function InvoicesPage() {
         type: normalizeEntityType(e.type) ?? e.type,
         inn: e.inn,
         kpp: e.kpp,
+        bankName: e.bankName,
+        accountNumber: e.accountNumber,
       }));
     });
   }

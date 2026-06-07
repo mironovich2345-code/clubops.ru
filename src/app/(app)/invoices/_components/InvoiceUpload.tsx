@@ -7,7 +7,7 @@ import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors
 import { uploadAndAnalyzeInvoice, saveInvoice } from "../actions";
 
 type ClubOption = { id: string; name: string; city: string };
-type EntityOption = { id: string; name: string; type: string; inn: string | null; kpp: string | null };
+type EntityOption = { id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null };
 type EntitiesByClub = Record<string, EntityOption[]>;
 
 function norm(v: string | null | undefined): string {
@@ -244,6 +244,17 @@ export function InvoiceUpload({
                 <span className="mt-1 block text-xs text-amber-700">
                   Плательщик в счёте не совпадает с выбранным юрлицом
                 </span>
+              ) : null}
+              {selectedEntity ? (
+                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <div className="font-medium text-slate-800">{selectedEntity.name}</div>
+                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                    {selectedEntity.inn ? <span>ИНН {selectedEntity.inn}</span> : null}
+                    {selectedEntity.kpp ? <span>КПП {selectedEntity.kpp}</span> : null}
+                    {selectedEntity.bankName ? <span>Банк: {selectedEntity.bankName}</span> : null}
+                    {selectedEntity.accountNumber ? <span>Р/с {selectedEntity.accountNumber}</span> : null}
+                  </div>
+                </div>
               ) : null}
             </Field>
             <Field label="Сумма, ₽">

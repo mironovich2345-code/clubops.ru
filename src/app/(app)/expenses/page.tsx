@@ -51,7 +51,7 @@ export default async function ExpensesPage() {
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
 
   // Active legal entities per club for the expense form (cash -> ИП routing).
-  const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string }>> = {};
+  const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null }>> = {};
   if (canCreate) {
     const lists = await Promise.all(clubs.map((c) => getClubLegalEntities(c.id)));
     clubs.forEach((c, i) => {
@@ -59,6 +59,7 @@ export default async function ExpensesPage() {
         id: e.id,
         name: e.name,
         type: normalizeEntityType(e.type) ?? e.type,
+        inn: e.inn,
       }));
     });
   }

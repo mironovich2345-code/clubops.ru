@@ -50,14 +50,23 @@ model LegalEntity {
   companyId     String
   // "ooo" | "ip" (legacy seed data may use "ООО"/"ИП" — normalize in code).
   type          String
+  // `name` is the primary display name (kept for back-compat). Full profile
+  // below; everything nullable so existing rows are unaffected.
   name          String
+  fullName      String?
+  shortName     String?
   inn           String?
   kpp           String?
   ogrn          String?
+  legalAddress  String?
+  phone         String?
+  email         String?
   bankName      String?
   bankBik       String?
-  accountNumber String?
+  accountNumber String? // расчётный счёт (bank account)
   corrAccount   String?
+  directorName  String?
+  comment       String?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

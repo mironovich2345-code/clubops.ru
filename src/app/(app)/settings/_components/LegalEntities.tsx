@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import {
   createLegalEntity,
@@ -9,17 +10,26 @@ import {
   detachLegalEntityFromClub,
 } from "../legal-entity-actions";
 import { LEGAL_ENTITY_TYPES, legalEntityTypeLabel } from "@/lib/legal-entities";
+import { legalEntityFieldWarning } from "@/lib/legal-entity-format";
 
 type EntityView = {
   id: string;
   name: string;
   type: string;
+  fullName: string | null;
+  shortName: string | null;
   inn: string | null;
   kpp: string | null;
+  ogrn: string | null;
+  legalAddress: string | null;
+  phone: string | null;
+  email: string | null;
   bankName: string | null;
   bankBik: string | null;
   accountNumber: string | null;
   corrAccount: string | null;
+  directorName: string | null;
+  comment: string | null;
   isActive: boolean;
   clubs: Array<{ clubId: string; clubName: string }>;
 };
@@ -27,6 +37,16 @@ type ClubView = { id: string; name: string };
 
 type State = { ok: boolean; error?: string };
 const initial: State = { ok: false };
+
+// Profile sections (Часть 2). `validate` fields show a non-blocking format warning.
+const SECTIONS: Array<{ title: string; fields: Array<{ name: string; label: string; validate?: boolean }> }> = [
+  { title: "Общая информация", fields: [{ name: "fullName", label: "Полное наименование" }, { name: "shortName", label: "Краткое наименование" }] },
+  { title: "Реквизиты", fields: [{ name: "inn", label: "ИНН", validate: true }, { name: "kpp", label: "КПП", validate: true }, { name: "ogrn", label: "ОГРН" }, { name: "legalAddress", label: "Юридический адрес" }] },
+  { title: "Контакты", fields: [{ name: "phone", label: "Телефон" }, { name: "email", label: "Email" }] },
+  { title: "Банк", fields: [{ name: "bankName", label: "Банк" }, { name: "bankBik", label: "БИК", validate: true }, { name: "accountNumber", label: "Расчётный счёт", validate: true }, { name: "corrAccount", label: "Корр. счёт", validate: true }] },
+  { title: "Ответственное лицо", fields: [{ name: "directorName", label: "Руководитель" }] },
+  { title: "Прочее", fields: [{ name: "comment", label: "Комментарий" }] },
+];
 
 function Submit({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -42,14 +62,35 @@ function Status({ state }: { state: State }) {
   return null;
 }
 
-const FIELDS: Array<{ name: string; label: string }> = [
-  { name: "inn", label: "ИНН" },
-  { name: "kpp", label: "КПП" },
-  { name: "bankName", label: "Банк" },
-  { name: "bankBik", label: "БИК" },
-  { name: "accountNumber", label: "Расчётный счёт" },
-  { name: "corrAccount", label: "Корр. счёт" },
-];
+function ProfileInput({ name, label, defaultValue, validate }: { name: string; label: string; defaultValue: string; validate?: boolean }) {
+  const [v, setV] = useState(defaultValue);
+  const warning = validate ? legalEntityFieldWarning(name, v) : null;
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-slate-600">{label}</span>
+      <input name={name} value={v} onChange={(e) => setV(e.target.value)} className="input w-full" />
+      {warning ? <span className="mt-1 block text-xs text-amber-700">{warning}</span> : null}
+    </label>
+  );
+}
+
+function SectionedFields({ entity }: { entity?: EntityView }) {
+  const val = (k: string) => (entity ? (entity as unknown as Record<string, string | null>)[k] ?? "" : "");
+  return (
+    <>
+      {SECTIONS.map((s) => (
+        <div key={s.title} className="sm:col-span-2">
+          <div className="mb-1 mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.title}</div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {s.fields.map((f) => (
+              <ProfileInput key={f.name} name={f.name} label={f.label} defaultValue={val(f.name)} validate={f.validate} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
 
 export function LegalEntities({
   companyId,
@@ -78,6 +119,7 @@ export function LegalEntities({
                 {!e.isActive ? <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 ring-1 ring-inset ring-slate-200">Неактивно</span> : null}
                 {e.inn ? <span className="text-xs text-slate-500">ИНН {e.inn}</span> : null}
                 {e.kpp ? <span className="text-xs text-slate-500">КПП {e.kpp}</span> : null}
+                {e.directorName ? <span className="text-xs text-slate-500">Рук.: {e.directorName}</span> : null}
               </div>
 
               {/* Attached clubs */}
@@ -102,9 +144,7 @@ export function LegalEntities({
 
               {canManage ? (
                 <div className="mt-3 flex flex-wrap items-end gap-3">
-                  {/* Attach to a club */}
                   <AttachForm entityId={e.id} clubs={clubs.filter((c) => !e.clubs.some((x) => x.clubId === c.id))} />
-                  {/* Activate / deactivate */}
                   <form action={setLegalEntityActive}>
                     <input type="hidden" name="legalEntityId" value={e.id} />
                     <input type="hidden" name="active" value={e.isActive ? "false" : "true"} />
@@ -113,7 +153,7 @@ export function LegalEntities({
                     </button>
                   </form>
                   <details className="w-full">
-                    <summary className="cursor-pointer text-xs font-medium text-brand-600">Реквизиты / редактировать</summary>
+                    <summary className="cursor-pointer text-xs font-medium text-brand-600">Профиль / редактировать</summary>
                     <EditForm entity={e} />
                   </details>
                 </div>
@@ -158,15 +198,11 @@ function EditForm({ entity }: { entity: EntityView }) {
     <form action={action} className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
       <input type="hidden" name="legalEntityId" value={entity.id} />
       <label className="block sm:col-span-2">
-        <span className="mb-1 block text-xs font-medium text-slate-600">Название</span>
+        <span className="mb-1 block text-xs font-medium text-slate-600">Название (для списков)</span>
         <input name="name" defaultValue={entity.name} required className="input w-full" />
       </label>
-      {FIELDS.map((f) => (
-        <label key={f.name} className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">{f.label}</span>
-          <input name={f.name} defaultValue={(entity as unknown as Record<string, string | null>)[f.name] ?? ""} className="input w-full" />
-        </label>
-      ))}
+      <div className="sm:col-span-2 text-xs text-slate-500">Тип: <span className="font-medium text-slate-700">{legalEntityTypeLabel(entity.type)}</span></div>
+      <SectionedFields entity={entity} />
       <div className="flex items-center gap-2 sm:col-span-2">
         <Submit label="Сохранить" />
         <Status state={state} />
@@ -181,7 +217,7 @@ function CreateForm({ companyId }: { companyId: string }) {
     <form action={action} className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
       <input type="hidden" name="companyId" value={companyId} />
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-slate-600">Название</span>
+        <span className="mb-1 block text-xs font-medium text-slate-600">Название (для списков)</span>
         <input name="name" required className="input w-full" placeholder="ООО «Метрофитнес»" />
       </label>
       <label className="block">
@@ -192,12 +228,7 @@ function CreateForm({ companyId }: { companyId: string }) {
           ))}
         </select>
       </label>
-      {FIELDS.map((f) => (
-        <label key={f.name} className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">{f.label}</span>
-          <input name={f.name} className="input w-full" />
-        </label>
-      ))}
+      <SectionedFields />
       <div className="flex items-center gap-2 sm:col-span-2">
         <Submit label="Добавить" />
         <Status state={state} />

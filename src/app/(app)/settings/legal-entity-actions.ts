@@ -38,17 +38,7 @@ export async function createLegalEntity(_prev: State | undefined, formData: Form
   if (!isEntityType(type)) return { ok: false, error: "Выберите тип (ООО или ИП)" };
 
   const entity = await prisma.legalEntity.create({
-    data: {
-      companyId,
-      type,
-      name,
-      inn: str(formData, "inn"),
-      kpp: str(formData, "kpp"),
-      bankName: str(formData, "bankName"),
-      bankBik: str(formData, "bankBik"),
-      accountNumber: str(formData, "accountNumber"),
-      corrAccount: str(formData, "corrAccount"),
-    },
+    data: { companyId, type, ...profileFields(formData, name) },
   });
   await recordAudit({
     action: "legal_entity.created",
@@ -62,6 +52,27 @@ export async function createLegalEntity(_prev: State | undefined, formData: Form
   return { ok: true };
 }
 
+// Full profile (name is required and already validated by the caller).
+function profileFields(formData: FormData, name: string) {
+  return {
+    name,
+    fullName: str(formData, "fullName"),
+    shortName: str(formData, "shortName"),
+    inn: str(formData, "inn"),
+    kpp: str(formData, "kpp"),
+    ogrn: str(formData, "ogrn"),
+    legalAddress: str(formData, "legalAddress"),
+    phone: str(formData, "phone"),
+    email: str(formData, "email"),
+    bankName: str(formData, "bankName"),
+    bankBik: str(formData, "bankBik"),
+    accountNumber: str(formData, "accountNumber"),
+    corrAccount: str(formData, "corrAccount"),
+    directorName: str(formData, "directorName"),
+    comment: str(formData, "comment"),
+  };
+}
+
 export async function updateLegalEntity(_prev: State | undefined, formData: FormData): Promise<State> {
   const legalEntityId = String(formData.get("legalEntityId") ?? "").trim();
   const existing = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });
@@ -72,24 +83,19 @@ export async function updateLegalEntity(_prev: State | undefined, formData: Form
   const name = str(formData, "name");
   if (!name) return { ok: false, error: "Укажите название юрлица" };
 
-  await prisma.legalEntity.update({
-    where: { id: legalEntityId },
-    data: {
-      name,
-      inn: str(formData, "inn"),
-      kpp: str(formData, "kpp"),
-      bankName: str(formData, "bankName"),
-      bankBik: str(formData, "bankBik"),
-      accountNumber: str(formData, "accountNumber"),
-      corrAccount: str(formData, "corrAccount"),
-    },
-  });
+  const next = profileFields(formData, name);
+  const changedFields = (Object.keys(next) as (keyof typeof next)[]).filter(
+    (k) => (existing[k] ?? null) !== next[k],
+  );
+
+  await prisma.legalEntity.update({ where: { id: legalEntityId }, data: next });
   await recordAudit({
     action: "legal_entity.updated",
     entityType: "LegalEntity",
     entityId: legalEntityId,
     companyId: existing.companyId,
     userId: guard.ctx.user.id,
+    metadata: { changedFields },
   });
   revalidatePath("/settings");
   return { ok: true };

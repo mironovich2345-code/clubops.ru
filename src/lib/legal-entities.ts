@@ -27,6 +27,36 @@ export function legalEntityTypeLabel(type: string): string {
   return n === "ooo" ? "ООО" : n === "ip" ? "ИП" : type;
 }
 
+export type LegalEntityDisplay = {
+  name: string;
+  inn: string | null;
+  kpp: string | null;
+  type: string;
+  typeLabel: string;
+};
+
+/**
+ * Canonical short display for a legal entity (name / INN / KPP / type). Reused
+ * across forms and reserved for future document generation (contracts, acts,
+ * returns, bank integrations).
+ */
+export function getLegalEntityDisplay(e: {
+  name: string;
+  shortName?: string | null;
+  fullName?: string | null;
+  inn?: string | null;
+  kpp?: string | null;
+  type: string;
+}): LegalEntityDisplay {
+  return {
+    name: e.shortName || e.name || e.fullName || "",
+    inn: e.inn ?? null,
+    kpp: e.kpp ?? null,
+    type: e.type,
+    typeLabel: legalEntityTypeLabel(e.type),
+  };
+}
+
 export function isEntityType(value: string): value is LegalEntityType {
   return value === "ooo" || value === "ip";
 }
