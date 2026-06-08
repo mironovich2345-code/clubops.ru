@@ -204,6 +204,89 @@ export async function uploadSalesReportDocuments(formData: FormData): Promise<vo
   revalidatePath(`/sales/reports/${report.id}`);
 }
 
+// Per-type audit action for an uploaded supporting document.
+const DOC_UPLOAD_AUDIT: Record<string, string> = {
+  ooo_report: "sales_report.ooo_report_uploaded",
+  ip_report: "sales_report.ip_report_uploaded",
+  encashment: "sales_report.encashment_document_uploaded",
+  withdrawal: "sales_report.withdrawal_document_uploaded",
+};
+const DEFAULT_DOC_AUDIT = "sales_report.document_uploaded";
+
+/**
+ * Structured multi-slot upload: one labeled file input per document type
+ * (file_ooo_report, file_ip_report, file_encashment, file_withdrawal,
+ * file_other, ...). Stores every provided file under its type and emits a
+ * per-type audit event. Same edit-permission rules as the single-type upload.
+ */
+export async function uploadSalesReportDocSlots(formData: FormData): Promise<void> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "sales")) throw new Error("Нет доступа");
+
+  const reportId = String(formData.get("reportId") ?? "").trim();
+  const report = await getSalesReportForContext(ctx, reportId);
+  if (!report) throw new Error("Отчёт не найден или нет доступа");
+
+  const isCreator = report.createdByUserId === ctx.user.id;
+  if (!canEditReport(report.status, ctx.effectiveRoles, isCreator)) {
+    throw new Error("Загружать документы можно только в свой отчёт на проверке");
+  }
+
+  // Gather files per slot (typed by the input name suffix).
+  const slots: Array<{ type: string; files: UploadedFile[] }> = [];
+  let totalIncoming = 0;
+  for (const type of SALES_REPORT_DOC_TYPE_KEYS) {
+    const files: UploadedFile[] = [];
+    for (const entry of formData.getAll(`file_${type}`)) {
+      if (isUploadedFile(entry) && entry.size > 0) files.push(entry);
+    }
+    if (files.length > 0) {
+      slots.push({ type, files });
+      totalIncoming += files.length;
+    }
+  }
+  if (totalIncoming === 0) throw new Error("Выберите хотя бы один файл");
+  if (report.documents.length + totalIncoming > MAX_REPORT_FILES) {
+    throw new Error(`Слишком много файлов (максимум ${MAX_REPORT_FILES})`);
+  }
+
+  let storedTotal = 0;
+  for (const slot of slots) {
+    let stored = 0;
+    for (const file of slot.files) {
+      if (validateReportFile(file)) continue; // skip invalid; keep the rest
+      const s = await storeReportFile(file);
+      await prisma.salesReportDocument.create({
+        data: {
+          salesReportId: report.id,
+          type: slot.type,
+          originalFileName: s.fileName,
+          originalFileMime: s.mime,
+          originalFileSize: s.size,
+          storageKey: s.storageKey,
+          uploadedByUserId: ctx.user.id,
+        },
+      });
+      stored++;
+    }
+    if (stored > 0) {
+      storedTotal += stored;
+      await recordAudit({
+        action: DOC_UPLOAD_AUDIT[slot.type] ?? DEFAULT_DOC_AUDIT,
+        entityType: "SalesReport",
+        entityId: report.id,
+        companyId: report.companyId,
+        clubId: report.clubId,
+        userId: ctx.user.id,
+        metadata: { count: stored, type: slot.type },
+      });
+    }
+  }
+  if (storedTotal === 0) throw new Error("Файлы не загружены: проверьте формат и размер");
+
+  revalidatePath(`/sales/reports/${report.id}`);
+}
+
 export async function transitionSalesReport(formData: FormData): Promise<void> {
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "sales")) throw new Error("Нет доступа");

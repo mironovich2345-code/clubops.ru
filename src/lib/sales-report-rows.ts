@@ -58,6 +58,9 @@ export const CALC_HINT = "рассчитывается автоматическ�
 export const REVENUE_LINE_KEY = "total_revenue";
 export const ENCASHMENT_KEY = "encashment_ooo";
 export const CASH_OOO_KEY = "cash_ooo";
+export const WITHDRAWAL_KEY = "withdrawal";
+export const REVENUE_OOO_KEY = "revenue_ooo";
+export const REVENUE_IP_KEY = "revenue_ip";
 export const CASH_REMAINING_LABEL = "Остаток наличности ООО";
 
 /** Cash left in the club after collection: cash_ooo − encashment_ooo. */
@@ -65,12 +68,16 @@ export function cashOooRemaining(cashOooKopeks: number, encashmentKopeks: number
   return cashOooKopeks - encashmentKopeks;
 }
 
-// Document types for sales-report attachments.
+// Document types for sales-report attachments. Structured so the accountant can
+// see, per report, what supporting documents are present vs missing.
 export const SALES_REPORT_DOC_TYPES: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "ooo_report", label: "Отчёт ООО" },
+  { key: "ip_report", label: "Отчёт ИП" },
   { key: "encashment", label: "Инкассация" },
+  { key: "withdrawal", label: "Изъятие" },
   { key: "cash_report", label: "Кассовый отчёт" },
-  { key: "acquiring_report", label: "Отчёт эквайринга" },
-  { key: "other", label: "Прочее" },
+  { key: "acquiring_report", label: "Эквайринг" },
+  { key: "other", label: "Другое" },
 ];
 export const SALES_REPORT_DOC_TYPE_KEYS = SALES_REPORT_DOC_TYPES.map((t) => t.key);
 export const SALES_REPORT_DOC_TYPE_LABELS: Record<string, string> = Object.fromEntries(
@@ -151,22 +158,40 @@ export function linesToMap(lines: Array<{ key: string; amountKopeks: number }>):
 }
 
 /**
- * Non-formula warnings (calculated totals are automatic, so no mismatch checks):
- *  - инкассация recorded but no encashment-type document attached,
- *  - some entity-bound rows have no matching club legal entity.
+ * Non-formula warnings (calculated totals are automatic, so no mismatch checks).
+ * Important (необходимо): инкассация / изъятие recorded but no matching document.
+ * Advisory (желательно): выручка ООО / ИП recorded but no corresponding report.
+ * None of these block saving or confirmation.
  */
 export function salesReportWarnings(opts: {
   cashOooKopeks: number;
   encashmentKopeks: number;
   encashmentDocCount: number;
   unmappedEntityRows: number;
+  withdrawalKopeks?: number;
+  withdrawalDocCount?: number;
+  revenueOooKopeks?: number;
+  oooReportDocCount?: number;
+  revenueIpKopeks?: number;
+  ipReportDocCount?: number;
 }): string[] {
   const warnings: string[] = [];
   if (opts.encashmentKopeks > opts.cashOooKopeks) {
     warnings.push("Инкассация ООО больше наличной выручки ООО");
   }
+  // Important: cash movements must have supporting documents.
   if (opts.encashmentKopeks > 0 && opts.encashmentDocCount === 0) {
     warnings.push("Для инкассации необходимо приложить документ");
+  }
+  if ((opts.withdrawalKopeks ?? 0) > 0 && (opts.withdrawalDocCount ?? 0) === 0) {
+    warnings.push("Для изъятия необходимо приложить документ");
+  }
+  // Advisory: revenue reports are recommended but not mandatory.
+  if ((opts.revenueOooKopeks ?? 0) > 0 && (opts.oooReportDocCount ?? 0) === 0) {
+    warnings.push("Для выручки ООО желательно приложить отчёт ООО");
+  }
+  if ((opts.revenueIpKopeks ?? 0) > 0 && (opts.ipReportDocCount ?? 0) === 0) {
+    warnings.push("Для выручки ИП желательно приложить отчёт ИП");
   }
   if (opts.unmappedEntityRows > 0) {
     warnings.push("Для части строк не найдено привязанное юрлицо");

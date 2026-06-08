@@ -20,11 +20,14 @@ import {
   REVENUE_LINE_KEY,
   SALES_REPORT_STATUS_LABELS,
   SALES_REPORT_STATUS_TONE,
-  SALES_REPORT_DOC_TYPE_LABELS,
+  SALES_REPORT_DOC_TYPES,
+  WITHDRAWAL_KEY,
+  REVENUE_OOO_KEY,
+  REVENUE_IP_KEY,
   type ReportSection,
 } from "@/lib/sales-reports";
 import { SalesReportActions } from "../../_components/SalesReportActions";
-import { SalesReportDocUpload } from "../../_components/SalesReportDocUpload";
+import { SalesReportDocSlots } from "../../_components/SalesReportDocSlots";
 
 export const dynamic = "force-dynamic";
 
@@ -50,17 +53,37 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
   const cashOoo = byKey[CASH_OOO_KEY] ?? 0;
   const encashment = byKey[ENCASHMENT_KEY] ?? 0;
   const cashRemaining = cashOooRemaining(cashOoo, encashment);
+  const withdrawal = byKey[WITHDRAWAL_KEY] ?? 0;
+  const revenueOoo = byKey[REVENUE_OOO_KEY] ?? 0;
+  const revenueIp = byKey[REVENUE_IP_KEY] ?? 0;
   const encashmentDoc = report.documents.find((d) => d.type === "encashment");
-  const encashmentDocCount = report.documents.filter((d) => d.type === "encashment").length;
+  // Count attached documents per type for the grouped display + warnings.
+  const docsByType = new Map<string, typeof report.documents>();
+  for (const d of report.documents) {
+    const list = docsByType.get(d.type) ?? [];
+    list.push(d);
+    docsByType.set(d.type, list);
+  }
+  const docCount = (type: string) => docsByType.get(type)?.length ?? 0;
   const unmappedEntityRows = report.lines.filter(
     (l) => (ROW_META.get(l.key)?.section ?? "totals") !== "totals" && l.amountKopeks > 0 && !l.legalEntityId,
   ).length;
   const warnings = salesReportWarnings({
     cashOooKopeks: cashOoo,
     encashmentKopeks: encashment,
-    encashmentDocCount,
+    encashmentDocCount: docCount("encashment"),
     unmappedEntityRows,
+    withdrawalKopeks: withdrawal,
+    withdrawalDocCount: docCount("withdrawal"),
+    revenueOooKopeks: revenueOoo,
+    oooReportDocCount: docCount("ooo_report"),
+    revenueIpKopeks: revenueIp,
+    ipReportDocCount: docCount("ip_report"),
   });
+  // Which types must (важно) have a document given the amounts on this report.
+  const requiredMissing = (type: string): boolean =>
+    (type === "encashment" && encashment > 0 && docCount("encashment") === 0) ||
+    (type === "withdrawal" && withdrawal > 0 && docCount("withdrawal") === 0);
 
   // Resolve verifier / rejecter names (stored as plain scalar ids).
   const actorIds = [report.verifiedByUserId, report.rejectedByUserId].filter((x): x is string => !!x);
@@ -176,38 +199,54 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
           ))}
         </div>
 
-        {/* Documents */}
+        {/* Documents grouped by type (accountant sees what is attached vs missing) */}
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Документы</div>
-          <div className="p-4">
-            {report.documents.length === 0 ? (
-              <div className="text-sm text-slate-500">Документы не прикреплены.</div>
-            ) : (
-              <ul className="space-y-1">
-                {report.documents.map((doc) => (
-                  <li key={doc.id}>
-                    <span className="mr-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
-                      {SALES_REPORT_DOC_TYPE_LABELS[doc.type] ?? doc.type}
-                    </span>
-                    <a
-                      href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(doc.storageKey ?? "")}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sm text-brand-600 hover:text-brand-700"
-                    >
-                      {doc.originalFileName}
-                    </a>
-                    <span className="ml-2 text-xs text-slate-400">{Math.round(doc.originalFileSize / 1024)} КБ</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {editable ? (
-              <div className="mt-4 border-t border-slate-100 pt-4">
-                <SalesReportDocUpload reportId={report.id} />
-              </div>
-            ) : null}
+          <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Документы отчёта</div>
+          <div className="divide-y divide-slate-100">
+            {SALES_REPORT_DOC_TYPES.map((t) => {
+              const docs = docsByType.get(t.key) ?? [];
+              const mustHave = requiredMissing(t.key);
+              return (
+                <div key={t.key} className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-slate-700">{t.label}</span>
+                    {docs.length === 0 ? (
+                      mustHave ? (
+                        <span className="text-xs font-medium text-rose-600">не приложен</span>
+                      ) : (
+                        <span className="text-xs text-slate-400">не приложен</span>
+                      )
+                    ) : (
+                      <span className="text-xs text-emerald-600">{docs.length} файл(ов)</span>
+                    )}
+                  </div>
+                  {docs.length > 0 ? (
+                    <ul className="mt-1 space-y-1">
+                      {docs.map((doc) => (
+                        <li key={doc.id} className="text-sm">
+                          <a
+                            href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(doc.storageKey ?? "")}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand-600 hover:text-brand-700"
+                          >
+                            {doc.originalFileName}
+                          </a>
+                          <span className="ml-2 text-xs text-slate-400">{Math.round(doc.originalFileSize / 1024)} КБ</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
+          {editable ? (
+            <div className="border-t border-slate-100 p-4">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Загрузить документы</div>
+              <SalesReportDocSlots reportId={report.id} />
+            </div>
+          ) : null}
         </div>
       </div>
 

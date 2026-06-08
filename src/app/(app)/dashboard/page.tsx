@@ -19,7 +19,7 @@ import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
 import { canManageSalesPlans, canAnyRoleAccessPage, type Role } from "@/lib/auth";
 import { getRecentActivity, type ActivityRow } from "@/lib/activity";
-import { getSalesPlan, getSalesPlansForCompanyMonth, getConfirmedReportFactTotals, planTotalsByType, salesPlanProgress, PLAN_TYPES, monthKey } from "@/lib/sales-plans";
+import { getSalesPlan, getSalesPlansForCompanyMonth, getConfirmedReportFactTotals, planTotalsByType, salesPlanProgress, PLAN_TYPES, monthKey, normalizeMonth } from "@/lib/sales-plans";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { SalesPlanForm } from "./_components/SalesPlanForm";
 import { SalesPlanImport } from "./_components/SalesPlanImport";
@@ -46,7 +46,11 @@ function planTone(pct: number | null): string {
   return "text-rose-700";
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>;
+}) {
   const user = await requirePageAccess("dashboard");
 
   const scope = await getCurrentCompanyAndClub(user);
@@ -56,8 +60,12 @@ export default async function DashboardPage() {
 
   const now = new Date();
   const planMonth = monthKey(now);
+  // The plan/fact split honours a selected month (?month=YYYY-MM); the rest of
+  // the dashboard stays on the current month.
+  const { month: monthParam } = await searchParams;
+  const selectedPlanMonth = normalizeMonth(monthParam ?? "") ?? planMonth;
 
-  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, planFactTotals, budgets, budgetRequests, reportRevenue, pendingReports, reportCashControl] =
+  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, splitPlanRows, splitFactTotals, budgets, budgetRequests, reportRevenue, pendingReports, reportCashControl] =
     await Promise.all([
       getClubsInScope(scope),
       getInvoicesForScope(scope),
@@ -67,13 +75,15 @@ export default async function DashboardPage() {
       getCurrentAccessContext(),
       getSalesPlan(scope.company.id, scope.club?.id ?? null, planMonth),
       getSalesPlansForCompanyMonth(scope.company.id, planMonth),
-      getConfirmedReportFactTotals(scope.company.id, scope.clubIds, planMonth),
+      getSalesPlansForCompanyMonth(scope.company.id, selectedPlanMonth),
+      getConfirmedReportFactTotals(scope.company.id, scope.clubIds, selectedPlanMonth),
       getBudgetsForScope(scope, planMonth),
       getPendingBudgetRequestsForScope(scope),
       getConfirmedReportRevenue(scope),
       getPendingSalesReports(scope),
       getConfirmedReportCashControl(scope),
     ]);
+  const selectedMonthLabel = monthFormatter.format(new Date(`${selectedPlanMonth}-01T00:00:00`));
 
   const roles = ctx?.effectiveRoles ?? [];
   const financials = canSeeFinancials(roles);
@@ -143,7 +153,6 @@ export default async function DashboardPage() {
   const profit = profitSummary(salesSum, expensesSum);
 
   const planProgress = salesPlanProgress(salesPlan?.targetAmountKopeks ?? 0, profit.currentSalesKopeks);
-  const planTargetRubles = salesPlan ? (salesPlan.targetAmountKopeks / 100).toString() : "";
 
   // Block 3: club ranking (per-club plan from the company's plans). The "total"
   // plan type is the overall sales plan used by the legacy ranking.
@@ -151,22 +160,23 @@ export default async function DashboardPage() {
   for (const p of planRows) if (p.clubId && p.planType === "total") planByClub.set(p.clubId, p.targetAmountKopeks);
   const ranking = clubRanking(clubs, confirmedRevenue, expenseEvents, now, planByClub);
 
-  // Plan-vs-fact split by type (общий / абонементы / персональные) — visible to
-  // everyone in scope, including managers (sales-only). Fact uses confirmed
-  // daily reports; plan sums per-club plans (company-wide total as fallback).
-  const planSplitTotals = planTotalsByType(planRows, scope.clubIds);
+  // Plan-vs-fact split by type (общий / абонементы / персональные) for the
+  // SELECTED month — visible to everyone in scope, including managers
+  // (sales-only). Fact uses confirmed daily reports; plan sums per-club plans
+  // (company-wide total as fallback).
+  const planSplitTotals = planTotalsByType(splitPlanRows, scope.clubIds);
   const planSplit = PLAN_TYPES.map((t) => ({
     key: t.key,
     label: t.label,
     planKopeks: planSplitTotals[t.key],
-    factKopeks: planFactTotals[t.key],
-    percent: salesPlanProgress(planSplitTotals[t.key], planFactTotals[t.key]).percent,
+    factKopeks: splitFactTotals[t.key],
+    percent: salesPlanProgress(planSplitTotals[t.key], splitFactTotals[t.key]).percent,
   }));
   const hasPlanSplit = planSplit.some((s) => s.planKopeks > 0 || s.factKopeks > 0);
 
   // Per-club plan table (GD plan management): club → {total, subs, PT}.
   const perClubPlan = new Map<string, { total: number; subscriptions: number; personal_training: number }>();
-  for (const p of planRows) {
+  for (const p of splitPlanRows) {
     if (!p.clubId) continue;
     const cur = perClubPlan.get(p.clubId) ?? { total: 0, subscriptions: 0, personal_training: 0 };
     if (p.planType === "total") cur.total = p.targetAmountKopeks;
@@ -181,7 +191,7 @@ export default async function DashboardPage() {
       const v = perClubPlan.get(c.id)!;
       return {
         clubName: c.name,
-        month: planMonth,
+        month: selectedPlanMonth,
         total: dash(v.total),
         subscriptions: dash(v.subscriptions),
         personal: dash(v.personal_training),
@@ -286,21 +296,43 @@ export default async function DashboardPage() {
               <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, planProgress.percent ?? 0)}%` }} />
             </div>
           ) : null}
-          {canEditPlan ? <SalesPlanForm month={planMonth} scopeLabel={planScopeLabel} currentTargetRubles={planTargetRubles} /> : null}
         </div>
       ) : null}
 
       {/* Plan vs Fact split by type (общий / абонементы / персональные) */}
       {hasPlanSplit || canEditPlan ? (
         <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 text-sm font-semibold text-slate-700">
-            План и факт по направлениям · {monthFormatter.format(now)}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-slate-700">
+              План и факт по направлениям · {selectedMonthLabel}
+            </div>
+            <form method="get" action="/dashboard" className="flex items-end gap-2">
+              <label className="block">
+                <span className="sr-only">Месяц</span>
+                <input
+                  type="month"
+                  name="month"
+                  defaultValue={selectedPlanMonth}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+              </label>
+              <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                Показать
+              </button>
+            </form>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {planSplit.map((s) => (
               <PlanSplitCard key={s.key} label={s.label} planKopeks={s.planKopeks} factKopeks={s.factKopeks} percent={s.percent} />
             ))}
           </div>
+          {canEditPlan && clubs.length > 0 ? (
+            <SalesPlanForm
+              clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
+              defaultClubId={scope.club?.id ?? clubs[0].id}
+              defaultMonth={selectedPlanMonth}
+            />
+          ) : null}
           {canEditPlan ? <SalesPlanImport rows={planClubRows} /> : null}
         </div>
       ) : null}
