@@ -34,11 +34,80 @@ export async function getSalesPlan(
 export async function getSalesPlansForCompanyMonth(
   companyId: string,
   month: string,
-): Promise<Array<{ clubId: string | null; targetAmountKopeks: number }>> {
+): Promise<Array<{ clubId: string | null; planType: string; targetAmountKopeks: number }>> {
   return prisma.salesPlan.findMany({
     where: { companyId, month },
-    select: { clubId: true, targetAmountKopeks: true },
+    select: { clubId: true, planType: true, targetAmountKopeks: true },
   });
+}
+
+// --- Plan types -------------------------------------------------------------
+
+export type PlanType = "total" | "subscriptions" | "personal_training";
+
+// Each plan type maps to a confirmed sales-report line for the "fact".
+export const PLAN_TYPES: ReadonlyArray<{ key: PlanType; label: string; factKey: string }> = [
+  { key: "total", label: "Общий план", factKey: "total_revenue" },
+  { key: "subscriptions", label: "Абонементы", factKey: "subscriptions_ooo" },
+  { key: "personal_training", label: "Персональные", factKey: "personal_training_total" },
+];
+export const PLAN_TYPE_KEYS: PlanType[] = PLAN_TYPES.map((t) => t.key);
+export const PLAN_FACT_KEYS = PLAN_TYPES.map((t) => t.factKey);
+
+export function isPlanType(v: string): v is PlanType {
+  return v === "total" || v === "subscriptions" || v === "personal_training";
+}
+
+export type PlanTotals = Record<PlanType, number>;
+const emptyTotals = (): PlanTotals => ({ total: 0, subscriptions: 0, personal_training: 0 });
+
+/** Per-type plan totals for the scope's clubs; company-wide total is a fallback. */
+export function planTotalsByType(
+  plans: Array<{ clubId: string | null; planType: string; targetAmountKopeks: number }>,
+  scopeClubIds: string[],
+): PlanTotals {
+  const set = new Set(scopeClubIds);
+  const out = emptyTotals();
+  for (const p of plans) {
+    if (p.clubId && set.has(p.clubId) && isPlanType(p.planType)) out[p.planType] += p.targetAmountKopeks;
+  }
+  if (out.total === 0) {
+    out.total = plans
+      .filter((p) => !p.clubId && p.planType === "total")
+      .reduce((a, b) => a + b.targetAmountKopeks, 0);
+  }
+  return out;
+}
+
+function monthBounds(month: string): { start: Date; end: Date } | null {
+  const m = month.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  return { start: new Date(y, mo, 1), end: new Date(y, mo + 1, 1) };
+}
+
+/** Confirmed-report facts per plan type for a month (total / subscriptions / PT). */
+export async function getConfirmedReportFactTotals(
+  companyId: string,
+  clubIds: string[],
+  month: string,
+): Promise<PlanTotals> {
+  const out = emptyTotals();
+  const b = monthBounds(month);
+  if (clubIds.length === 0 || !b) return out;
+  const reports = await prisma.salesReport.findMany({
+    where: { companyId, clubId: { in: clubIds }, status: "confirmed", reportDate: { gte: b.start, lt: b.end } },
+    select: { lines: { where: { key: { in: PLAN_FACT_KEYS } }, select: { key: true, amountKopeks: true } } },
+  });
+  for (const r of reports) {
+    for (const l of r.lines) {
+      if (l.key === "total_revenue") out.total += l.amountKopeks;
+      else if (l.key === "subscriptions_ooo") out.subscriptions += l.amountKopeks;
+      else if (l.key === "personal_training_total") out.personal_training += l.amountKopeks;
+    }
+  }
+  return out;
 }
 
 export type SalesPlanProgress = {

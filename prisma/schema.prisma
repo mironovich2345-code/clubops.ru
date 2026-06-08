@@ -604,6 +604,8 @@ model SalesPlan {
   companyId         String
   clubId            String?
   month             String
+  // total | subscriptions | personal_training (existing rows default to total)
+  planType          String   @default("total")
   targetAmountKopeks Int     @default(0)
   createdByUserId   String
   createdAt         DateTime @default(now())
@@ -613,6 +615,7 @@ model SalesPlan {
   club      Club?   @relation(fields: [clubId], references: [id], onDelete: Cascade)
   createdBy User    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
 
+  @@unique([companyId, clubId, month, planType])
   @@index([companyId])
   @@index([clubId])
   @@index([month])

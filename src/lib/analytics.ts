@@ -6,6 +6,10 @@ import {
 } from "@/lib/budgets";
 import { REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY } from "@/lib/sales-report-rows";
 
+// Confirmed-report line keys for the plan-type split facts.
+const SUBSCRIPTIONS_KEY = "subscriptions_ooo";
+const PERSONAL_TRAINING_KEY = "personal_training_total";
+
 // ---------------------------------------------------------------------------
 // Network analytics. Period-aware aggregation built from settled financial
 // events:
@@ -83,8 +87,10 @@ export type AnalyticsData = {
   invoices: Array<{ clubId: string; expenseCategory: string | null; amountKopeks: number; paidAt: Date | null; invoiceDate: Date | null; createdAt: Date; status: string }>;
   refunds: Array<{ clubId: string; amountKopeks: number; paidAt: Date | null; refundDate: Date | null; createdAt: Date; status: string }>;
   budgets: Array<{ clubId: string; category: string; limitAmountKopeks: number }>;
-  plans: Array<{ clubId: string | null; targetAmountKopeks: number }>;
+  plans: Array<{ clubId: string | null; planType: string; targetAmountKopeks: number }>;
   reportCash: Array<{ reportDate: Date; cashOooKopeks: number; encashmentKopeks: number }>;
+  // Per-club confirmed-report facts by plan type (общий / абонементы / персональные).
+  reportSplit: Array<{ clubId: string; date: Date; total: number; subscriptions: number; personal_training: number }>;
   pendingSalesCount: number;
   debtKopeks: number;
 };
@@ -99,7 +105,7 @@ export async function loadAnalyticsData(
   period: ResolvedPeriod,
 ): Promise<AnalyticsData> {
   if (clubIds.length === 0) {
-    return { clubs: [], sales: [], expenses: [], invoices: [], refunds: [], budgets: [], plans: [], reportCash: [], pendingSalesCount: 0, debtKopeks: 0 };
+    return { clubs: [], sales: [], expenses: [], invoices: [], refunds: [], budgets: [], plans: [], reportCash: [], reportSplit: [], pendingSalesCount: 0, debtKopeks: 0 };
   }
   const lo = period.prevStart;
   const hi = period.end;
@@ -109,12 +115,12 @@ export async function loadAnalyticsData(
     await Promise.all([
       prisma.club.findMany({ where: { id: inClubs }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       prisma.sale.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", saleDate: { gte: lo, lt: hi } }, select: { clubId: true, amountKopeks: true, saleDate: true } }),
-      prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, lines: { where: { key: { in: [REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY] } }, select: { key: true, amountKopeks: true } } } }),
+      prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, lines: { where: { key: { in: [REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, SUBSCRIPTIONS_KEY, PERSONAL_TRAINING_KEY] } }, select: { key: true, amountKopeks: true } } } }),
       prisma.expense.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", expenseDate: { gte: lo, lt: hi } }, select: { clubId: true, category: true, amountKopeks: true, expenseDate: true, status: true } }),
       prisma.invoice.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, expenseCategory: true, amountKopeks: true, paidAt: true, invoiceDate: true, createdAt: true, status: true } }),
       prisma.refund.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true } }),
       prisma.budget.findMany({ where: { companyId, clubId: inClubs, month: { in: period.months } }, select: { clubId: true, category: true, limitAmountKopeks: true } }),
-      prisma.salesPlan.findMany({ where: { companyId, month: { in: period.months } }, select: { clubId: true, targetAmountKopeks: true } }),
+      prisma.salesPlan.findMany({ where: { companyId, month: { in: period.months } }, select: { clubId: true, planType: true, targetAmountKopeks: true } }),
       prisma.sale.count({ where: { companyId, clubId: inClubs, status: "pending_accountant" } }),
       prisma.invoice.aggregate({ where: { companyId, clubId: inClubs, status: { in: APPROVED_UNPAID } }, _sum: { amountKopeks: true } }),
       prisma.refund.aggregate({ where: { companyId, clubId: inClubs, status: { in: APPROVED_UNPAID } }, _sum: { amountKopeks: true } }),
@@ -133,6 +139,13 @@ export async function loadAnalyticsData(
     cashOooKopeks: lineOf(r, CASH_OOO_KEY),
     encashmentKopeks: lineOf(r, ENCASHMENT_KEY),
   }));
+  const reportSplit = reports.map((r) => ({
+    clubId: r.clubId,
+    date: r.reportDate,
+    total: lineOf(r, REVENUE_LINE_KEY),
+    subscriptions: lineOf(r, SUBSCRIPTIONS_KEY),
+    personal_training: lineOf(r, PERSONAL_TRAINING_KEY),
+  }));
 
   return {
     clubs,
@@ -143,6 +156,7 @@ export async function loadAnalyticsData(
     budgets,
     plans,
     reportCash,
+    reportSplit,
     pendingSalesCount,
     debtKopeks: (debtInvoices._sum.amountKopeks ?? 0) + (debtRefunds._sum.amountKopeks ?? 0),
   };
@@ -226,6 +240,15 @@ export type PlanPerfRow = {
   status: PlanStatus;
 };
 
+export type PlanSplitCell = { planKopeks: number; factKopeks: number; percent: number | null };
+export type PlanSplitClubRow = {
+  clubId: string;
+  clubName: string;
+  total: PlanSplitCell;
+  subscriptions: PlanSplitCell;
+  personal_training: PlanSplitCell;
+};
+
 export type TopExpenseRow = { category: string; label: string; amountKopeks: number; sharePercent: number };
 
 export type CriticalZone = { tone: "red" | "amber"; text: string };
@@ -239,6 +262,7 @@ export type AnalyticsReport = {
   profitTrend: Trend;
   clubRanking: ClubRankRow[];
   planPerformance: PlanPerfRow[];
+  planSplitByClub: PlanSplitClubRow[];
   budgetPerformance: BudgetFactReport;
   topExpenses: TopExpenseRow[];
   criticalZones: CriticalZone[];
@@ -298,11 +322,11 @@ function planStatus(pct: number | null): PlanStatus {
   return "behind";
 }
 
-/** Per-club plan targets across the period months (per-club plans only). */
+/** Per-club overall (total) plan targets across the period months. */
 function planByClub(data: AnalyticsData): Map<string, number> {
   const m = new Map<string, number>();
   for (const p of data.plans) {
-    if (!p.clubId) continue;
+    if (!p.clubId || p.planType !== "total") continue;
     m.set(p.clubId, (m.get(p.clubId) ?? 0) + p.targetAmountKopeks);
   }
   return m;
@@ -337,7 +361,7 @@ export function buildAnalyticsReport(
   const prevSpend = sumInRange(spendForCats, period.prevStart, period.prevEnd);
   const planMap = planByClub(data);
   const sumPerClubPlan = [...planMap.values()].reduce((a, b) => a + b, 0);
-  const companyWidePlan = data.plans.filter((p) => !p.clubId).reduce((a, b) => a + b.targetAmountKopeks, 0);
+  const companyWidePlan = data.plans.filter((p) => !p.clubId && p.planType === "total").reduce((a, b) => a + b.targetAmountKopeks, 0);
   const planTargetKopeks = sumPerClubPlan > 0 ? sumPerClubPlan : companyWidePlan;
   // Остаток наличности ООО за период: sum(cash_ooo − encashment_ooo) of confirmed reports.
   const cashOooRemainingKopeks = data.reportCash
@@ -389,6 +413,52 @@ export function buildAnalyticsReport(
     .filter((r) => r.planKopeks > 0 || r.factKopeks > 0)
     .sort((a, b) => (b.completionPercent ?? -1) - (a.completionPercent ?? -1));
 
+  // Block 6b: plan/fact split by type per club (общий / абонементы / персональные).
+  // Plan from per-club SalesPlan rows by type; fact from confirmed daily reports.
+  const cell = (planK: number, factK: number): PlanSplitCell => ({
+    planKopeks: planK,
+    factKopeks: factK,
+    percent: planK > 0 ? (factK / planK) * 100 : null,
+  });
+  type SplitAcc = { total: number; subscriptions: number; personal_training: number };
+  const planByClubType = new Map<string, SplitAcc>();
+  for (const p of data.plans) {
+    if (!p.clubId) continue;
+    const acc = planByClubType.get(p.clubId) ?? { total: 0, subscriptions: 0, personal_training: 0 };
+    if (p.planType === "total") acc.total += p.targetAmountKopeks;
+    else if (p.planType === "subscriptions") acc.subscriptions += p.targetAmountKopeks;
+    else if (p.planType === "personal_training") acc.personal_training += p.targetAmountKopeks;
+    planByClubType.set(p.clubId, acc);
+  }
+  const factByClubType = new Map<string, SplitAcc>();
+  for (const r of data.reportSplit) {
+    if (!inRange(r.date, period.start, period.end)) continue;
+    const acc = factByClubType.get(r.clubId) ?? { total: 0, subscriptions: 0, personal_training: 0 };
+    acc.total += r.total;
+    acc.subscriptions += r.subscriptions;
+    acc.personal_training += r.personal_training;
+    factByClubType.set(r.clubId, acc);
+  }
+  const zeroAcc: SplitAcc = { total: 0, subscriptions: 0, personal_training: 0 };
+  const planSplitByClub: PlanSplitClubRow[] = data.clubs
+    .map((c) => {
+      const pl = planByClubType.get(c.id) ?? zeroAcc;
+      const fa = factByClubType.get(c.id) ?? zeroAcc;
+      return {
+        clubId: c.id,
+        clubName: c.name,
+        total: cell(pl.total, fa.total),
+        subscriptions: cell(pl.subscriptions, fa.subscriptions),
+        personal_training: cell(pl.personal_training, fa.personal_training),
+      };
+    })
+    .filter(
+      (r) =>
+        r.total.planKopeks > 0 || r.total.factKopeks > 0 ||
+        r.subscriptions.planKopeks > 0 || r.subscriptions.factKopeks > 0 ||
+        r.personal_training.planKopeks > 0 || r.personal_training.factKopeks > 0,
+    );
+
   // Block 7: budget performance (reuse existing budget report for the period's month)
   const budgetPerformance = computeBudgetFactReport(
     data.budgets,
@@ -432,6 +502,7 @@ export function buildAnalyticsReport(
     profitTrend,
     clubRanking,
     planPerformance,
+    planSplitByClub,
     budgetPerformance,
     topExpenses,
     criticalZones,

@@ -19,9 +19,10 @@ import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
 import { canManageSalesPlans, canAnyRoleAccessPage, type Role } from "@/lib/auth";
 import { getRecentActivity, type ActivityRow } from "@/lib/activity";
-import { getSalesPlan, getSalesPlansForCompanyMonth, salesPlanProgress, monthKey } from "@/lib/sales-plans";
+import { getSalesPlan, getSalesPlansForCompanyMonth, getConfirmedReportFactTotals, planTotalsByType, salesPlanProgress, PLAN_TYPES, monthKey } from "@/lib/sales-plans";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { SalesPlanForm } from "./_components/SalesPlanForm";
+import { SalesPlanImport } from "./_components/SalesPlanImport";
 import { profitSummary, clubRanking, type ClubRankRow } from "@/lib/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export default async function DashboardPage() {
   const now = new Date();
   const planMonth = monthKey(now);
 
-  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, budgets, budgetRequests, reportRevenue, pendingReports, reportCashControl] =
+  const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, planFactTotals, budgets, budgetRequests, reportRevenue, pendingReports, reportCashControl] =
     await Promise.all([
       getClubsInScope(scope),
       getInvoicesForScope(scope),
@@ -66,6 +67,7 @@ export default async function DashboardPage() {
       getCurrentAccessContext(),
       getSalesPlan(scope.company.id, scope.club?.id ?? null, planMonth),
       getSalesPlansForCompanyMonth(scope.company.id, planMonth),
+      getConfirmedReportFactTotals(scope.company.id, scope.clubIds, planMonth),
       getBudgetsForScope(scope, planMonth),
       getPendingBudgetRequestsForScope(scope),
       getConfirmedReportRevenue(scope),
@@ -143,10 +145,48 @@ export default async function DashboardPage() {
   const planProgress = salesPlanProgress(salesPlan?.targetAmountKopeks ?? 0, profit.currentSalesKopeks);
   const planTargetRubles = salesPlan ? (salesPlan.targetAmountKopeks / 100).toString() : "";
 
-  // Block 3: club ranking (per-club plan from the company's plans).
+  // Block 3: club ranking (per-club plan from the company's plans). The "total"
+  // plan type is the overall sales plan used by the legacy ranking.
   const planByClub = new Map<string, number>();
-  for (const p of planRows) if (p.clubId) planByClub.set(p.clubId, p.targetAmountKopeks);
+  for (const p of planRows) if (p.clubId && p.planType === "total") planByClub.set(p.clubId, p.targetAmountKopeks);
   const ranking = clubRanking(clubs, confirmedRevenue, expenseEvents, now, planByClub);
+
+  // Plan-vs-fact split by type (общий / абонементы / персональные) — visible to
+  // everyone in scope, including managers (sales-only). Fact uses confirmed
+  // daily reports; plan sums per-club plans (company-wide total as fallback).
+  const planSplitTotals = planTotalsByType(planRows, scope.clubIds);
+  const planSplit = PLAN_TYPES.map((t) => ({
+    key: t.key,
+    label: t.label,
+    planKopeks: planSplitTotals[t.key],
+    factKopeks: planFactTotals[t.key],
+    percent: salesPlanProgress(planSplitTotals[t.key], planFactTotals[t.key]).percent,
+  }));
+  const hasPlanSplit = planSplit.some((s) => s.planKopeks > 0 || s.factKopeks > 0);
+
+  // Per-club plan table (GD plan management): club → {total, subs, PT}.
+  const perClubPlan = new Map<string, { total: number; subscriptions: number; personal_training: number }>();
+  for (const p of planRows) {
+    if (!p.clubId) continue;
+    const cur = perClubPlan.get(p.clubId) ?? { total: 0, subscriptions: 0, personal_training: 0 };
+    if (p.planType === "total") cur.total = p.targetAmountKopeks;
+    else if (p.planType === "subscriptions") cur.subscriptions = p.targetAmountKopeks;
+    else if (p.planType === "personal_training") cur.personal_training = p.targetAmountKopeks;
+    perClubPlan.set(p.clubId, cur);
+  }
+  const dash = (k: number) => (k > 0 ? formatKopeks(k) : "—");
+  const planClubRows = clubs
+    .filter((c) => perClubPlan.has(c.id))
+    .map((c) => {
+      const v = perClubPlan.get(c.id)!;
+      return {
+        clubName: c.name,
+        month: planMonth,
+        total: dash(v.total),
+        subscriptions: dash(v.subscriptions),
+        personal: dash(v.personal_training),
+      };
+    });
 
   // Block 2 / 7: budget overruns + notifications (financial roles only).
   const overruns = financials ? computeBudgetOverruns(budgets, { expenses, invoices, refunds }, planMonth) : [];
@@ -247,6 +287,21 @@ export default async function DashboardPage() {
             </div>
           ) : null}
           {canEditPlan ? <SalesPlanForm month={planMonth} scopeLabel={planScopeLabel} currentTargetRubles={planTargetRubles} /> : null}
+        </div>
+      ) : null}
+
+      {/* Plan vs Fact split by type (общий / абонементы / персональные) */}
+      {hasPlanSplit || canEditPlan ? (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 text-sm font-semibold text-slate-700">
+            План и факт по направлениям · {monthFormatter.format(now)}
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {planSplit.map((s) => (
+              <PlanSplitCard key={s.key} label={s.label} planKopeks={s.planKopeks} factKopeks={s.factKopeks} percent={s.percent} />
+            ))}
+          </div>
+          {canEditPlan ? <SalesPlanImport rows={planClubRows} /> : null}
         </div>
       ) : null}
 
@@ -737,6 +792,35 @@ function RecentExpensesBlock({
 }
 
 // --- Small shared building blocks -----------------------------------------
+
+function PlanSplitCard({
+  label,
+  planKopeks,
+  factKopeks,
+  percent,
+}: {
+  label: string;
+  planKopeks: number;
+  factKopeks: number;
+  percent: number | null;
+}) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className={`mt-1 text-lg font-semibold ${planTone(percent)}`}>
+        {percent === null ? "—" : `${percent.toFixed(0)}%`}
+      </div>
+      <div className="mt-1 text-xs text-slate-500">
+        Факт {formatKopeks(factKopeks)} из {formatKopeks(planKopeks)}
+      </div>
+      {planKopeks > 0 ? (
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, percent ?? 0)}%` }} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function KpiCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
   return (

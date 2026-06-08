@@ -39,7 +39,7 @@ export async function saveSalesPlan(
   const targetAmountKopeks = rublesToKopeks(amount);
 
   const existing = await prisma.salesPlan.findFirst({
-    where: { companyId, clubId, month },
+    where: { companyId, clubId, month, planType: "total" },
     select: { id: true },
   });
 
@@ -51,7 +51,7 @@ export async function saveSalesPlan(
     action = "sales_plan.updated";
   } else {
     const created = await prisma.salesPlan.create({
-      data: { companyId, clubId, month, targetAmountKopeks, createdByUserId: ctx.user.id },
+      data: { companyId, clubId, month, planType: "total", targetAmountKopeks, createdByUserId: ctx.user.id },
     });
     planId = created.id;
     action = "sales_plan.created";

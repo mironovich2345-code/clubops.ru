@@ -21,6 +21,7 @@ import {
   type Trend,
   type ClubRankRow,
   type PlanPerfRow,
+  type PlanSplitClubRow,
   type TopExpenseRow,
   type CriticalZone,
 } from "@/lib/analytics";
@@ -191,6 +192,9 @@ export default async function AnalyticsPage({
       {/* Block 6: sales plan performance */}
       <PlanPerformanceBlock rows={report.planPerformance} />
 
+      {/* Block 6b: plan/fact split by type */}
+      <PlanSplitBlock rows={report.planSplitByClub} />
+
       {/* Block 7: budget performance */}
       <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <SectionHeader title={marketerOnly ? "Бюджет: реклама" : "Исполнение бюджета"} />
@@ -335,6 +339,52 @@ function PlanPerformanceBlock({ rows }: { rows: PlanPerfRow[] }) {
             })}
           </tbody>
         </table>
+      )}
+    </div>
+  );
+}
+
+function PlanSplitBlock({ rows }: { rows: PlanSplitClubRow[] }) {
+  const groupTh = "px-4 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 border-l border-slate-200";
+  const subTh = "px-4 py-2 text-right text-[11px] font-medium text-slate-400";
+  return (
+    <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <SectionHeader title="План и факт по направлениям" />
+      {rows.length === 0 ? (
+        <div className="px-4 py-8 text-center text-sm text-slate-500">Планы по направлениям не заданы.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th rowSpan={2} className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Клуб</th>
+                <th colSpan={3} className={groupTh}>Общий</th>
+                <th colSpan={3} className={groupTh}>Абонементы</th>
+                <th colSpan={3} className={groupTh}>Персональные</th>
+              </tr>
+              <tr>
+                {["план", "факт", "%", "план", "факт", "%", "план", "факт", "%"].map((h, i) => (
+                  <th key={i} className={`${subTh}${i % 3 === 0 ? " border-l border-slate-200" : ""}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {rows.map((r) => {
+                const cells = [r.total, r.subscriptions, r.personal_training].flatMap((c, gi) => [
+                  <Td key={`${gi}-p`} className={`text-right text-slate-500${gi > 0 ? " border-l border-slate-100" : ""}`}>{c.planKopeks > 0 ? formatKopeks(c.planKopeks) : "—"}</Td>,
+                  <Td key={`${gi}-f`} className="text-right">{formatKopeks(c.factKopeks)}</Td>,
+                  <Td key={`${gi}-pct`} className={`text-right font-medium ${planTone(c.percent)}`}>{pct(c.percent)}</Td>,
+                ]);
+                return (
+                  <tr key={r.clubId} className="hover:bg-slate-50">
+                    <Td className="font-medium text-slate-900">{r.clubName}</Td>
+                    {cells}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
