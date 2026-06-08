@@ -17,6 +17,8 @@ import {
 import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
+import { ExcelImportPanel } from "@/components/ExcelImportPanel";
+import { importInvoices } from "./invoice-import-actions";
 import { ExportButton } from "@/components/ExportButton";
 import { canExport } from "@/lib/exports";
 
@@ -74,7 +76,18 @@ export default async function InvoicesPage() {
 
       {canCreate ? (
         clubs.length > 0 ? (
-          <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} legalEntitiesByClub={legalEntitiesByClub} />
+          <>
+            <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} legalEntitiesByClub={legalEntitiesByClub} />
+            {/* Excel import (additional input method; manual form + AI upload unchanged) */}
+            <ExcelImportPanel
+              title="Импорт счетов из Excel"
+              description="Скачайте шаблон, заполните и загрузите. Счета импортируются со статусом «На согласовании» и не помечаются оплаченными."
+              templateHref="/api/invoices/template"
+              templateLabel="Скачать шаблон счетов"
+              uploadLabel="Загрузить счета из Excel"
+              action={importInvoices}
+            />
+          </>
         ) : (
           <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
             Нет доступных клубов для создания счёта.

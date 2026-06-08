@@ -19,6 +19,8 @@ import {
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { ExpenseUpload } from "./_components/ExpenseUpload";
+import { ExcelImportPanel } from "@/components/ExcelImportPanel";
+import { importExpenses } from "./expense-import-actions";
 import { ExportButton } from "@/components/ExportButton";
 import { canExport } from "@/lib/exports";
 
@@ -95,6 +97,18 @@ export default async function ExpensesPage() {
           categories={EXPENSE_CATEGORY_OPTIONS}
           companyName={scope.company.name}
           legalEntitiesByClub={legalEntitiesByClub}
+        />
+      ) : null}
+
+      {/* Excel import (additional input method; manual form + AI upload unchanged) */}
+      {canCreate && clubs.length > 0 ? (
+        <ExcelImportPanel
+          title="Импорт расходов из Excel"
+          description="Скачайте шаблон, заполните и загрузите. Наличные расходы автоматически относятся на ИП клуба; превышение бюджета уходит на согласование."
+          templateHref="/api/expenses/template"
+          templateLabel="Скачать шаблон расходов"
+          uploadLabel="Загрузить расходы из Excel"
+          action={importExpenses}
         />
       ) : null}
 

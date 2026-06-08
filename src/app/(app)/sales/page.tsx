@@ -15,6 +15,8 @@ import { canCreateOperational } from "@/lib/auth";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { SaleRowActions } from "./_components/SaleRowActions";
 import { SalesReportForm } from "./_components/SalesReportForm";
+import { ExcelImportPanel } from "@/components/ExcelImportPanel";
+import { importSalesReports } from "./report-import-actions";
 import { ExportButton } from "@/components/ExportButton";
 import { canExport } from "@/lib/exports";
 import {
@@ -96,6 +98,18 @@ export default async function SalesPage({
 
       {/* Daily sales reports (real-club report structure) */}
       {canCreate ? <SalesReportForm clubs={clubs} /> : null}
+
+      {/* Excel import (additional input method; manual form + AI upload unchanged) */}
+      {canCreate ? (
+        <ExcelImportPanel
+          title="Импорт сменных отчётов из Excel"
+          description="Скачайте шаблон, заполните по одной строке на смену и загрузите. Итоги считаются автоматически."
+          templateHref="/api/sales-reports/template"
+          templateLabel="Скачать шаблон сменного отчёта"
+          uploadLabel="Загрузить сменный отчёт из Excel"
+          action={importSalesReports}
+        />
+      ) : null}
 
       <div className="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">

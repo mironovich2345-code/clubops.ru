@@ -1,0 +1,133 @@
+// Shared, dependency-light helpers for the Excel template/import features
+// (sales reports, expenses, invoices). Mirrors the proven sales-plan import
+// parsing. Pure module — safe to import *types* from client components; the
+// runtime helpers (which pull in xlsx) are only used by server actions.
+import * as XLSX from "xlsx";
+
+// Error/result shapes shared by every import. `field` names the offending
+// column for the on-screen errors table (row / club / field / issue).
+export type ImportRowError = { row: number; club: string; field?: string; issue: string };
+export type ImportSummary = {
+  processed: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: ImportRowError[];
+};
+export type ImportActionState = { ok: boolean; error?: string; result?: ImportSummary };
+
+export const newSummary = (): ImportSummary => ({ processed: 0, created: 0, updated: 0, skipped: 0, errors: [] });
+
+/** Normalize a cell/header for matching: trim, lowercase, ё→е, collapse spaces. */
+export const norm = (v: unknown) =>
+  String(v ?? "").trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
+
+/**
+ * Read the first worksheet as an array-of-arrays (header row included).
+ * Handles .xlsx/.xls (ZIP archives, magic "PK") and .csv (UTF-8 text, so
+ * Cyrillic headers survive).
+ */
+export function readSheetRows(buffer: Buffer): unknown[][] {
+  const isZip = buffer.length > 1 && buffer[0] === 0x50 && buffer[1] === 0x4b;
+  const wb = isZip
+    ? XLSX.read(buffer, { type: "buffer", cellDates: true })
+    : XLSX.read(buffer.toString("utf8"), { type: "string", cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, blankrows: false });
+}
+
+const EXCEL_EPOCH = Date.UTC(1899, 11, 30);
+
+/**
+ * Parse a date cell (Date | Excel serial | "DD.MM.YYYY" | "YYYY-MM-DD") into a
+ * UTC-midnight Date (timezone-independent calendar day), or null. UTC midnight
+ * matches how the manual sales-report form stores `reportDate`.
+ */
+export function parseDateCell(value: unknown): Date | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const utc = new Date(EXCEL_EPOCH + Math.round(value) * 86_400_000);
+    if (Number.isNaN(utc.getTime())) return null;
+    return new Date(Date.UTC(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate()));
+  }
+  const s = String(value).trim();
+  const dmy = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
+  if (dmy) {
+    let year = Number(dmy[3]);
+    if (year < 100) year += 2000;
+    const t = Date.UTC(year, Number(dmy[2]) - 1, Number(dmy[1]));
+    return Number.isNaN(t) ? null : new Date(t);
+  }
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const t = Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return Number.isNaN(t) ? null : new Date(t);
+  }
+  return null;
+}
+
+/** {empty} | {value:rubles} | {error}. Caller decides on negativity. */
+export function parseAmountCell(cell: unknown): { empty?: true; value?: number; error?: true } {
+  if (cell == null || String(cell).trim() === "") return { empty: true };
+  if (typeof cell === "number") return Number.isFinite(cell) ? { value: cell } : { error: true };
+  const cleaned = String(cell).trim().replace(/₽|руб\.?/gi, "").replace(/\s/g, "").replace(",", ".");
+  if (cleaned === "") return { empty: true };
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? { value: n } : { error: true };
+}
+
+export type ColumnSpec = { key: string; headers: string[]; required?: boolean };
+
+/**
+ * Map a header row to column indices by normalized header match (exact first,
+ * then startsWith). Returns the index map and any required-but-missing keys.
+ */
+export function resolveColumns(
+  headerRow: unknown[],
+  spec: ColumnSpec[],
+): { index: Record<string, number>; missing: string[] } {
+  const normCells = headerRow.map((c) => norm(c));
+  const index: Record<string, number> = {};
+  const missing: string[] = [];
+  for (const col of spec) {
+    let found = -1;
+    for (const h of col.headers) {
+      const nh = norm(h);
+      let i = normCells.indexOf(nh);
+      if (i === -1) i = normCells.findIndex((c) => c !== "" && c.startsWith(nh));
+      if (i !== -1) {
+        found = i;
+        break;
+      }
+    }
+    if (found === -1) {
+      if (col.required) missing.push(col.headers[0]);
+    } else {
+      index[col.key] = found;
+    }
+  }
+  return { index, missing };
+}
+
+/** Match a club by normalized name within a scope-restricted list. */
+export function matchClubByName<T extends { id: string; name: string }>(
+  clubs: T[],
+  nameCell: unknown,
+): { club?: T; ambiguous?: boolean } {
+  const n = norm(nameCell);
+  if (!n) return {};
+  const hits = clubs.filter((c) => norm(c.name) === n);
+  if (hits.length === 1) return { club: hits[0] };
+  if (hits.length > 1) return { ambiguous: true };
+  return {};
+}
+
+/** True when a whole row is blank (every cell null/empty). */
+export function isBlankRow(row: unknown[]): boolean {
+  return row.every((c) => c == null || String(c).trim() === "");
+}
