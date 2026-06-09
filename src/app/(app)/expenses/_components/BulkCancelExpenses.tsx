@@ -106,7 +106,9 @@ export function BulkCancelExpenses({
         execState.count === 0 ? (
           <p className="mt-2 text-sm text-slate-500">Под выбранные условия активных расходов не найдено.</p>
         ) : (
-          <p className="mt-2 text-sm text-emerald-700">Отменено расходов: {execState.count} на сумму {formatKopeks(execState.totalKopeks ?? 0)}.</p>
+          <p className="mt-2 text-sm text-emerald-700">
+            Отменено расходов: {execState.count} на сумму {formatKopeks(execState.totalKopeks ?? 0)}. Расходы отменены. Повторная загрузка файла теперь доступна, если все строки импорта отменены.
+          </p>
         )
       ) : execState.error ? (
         <p className="mt-2 text-sm text-rose-600">{execState.error}</p>

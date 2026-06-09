@@ -2,6 +2,8 @@
 // files can be blocked, duplicate rows skipped, and a whole import undone.
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { recordAudit } from "@/lib/access";
+import { EXPENSE_ACTIVE_STATUSES } from "@/lib/expenses";
 
 export type ImportType = "sales_reports" | "expenses" | "invoices";
 
@@ -91,12 +93,13 @@ export function invoiceDupKey(i: InvoiceDupFields): string {
   ].join("|");
 }
 
-/** Existing (active) expense dup keys for the scope. Reverted-import rows are
- * excluded so a file can be re-imported after its batch is undone. */
+/** Existing expense dup keys for the scope. Only ACTIVE rows count — canceled /
+ * reverted / rejected rows are ignored so the same row can be re-imported once
+ * its earlier copy is no longer active. */
 export async function loadExpenseDupKeys(companyId: string, clubIds: string[]): Promise<Set<string>> {
   if (clubIds.length === 0) return new Set();
   const rows = await prisma.expense.findMany({
-    where: { companyId, clubId: { in: clubIds }, status: { not: EXPENSE_STATUS_IMPORT_REVERTED } },
+    where: { companyId, clubId: { in: clubIds }, status: { in: [...EXPENSE_ACTIVE_STATUSES] } },
     select: { companyId: true, clubId: true, expenseDate: true, amountKopeks: true, category: true, paymentMethod: true, vendorName: true, legalEntityId: true },
   });
   return new Set(rows.map(expenseDupKey));
@@ -131,6 +134,70 @@ export async function findDuplicateFileBatch(
     orderBy: { createdAt: "desc" },
     select: { createdAt: true, createdByUserId: true },
   });
+}
+
+/** Number of still-active financial rows created by an expense import batch
+ * (confirmed / waiting_budget_approval). Canceled / reverted / rejected are
+ * inactive. */
+export async function expenseBatchActiveCount(batchId: string): Promise<number> {
+  return prisma.expense.count({
+    where: { importBatchId: batchId, status: { in: [...EXPENSE_ACTIVE_STATUSES] } },
+  });
+}
+
+/**
+ * For expenses, a re-import is only blocked while a previous import of the same
+ * file still has at least one ACTIVE row. Once every imported row is inactive
+ * (canceled / import_reverted / rejected) the same file may be imported again.
+ */
+export async function findActiveExpenseFileBatch(
+  companyId: string,
+  fileHash: string,
+): Promise<{ createdAt: Date; createdByUserId: string } | null> {
+  if (!fileHash) return null;
+  const batches = await prisma.importBatch.findMany({
+    where: { companyId, type: "expenses", fileHash },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, createdAt: true, createdByUserId: true },
+  });
+  for (const b of batches) {
+    if ((await expenseBatchActiveCount(b.id)) > 0) {
+      return { createdAt: b.createdAt, createdByUserId: b.createdByUserId };
+    }
+  }
+  return null;
+}
+
+/**
+ * Mark an expense import batch `reverted` once all the rows it created are
+ * inactive (called after a single or bulk cancel). Only acts on a still
+ * `completed` expense batch; returns true when it flips the status.
+ */
+export async function revertExpenseBatchIfAllInactive(
+  batchId: string,
+  opts: { userId: string; companyId: string; clubId: string | null; action: string },
+): Promise<boolean> {
+  const batch = await prisma.importBatch.findUnique({
+    where: { id: batchId },
+    select: { id: true, status: true, type: true },
+  });
+  if (!batch || batch.type !== "expenses" || batch.status !== "completed") return false;
+  if ((await expenseBatchActiveCount(batchId)) > 0) return false;
+
+  await prisma.importBatch.update({
+    where: { id: batchId },
+    data: { status: "reverted", revertedByUserId: opts.userId, revertedAt: new Date() },
+  });
+  await recordAudit({
+    action: opts.action,
+    entityType: "ImportBatch",
+    entityId: batchId,
+    companyId: opts.companyId,
+    clubId: opts.clubId,
+    userId: opts.userId,
+    metadata: { type: "expenses", trigger: opts.action },
+  });
+  return true;
 }
 
 // --- batch lifecycle -------------------------------------------------------

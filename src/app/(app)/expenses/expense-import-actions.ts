@@ -24,7 +24,7 @@ import {
 } from "@/lib/excel-import";
 import {
   fileSha256,
-  findDuplicateFileBatch,
+  findActiveExpenseFileBatch,
   createImportBatch,
   finalizeImportBatch,
   loadExpenseDupKeys,
@@ -100,9 +100,10 @@ export async function importExpenses(
 
   const companyId = ctx.selectedCompanyId;
 
-  // Part 2: block re-import of the exact same file (by hash).
+  // Part 1: block re-import of the same file only while a previous import of it
+  // still has ACTIVE rows. Once all imported rows are canceled/reverted, allow it.
   const fileHash = fileSha256(buffer);
-  const prior = await findDuplicateFileBatch(companyId, "expenses", fileHash);
+  const prior = await findActiveExpenseFileBatch(companyId, fileHash);
   if (prior) {
     const by = (await prisma.user.findUnique({ where: { id: prior.createdByUserId }, select: { name: true } }))?.name ?? "—";
     await recordAudit({
@@ -114,7 +115,7 @@ export async function importExpenses(
     });
     return {
       ok: false,
-      error: "Этот файл уже загружался ранее. Повторная загрузка заблокирована.",
+      error: "Этот файл уже загружался ранее, и активные строки из него ещё существуют.",
       blocked: { at: prior.createdAt.toISOString(), by },
     };
   }

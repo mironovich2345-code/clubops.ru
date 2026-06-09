@@ -106,7 +106,7 @@ export function ExcelImportPanel({
       {/* Duplicate-file block (Part 2 / 8) */}
       {state.blocked ? (
         <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
-          Этот файл уже загружался ранее. Повторная загрузка заблокирована.
+          {state.error ?? "Этот файл уже загружался ранее. Повторная загрузка заблокирована."}
           <div className="mt-0.5 text-xs text-amber-700">
             Загружен: {dtf.format(new Date(state.blocked.at))} · {state.blocked.by}
           </div>

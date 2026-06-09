@@ -55,6 +55,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "import.row_duplicate_skipped": "Пропущены дубли строк при импорте",
   "import.reverted": "Импорт отменён",
   "import.revert_failed": "Не удалось отменить импорт",
+  "import.reverted_by_bulk_cancel": "Импорт отменён (массовая отмена расходов)",
+  "import.reverted_by_expense_cancel": "Импорт отменён (отмена расхода)",
   // Payroll
   "payroll_statement.uploaded": "Загружена ведомость",
   "payroll_statement.extracted": "Распознана ведомость",

@@ -6,6 +6,7 @@ import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import { getExpenseForContext, EXPENSE_STATUS_CANCELED, EXPENSE_ACTIVE_STATUSES, isExpenseCancelable } from "@/lib/expenses";
+import { revertExpenseBatchIfAllInactive } from "@/lib/import-batches";
 import {
   evaluateExpenseBudget,
   currentMonthKey,
@@ -435,6 +436,17 @@ export async function cancelExpense(
     metadata: { prevStatus: existing.status, amountKopeks: existing.amountKopeks, category: existing.category, reason },
   });
 
+  // If this was the last active row of its import, mark the batch reverted so the
+  // same file can be re-imported (Part 3).
+  if (existing.importBatchId) {
+    await revertExpenseBatchIfAllInactive(existing.importBatchId, {
+      userId: ctx.user.id,
+      companyId: existing.companyId,
+      clubId: existing.clubId,
+      action: "import.reverted_by_expense_cancel",
+    });
+  }
+
   revalidateFinancial();
   revalidatePath(`/expenses/${existing.id}`);
   return { ok: true };
@@ -520,7 +532,7 @@ export async function cancelExpensesForMonth(
   const built = await buildBulkWhere(ctx, formData);
   if ("error" in built) return { ok: false, error: built.error };
 
-  const matches = await prisma.expense.findMany({ where: built.where, select: { id: true, amountKopeks: true } });
+  const matches = await prisma.expense.findMany({ where: built.where, select: { id: true, amountKopeks: true, importBatchId: true } });
   if (matches.length === 0) {
     return { ok: true, count: 0, totalKopeks: 0, done: true };
   }
@@ -539,6 +551,18 @@ export async function cancelExpensesForMonth(
     userId: ctx.user.id,
     metadata: { month: built.month, clubId: built.clubId, category: built.category, count: ids.length, totalAmount: totalKopeks, reason },
   });
+
+  // Flip any import batch whose rows are now all inactive so the file can be
+  // re-imported (Part 2).
+  const batchIds = [...new Set(matches.map((m) => m.importBatchId).filter((b): b is string => !!b))];
+  for (const batchId of batchIds) {
+    await revertExpenseBatchIfAllInactive(batchId, {
+      userId: ctx.user.id,
+      companyId: ctx.selectedCompanyId,
+      clubId: built.clubId,
+      action: "import.reverted_by_bulk_cancel",
+    });
+  }
 
   revalidateFinancial();
   return { ok: true, count: ids.length, totalKopeks, done: true };
