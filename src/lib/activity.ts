@@ -49,6 +49,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "expense.extracted": "Распознан расход",
   "expense.created": "Создан расход",
   "expense.updated": "Обновлён расход",
+  // Excel imports (safety layer)
+  "import.created": "Импорт завершён",
+  "import.duplicate_file_blocked": "Импорт заблокирован (дубль файла)",
+  "import.row_duplicate_skipped": "Пропущены дубли строк при импорте",
+  "import.reverted": "Импорт отменён",
+  "import.revert_failed": "Не удалось отменить импорт",
   // Payroll
   "payroll_statement.uploaded": "Загружена ведомость",
   "payroll_statement.extracted": "Распознана ведомость",

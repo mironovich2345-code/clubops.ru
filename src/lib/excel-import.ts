@@ -13,10 +13,22 @@ export type ImportSummary = {
   updated: number;
   skipped: number;
   errors: ImportRowError[];
+  // Rows skipped because an identical record already exists (Part 3). Shown in
+  // the same on-screen table as errors, with row numbers.
+  duplicates: ImportRowError[];
 };
-export type ImportActionState = { ok: boolean; error?: string; result?: ImportSummary };
+// `blocked` is set when an identical file was already imported (Part 2).
+export type ImportActionState = {
+  ok: boolean;
+  error?: string;
+  result?: ImportSummary;
+  blocked?: { at: string; by: string };
+};
 
-export const newSummary = (): ImportSummary => ({ processed: 0, created: 0, updated: 0, skipped: 0, errors: [] });
+export const newSummary = (): ImportSummary => ({ processed: 0, created: 0, updated: 0, skipped: 0, errors: [], duplicates: [] });
+
+/** Standard duplicate-row warning text shown to the user. */
+export const DUPLICATE_ROW_ISSUE = "Похоже, такая запись уже существует";
 
 /** Normalize a cell/header for matching: trim, lowercase, ё→е, collapse spaces. */
 export const norm = (v: unknown) =>

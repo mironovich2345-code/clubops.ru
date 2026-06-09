@@ -18,9 +18,18 @@ import {
   isBlankRow,
   norm,
   newSummary,
+  DUPLICATE_ROW_ISSUE,
   type ImportActionState,
   type ColumnSpec,
 } from "@/lib/excel-import";
+import {
+  fileSha256,
+  findDuplicateFileBatch,
+  createImportBatch,
+  finalizeImportBatch,
+  loadExpenseDupKeys,
+  expenseDupKey,
+} from "@/lib/import-batches";
 
 const COLUMNS: ColumnSpec[] = [
   { key: "date", headers: ["Дата"], required: true },
@@ -74,9 +83,11 @@ export async function importExpenses(
     return { ok: false, error: "Выберите файл (.xlsx, .xls или .csv)" };
   }
 
+  let buffer: Buffer;
   let rows: unknown[][];
   try {
-    rows = readSheetRows(Buffer.from(await fileEntry.arrayBuffer()));
+    buffer = Buffer.from(await fileEntry.arrayBuffer());
+    rows = readSheetRows(buffer);
   } catch {
     return { ok: false, error: "Не удалось прочитать файл. Поддерживаются .xlsx, .xls, .csv" };
   }
@@ -87,14 +98,44 @@ export async function importExpenses(
     return { ok: false, error: `В файле не найдены столбцы: ${missing.join(", ")}` };
   }
 
+  const companyId = ctx.selectedCompanyId;
+
+  // Part 2: block re-import of the exact same file (by hash).
+  const fileHash = fileSha256(buffer);
+  const prior = await findDuplicateFileBatch(companyId, "expenses", fileHash);
+  if (prior) {
+    const by = (await prisma.user.findUnique({ where: { id: prior.createdByUserId }, select: { name: true } }))?.name ?? "—";
+    await recordAudit({
+      action: "import.duplicate_file_blocked",
+      entityType: "ImportBatch",
+      companyId,
+      userId: ctx.user.id,
+      metadata: { type: "expenses", fileName: fileEntry.name, fileHash },
+    });
+    return {
+      ok: false,
+      error: "Этот файл уже загружался ранее. Повторная загрузка заблокирована.",
+      blocked: { at: prior.createdAt.toISOString(), by },
+    };
+  }
+
   const scope = await getCurrentCompanyAndClub(ctx.user);
   const clubs = await getClubsInScope(scope);
-  const companyId = ctx.selectedCompanyId;
 
   const result = newSummary();
   let budgetPending = 0;
   const entityListCache = new Map<string, Awaited<ReturnType<typeof getClubLegalEntities>>>();
   const ipCache = new Map<string, string | null>();
+  // Part 3: existing + in-file expense duplicate keys.
+  const dupKeys = await loadExpenseDupKeys(companyId, scope.clubIds);
+  const batchId = await createImportBatch({
+    companyId,
+    clubId: scope.club?.id ?? null,
+    type: "expenses",
+    fileName: fileEntry.name,
+    fileHash,
+    createdByUserId: ctx.user.id,
+  });
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] ?? [];
@@ -186,6 +227,17 @@ export async function importExpenses(
       }
     }
 
+    const vendorName = String(at("vendor") ?? "").trim() || null;
+
+    // Part 3: skip the row if an identical record already exists (or is repeated
+    // earlier in this file). Does not block the rest of the file.
+    const key = expenseDupKey({ companyId: club.companyId, clubId: club.id, expenseDate, amountKopeks, category, paymentMethod, vendorName, legalEntityId });
+    if (dupKeys.has(key)) {
+      result.duplicates.push({ row: rowNo, club: club.name, field: "Дубль", issue: DUPLICATE_ROW_ISSUE });
+      continue;
+    }
+    dupKeys.add(key);
+
     // Budget-overrun gate (same as manual): waiting + approval request.
     const month = currentMonthKey(expenseDate);
     const evalBudget = await evaluateExpenseBudget(club.id, category, month, amountKopeks);
@@ -199,7 +251,7 @@ export async function importExpenses(
         createdByUserId: ctx.user.id,
         type,
         category,
-        vendorName: String(at("vendor") ?? "").trim() || null,
+        vendorName,
         amountKopeks,
         currency: "RUB",
         expenseDate,
@@ -208,6 +260,7 @@ export async function importExpenses(
         legalEntityId,
         confidence: "low",
         status: overBudget ? SOURCE_STATUS_WAITING : "confirmed",
+        importBatchId: batchId,
       },
     });
     result.created++;
@@ -258,12 +311,37 @@ export async function importExpenses(
     }
   }
 
+  await finalizeImportBatch(
+    batchId,
+    { created: result.created, skipped: result.skipped, duplicated: result.duplicates.length, errored: result.errors.length },
+    { processed: result.processed, budgetPending },
+  );
+  if (result.duplicates.length > 0) {
+    await recordAudit({
+      action: "import.row_duplicate_skipped",
+      entityType: "ImportBatch",
+      entityId: batchId,
+      companyId,
+      userId: ctx.user.id,
+      metadata: { type: "expenses", count: result.duplicates.length, rows: result.duplicates.map((d) => d.row) },
+    });
+  }
   await recordAudit({
-    action: "expense.imported",
-    entityType: "Expense",
+    action: "import.created",
+    entityType: "ImportBatch",
+    entityId: batchId,
     companyId,
+    clubId: scope.club?.id ?? null,
     userId: ctx.user.id,
-    metadata: { processed: result.processed, created: result.created, budgetPending, errors: result.errors.length },
+    metadata: {
+      type: "expenses",
+      fileName: fileEntry.name,
+      fileHash,
+      created: result.created,
+      skipped: result.skipped,
+      duplicated: result.duplicates.length,
+      errored: result.errors.length,
+    },
   });
 
   if (budgetPending > 0) {

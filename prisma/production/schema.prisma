@@ -43,6 +43,7 @@ model Company {
   payrollStatements PayrollStatement[]
   salesPlans    SalesPlan[]
   salesReports  SalesReport[]
+  importBatches ImportBatch[]
 }
 
 model LegalEntity {
@@ -412,6 +413,8 @@ model Invoice {
   notes     String?
   comment   String?
   fileUrl   String?
+  // Set when the row was created by an Excel import batch (for undo + dedup).
+  importBatchId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -425,6 +428,7 @@ model Invoice {
   @@index([createdByUserId])
   @@index([status])
   @@index([dueDate])
+  @@index([importBatchId])
 }
 
 model Expense {
@@ -465,6 +469,8 @@ model Expense {
   rawExtractedJson       String?
 
   fileUrl   String?
+  // Set when the row was created by an Excel import batch (for undo + dedup).
+  importBatchId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -478,6 +484,7 @@ model Expense {
   @@index([createdByUserId])
   @@index([category])
   @@index([expenseDate])
+  @@index([importBatchId])
 }
 
 model Sale {
@@ -645,6 +652,8 @@ model SalesReport {
   rejectedAt       DateTime?
   rejectionReason  String?
   notes            String?
+  // Set when the row was created by an Excel import batch (for undo).
+  importBatchId    String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -658,6 +667,37 @@ model SalesReport {
   @@index([clubId])
   @@index([status])
   @@index([reportDate])
+  @@index([importBatchId])
+}
+
+// Tracks one Excel import run so duplicate files can be blocked and a whole
+// import can be undone. Every row created by an import stores its importBatchId.
+model ImportBatch {
+  id               String    @id @default(cuid())
+  companyId        String
+  clubId           String?
+  // sales_reports | expenses | invoices
+  type             String
+  fileName         String?
+  fileHash         String?
+  // completed | reverted | failed
+  status           String    @default("completed")
+  createdByUserId  String
+  createdAt        DateTime  @default(now())
+  revertedByUserId String?
+  revertedAt       DateTime?
+  rowsCreated      Int       @default(0)
+  rowsSkipped      Int       @default(0)
+  rowsDuplicated   Int       @default(0)
+  rowsErrored      Int       @default(0)
+  summaryJson      String?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([type])
+  @@index([fileHash])
+  @@index([createdByUserId])
 }
 
 model SalesReportLine {

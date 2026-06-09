@@ -17,6 +17,8 @@ import { SaleRowActions } from "./_components/SaleRowActions";
 import { SalesReportForm } from "./_components/SalesReportForm";
 import { ExcelImportPanel } from "@/components/ExcelImportPanel";
 import { importSalesReports } from "./report-import-actions";
+import { revertImportBatch } from "../import-revert-actions";
+import { getLastImportBatch } from "@/lib/import-batches";
 import { ExportButton } from "@/components/ExportButton";
 import { canExport } from "@/lib/exports";
 import {
@@ -72,6 +74,9 @@ export default async function SalesPage({
     getSalesReportsForScope(scope),
   ]);
   const canCreate = canCreateOperational(ctx.effectiveRoles);
+  const lastImport = canCreate
+    ? await getLastImportBatch(scope.company.id, "sales_reports", scope.clubIds, ctx.user.id)
+    : null;
 
   const now = new Date();
   // Revenue cards reflect only confirmed sales — pending/rejected are not revenue.
@@ -108,6 +113,8 @@ export default async function SalesPage({
           templateLabel="Скачать шаблон сменного отчёта"
           uploadLabel="Загрузить сменный отчёт из Excel"
           action={importSalesReports}
+          lastBatch={lastImport}
+          revertAction={revertImportBatch}
         />
       ) : null}
 

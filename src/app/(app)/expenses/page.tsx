@@ -21,6 +21,8 @@ import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities"
 import { ExpenseUpload } from "./_components/ExpenseUpload";
 import { ExcelImportPanel } from "@/components/ExcelImportPanel";
 import { importExpenses } from "./expense-import-actions";
+import { revertImportBatch } from "../import-revert-actions";
+import { getLastImportBatch } from "@/lib/import-batches";
 import { ExportButton } from "@/components/ExportButton";
 import { canExport } from "@/lib/exports";
 
@@ -51,6 +53,9 @@ export default async function ExpensesPage() {
     getCurrentAccessContext(),
   ]);
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
+  const lastImport = canCreate && ctx
+    ? await getLastImportBatch(scope.company.id, "expenses", scope.clubIds, ctx.user.id)
+    : null;
 
   // Active legal entities per club for the expense form (cash -> ИП routing).
   const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null }>> = {};
@@ -109,6 +114,8 @@ export default async function ExpensesPage() {
           templateLabel="Скачать шаблон расходов"
           uploadLabel="Загрузить расходы из Excel"
           action={importExpenses}
+          lastBatch={lastImport}
+          revertAction={revertImportBatch}
         />
       ) : null}
 

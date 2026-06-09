@@ -17,9 +17,18 @@ import {
   isBlankRow,
   norm,
   newSummary,
+  DUPLICATE_ROW_ISSUE,
   type ImportActionState,
   type ColumnSpec,
 } from "@/lib/excel-import";
+import {
+  fileSha256,
+  findDuplicateFileBatch,
+  createImportBatch,
+  finalizeImportBatch,
+  loadInvoiceDupKeys,
+  invoiceDupKey,
+} from "@/lib/import-batches";
 
 const COLUMNS: ColumnSpec[] = [
   { key: "invoiceDate", headers: ["Дата счёта", "Дата"], required: true },
@@ -71,9 +80,11 @@ export async function importInvoices(
     return { ok: false, error: "Выберите файл (.xlsx, .xls или .csv)" };
   }
 
+  let buffer: Buffer;
   let rows: unknown[][];
   try {
-    rows = readSheetRows(Buffer.from(await fileEntry.arrayBuffer()));
+    buffer = Buffer.from(await fileEntry.arrayBuffer());
+    rows = readSheetRows(buffer);
   } catch {
     return { ok: false, error: "Не удалось прочитать файл. Поддерживаются .xlsx, .xls, .csv" };
   }
@@ -84,12 +95,42 @@ export async function importInvoices(
     return { ok: false, error: `В файле не найдены столбцы: ${missing.join(", ")}` };
   }
 
+  const companyId = ctx.selectedCompanyId;
+
+  // Part 2: block re-import of the exact same file (by hash).
+  const fileHash = fileSha256(buffer);
+  const prior = await findDuplicateFileBatch(companyId, "invoices", fileHash);
+  if (prior) {
+    const by = (await prisma.user.findUnique({ where: { id: prior.createdByUserId }, select: { name: true } }))?.name ?? "—";
+    await recordAudit({
+      action: "import.duplicate_file_blocked",
+      entityType: "ImportBatch",
+      companyId,
+      userId: ctx.user.id,
+      metadata: { type: "invoices", fileName: fileEntry.name, fileHash },
+    });
+    return {
+      ok: false,
+      error: "Этот файл уже загружался ранее. Повторная загрузка заблокирована.",
+      blocked: { at: prior.createdAt.toISOString(), by },
+    };
+  }
+
   const scope = await getCurrentCompanyAndClub(ctx.user);
   const clubs = await getClubsInScope(scope);
-  const companyId = ctx.selectedCompanyId;
 
   const result = newSummary();
   const entityListCache = new Map<string, Awaited<ReturnType<typeof getClubLegalEntities>>>();
+  // Part 3: existing + in-file invoice duplicate keys.
+  const dupKeys = await loadInvoiceDupKeys(companyId, scope.clubIds);
+  const batchId = await createImportBatch({
+    companyId,
+    clubId: scope.club?.id ?? null,
+    type: "invoices",
+    fileName: fileEntry.name,
+    fileHash,
+    createdByUserId: ctx.user.id,
+  });
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] ?? [];
@@ -177,13 +218,25 @@ export async function importInvoices(
       comment = comment ? `${comment}\n${warn}` : warn;
     }
 
+    // Part 3: skip the row if an identical invoice already exists (or is repeated
+    // earlier in this file). Does not block the rest of the file.
+    const counterpartyName = text("supplier");
+    const invoiceNumber = text("invoiceNumber");
+    const key = invoiceDupKey({ companyId: club.companyId, clubId: club.id, invoiceDate, amountKopeks, counterpartyName, invoiceNumber, legalEntityId });
+    if (dupKeys.has(key)) {
+      result.duplicates.push({ row: rowNo, club: club.name, field: "Дубль", issue: DUPLICATE_ROW_ISSUE });
+      continue;
+    }
+    dupKeys.add(key);
+
     const invoice = await prisma.invoice.create({
       data: {
         companyId: club.companyId,
         clubId: club.id,
         createdByUserId: ctx.user.id,
         legalEntityId,
-        counterpartyName: text("supplier"),
+        importBatchId: batchId,
+        counterpartyName,
         counterpartyInn: text("supplierInn"),
         counterpartyKpp: text("supplierKpp"),
         counterpartyBankName: text("supplierBank"),
@@ -195,7 +248,7 @@ export async function importInvoices(
         amountKopeks,
         currency: "RUB",
         expenseCategory,
-        invoiceNumber: text("invoiceNumber"),
+        invoiceNumber,
         invoiceDate,
         dueDate,
         // Imported invoices are never auto-approved or paid.
@@ -217,12 +270,37 @@ export async function importInvoices(
     });
   }
 
+  await finalizeImportBatch(
+    batchId,
+    { created: result.created, skipped: result.skipped, duplicated: result.duplicates.length, errored: result.errors.length },
+    { processed: result.processed },
+  );
+  if (result.duplicates.length > 0) {
+    await recordAudit({
+      action: "import.row_duplicate_skipped",
+      entityType: "ImportBatch",
+      entityId: batchId,
+      companyId,
+      userId: ctx.user.id,
+      metadata: { type: "invoices", count: result.duplicates.length, rows: result.duplicates.map((d) => d.row) },
+    });
+  }
   await recordAudit({
-    action: "invoice.imported",
-    entityType: "Invoice",
+    action: "import.created",
+    entityType: "ImportBatch",
+    entityId: batchId,
     companyId,
+    clubId: scope.club?.id ?? null,
     userId: ctx.user.id,
-    metadata: { processed: result.processed, created: result.created, errors: result.errors.length },
+    metadata: {
+      type: "invoices",
+      fileName: fileEntry.name,
+      fileHash,
+      created: result.created,
+      skipped: result.skipped,
+      duplicated: result.duplicates.length,
+      errored: result.errors.length,
+    },
   });
 
   revalidatePath("/invoices");

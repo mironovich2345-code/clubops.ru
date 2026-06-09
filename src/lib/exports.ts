@@ -54,6 +54,7 @@ const EXPENSE_STATUS_LABELS: Record<string, string> = {
   confirmed: "Подтверждён",
   waiting_budget_approval: "Ожидает согласования бюджета",
   budget_rejected: "Отклонён (бюджет)",
+  import_reverted: "Импорт отменён",
 };
 
 export type ExportResult = { headers: string[]; rows: CsvCell[][] };

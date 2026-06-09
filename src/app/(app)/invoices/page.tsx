@@ -19,6 +19,8 @@ import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities"
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 import { ExcelImportPanel } from "@/components/ExcelImportPanel";
 import { importInvoices } from "./invoice-import-actions";
+import { revertImportBatch } from "../import-revert-actions";
+import { getLastImportBatch } from "@/lib/import-batches";
 import { ExportButton } from "@/components/ExportButton";
 import { canExport } from "@/lib/exports";
 
@@ -50,6 +52,9 @@ export default async function InvoicesPage() {
     getCurrentAccessContext(),
   ]);
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
+  const lastImport = canCreate && ctx
+    ? await getLastImportBatch(scope.company.id, "invoices", scope.clubIds, ctx.user.id)
+    : null;
 
   const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null }>> = {};
   if (canCreate) {
@@ -86,6 +91,8 @@ export default async function InvoicesPage() {
               templateLabel="Скачать шаблон счетов"
               uploadLabel="Загрузить счета из Excel"
               action={importInvoices}
+              lastBatch={lastImport}
+              revertAction={revertImportBatch}
             />
           </>
         ) : (
