@@ -14,6 +14,58 @@ export type InvoiceStatus =
 
 export type InvoiceConfidence = "low" | "medium" | "high";
 
+// --- Expense period (accounting month an invoice belongs to) ----------------
+// `expensePeriod` ("YYYY-MM") decides which month an invoice counts in for
+// expenses / profit / budget / analytics — independent of `paidAt` (when the
+// money actually left). Payment reporting keeps using paidAt.
+
+function monthKeyOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Accounting month for an invoice: stored expensePeriod, else derived from
+ * invoiceDate → paidAt → createdAt. */
+export function invoiceExpensePeriod(inv: {
+  expensePeriod?: string | null;
+  invoiceDate: Date | null;
+  paidAt: Date | null;
+  createdAt: Date;
+}): string {
+  if (inv.expensePeriod && /^\d{4}-\d{2}$/.test(inv.expensePeriod)) return inv.expensePeriod;
+  return monthKeyOf(inv.invoiceDate ?? inv.paidAt ?? inv.createdAt);
+}
+
+/** First day of a "YYYY-MM" month, or null. */
+export function periodToDate(period: string): Date | null {
+  const m = period.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, 1);
+}
+
+/** The date an invoice contributes to date-based expense analytics — a day
+ * inside its expensePeriod (keeps invoiceDate's day when in the same month). */
+export function invoiceAnalyticsDate(inv: {
+  expensePeriod?: string | null;
+  invoiceDate: Date | null;
+  paidAt: Date | null;
+  createdAt: Date;
+}): Date {
+  const period = invoiceExpensePeriod(inv);
+  const base = inv.invoiceDate ?? inv.paidAt ?? inv.createdAt;
+  if (monthKeyOf(base) === period) return base;
+  return periodToDate(period) ?? base;
+}
+
+const MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+/** "Май 2026" for a "YYYY-MM" period (or the raw value if malformed). */
+export function formatExpensePeriod(period: string | null | undefined): string {
+  if (!period) return "—";
+  const m = period.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return period;
+  return `${MONTHS_RU[Number(m[2]) - 1] ?? m[2]} ${m[1]}`;
+}
+
 export const INVOICE_STATUSES: InvoiceStatus[] = [
   "draft",
   "needs_review",

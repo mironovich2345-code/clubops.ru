@@ -50,6 +50,10 @@ export function HistoricalInvoiceForm({
           </select>
         </label>
         <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">Период расхода</span>
+          <input type="month" name="expensePeriod" className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
+        </label>
+        <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600">Дата счёта</span>
           <input type="date" name="invoiceDate" required className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
         </label>

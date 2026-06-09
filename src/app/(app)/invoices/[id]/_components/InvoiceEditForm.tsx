@@ -15,6 +15,9 @@ type InvoiceView = {
   amount: string;
   currency: string;
   expenseCategory: string;
+  expensePeriod: string; // "YYYY-MM" for the month picker
+  expensePeriodLabel: string; // "Май 2026"
+  paidAtLabel: string;
   invoiceNumber: string;
   invoiceDate: string;
   dueDate: string;
@@ -96,6 +99,10 @@ export function InvoiceEditForm({
               >
                 {statusLabel}
               </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+              <span>Период расхода: <span className="font-medium text-slate-700">{invoice.expensePeriodLabel}</span></span>
+              <span>Дата оплаты: <span className="font-medium text-slate-700">{invoice.paidAtLabel}</span></span>
             </div>
           </div>
           {invoice.hasFile ? (
@@ -187,6 +194,10 @@ export function InvoiceEditForm({
             </Field>
             <Field label="Дата счёта">
               <input type="date" name="invoiceDate" defaultValue={invoice.invoiceDate} className="input" />
+            </Field>
+            <Field label="Период расхода">
+              <input type="month" name="expensePeriod" defaultValue={invoice.expensePeriod} className="input" />
+              <span className="mt-1 block text-xs text-slate-400">Месяц, к которому относится расход</span>
             </Field>
             <Field label="Срок оплаты">
               <input type="date" name="dueDate" defaultValue={invoice.dueDate} className="input" />

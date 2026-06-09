@@ -390,6 +390,9 @@ model Invoice {
   amountKopeks    Int       @default(0)
   currency        String    @default("RUB")
   expenseCategory String?
+  // Accounting month the expense belongs to ("YYYY-MM"); drives expenses /
+  // profit / budget / analytics. Independent of paidAt (when money left).
+  expensePeriod   String?
   subject         String?
   invoiceNumber   String?
   invoiceDate     DateTime?

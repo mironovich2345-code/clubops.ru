@@ -69,11 +69,21 @@ type ParsedFields = {
   amountKopeks: number;
   currency: string;
   expenseCategory: string | null;
+  expensePeriod: string | null;
   invoiceNumber: string | null;
   invoiceDate: Date | null;
   dueDate: Date | null;
   notes: string | null;
 };
+
+const monthOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+/** expensePeriod from the form, else derived from invoiceDate's month. */
+function resolveExpensePeriod(formData: FormData, invoiceDate: Date | null): string | null {
+  const raw = String(formData.get("expensePeriod") ?? "").trim();
+  if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+  return invoiceDate ? monthOf(invoiceDate) : null;
+}
 
 function parseInvoiceFields(formData: FormData): { data?: ParsedFields; error?: string } {
   const amountRaw = String(formData.get("amount") ?? "").trim().replace(",", ".");
@@ -81,6 +91,7 @@ function parseInvoiceFields(formData: FormData): { data?: ParsedFields; error?: 
   if (!Number.isFinite(amount) || amount < 0) {
     return { error: "Сумма должна быть неотрицательным числом" };
   }
+  const invoiceDate = parseDate(str(formData, "invoiceDate"));
   return {
     data: {
       counterpartyName: str(formData, "counterpartyName"),
@@ -93,8 +104,9 @@ function parseInvoiceFields(formData: FormData): { data?: ParsedFields; error?: 
       amountKopeks: rublesToKopeks(amount),
       currency: str(formData, "currency") ?? "RUB",
       expenseCategory: str(formData, "expenseCategory"),
+      expensePeriod: resolveExpensePeriod(formData, invoiceDate),
       invoiceNumber: str(formData, "invoiceNumber"),
-      invoiceDate: parseDate(str(formData, "invoiceDate")),
+      invoiceDate,
       dueDate: parseDate(str(formData, "dueDate")),
       notes: str(formData, "notes"),
     },
@@ -362,6 +374,8 @@ export async function saveHistoricalInvoice(
       amountKopeks: rublesToKopeks(amount),
       currency: "RUB",
       expenseCategory: str(formData, "expenseCategory"),
+      // Expense belongs to its period; money may leave in a different month.
+      expensePeriod: resolveExpensePeriod(formData, invoiceDate),
       invoiceNumber: str(formData, "invoiceNumber"),
       invoiceDate,
       paidAt,

@@ -5,6 +5,7 @@ import {
   type BudgetFactReport,
 } from "@/lib/budgets";
 import { REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, getSalesReportFactBreakdown } from "@/lib/sales-report-rows";
+import { invoiceAnalyticsDate } from "@/lib/invoices";
 
 // Confirmed-report line keys for the plan-direction split facts.
 const SUBSCRIPTIONS_KEY = "subscriptions_ooo";
@@ -98,7 +99,7 @@ export type AnalyticsData = {
   clubs: Array<{ id: string; name: string }>;
   sales: Array<{ clubId: string; amountKopeks: number; saleDate: Date }>;
   expenses: Array<{ clubId: string; category: string; amountKopeks: number; expenseDate: Date; status: string }>;
-  invoices: Array<{ clubId: string; expenseCategory: string | null; amountKopeks: number; paidAt: Date | null; invoiceDate: Date | null; createdAt: Date; status: string }>;
+  invoices: Array<{ clubId: string; expenseCategory: string | null; amountKopeks: number; expensePeriod: string | null; paidAt: Date | null; invoiceDate: Date | null; createdAt: Date; status: string }>;
   refunds: Array<{ clubId: string; amountKopeks: number; paidAt: Date | null; refundDate: Date | null; createdAt: Date; status: string }>;
   budgets: Array<{ clubId: string; category: string; limitAmountKopeks: number }>;
   plans: Array<{ clubId: string | null; planType: string; targetAmountKopeks: number }>;
@@ -133,7 +134,7 @@ export async function loadAnalyticsData(
       prisma.sale.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", saleDate: { gte: lo, lt: hi } }, select: { clubId: true, amountKopeks: true, saleDate: true } }),
       prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, managerName: true, lines: { where: { key: { in: [REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, SUBSCRIPTIONS_KEY, PERSONAL_TRAINING_KEY, REVENUE_IP_KEY] } }, select: { key: true, amountKopeks: true } } } }),
       prisma.expense.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", expenseDate: { gte: lo, lt: hi } }, select: { clubId: true, category: true, amountKopeks: true, expenseDate: true, status: true } }),
-      prisma.invoice.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, expenseCategory: true, amountKopeks: true, paidAt: true, invoiceDate: true, createdAt: true, status: true } }),
+      prisma.invoice.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, expenseCategory: true, amountKopeks: true, expensePeriod: true, paidAt: true, invoiceDate: true, createdAt: true, status: true } }),
       prisma.refund.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true } }),
       prisma.budget.findMany({ where: { companyId, clubId: inClubs, month: { in: period.months } }, select: { clubId: true, category: true, limitAmountKopeks: true } }),
       prisma.salesPlan.findMany({ where: { companyId, month: { in: period.months } }, select: { clubId: true, planType: true, targetAmountKopeks: true } }),
@@ -194,7 +195,9 @@ function salesEvents(data: AnalyticsData): SalesEvent[] {
 function spendEvents(data: AnalyticsData): SpendEvent[] {
   return [
     ...data.expenses.map((e) => ({ clubId: e.clubId, category: e.category, amountKopeks: e.amountKopeks, date: e.expenseDate })),
-    ...data.invoices.map((i) => ({ clubId: i.clubId, category: i.expenseCategory ?? "other", amountKopeks: i.amountKopeks, date: i.paidAt ?? i.invoiceDate ?? i.createdAt })),
+    // Invoices contribute to their accounting month (expensePeriod), not the
+    // payment date.
+    ...data.invoices.map((i) => ({ clubId: i.clubId, category: i.expenseCategory ?? "other", amountKopeks: i.amountKopeks, date: invoiceAnalyticsDate(i) })),
     ...data.refunds.map((r) => ({ clubId: r.clubId, category: "refunds", amountKopeks: r.amountKopeks, date: r.paidAt ?? r.refundDate ?? r.createdAt })),
   ];
 }

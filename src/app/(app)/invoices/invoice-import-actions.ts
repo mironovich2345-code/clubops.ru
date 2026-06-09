@@ -47,10 +47,13 @@ const COLUMNS: ColumnSpec[] = [
   { key: "invoiceNumber", headers: ["Номер счёта", "Номер счета", "№ счёта"] },
   { key: "amount", headers: ["Сумма"], required: true },
   { key: "category", headers: ["Статья расходов", "Статья"] },
+  { key: "expensePeriod", headers: ["Период расхода"] },
   { key: "dueDate", headers: ["Срок оплаты"] },
   { key: "paidDate", headers: ["Дата оплаты"] },
   { key: "comment", headers: ["Комментарий"] },
 ];
+
+const monthOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 const CATEGORY_BY_LABEL = new Map<string, string>();
 for (const o of EXPENSE_CATEGORY_OPTIONS) {
@@ -194,6 +197,11 @@ export async function importInvoices(
       }
     }
 
+    // Expense period (Part 4): use the column if given, else derive from
+    // invoiceDate → paidAt → createdAt.
+    const periodCell = String(at("expensePeriod") ?? "").trim();
+    const expensePeriod = /^\d{4}-\d{2}$/.test(periodCell) ? periodCell : monthOf(invoiceDate ?? paidAt ?? new Date());
+
     // Category optional; if provided it must be a known category.
     let expenseCategory: string | null = null;
     if (at("category") != null && String(at("category")).trim() !== "") {
@@ -265,6 +273,7 @@ export async function importInvoices(
         amountKopeks,
         currency: "RUB",
         expenseCategory,
+        expensePeriod,
         invoiceNumber,
         invoiceDate,
         dueDate,

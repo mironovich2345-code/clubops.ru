@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess } from "@/lib/access";
 import { formatKopeks } from "@/lib/money";
-import { getInvoicesForScope } from "@/lib/invoices";
+import { getInvoicesForScope, invoiceAnalyticsDate } from "@/lib/invoices";
 import { getExpensesForScope, summarizeExpenses, expenseCategoryLabel } from "@/lib/expenses";
 import { getSalesForScope, summarizeSales } from "@/lib/sales";
 import { getConfirmedReportRevenue, getPendingSalesReports, getConfirmedReportCashControl } from "@/lib/sales-reports";
@@ -106,7 +106,7 @@ export default async function DashboardPage({
   // Realized expenses = confirmed expenses + paid invoices + paid refunds.
   const expenseEvents = [
     ...expenses.filter((e) => e.status === "confirmed").map((e) => ({ clubId: e.clubId, category: e.category, amountKopeks: e.amountKopeks, expenseDate: e.expenseDate })),
-    ...invoices.filter((i) => i.status === "paid").map((i) => ({ clubId: i.clubId, category: i.expenseCategory ?? "other", amountKopeks: i.amountKopeks, expenseDate: i.paidAt ?? i.invoiceDate ?? i.createdAt })),
+    ...invoices.filter((i) => i.status === "paid").map((i) => ({ clubId: i.clubId, category: i.expenseCategory ?? "other", amountKopeks: i.amountKopeks, expenseDate: invoiceAnalyticsDate(i) })),
     ...refunds.filter((r) => r.status === "paid").map((r) => ({ clubId: r.clubId, category: "refunds", amountKopeks: r.amountKopeks, expenseDate: r.paidAt ?? r.refundDate ?? r.createdAt })),
   ];
 

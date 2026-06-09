@@ -2,6 +2,7 @@ import type { Budget, BudgetApprovalRequest } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DataScope, AccessContext } from "@/lib/access";
 import { EXPENSE_CATEGORY_OPTIONS, EXPENSE_CATEGORY_LABELS } from "@/lib/expenses";
+import { invoiceExpensePeriod } from "@/lib/invoices";
 
 // Budget categories reuse the expense category keys.
 export const BUDGET_CATEGORIES = EXPENSE_CATEGORY_OPTIONS;
@@ -78,9 +79,10 @@ export async function computeUsedKopeks(
 
   const invoices = await prisma.invoice.findMany({
     where: { clubId, expenseCategory: category, status: { in: APPROVED_INVOICE_STATUSES } },
-    select: { amountKopeks: true, invoiceDate: true, createdAt: true },
+    select: { amountKopeks: true, expensePeriod: true, invoiceDate: true, paidAt: true, createdAt: true },
   });
-  for (const i of invoices) if (inRange(i.invoiceDate ?? i.createdAt)) used += i.amountKopeks;
+  // Invoices count in their accounting month (expensePeriod), not the payment date.
+  for (const i of invoices) if (invoiceExpensePeriod(i) === month) used += i.amountKopeks;
 
   const expenses = await prisma.expense.findMany({
     where: { clubId, category, status: "confirmed" },
@@ -151,7 +153,7 @@ export function computeBudgetOverruns(
   budgets: Array<{ clubId: string; category: string; limitAmountKopeks: number }>,
   data: {
     expenses: Array<{ clubId: string; category: string; amountKopeks: number; expenseDate: Date; status: string }>;
-    invoices: Array<{ clubId: string; expenseCategory: string | null; amountKopeks: number; invoiceDate: Date | null; createdAt: Date; status: string }>;
+    invoices: Array<{ clubId: string; expenseCategory: string | null; amountKopeks: number; expensePeriod: string | null; invoiceDate: Date | null; paidAt: Date | null; createdAt: Date; status: string }>;
     refunds: Array<{ clubId: string; amountKopeks: number; refundDate: Date | null; createdAt: Date; status: string }>;
   },
   month: string,
@@ -170,7 +172,7 @@ export function computeBudgetOverruns(
     if (e.status === "confirmed" && inR(e.expenseDate)) add(key(e.clubId, e.category), e.amountKopeks);
   }
   for (const i of data.invoices) {
-    if (i.expenseCategory && APPROVED_INVOICE_STATUSES.includes(i.status) && inR(i.invoiceDate ?? i.createdAt)) {
+    if (i.expenseCategory && APPROVED_INVOICE_STATUSES.includes(i.status) && invoiceExpensePeriod(i) === month) {
       add(key(i.clubId, i.expenseCategory), i.amountKopeks);
     }
   }
@@ -245,6 +247,7 @@ type FactExpense = { category: string; amountKopeks: number; expenseDate: Date; 
 type FactInvoice = {
   expenseCategory: string | null;
   amountKopeks: number;
+  expensePeriod: string | null;
   paidAt: Date | null;
   invoiceDate: Date | null;
   createdAt: Date;
@@ -293,7 +296,8 @@ export function computeBudgetFactReport(
     if (e.status === "confirmed" && inR(e.expenseDate)) add(e.category, e.amountKopeks);
   }
   for (const i of data.invoices) {
-    if (i.status === "paid" && i.expenseCategory && inR(i.paidAt ?? i.invoiceDate ?? i.createdAt)) {
+    // Count in the accounting month (expensePeriod), not the payment date.
+    if (i.status === "paid" && i.expenseCategory && invoiceExpensePeriod(i) === month) {
       add(i.expenseCategory, i.amountKopeks);
     }
   }
@@ -343,7 +347,7 @@ export async function getBudgetFactReportForScope(
     }),
     prisma.invoice.findMany({
       where: { clubId: { in: clubIds }, status: "paid" },
-      select: { expenseCategory: true, amountKopeks: true, paidAt: true, invoiceDate: true, createdAt: true, status: true },
+      select: { expenseCategory: true, amountKopeks: true, expensePeriod: true, paidAt: true, invoiceDate: true, createdAt: true, status: true },
     }),
     prisma.refund.findMany({
       where: { clubId: { in: clubIds }, status: "paid" },
