@@ -41,7 +41,7 @@ export type InvoiceExtraction = {
 export type AnalysisInput = { buffer: Buffer; mime: string; fileName: string };
 
 // Category keys shared with expenses/budgets.
-const CATEGORY_KEYS = ["advertising", "household", "builders", "rent", "investments", "refunds", "salary", "other"];
+const CATEGORY_KEYS = ["advertising", "household", "builders", "rent", "maintenance", "investments", "taxes", "salary", "dismissal_compensation", "recruitment", "it_services", "office_supplies", "consumables", "refunds", "other"];
 
 // Key fields required for high confidence (incl. amount + bank details).
 const KEY_FIELDS: Array<keyof InvoiceExtraction> = [
@@ -196,6 +196,10 @@ const SYSTEM_PROMPT =
   "Если поле не видно или не уверено — верни null. НИКОГДА не выдумывай ИНН, банковские реквизиты, " +
   "даты, суммы. Если сумма или банковские реквизиты неточны — confidence не выше medium. " +
   `expenseCategory выбирай ТОЛЬКО из: ${CATEGORY_KEYS.join(", ")}; если не уверен — "other". ` +
+  "Соответствия по типу счёта: НДФЛ/ИФНС/налоги → taxes; зарплата → salary; аренда (в т.ч. переменная часть) → rent; " +
+  "размещение рекламы → advertising; вакансии/HeadHunter → recruitment; администрирование сайта/подписка ПО/ПЕТЕР-СЕРВИС → it_services; " +
+  "замки/ремонт/обслуживание → maintenance; хозтовары → household; канцтовары → office_supplies; бахилы → consumables; " +
+  "возврат клиенту → refunds; увольнение сотрудника → dismissal_compensation. " +
   "confidence=high только если все ключевые поля чётко видны.";
 
 async function openaiAnalyze(input: AnalysisInput): Promise<InvoiceExtraction> {

@@ -47,6 +47,7 @@ const COLUMNS: ColumnSpec[] = [
   { key: "amount", headers: ["Сумма"], required: true },
   { key: "category", headers: ["Статья расходов", "Статья"] },
   { key: "dueDate", headers: ["Срок оплаты"] },
+  { key: "paidDate", headers: ["Дата оплаты"] },
   { key: "comment", headers: ["Комментарий"] },
 ];
 
@@ -176,6 +177,16 @@ export async function importInvoices(
         continue;
       }
     }
+    // Part 4: paid date — if present, the invoice is imported as already paid and
+    // immediately counts in expenses / budget / analytics.
+    let paidAt: Date | null = null;
+    if (at("paidDate") != null && String(at("paidDate")).trim() !== "") {
+      paidAt = parseDateCell(at("paidDate"));
+      if (!paidAt) {
+        result.errors.push({ row: rowNo, club: club.name, field: "Дата оплаты", issue: "Неверный формат даты" });
+        continue;
+      }
+    }
 
     // Category optional; if provided it must be a known category.
     let expenseCategory: string | null = null;
@@ -251,8 +262,9 @@ export async function importInvoices(
         invoiceNumber,
         invoiceDate,
         dueDate,
-        // Imported invoices are never auto-approved or paid.
-        status: "needs_review",
+        paidAt,
+        // With a paid date → paid immediately; otherwise the normal review flow.
+        status: paidAt ? "paid" : "needs_review",
         confidence: "low",
         comment,
       },

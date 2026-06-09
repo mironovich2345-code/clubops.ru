@@ -301,6 +301,95 @@ export async function saveInvoice(
   return { ok: true, invoiceId: invoice.id };
 }
 
+/**
+ * Quick entry of a historical, already-paid invoice (for importing past months).
+ * Status becomes `paid` immediately with no approval workflow, so it counts in
+ * expenses / budget / analytics right away. Manager/regional only, scoped.
+ */
+export async function saveHistoricalInvoice(
+  _prev: SaveState | undefined,
+  formData: FormData,
+): Promise<SaveState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Добавлять счета могут управляющие и региональные директора" };
+  }
+
+  const clubId = String(formData.get("clubId") ?? "").trim();
+  if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
+    return { ok: false, error: "Нет доступа к выбранному клубу" };
+  }
+  const companyId = await clubInCompany(clubId);
+  if (!companyId || companyId !== ctx.selectedCompanyId) {
+    return { ok: false, error: "Клуб не найден" };
+  }
+
+  const amountRaw = String(formData.get("amount") ?? "").trim().replace(",", ".");
+  const amount = amountRaw === "" ? 0 : Number(amountRaw);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, error: "Укажите положительную сумму" };
+  }
+  const invoiceDate = parseDate(str(formData, "invoiceDate"));
+  if (!invoiceDate) return { ok: false, error: "Укажите дату счёта" };
+  const paidAt = parseDate(str(formData, "paidDate"));
+  if (!paidAt) return { ok: false, error: "Укажите дату оплаты" };
+
+  let legalEntityId: string | null = null;
+  const requestedEntityId = str(formData, "legalEntityId");
+  if (requestedEntityId) {
+    const attached = await getClubLegalEntities(clubId);
+    legalEntityId = attached.some((e) => e.id === requestedEntityId) ? requestedEntityId : null;
+  }
+
+  const invoice = await prisma.invoice.create({
+    data: {
+      companyId,
+      clubId,
+      createdByUserId: ctx.user.id,
+      legalEntityId,
+      counterpartyName: str(formData, "counterpartyName"),
+      amountKopeks: rublesToKopeks(amount),
+      currency: "RUB",
+      expenseCategory: str(formData, "expenseCategory"),
+      invoiceNumber: str(formData, "invoiceNumber"),
+      invoiceDate,
+      paidAt,
+      // Historical entry: paid immediately, no approval workflow.
+      status: "paid",
+      confidence: "high",
+      comment: str(formData, "comment"),
+    },
+  });
+
+  await recordAudit({
+    action: "invoice.created",
+    entityType: "Invoice",
+    entityId: invoice.id,
+    companyId,
+    clubId,
+    userId: ctx.user.id,
+    metadata: { historical: true, status: "paid", amountKopeks: invoice.amountKopeks },
+  });
+  await recordAudit({
+    action: "invoice.paid",
+    entityType: "Invoice",
+    entityId: invoice.id,
+    companyId,
+    clubId,
+    userId: ctx.user.id,
+    metadata: { historical: true, paidAt: paidAt.toISOString() },
+  });
+
+  revalidatePath("/invoices");
+  revalidatePath("/dashboard");
+  revalidatePath("/budgets");
+  revalidatePath("/analytics");
+  return { ok: true, invoiceId: invoice.id };
+}
+
 export async function updateInvoice(
   _prev: SaveState | undefined,
   formData: FormData,

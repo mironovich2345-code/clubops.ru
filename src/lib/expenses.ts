@@ -47,9 +47,16 @@ export const EXPENSE_CATEGORY_OPTIONS: ReadonlyArray<{ key: string; label: strin
   { key: "household", label: "Хозрасходы" },
   { key: "builders", label: "Строители" },
   { key: "rent", label: "Аренда" },
+  { key: "maintenance", label: "Ремонт и обслуживание" },
   { key: "investments", label: "Вложения" },
-  { key: "refunds", label: "Возвраты" },
+  { key: "taxes", label: "Налоги" },
   { key: "salary", label: "Зарплата" },
+  { key: "dismissal_compensation", label: "Компенсации при увольнении" },
+  { key: "recruitment", label: "Подбор персонала" },
+  { key: "it_services", label: "IT и сервисы" },
+  { key: "office_supplies", label: "Канцтовары" },
+  { key: "consumables", label: "Расходные материалы" },
+  { key: "refunds", label: "Возвраты" },
   { key: "other", label: "Прочее" },
 ];
 

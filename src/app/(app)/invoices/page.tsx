@@ -17,6 +17,7 @@ import {
 import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
+import { HistoricalInvoiceForm } from "./_components/HistoricalInvoiceForm";
 import { ExcelImportPanel } from "@/components/ExcelImportPanel";
 import { importInvoices } from "./invoice-import-actions";
 import { revertImportBatch } from "../import-revert-actions";
@@ -83,10 +84,17 @@ export default async function InvoicesPage() {
         clubs.length > 0 ? (
           <>
             <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} legalEntitiesByClub={legalEntitiesByClub} />
+            {/* Historical paid-invoice quick entry (past months) */}
+            <HistoricalInvoiceForm
+              clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
+              categories={EXPENSE_CATEGORY_OPTIONS}
+              legalEntitiesByClub={legalEntitiesByClub}
+              defaultClubId={scope.club?.id ?? clubs[0].id}
+            />
             {/* Excel import (additional input method; manual form + AI upload unchanged) */}
             <ExcelImportPanel
               title="Импорт счетов из Excel"
-              description="Скачайте шаблон, заполните и загрузите. Счета импортируются со статусом «На согласовании» и не помечаются оплаченными."
+              description="Скачайте шаблон, заполните и загрузите. Если указана «Дата оплаты» — счёт создаётся оплаченным и сразу учитывается; иначе — со статусом «На согласовании»."
               templateHref="/api/invoices/template"
               templateLabel="Скачать шаблон счетов"
               uploadLabel="Загрузить счета из Excel"
