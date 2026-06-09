@@ -2,6 +2,10 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
+  // Class-gated dark mode: `dark:` utilities stay dormant until a `.dark` class
+  // is added to an ancestor (no such class is rendered today, so nothing changes
+  // visually). Keeps Analytics dark-theme ready without forcing a theme switch.
+  darkMode: "class",
   theme: {
     extend: {
       colors: {

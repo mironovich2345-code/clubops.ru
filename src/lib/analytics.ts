@@ -35,7 +35,14 @@ const WEEKDAY_FULL_MON_FIRST = [
 // caller from effective roles; these helpers never widen it.
 // ---------------------------------------------------------------------------
 
-export type AnalyticsPeriodKey = "current_month" | "previous_month" | "custom" | "week" | "year";
+export type AnalyticsPeriodKey =
+  | "current_week"
+  | "previous_week"
+  | "current_month"
+  | "previous_month"
+  | "current_year"
+  | "previous_year"
+  | "custom";
 
 export type ResolvedPeriod = {
   key: AnalyticsPeriodKey;
@@ -62,6 +69,16 @@ function monthsBetween(start: Date, end: Date): string[] {
   return out.length ? out : [monthStr(start)];
 }
 
+/** Monday-00:00 of the calendar week containing `d` (local time). */
+function startOfWeek(d: Date): Date {
+  const offset = (d.getDay() + 6) % 7; // days since Monday (Mon=0 … Sun=6)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - offset);
+}
+
+function buildPeriod(key: AnalyticsPeriodKey, label: string, start: Date, end: Date, prevStart: Date): ResolvedPeriod {
+  return { key, label, start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+}
+
 export function resolvePeriod(
   key: AnalyticsPeriodKey,
   now: Date,
@@ -70,38 +87,40 @@ export function resolvePeriod(
 ): ResolvedPeriod {
   const y = now.getFullYear();
   const m = now.getMonth();
+  const WEEK = 7 * 24 * 60 * 60 * 1000;
+
+  if (key === "current_week") {
+    const start = startOfWeek(now);
+    const end = new Date(start.getTime() + WEEK);
+    return buildPeriod(key, "Текущая неделя", start, end, new Date(start.getTime() - WEEK));
+  }
+  if (key === "previous_week") {
+    const cur = startOfWeek(now);
+    const start = new Date(cur.getTime() - WEEK);
+    return buildPeriod(key, "Прошлая неделя", start, cur, new Date(start.getTime() - WEEK));
+  }
   if (key === "previous_month") {
     const start = new Date(y, m - 1, 1);
-    const end = new Date(y, m, 1);
-    const prevStart = new Date(y, m - 2, 1);
-    return { key, label: "Прошлый месяц", start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+    return buildPeriod(key, "Прошлый месяц", start, new Date(y, m, 1), new Date(y, m - 2, 1));
   }
-  if (key === "week") {
-    // Rolling last 7 days (including today); previous 7 days for comparison.
-    const start = new Date(y, m, now.getDate() - 6);
-    const end = new Date(y, m, now.getDate() + 1);
-    const prevStart = new Date(y, m, now.getDate() - 13);
-    return { key, label: "Последние 7 дней", start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
-  }
-  if (key === "year") {
+  if (key === "current_year") {
     const start = new Date(y, 0, 1);
-    const end = new Date(y + 1, 0, 1);
-    const prevStart = new Date(y - 1, 0, 1);
-    return { key, label: String(y), start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+    return buildPeriod(key, "Текущий год", start, new Date(y + 1, 0, 1), new Date(y - 1, 0, 1));
+  }
+  if (key === "previous_year") {
+    const start = new Date(y - 1, 0, 1);
+    return buildPeriod(key, "Прошлый год", start, new Date(y, 0, 1), new Date(y - 2, 0, 1));
   }
   if (key === "custom" && from && to) {
     const start = new Date(from.getFullYear(), from.getMonth(), from.getDate());
     const end = new Date(to.getFullYear(), to.getMonth(), to.getDate() + 1); // inclusive `to`
     const span = end.getTime() - start.getTime();
-    const prevEnd = start;
     const prevStart = new Date(start.getTime() - span);
-    return { key, label: "Период", start, end, prevStart, prevEnd, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+    return { key, label: "Произвольный период", start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
   }
   // current_month (default)
   const start = new Date(y, m, 1);
-  const end = new Date(y, m + 1, 1);
-  const prevStart = new Date(y, m - 1, 1);
-  return { key: "current_month", label: "Текущий месяц", start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+  return buildPeriod("current_month", "Текущий месяц", start, new Date(y, m + 1, 1), new Date(y, m - 1, 1));
 }
 
 // --- raw data --------------------------------------------------------------
@@ -241,6 +260,10 @@ export type ExecutiveSummary = {
   budgetTotalKopeks: number; // план расходов (лимит бюджета за период); 0 если не задан
   profitKopeks: number;
   prevProfitKopeks: number;
+  // Previous-period facts for the small KPI trend deltas (same windows).
+  prevSubscriptionsKopeks: number;
+  prevPersonalTrainingKopeks: number;
+  prevExpensesKopeks: number;
   planTargetKopeks: number;
   planPercent: number | null;
   cashOooRemainingKopeks: number;
@@ -477,6 +500,9 @@ export function buildAnalyticsReport(
   const splitInPeriod = data.reportSplit.filter((r) => inRange(r.date, period.start, period.end));
   const subscriptionsKopeks = splitInPeriod.reduce((s, r) => s + r.subscriptions, 0);
   const personalTrainingKopeks = splitInPeriod.reduce((s, r) => s + r.personal_training, 0);
+  const splitInPrev = data.reportSplit.filter((r) => inRange(r.date, period.prevStart, period.prevEnd));
+  const prevSubscriptionsKopeks = splitInPrev.reduce((s, r) => s + r.subscriptions, 0);
+  const prevPersonalTrainingKopeks = splitInPrev.reduce((s, r) => s + r.personal_training, 0);
   // План расходов = сумма лимитов бюджета за месяцы периода (по разрешённым
   // категориям, если задано ограничение для маркетолога).
   const budgetTotalKopeks = (allowed ? data.budgets.filter((b) => allowed.has(b.category)) : data.budgets)
@@ -489,6 +515,9 @@ export function buildAnalyticsReport(
     budgetTotalKopeks,
     profitKopeks: curSales - curSpend,
     prevProfitKopeks: prevSales - prevSpend,
+    prevSubscriptionsKopeks,
+    prevPersonalTrainingKopeks,
+    prevExpensesKopeks: prevSpend,
     planTargetKopeks,
     planPercent: planTargetKopeks > 0 ? (curSales / planTargetKopeks) * 100 : null,
     cashOooRemainingKopeks,
