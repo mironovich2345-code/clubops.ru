@@ -89,6 +89,11 @@ export default async function AnalyticsPage({
     : "current_month";
   const now = new Date();
   const period = resolvePeriod(periodKey, now, parseDate(sp.from), parseDate(sp.to));
+  // Local-date bounds for the expense drilldown links (exclusive end), matching
+  // the analytics period exactly.
+  const isoLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const drillFrom = isoLocal(period.start);
+  const drillTo = isoLocal(period.end);
   const granularity: TrendGranularity = GRANS.some((g) => g.key === sp.g)
     ? (sp.g as TrendGranularity)
     : period.months.length > 2
@@ -215,7 +220,7 @@ export default async function AnalyticsPage({
       ) : null}
 
       {/* Block 8: top expenses (financial roles) */}
-      {financials ? <TopExpensesBlock rows={report.topExpenses} /> : null}
+      {financials ? <TopExpensesBlock rows={report.topExpenses} from={drillFrom} to={drillTo} /> : null}
 
       {/* Block 9: critical zones (financial roles, or advertising/plan for marketer) */}
       {financials || marketerOnly ? <CriticalZonesBlock zones={report.criticalZones} /> : null}
@@ -503,10 +508,11 @@ function BestBadge({ text }: { text: string }) {
   );
 }
 
-function TopExpensesBlock({ rows }: { rows: TopExpenseRow[] }) {
+function TopExpensesBlock({ rows, from, to }: { rows: TopExpenseRow[]; from: string; to: string }) {
+  const href = (category: string) => `/analytics/expenses?category=${encodeURIComponent(category)}&from=${from}&to=${to}`;
   return (
     <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <SectionHeader title="Топ расходов по статьям" />
+      <SectionHeader title="Топ расходов по статьям" right={<span className="text-xs text-slate-400">Нажмите статью для детализации</span>} />
       {rows.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-slate-500">Расходов за период нет.</div>
       ) : (
@@ -522,7 +528,9 @@ function TopExpensesBlock({ rows }: { rows: TopExpenseRow[] }) {
           <tbody className="divide-y divide-slate-100 bg-white">
             {rows.map((r) => (
               <tr key={r.category} className="hover:bg-slate-50">
-                <Td className="font-medium text-slate-900">{r.label}</Td>
+                <Td className="font-medium text-slate-900">
+                  <Link href={href(r.category)} className="text-brand-700 hover:text-brand-800 hover:underline">{r.label}</Link>
+                </Td>
                 <Td className="text-right">{formatKopeks(r.amountKopeks)}</Td>
                 <Td className="text-right text-slate-600">{r.sharePercent.toFixed(0)}%</Td>
                 <Td className="w-40">
