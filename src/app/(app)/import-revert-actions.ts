@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canCreateOperational } from "@/lib/auth";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { revertImportBatchRows } from "@/lib/import-batches";
+import { isMonthClosed, monthKeyOf, MONTH_CLOSED_ERROR } from "@/lib/month-close";
 
 export type RevertState = { ok: boolean; error?: string; reverted?: number; kept?: number };
 
@@ -47,6 +48,15 @@ export async function revertImportBatch(
     return { ok: false, error: "Этот импорт уже отменён" };
   }
 
+  // A revert mutates the imported rows — block it if any of their months are
+  // closed.
+  const rowDates = await loadBatchRowDates(batch.id, batch.type);
+  for (const d of rowDates) {
+    if (await isMonthClosed(batch.companyId, d.clubId, monthKeyOf(d.date))) {
+      return { ok: false, error: MONTH_CLOSED_ERROR };
+    }
+  }
+
   try {
     const { reverted, kept } = await revertImportBatchRows(batch.id, batch.type);
     await prisma.importBatch.update({
@@ -76,4 +86,18 @@ export async function revertImportBatch(
     });
     return { ok: false, error: "Не удалось отменить импорт" };
   }
+}
+
+/** (clubId, date) of every row a batch created — for the month-closed check. */
+async function loadBatchRowDates(batchId: string, type: string): Promise<Array<{ clubId: string; date: Date }>> {
+  if (type === "expenses") {
+    const rows = await prisma.expense.findMany({ where: { importBatchId: batchId }, select: { clubId: true, expenseDate: true } });
+    return rows.map((r) => ({ clubId: r.clubId, date: r.expenseDate }));
+  }
+  if (type === "invoices") {
+    const rows = await prisma.invoice.findMany({ where: { importBatchId: batchId }, select: { clubId: true, invoiceDate: true, createdAt: true } });
+    return rows.map((r) => ({ clubId: r.clubId, date: r.invoiceDate ?? r.createdAt }));
+  }
+  const rows = await prisma.salesReport.findMany({ where: { importBatchId: batchId }, select: { clubId: true, reportDate: true } });
+  return rows.map((r) => ({ clubId: r.clubId, date: r.reportDate }));
 }

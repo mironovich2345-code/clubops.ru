@@ -18,6 +18,7 @@ import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 import { HistoricalInvoiceForm } from "./_components/HistoricalInvoiceForm";
+import { BulkCancelInvoices } from "./_components/BulkCancelInvoices";
 import { ExcelImportPanel } from "@/components/ExcelImportPanel";
 import { importInvoices } from "./invoice-import-actions";
 import { revertImportBatch } from "../import-revert-actions";
@@ -53,9 +54,14 @@ export default async function InvoicesPage() {
     getCurrentAccessContext(),
   ]);
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
+  const canCancelInv = ctx
+    ? ctx.effectiveRoles.some((r) => ["manager", "regional_director", "general_director", "owner", "accountant"].includes(r))
+    : false;
   const lastImport = canCreate && ctx
     ? await getLastImportBatch(scope.company.id, "invoices", scope.clubIds, ctx.user.id)
     : null;
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null }>> = {};
   if (canCreate) {
@@ -108,6 +114,16 @@ export default async function InvoicesPage() {
             Нет доступных клубов для создания счёта.
           </div>
         )
+      ) : null}
+
+      {/* Monthly bulk cancel (manager / regional / GD / owner / accountant) */}
+      {canCancelInv && clubs.length > 0 ? (
+        <BulkCancelInvoices
+          clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
+          categories={EXPENSE_CATEGORY_OPTIONS}
+          defaultClubId={scope.club?.id ?? clubs[0].id}
+          defaultMonth={defaultMonth}
+        />
       ) : null}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

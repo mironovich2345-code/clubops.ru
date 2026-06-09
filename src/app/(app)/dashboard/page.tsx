@@ -23,6 +23,8 @@ import { getSalesPlan, getSalesPlansForCompanyMonth, getConfirmedReportFactTotal
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { SalesPlanForm } from "./_components/SalesPlanForm";
 import { SalesPlanImport } from "./_components/SalesPlanImport";
+import { MonthCloseBlock } from "./_components/MonthCloseBlock";
+import { getMonthCloseInfo } from "@/lib/month-close";
 import { profitSummary, clubRanking, type ClubRankRow } from "@/lib/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +51,7 @@ function planTone(pct: number | null): string {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ month?: string; closeMonth?: string }>;
 }) {
   const user = await requirePageAccess("dashboard");
 
@@ -62,8 +64,11 @@ export default async function DashboardPage({
   const planMonth = monthKey(now);
   // The plan/fact split honours a selected month (?month=YYYY-MM); the rest of
   // the dashboard stays on the current month.
-  const { month: monthParam } = await searchParams;
+  const { month: monthParam, closeMonth: closeMonthParam } = await searchParams;
   const selectedPlanMonth = normalizeMonth(monthParam ?? "") ?? planMonth;
+  // Month-close management defaults to the previous month (the one you close).
+  const prevMonthKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  const manageMonth = normalizeMonth(closeMonthParam ?? "") ?? prevMonthKey;
 
   const [clubs, invoices, expenses, sales, refunds, ctx, salesPlan, planRows, splitPlanRows, splitFactTotals, budgets, budgetRequests, reportRevenue, pendingReports, reportCashControl] =
     await Promise.all([
@@ -91,6 +96,12 @@ export default async function DashboardPage({
   const marketerOnly = roles.includes("marketer") && !financials;
   const canEditPlan = canManageSalesPlans(roles);
   const planScopeLabel = scope.club ? scope.club.name : "вся компания";
+
+  // Month-close status block (Part 6).
+  const canCloseMonth = roles.some((r) => r === "accountant" || r === "general_director" || r === "owner");
+  const canReopenMonth = roles.some((r) => r === "general_director" || r === "owner");
+  const monthInfo = await getMonthCloseInfo(scope.company.id, null, manageMonth);
+  const manageMonthLabel = monthFormatter.format(new Date(`${manageMonth}-01T00:00:00`));
 
   // Realized expenses = confirmed expenses + paid invoices + paid refunds.
   const expenseEvents = [
@@ -254,6 +265,17 @@ export default async function DashboardPage({
   return (
     <div>
       <PageHeader title="Дашборд" description={`Состояние бизнеса · ${monthFormatter.format(now)}`} />
+
+      {/* Статус месяца (закрытие/открытие) */}
+      <MonthCloseBlock
+        month={manageMonth}
+        monthLabel={manageMonthLabel}
+        status={monthInfo.status}
+        closedByName={monthInfo.closedByName}
+        closedAt={monthInfo.closedAt ? monthInfo.closedAt.toISOString() : null}
+        canClose={canCloseMonth}
+        canReopen={canReopenMonth}
+      />
 
       {/* Block 1: главные показатели */}
       <div className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">

@@ -108,6 +108,21 @@ export function cashOooRemaining(cashOooKopeks: number, encashmentKopeks: number
   return cashOooKopeks - encashmentKopeks;
 }
 
+/**
+ * Cash reconciliation: наличные ООО − инкассация − изъятие. A non-negative
+ * remainder means collection + withdrawals do not exceed the cash on hand
+ * (сверка пройдена); a negative remainder flags a discrepancy. Advisory only —
+ * never blocks confirmation.
+ */
+export function cashReconciliation(opts: {
+  cashOooKopeks: number;
+  encashmentKopeks: number;
+  withdrawalKopeks: number;
+}): { remainingKopeks: number; ok: boolean } {
+  const remainingKopeks = opts.cashOooKopeks - opts.encashmentKopeks - opts.withdrawalKopeks;
+  return { remainingKopeks, ok: remainingKopeks >= 0 };
+}
+
 // Document types for sales-report attachments. Structured so the accountant can
 // see, per report, what supporting documents are present vs missing.
 export const SALES_REPORT_DOC_TYPES: ReadonlyArray<{ key: string; label: string }> = [

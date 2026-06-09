@@ -11,6 +11,7 @@ import {
   salesReportWarnings,
   linesToMap,
   cashOooRemaining,
+  cashReconciliation,
   SALES_REPORT_ROWS,
   REPORT_SECTIONS,
   CALC_HINT,
@@ -56,6 +57,7 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
   const withdrawal = byKey[WITHDRAWAL_KEY] ?? 0;
   const revenueOoo = byKey[REVENUE_OOO_KEY] ?? 0;
   const revenueIp = byKey[REVENUE_IP_KEY] ?? 0;
+  const recon = cashReconciliation({ cashOooKopeks: cashOoo, encashmentKopeks: encashment, withdrawalKopeks: withdrawal });
   const encashmentDoc = report.documents.find((d) => d.type === "encashment");
   // Count attached documents per type for the grouped display + warnings.
   const docsByType = new Map<string, typeof report.documents>();
@@ -124,6 +126,26 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
           </ul>
         </div>
       ) : null}
+
+      {/* Контроль наличности — сверка (Part 8) */}
+      <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Контроль наличности
+        </div>
+        <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-4">
+          <CashCell label="Общая выручка" value={formatKopeks(byKey[REVENUE_LINE_KEY] ?? 0)} />
+          <CashCell label="Инкассация" value={formatKopeks(encashment)} />
+          <CashCell label="Изъятия" value={formatKopeks(withdrawal)} />
+          <CashCell
+            label="Остаток наличности"
+            value={formatKopeks(recon.remainingKopeks)}
+            accent={recon.ok ? "text-emerald-700" : "text-rose-700"}
+          />
+        </div>
+        <div className={`border-t px-4 py-2 text-sm font-medium ${recon.ok ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>
+          {recon.ok ? "✓ Сверка пройдена" : "⚠ Есть расхождение по наличности"}
+        </div>
+      </div>
 
       {/* Контроль наличности ООО */}
       <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

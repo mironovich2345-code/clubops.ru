@@ -29,6 +29,7 @@ import {
   loadInvoiceDupKeys,
   invoiceDupKey,
 } from "@/lib/import-batches";
+import { makeMonthCloseChecker, MONTH_CLOSED_ERROR } from "@/lib/month-close";
 
 const COLUMNS: ColumnSpec[] = [
   { key: "invoiceDate", headers: ["Дата счёта", "Дата"], required: true },
@@ -121,6 +122,7 @@ export async function importInvoices(
   const clubs = await getClubsInScope(scope);
 
   const result = newSummary();
+  const isClosed = makeMonthCloseChecker(companyId);
   const entityListCache = new Map<string, Awaited<ReturnType<typeof getClubLegalEntities>>>();
   // Part 3: existing + in-file invoice duplicate keys.
   const dupKeys = await loadInvoiceDupKeys(companyId, scope.clubIds);
@@ -167,6 +169,10 @@ export async function importInvoices(
     const invoiceDate = parseDateCell(at("invoiceDate"));
     if (!invoiceDate) {
       result.errors.push({ row: rowNo, club: club.name, field: "Дата счёта", issue: "Неверный формат даты" });
+      continue;
+    }
+    if (await isClosed(club.id, invoiceDate)) {
+      result.errors.push({ row: rowNo, club: club.name, field: "Месяц", issue: MONTH_CLOSED_ERROR });
       continue;
     }
     let dueDate: Date | null = null;

@@ -17,6 +17,8 @@ import {
   type InvoiceAction,
 } from "@/lib/invoices";
 import { getClubLegalEntities } from "@/lib/legal-entities";
+import { monthClosedError, isMonthClosed, MONTH_CLOSED_ERROR } from "@/lib/month-close";
+import type { Role } from "@/lib/auth";
 import {
   analyzeInvoiceDocument,
   type InvoiceExtraction,
@@ -256,6 +258,9 @@ export async function saveInvoice(
   const parsed = parseInvoiceFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
+  const closed = await monthClosedError(companyId, clubId, parsed.data.invoiceDate ?? new Date());
+  if (closed) return { ok: false, error: closed };
+
   // Legal entity: only honour one that is attached to this club.
   let legalEntityId: string | null = null;
   const requestedEntityId = str(formData, "legalEntityId");
@@ -337,6 +342,9 @@ export async function saveHistoricalInvoice(
   const paidAt = parseDate(str(formData, "paidDate"));
   if (!paidAt) return { ok: false, error: "Укажите дату оплаты" };
 
+  const closedHist = await monthClosedError(companyId, clubId, invoiceDate);
+  if (closedHist) return { ok: false, error: closedHist };
+
   let legalEntityId: string | null = null;
   const requestedEntityId = str(formData, "legalEntityId");
   if (requestedEntityId) {
@@ -406,6 +414,8 @@ export async function updateInvoice(
   if (!canEditInvoice(existing.status, ctx.effectiveRoles)) {
     return { ok: false, error: "Оплаченный счёт может редактировать только владелец или бухгалтер" };
   }
+  const closedEdit = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
+  if (closedEdit) return { ok: false, error: closedEdit };
 
   const parsed = parseInvoiceFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
@@ -426,6 +436,166 @@ export async function updateInvoice(
   return { ok: true, invoiceId };
 }
 
+// --- cancellation (soft) ----------------------------------------------------
+
+// Cancel: manager / regional / general_director / owner / accountant. Marketer denied.
+function canCancelInvoiceRole(roles: readonly Role[]): boolean {
+  return roles.some((r) => r === "manager" || r === "regional_director" || r === "general_director" || r === "owner" || r === "accountant");
+}
+// A plain manager (no higher role) may not cancel a PAID invoice.
+function isManagerOnly(roles: readonly Role[]): boolean {
+  return roles.includes("manager") && !roles.some((r) => r === "regional_director" || r === "general_director" || r === "owner" || r === "accountant");
+}
+
+const INVOICE_CANCELABLE = ["draft", "needs_review", "approved_by_regional", "approved_by_owner", "paid"];
+const INVOICE_BULK_ACTIVE = ["needs_review", "approved_by_regional", "approved_by_owner", "paid"];
+
+type CancelState = { ok: boolean; error?: string };
+
+function revalidateInvoiceFinancial() {
+  revalidatePath("/invoices");
+  revalidatePath("/dashboard");
+  revalidatePath("/budgets");
+  revalidatePath("/analytics");
+}
+
+/** Soft-cancel a single invoice (status -> canceled). Scoped to company +
+ * allowed clubs; managers may only cancel unpaid invoices in their own club. */
+export async function cancelInvoice(
+  _prev: CancelState | undefined,
+  formData: FormData,
+): Promise<CancelState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) return { ok: false, error: "Нет доступа" };
+  if (!canCancelInvoiceRole(ctx.effectiveRoles)) return { ok: false, error: "Недостаточно прав для отмены счёта" };
+
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  const existing = await getInvoiceForContext(ctx, invoiceId);
+  if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
+
+  if (!INVOICE_CANCELABLE.includes(existing.status)) {
+    return { ok: false, error: "Этот счёт нельзя отменить" };
+  }
+  if (isManagerOnly(ctx.effectiveRoles) && existing.status === "paid") {
+    return { ok: false, error: "Управляющий не может отменить оплаченный счёт" };
+  }
+  const closed = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
+  if (closed) return { ok: false, error: closed };
+
+  await prisma.invoice.update({ where: { id: existing.id }, data: { status: "canceled" } });
+  await recordAudit({
+    action: "invoice.canceled",
+    entityType: "Invoice",
+    entityId: existing.id,
+    companyId: existing.companyId,
+    clubId: existing.clubId,
+    userId: ctx.user.id,
+    metadata: { prevStatus: existing.status, amountKopeks: existing.amountKopeks, reason },
+  });
+
+  revalidateInvoiceFinancial();
+  revalidatePath(`/invoices/${existing.id}`);
+  return { ok: true };
+}
+
+// --- monthly bulk cancel ----------------------------------------------------
+
+type BulkState = { ok: boolean; error?: string; count?: number; totalKopeks?: number; done?: boolean };
+
+function monthRangeDatesInv(month: string): { start: Date; end: Date } | null {
+  const m = month.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  return { start: new Date(Number(m[1]), Number(m[2]) - 1, 1), end: new Date(Number(m[1]), Number(m[2]), 1) };
+}
+
+type BulkWhereInv =
+  | { error: string }
+  | { where: import("@prisma/client").Prisma.InvoiceWhereInput; month: string; clubId: string; category: string | null };
+
+async function buildInvoiceBulkWhere(
+  ctx: NonNullable<Awaited<ReturnType<typeof getCurrentAccessContext>>>,
+  formData: FormData,
+): Promise<BulkWhereInv> {
+  const month = String(formData.get("month") ?? "").trim();
+  const clubId = String(formData.get("clubId") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim();
+  const range = monthRangeDatesInv(month);
+  if (!range) return { error: "Укажите месяц в формате ГГГГ-ММ" };
+  if (!clubId) return { error: "Выберите клуб" };
+  if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
+    return { error: "Нет доступа к выбранному клубу" };
+  }
+  // Active invoices in the month (by invoiceDate, fallback createdAt).
+  const active = isManagerOnly(ctx.effectiveRoles)
+    ? INVOICE_BULK_ACTIVE.filter((s) => s !== "paid")
+    : INVOICE_BULK_ACTIVE;
+  const where: import("@prisma/client").Prisma.InvoiceWhereInput = {
+    companyId: ctx.selectedCompanyId!,
+    clubId,
+    status: { in: active },
+    OR: [{ invoiceDate: { gte: range.start, lt: range.end } }, { invoiceDate: null, createdAt: { gte: range.start, lt: range.end } }],
+    ...(category ? { expenseCategory: category } : {}),
+  };
+  return { where, month, clubId, category: category || null };
+}
+
+export async function previewBulkCancelInvoices(
+  _prev: BulkState | undefined,
+  formData: FormData,
+): Promise<BulkState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !ctx.selectedCompanyId || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCancelInvoiceRole(ctx.effectiveRoles)) return { ok: false, error: "Недостаточно прав" };
+  const built = await buildInvoiceBulkWhere(ctx, formData);
+  if ("error" in built) return { ok: false, error: built.error };
+  const agg = await prisma.invoice.aggregate({ where: built.where, _count: true, _sum: { amountKopeks: true } });
+  return { ok: true, count: agg._count, totalKopeks: agg._sum.amountKopeks ?? 0 };
+}
+
+export async function cancelInvoicesForMonth(
+  _prev: BulkState | undefined,
+  formData: FormData,
+): Promise<BulkState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !ctx.selectedCompanyId || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCancelInvoiceRole(ctx.effectiveRoles)) {
+    return { ok: false, error: "Недостаточно прав для массовой отмены" };
+  }
+  if (String(formData.get("confirm") ?? "").trim() !== "ОТМЕНИТЬ") {
+    return { ok: false, error: "Введите ОТМЕНИТЬ заглавными буквами для подтверждения" };
+  }
+  const built = await buildInvoiceBulkWhere(ctx, formData);
+  if ("error" in built) return { ok: false, error: built.error };
+
+  if (await isMonthClosed(ctx.selectedCompanyId, built.clubId, built.month)) {
+    return { ok: false, error: MONTH_CLOSED_ERROR };
+  }
+
+  const matches = await prisma.invoice.findMany({ where: built.where, select: { id: true, amountKopeks: true } });
+  if (matches.length === 0) return { ok: true, count: 0, totalKopeks: 0, done: true };
+  const ids = matches.map((m) => m.id);
+  const totalKopeks = matches.reduce((s, m) => s + m.amountKopeks, 0);
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+
+  await prisma.invoice.updateMany({ where: { id: { in: ids } }, data: { status: "canceled" } });
+  await recordAudit({
+    action: "invoice.bulk_canceled",
+    entityType: "Invoice",
+    companyId: ctx.selectedCompanyId,
+    clubId: built.clubId,
+    userId: ctx.user.id,
+    metadata: { month: built.month, clubId: built.clubId, category: built.category, count: ids.length, totalAmount: totalKopeks, reason },
+  });
+
+  revalidateInvoiceFinancial();
+  return { ok: true, count: ids.length, totalKopeks, done: true };
+}
+
 export async function transitionInvoice(formData: FormData): Promise<void> {
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
@@ -438,6 +608,9 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
 
   const existing = await getInvoiceForContext(ctx, invoiceId);
   if (!existing) throw new Error("Счёт не найден или нет доступа");
+
+  const closedTx = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
+  if (closedTx) throw new Error(closedTx);
 
   const result = applyInvoiceAction(action, existing.status, ctx.effectiveRoles);
   if (!result.ok) throw new Error(result.error);

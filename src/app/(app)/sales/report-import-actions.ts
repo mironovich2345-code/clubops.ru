@@ -30,6 +30,7 @@ import {
   type ColumnSpec,
 } from "@/lib/excel-import";
 import { fileSha256, findDuplicateFileBatch, createImportBatch, finalizeImportBatch } from "@/lib/import-batches";
+import { makeMonthCloseChecker, MONTH_CLOSED_ERROR } from "@/lib/month-close";
 
 const ACTIVE_REPORT_STATUSES = ["pending_accountant", "confirmed"];
 
@@ -122,6 +123,7 @@ export async function importSalesReports(
   const clubs = await getClubsInScope(scope); // scope-restricted (no cross-club / cross-company)
 
   const result = newSummary();
+  const isClosed = makeMonthCloseChecker(companyId);
   const seen = new Set<string>(); // clubId|day within this file
   const entityCache = new Map<string, { ooo: string | null; ip: string | null }>();
   const batchId = await createImportBatch({
@@ -155,6 +157,10 @@ export async function importSalesReports(
     const reportDate = parseDateCell(at("reportDate"));
     if (!reportDate) {
       result.errors.push({ row: rowNo, club: club.name, field: "Дата отчёта", issue: "Неверный формат даты" });
+      continue;
+    }
+    if (await isClosed(club.id, reportDate)) {
+      result.errors.push({ row: rowNo, club: club.name, field: "Месяц", issue: MONTH_CLOSED_ERROR });
       continue;
     }
 

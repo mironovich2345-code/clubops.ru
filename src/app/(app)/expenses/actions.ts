@@ -7,6 +7,7 @@ import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import { getExpenseForContext, EXPENSE_STATUS_CANCELED, EXPENSE_ACTIVE_STATUSES, isExpenseCancelable } from "@/lib/expenses";
 import { revertExpenseBatchIfAllInactive } from "@/lib/import-batches";
+import { monthClosedError, isMonthClosed, MONTH_CLOSED_ERROR } from "@/lib/month-close";
 import {
   evaluateExpenseBudget,
   currentMonthKey,
@@ -244,6 +245,9 @@ export async function saveExpense(
   const parsed = parseExpenseFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
+  const closedSave = await monthClosedError(companyId, clubId, parsed.data.expenseDate);
+  if (closedSave) return { ok: false, error: closedSave };
+
   // Legal-entity routing. Cash expenses MUST belong to the club's active ИП
   // (auto-assigned, ООО blocked); non-cash may use any active club entity.
   let legalEntityId: string | null = null;
@@ -364,6 +368,9 @@ export async function updateExpense(
   const existing = await getExpenseForContext(ctx, expenseId);
   if (!existing) return { ok: false, error: "Расход не найден или нет доступа" };
 
+  const closedUpd = await monthClosedError(existing.companyId, existing.clubId, existing.expenseDate);
+  if (closedUpd) return { ok: false, error: closedUpd };
+
   const parsed = parseExpenseFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
@@ -422,6 +429,8 @@ export async function cancelExpense(
   if (!isExpenseCancelable(existing.status)) {
     return { ok: false, error: "Этот расход нельзя отменить" };
   }
+  const closedCancel = await monthClosedError(existing.companyId, existing.clubId, existing.expenseDate);
+  if (closedCancel) return { ok: false, error: closedCancel };
 
   await prisma.budgetApprovalRequest.deleteMany({ where: { sourceType: "expense", sourceId: existing.id, status: "pending" } });
   await prisma.expense.update({ where: { id: existing.id }, data: { status: EXPENSE_STATUS_CANCELED } });
@@ -531,6 +540,9 @@ export async function cancelExpensesForMonth(
   }
   const built = await buildBulkWhere(ctx, formData);
   if ("error" in built) return { ok: false, error: built.error };
+  if (await isMonthClosed(ctx.selectedCompanyId, built.clubId, built.month)) {
+    return { ok: false, error: MONTH_CLOSED_ERROR };
+  }
 
   const matches = await prisma.expense.findMany({ where: built.where, select: { id: true, amountKopeks: true, importBatchId: true } });
   if (matches.length === 0) {

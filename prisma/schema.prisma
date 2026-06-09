@@ -41,6 +41,7 @@ model Company {
   salesPlans    SalesPlan[]
   salesReports  SalesReport[]
   importBatches ImportBatch[]
+  monthCloses   MonthClose[]
 }
 
 model LegalEntity {
@@ -695,6 +696,28 @@ model ImportBatch {
   @@index([type])
   @@index([fileHash])
   @@index([createdByUserId])
+}
+
+// Month closing: once a (company [+ club] + month) is closed, financial changes
+// for that period are blocked server-side. clubId null = company-wide close.
+model MonthClose {
+  id             String    @id @default(cuid())
+  companyId      String
+  clubId         String?
+  month          String // "YYYY-MM"
+  // open | closed
+  status         String    @default("closed")
+  closedByUserId String?
+  closedAt       DateTime?
+  comment        String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, clubId, month])
+  @@index([companyId])
+  @@index([month])
 }
 
 model SalesReportLine {

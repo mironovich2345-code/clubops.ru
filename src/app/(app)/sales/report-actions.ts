@@ -20,6 +20,7 @@ import {
   type SalesReportAction,
 } from "@/lib/sales-reports";
 import { getClubEntityByType } from "@/lib/legal-entities";
+import { monthClosedError } from "@/lib/month-close";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { validateReportFile, storeReportFile, MAX_REPORT_FILES } from "@/lib/sales-report-storage";
 
@@ -74,6 +75,9 @@ export async function createSalesReport(
   }
   const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
   if (!club || club.companyId !== ctx.selectedCompanyId) return { ok: false, error: "Клуб не найден" };
+
+  const closed = await monthClosedError(club.companyId, clubId, reportDate!);
+  if (closed) return { ok: false, error: closed };
 
   // One active report per club+date (a rejected/canceled report does not block a
   // new one). Day window is computed in UTC to match the date parse above.
@@ -159,6 +163,8 @@ export async function uploadSalesReportDocuments(formData: FormData): Promise<vo
   if (!canEditReport(report.status, ctx.effectiveRoles, isCreator)) {
     throw new Error("Загружать документы можно только в свой отчёт на проверке");
   }
+  const closedDoc = await monthClosedError(report.companyId, report.clubId, report.reportDate);
+  if (closedDoc) throw new Error(closedDoc);
 
   const docTypeRaw = String(formData.get("docType") ?? "other");
   const docType = SALES_REPORT_DOC_TYPE_KEYS.includes(docTypeRaw) ? docTypeRaw : "other";
@@ -231,6 +237,8 @@ export async function uploadSalesReportDocSlots(formData: FormData): Promise<voi
   if (!canEditReport(report.status, ctx.effectiveRoles, isCreator)) {
     throw new Error("Загружать документы можно только в свой отчёт на проверке");
   }
+  const closedSlots = await monthClosedError(report.companyId, report.clubId, report.reportDate);
+  if (closedSlots) throw new Error(closedSlots);
 
   // Gather files per slot (typed by the input name suffix).
   const slots: Array<{ type: string; files: UploadedFile[] }> = [];
@@ -297,6 +305,9 @@ export async function transitionSalesReport(formData: FormData): Promise<void> {
 
   const report = await getSalesReportForContext(ctx, reportId);
   if (!report) throw new Error("Отчёт не найден или нет доступа");
+
+  const closedTransition = await monthClosedError(report.companyId, report.clubId, report.reportDate);
+  if (closedTransition) throw new Error(closedTransition);
 
   const isCreator = report.createdByUserId === ctx.user.id;
   const result = applySalesReportAction(action, report.status, ctx.effectiveRoles, isCreator);

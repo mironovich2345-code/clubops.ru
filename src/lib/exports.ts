@@ -131,7 +131,9 @@ export async function buildInvoicesExport(companyId: string, clubIds: string[], 
       companyId,
       clubId: { in: clubIds },
       OR: [{ invoiceDate: { gte: start, lt: end } }, { invoiceDate: null, createdAt: { gte: start, lt: end } }],
-      ...(opts.status ? { status: opts.status } : {}),
+      // Default export excludes canceled invoices; an explicit status filter
+      // (e.g. status=canceled) can still include them.
+      ...(opts.status ? { status: opts.status } : { status: { not: "canceled" } }),
     },
     orderBy: { createdAt: "desc" },
     include: { club: { select: { name: true } }, createdBy: { select: { name: true } }, legalEntity: { select: { name: true } } },

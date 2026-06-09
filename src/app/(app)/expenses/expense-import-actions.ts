@@ -30,6 +30,7 @@ import {
   loadExpenseDupKeys,
   expenseDupKey,
 } from "@/lib/import-batches";
+import { makeMonthCloseChecker, MONTH_CLOSED_ERROR } from "@/lib/month-close";
 
 const COLUMNS: ColumnSpec[] = [
   { key: "date", headers: ["Дата"], required: true },
@@ -125,6 +126,7 @@ export async function importExpenses(
 
   const result = newSummary();
   let budgetPending = 0;
+  const isClosed = makeMonthCloseChecker(companyId);
   const entityListCache = new Map<string, Awaited<ReturnType<typeof getClubLegalEntities>>>();
   const ipCache = new Map<string, string | null>();
   // Part 3: existing + in-file expense duplicate keys.
@@ -159,6 +161,10 @@ export async function importExpenses(
     const expenseDate = parseDateCell(at("date"));
     if (!expenseDate) {
       result.errors.push({ row: rowNo, club: club.name, field: "Дата", issue: "Неверный формат даты" });
+      continue;
+    }
+    if (await isClosed(club.id, expenseDate)) {
+      result.errors.push({ row: rowNo, club: club.name, field: "Месяц", issue: MONTH_CLOSED_ERROR });
       continue;
     }
 
