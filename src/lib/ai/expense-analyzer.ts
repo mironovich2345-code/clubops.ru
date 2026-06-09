@@ -40,7 +40,7 @@ export type ExpenseExtraction = {
 
 export type ExpenseAnalysisInput = { buffer: Buffer; mime: string; fileName: string };
 
-const CATEGORY_KEYS = ["advertising", "household", "builders", "investments", "refunds", "salary", "other"];
+const CATEGORY_KEYS = ["advertising", "household", "builders", "rent", "investments", "refunds", "salary", "other"];
 const KEY_FIELDS: Array<keyof ExpenseExtraction> = ["amount", "expenseCategory"];
 
 function vStr(v: unknown): string | null {
@@ -214,6 +214,7 @@ const SYSTEM_PROMPT =
   "household — хозтовары, пакеты, майка-пакеты, крышки, стаканы, салфетки, бытовая химия, расходники, уборка, " +
   "канцелярия, мелкие товары для клуба/офиса. " +
   "builders — ремонт, стройматериалы, инструменты, подрядчики ремонта, сантехника, электрика. " +
+  "rent — аренда, аренда помещения, арендная плата, аренда оборудования. " +
   "investments — ТОЛЬКО крупные капитальные покупки и долгосрочные активы: тренажёры, оборудование, мебель, " +
   "техника для клуба, крупные вложения. НЕ используй investments для мелких расходников, упаковки, пакетов, " +
   "крышек, канцелярии — это household. " +

@@ -46,6 +46,7 @@ export const EXPENSE_CATEGORY_OPTIONS: ReadonlyArray<{ key: string; label: strin
   { key: "advertising", label: "Реклама" },
   { key: "household", label: "Хозрасходы" },
   { key: "builders", label: "Строители" },
+  { key: "rent", label: "Аренда" },
   { key: "investments", label: "Вложения" },
   { key: "refunds", label: "Возвраты" },
   { key: "salary", label: "Зарплата" },

@@ -41,7 +41,7 @@ export type InvoiceExtraction = {
 export type AnalysisInput = { buffer: Buffer; mime: string; fileName: string };
 
 // Category keys shared with expenses/budgets.
-const CATEGORY_KEYS = ["advertising", "household", "builders", "investments", "refunds", "salary", "other"];
+const CATEGORY_KEYS = ["advertising", "household", "builders", "rent", "investments", "refunds", "salary", "other"];
 
 // Key fields required for high confidence (incl. amount + bank details).
 const KEY_FIELDS: Array<keyof InvoiceExtraction> = [
