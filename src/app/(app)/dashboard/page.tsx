@@ -836,20 +836,42 @@ function PlanSplitCard({
   factKopeks: number;
   percent: number | null;
 }) {
+  const noPlan = planKopeks <= 0;
+  const diff = factKopeks - planKopeks;
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-      <div className="text-xs font-medium text-slate-500">{label}</div>
-      <div className={`mt-1 text-lg font-semibold ${planTone(percent)}`}>
-        {percent === null ? "—" : `${percent.toFixed(0)}%`}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium text-slate-500">{label}</div>
+        <div className={`text-lg font-semibold ${planTone(percent)}`}>{noPlan ? "—" : `${(percent ?? 0).toFixed(0)}%`}</div>
       </div>
-      <div className="mt-1 text-xs text-slate-500">
-        Факт {formatKopeks(factKopeks)} из {formatKopeks(planKopeks)}
-      </div>
-      {planKopeks > 0 ? (
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, percent ?? 0)}%` }} />
+      {noPlan ? (
+        <div className="mt-2 text-xs text-slate-400">
+          план не задан
+          {factKopeks > 0 ? <span className="ml-1 text-slate-500">· факт {formatKopeks(factKopeks)}</span> : null}
         </div>
-      ) : null}
+      ) : (
+        <>
+          <div className="mt-2 grid grid-cols-3 gap-1 text-xs">
+            <div>
+              <div className="text-slate-400">План</div>
+              <div className="font-medium text-slate-700">{formatKopeks(planKopeks)}</div>
+            </div>
+            <div>
+              <div className="text-slate-400">Факт</div>
+              <div className="font-medium text-slate-900">{formatKopeks(factKopeks)}</div>
+            </div>
+            <div>
+              <div className="text-slate-400">Разница</div>
+              <div className={`font-medium ${diff >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                {diff >= 0 ? "+" : "−"}{formatKopeks(Math.abs(diff))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, percent ?? 0)}%` }} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

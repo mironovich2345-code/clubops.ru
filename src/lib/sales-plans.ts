@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getSalesReportFactBreakdown, FACT_BREAKDOWN_KEYS } from "@/lib/sales-report-rows";
 
 // Monthly sales targets (план продаж). A plan is keyed by company + club (null =
 // company-wide) + month ("YYYY-MM"). Only the general director sets them
@@ -87,7 +88,13 @@ function monthBounds(month: string): { start: Date; end: Date } | null {
   return { start: new Date(y, mo, 1), end: new Date(y, mo + 1, 1) };
 }
 
-/** Confirmed-report facts per plan type for a month (total / subscriptions / PT). */
+/**
+ * Confirmed-report facts per plan direction for a month. Uses the shared
+ * breakdown so ИП revenue counts as personal training:
+ *   total            = total_revenue
+ *   subscriptions    = subscriptions_ooo
+ *   personal_training = personal_training_total + revenue_ip
+ */
 export async function getConfirmedReportFactTotals(
   companyId: string,
   clubIds: string[],
@@ -98,14 +105,13 @@ export async function getConfirmedReportFactTotals(
   if (clubIds.length === 0 || !b) return out;
   const reports = await prisma.salesReport.findMany({
     where: { companyId, clubId: { in: clubIds }, status: "confirmed", reportDate: { gte: b.start, lt: b.end } },
-    select: { lines: { where: { key: { in: PLAN_FACT_KEYS } }, select: { key: true, amountKopeks: true } } },
+    select: { lines: { where: { key: { in: FACT_BREAKDOWN_KEYS } }, select: { key: true, amountKopeks: true } } },
   });
   for (const r of reports) {
-    for (const l of r.lines) {
-      if (l.key === "total_revenue") out.total += l.amountKopeks;
-      else if (l.key === "subscriptions_ooo") out.subscriptions += l.amountKopeks;
-      else if (l.key === "personal_training_total") out.personal_training += l.amountKopeks;
-    }
+    const bd = getSalesReportFactBreakdown(r.lines);
+    out.total += bd.totalRevenue;
+    out.subscriptions += bd.subscriptionsRevenue;
+    out.personal_training += bd.personalTrainingRevenue;
   }
   return out;
 }

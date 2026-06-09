@@ -22,6 +22,8 @@ import {
   type ClubRankRow,
   type PlanPerfRow,
   type PlanSplitClubRow,
+  type WeekdayRow,
+  type ManagerRow,
   type TopExpenseRow,
   type CriticalZone,
 } from "@/lib/analytics";
@@ -39,7 +41,10 @@ const GRANS: { key: TrendGranularity; label: string }[] = [
   { key: "month", label: "По месяцам" },
 ];
 
-const FINANCIAL_ROLES = new Set<Role>(["owner", "general_director", "regional_director", "manager", "accountant"]);
+// Financial analytics (expenses, profit, club financial ranking, budgets, top
+// expenses, cash control). A manager is sales-only and a marketer sees
+// sales/plans/advertising — both are excluded here.
+const FINANCIAL_ROLES = new Set<Role>(["owner", "general_director", "regional_director", "accountant"]);
 
 function parseDate(v: string | undefined): Date | undefined {
   if (!v) return undefined;
@@ -137,8 +142,8 @@ export default async function AnalyticsPage({
           value={formatKopeks(report.summary.salesKopeks)}
           sub={report.salesTrend.changePercent === null ? undefined : `${report.salesTrend.changePercent >= 0 ? "+" : ""}${report.salesTrend.changePercent.toFixed(0)}% к прошлому периоду`}
         />
-        {!marketerOnly ? <KpiCard label="Расходы" value={formatKopeks(report.summary.expensesKopeks)} /> : null}
-        {!marketerOnly ? (
+        {financials ? <KpiCard label="Расходы" value={formatKopeks(report.summary.expensesKopeks)} /> : null}
+        {financials ? (
           <KpiCard
             label="Прибыль"
             value={formatKopeks(report.summary.profitKopeks)}
@@ -151,7 +156,7 @@ export default async function AnalyticsPage({
           sub={report.summary.planTargetKopeks > 0 ? `из ${formatKopeks(report.summary.planTargetKopeks)}` : "план не задан"}
           accent={planTone(report.summary.planPercent)}
         />
-        {!marketerOnly ? (
+        {financials ? (
           <KpiCard
             label="Остаток наличности ООО"
             value={formatKopeks(report.summary.cashOooRemainingKopeks)}
@@ -173,39 +178,47 @@ export default async function AnalyticsPage({
         </div>
       ) : null}
 
-      {/* Block 2: sales trend */}
+      {/* Block 2: sales trend (everyone) */}
       <TrendCard title="Динамика продаж" trend={report.salesTrend} noun="Продажи" tone="emerald" />
 
-      {/* Block 3: expense trend */}
-      {!marketerOnly ? (
+      {/* Block 3: expense trend (financial roles) */}
+      {financials ? (
         <TrendCard title="Динамика расходов" trend={report.expenseTrend} noun="Расходы" tone="rose" />
       ) : null}
 
-      {/* Block 4: profit trend */}
-      {!marketerOnly ? (
+      {/* Block 4: profit trend (financial roles) */}
+      {financials ? (
         <TrendCard title="Динамика прибыли" trend={report.profitTrend} noun="Прибыль" tone="brand" />
       ) : null}
 
-      {/* Block 5: club ranking */}
-      {!marketerOnly && multiClub ? <ClubRankingBlock rows={report.clubRanking} /> : null}
+      {/* Block 5: club ranking (financial roles) */}
+      {financials && multiClub ? <ClubRankingBlock rows={report.clubRanking} /> : null}
 
-      {/* Block 6: sales plan performance */}
+      {/* Block 6: sales plan performance (everyone) */}
       <PlanPerformanceBlock rows={report.planPerformance} />
 
-      {/* Block 6b: plan/fact split by type */}
+      {/* Block 6b: plan/fact split by direction (everyone) */}
       <PlanSplitBlock rows={report.planSplitByClub} />
 
-      {/* Block 7: budget performance */}
-      <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <SectionHeader title={marketerOnly ? "Бюджет: реклама" : "Исполнение бюджета"} />
-        <BudgetFactTable rows={report.budgetPerformance} />
-      </div>
+      {/* Block 6c: sales by weekday (everyone) */}
+      <WeekdaySalesBlock rows={report.weekdaySales} />
 
-      {/* Block 8: top expenses */}
-      {!marketerOnly ? <TopExpensesBlock rows={report.topExpenses} /> : null}
+      {/* Block 6d: sales by manager (everyone) */}
+      <ManagerSalesBlock rows={report.managerSales} />
 
-      {/* Block 9: critical zones */}
-      <CriticalZonesBlock zones={report.criticalZones} />
+      {/* Block 7: budget performance (financial roles, or advertising for marketer) */}
+      {financials || marketerOnly ? (
+        <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <SectionHeader title={marketerOnly ? "Бюджет: реклама" : "Исполнение бюджета"} />
+          <BudgetFactTable rows={report.budgetPerformance} />
+        </div>
+      ) : null}
+
+      {/* Block 8: top expenses (financial roles) */}
+      {financials ? <TopExpensesBlock rows={report.topExpenses} /> : null}
+
+      {/* Block 9: critical zones (financial roles, or advertising/plan for marketer) */}
+      {financials || marketerOnly ? <CriticalZonesBlock zones={report.criticalZones} /> : null}
     </div>
   );
 }
@@ -252,7 +265,7 @@ function TrendCard({ title, trend, noun, tone }: { title: string; trend: Trend; 
           </span>
         }
       />
-      <BarChart bars={trend.buckets.map((b) => ({ label: b.label, value: b.valueKopeks }))} tone={tone} />
+      <BarChart bars={trend.buckets.map((b) => ({ label: b.label, subLabel: b.subLabel, value: b.valueKopeks }))} tone={tone} />
       <div className="border-t border-slate-100 px-4 py-2 text-sm text-slate-600">{changeSentence(noun, trend.changePercent)}</div>
     </div>
   );
@@ -382,6 +395,83 @@ function PlanSplitBlock({ rows }: { rows: PlanSplitClubRow[] }) {
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WeekdaySalesBlock({ rows }: { rows: WeekdayRow[] }) {
+  const hasData = rows.some((r) => r.reportCount > 0);
+  return (
+    <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <SectionHeader title="Продажи по дням недели" />
+      {!hasData ? (
+        <div className="px-4 py-10 text-center text-sm text-slate-500">Нет данных за период</div>
+      ) : (
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr>
+              <Th>День недели</Th>
+              <Th className="text-right">Продажи</Th>
+              <Th className="text-right">Средняя выручка дня</Th>
+              <Th className="text-right">Отчётов</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {rows.map((r) => (
+              <tr key={r.weekday} className={r.isBest ? "bg-emerald-50/60" : "hover:bg-slate-50"}>
+                <Td className="font-medium text-slate-900">
+                  {r.isBest ? <span className="mr-1">⭐</span> : null}
+                  {r.label}
+                </Td>
+                <Td className="text-right font-medium text-slate-900">{formatKopeks(r.revenueKopeks)}</Td>
+                <Td className="text-right text-slate-600">{r.reportCount > 0 ? formatKopeks(r.avgPerReportKopeks) : "—"}</Td>
+                <Td className="text-right text-slate-600">{r.reportCount}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function ManagerSalesBlock({ rows }: { rows: ManagerRow[] }) {
+  return (
+    <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <SectionHeader title="Продажи по менеджерам" />
+      {rows.length === 0 ? (
+        <div className="px-4 py-10 text-center text-sm text-slate-500">Нет данных за период</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <Th>Менеджер</Th>
+                <Th className="text-right">Отчётов</Th>
+                <Th className="text-right">Общая выручка</Th>
+                <Th className="text-right">Абонементы</Th>
+                <Th className="text-right">Персональные</Th>
+                <Th className="text-right">Средняя за смену</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {rows.map((r, i) => (
+                <tr key={r.manager} className="hover:bg-slate-50">
+                  <Td className="font-medium text-slate-900">
+                    <span className="mr-1">{i === 0 ? "🥇" : ""}</span>
+                    {r.manager}
+                  </Td>
+                  <Td className="text-right text-slate-600">{r.reportCount}</Td>
+                  <Td className="text-right font-medium text-slate-900">{formatKopeks(r.totalKopeks)}</Td>
+                  <Td className="text-right text-slate-600">{formatKopeks(r.subscriptionsKopeks)}</Td>
+                  <Td className="text-right text-slate-600">{formatKopeks(r.personalTrainingKopeks)}</Td>
+                  <Td className="text-right text-slate-600">{formatKopeks(r.avgPerShiftKopeks)}</Td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

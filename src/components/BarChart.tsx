@@ -1,6 +1,6 @@
-import { formatKopeks } from "@/lib/money";
+import { formatKopeks, formatKopeksShort } from "@/lib/money";
 
-type Bar = { label: string; value: number };
+type Bar = { label: string; subLabel?: string; value: number };
 
 const TONE: Record<string, { pos: string; neg: string }> = {
   brand: { pos: "bg-brand-500", neg: "bg-rose-500" },
@@ -10,8 +10,11 @@ const TONE: Record<string, { pos: string; neg: string }> = {
 };
 
 /**
- * Minimal vertical bar chart (kopeks). Dashboard style, no external library.
- * Supports negative values (e.g. profit) with a centered zero baseline.
+ * Minimal vertical bar chart (kopeks). No external library. Each bar shows its
+ * value label on top, a date label and (when provided) a weekday sub-label
+ * below, and a full-amount tooltip. Supports negatives with a centered zero
+ * baseline. Shows an empty state when there is no data — or when every value is
+ * zero (no meaningless flat zero-line).
  */
 export function BarChart({
   bars,
@@ -22,23 +25,33 @@ export function BarChart({
   tone?: keyof typeof TONE;
   height?: number;
 }) {
-  if (bars.length === 0) {
-    return <div className="px-4 py-8 text-center text-sm text-slate-500">Нет данных за период.</div>;
+  const maxAbs = Math.max(...bars.map((b) => Math.abs(b.value)), 0);
+  if (bars.length === 0 || maxAbs === 0) {
+    return <div className="px-4 py-10 text-center text-sm text-slate-500">Нет данных за период</div>;
   }
   const colors = TONE[tone] ?? TONE.brand;
-  const maxAbs = Math.max(1, ...bars.map((b) => Math.abs(b.value)));
   const hasNeg = bars.some((b) => b.value < 0);
   const half = height / 2;
 
   return (
     <div className="overflow-x-auto px-4 py-4">
-      <div className="flex min-w-full items-end gap-1.5" style={{ minWidth: bars.length * 28 }}>
+      <div className="flex min-w-full items-end gap-1.5" style={{ minWidth: bars.length * 40 }}>
         {bars.map((b, i) => {
           const frac = Math.abs(b.value) / maxAbs;
-          const barPx = Math.max(2, Math.round(frac * (hasNeg ? half : height)));
+          const barPx = Math.max(2, Math.round(frac * (hasNeg ? half : height - 18)));
           const positive = b.value >= 0;
           return (
-            <div key={i} className="flex flex-1 flex-col items-center" title={`${b.label}: ${formatKopeks(b.value)}`}>
+            <div
+              key={i}
+              className="flex flex-1 flex-col items-center"
+              title={`${b.label}${b.subLabel ? " " + b.subLabel : ""}: ${formatKopeks(b.value)}`}
+            >
+              {/* Value label above the bar (compact). */}
+              {!hasNeg ? (
+                <div className="mb-0.5 w-full truncate text-center text-[9px] font-medium text-slate-500">
+                  {b.value > 0 ? formatKopeksShort(b.value) : ""}
+                </div>
+              ) : null}
               <div className="relative w-full" style={{ height }}>
                 {hasNeg ? (
                   <>
@@ -55,7 +68,10 @@ export function BarChart({
                   />
                 )}
               </div>
-              <div className="mt-1 w-full truncate text-center text-[10px] text-slate-400">{b.label}</div>
+              <div className="mt-1 w-full truncate text-center text-[10px] font-medium text-slate-500">{b.label}</div>
+              {b.subLabel ? (
+                <div className="w-full truncate text-center text-[10px] text-slate-400">{b.subLabel}</div>
+              ) : null}
             </div>
           );
         })}

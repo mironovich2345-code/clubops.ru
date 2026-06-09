@@ -4,11 +4,25 @@ import {
   computeBudgetFactReport,
   type BudgetFactReport,
 } from "@/lib/budgets";
-import { REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY } from "@/lib/sales-report-rows";
+import { REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, getSalesReportFactBreakdown } from "@/lib/sales-report-rows";
 
-// Confirmed-report line keys for the plan-type split facts.
+// Confirmed-report line keys for the plan-direction split facts.
 const SUBSCRIPTIONS_KEY = "subscriptions_ooo";
 const PERSONAL_TRAINING_KEY = "personal_training_total";
+const REVENUE_IP_KEY = "revenue_ip";
+
+// Russian short weekday names indexed by Date.getDay() (0 = Sunday).
+const WEEKDAY_SHORT = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+// Full weekday names, Monday-first, for the weekday analytics table.
+const WEEKDAY_FULL_MON_FIRST = [
+  { day: 1, label: "Понедельник" },
+  { day: 2, label: "Вторник" },
+  { day: 3, label: "Среда" },
+  { day: 4, label: "Четверг" },
+  { day: 5, label: "Пятница" },
+  { day: 6, label: "Суббота" },
+  { day: 0, label: "Воскресенье" },
+];
 
 // ---------------------------------------------------------------------------
 // Network analytics. Period-aware aggregation built from settled financial
@@ -89,8 +103,10 @@ export type AnalyticsData = {
   budgets: Array<{ clubId: string; category: string; limitAmountKopeks: number }>;
   plans: Array<{ clubId: string | null; planType: string; targetAmountKopeks: number }>;
   reportCash: Array<{ reportDate: Date; cashOooKopeks: number; encashmentKopeks: number }>;
-  // Per-club confirmed-report facts by plan type (общий / абонементы / персональные).
-  reportSplit: Array<{ clubId: string; date: Date; total: number; subscriptions: number; personal_training: number }>;
+  // Per-report confirmed facts by plan direction (общий / абонементы /
+  // персональные — ИП revenue folded into personal training), plus the manager
+  // and weekday for the by-weekday / by-manager analytics.
+  reportSplit: Array<{ clubId: string; date: Date; managerName: string | null; total: number; subscriptions: number; personal_training: number }>;
   pendingSalesCount: number;
   debtKopeks: number;
 };
@@ -115,7 +131,7 @@ export async function loadAnalyticsData(
     await Promise.all([
       prisma.club.findMany({ where: { id: inClubs }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       prisma.sale.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", saleDate: { gte: lo, lt: hi } }, select: { clubId: true, amountKopeks: true, saleDate: true } }),
-      prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, lines: { where: { key: { in: [REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, SUBSCRIPTIONS_KEY, PERSONAL_TRAINING_KEY] } }, select: { key: true, amountKopeks: true } } } }),
+      prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, managerName: true, lines: { where: { key: { in: [REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, SUBSCRIPTIONS_KEY, PERSONAL_TRAINING_KEY, REVENUE_IP_KEY] } }, select: { key: true, amountKopeks: true } } } }),
       prisma.expense.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", expenseDate: { gte: lo, lt: hi } }, select: { clubId: true, category: true, amountKopeks: true, expenseDate: true, status: true } }),
       prisma.invoice.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, expenseCategory: true, amountKopeks: true, paidAt: true, invoiceDate: true, createdAt: true, status: true } }),
       prisma.refund.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true } }),
@@ -139,13 +155,17 @@ export async function loadAnalyticsData(
     cashOooKopeks: lineOf(r, CASH_OOO_KEY),
     encashmentKopeks: lineOf(r, ENCASHMENT_KEY),
   }));
-  const reportSplit = reports.map((r) => ({
-    clubId: r.clubId,
-    date: r.reportDate,
-    total: lineOf(r, REVENUE_LINE_KEY),
-    subscriptions: lineOf(r, SUBSCRIPTIONS_KEY),
-    personal_training: lineOf(r, PERSONAL_TRAINING_KEY),
-  }));
+  const reportSplit = reports.map((r) => {
+    const bd = getSalesReportFactBreakdown(r.lines);
+    return {
+      clubId: r.clubId,
+      date: r.reportDate,
+      managerName: r.managerName,
+      total: bd.totalRevenue,
+      subscriptions: bd.subscriptionsRevenue,
+      personal_training: bd.personalTrainingRevenue,
+    };
+  });
 
   return {
     clubs,
@@ -209,7 +229,7 @@ export type ExecutiveSummary = {
 
 export type TrendGranularity = "day" | "week" | "month";
 
-export type TrendBucket = { label: string; valueKopeks: number };
+export type TrendBucket = { label: string; subLabel?: string; valueKopeks: number };
 
 export type Trend = {
   buckets: TrendBucket[];
@@ -249,6 +269,24 @@ export type PlanSplitClubRow = {
   personal_training: PlanSplitCell;
 };
 
+export type WeekdayRow = {
+  weekday: number; // Date.getDay()
+  label: string;
+  revenueKopeks: number;
+  reportCount: number;
+  avgPerReportKopeks: number;
+  isBest: boolean;
+};
+
+export type ManagerRow = {
+  manager: string;
+  reportCount: number;
+  totalKopeks: number;
+  subscriptionsKopeks: number;
+  personalTrainingKopeks: number;
+  avgPerShiftKopeks: number;
+};
+
 export type TopExpenseRow = { category: string; label: string; amountKopeks: number; sharePercent: number };
 
 export type CriticalZone = { tone: "red" | "amber"; text: string };
@@ -263,6 +301,8 @@ export type AnalyticsReport = {
   clubRanking: ClubRankRow[];
   planPerformance: PlanPerfRow[];
   planSplitByClub: PlanSplitClubRow[];
+  weekdaySales: WeekdayRow[];
+  managerSales: ManagerRow[];
   budgetPerformance: BudgetFactReport;
   topExpenses: TopExpenseRow[];
   criticalZones: CriticalZone[];
@@ -298,6 +338,7 @@ function makeBuckets(start: Date, end: Date, gran: TrendGranularity): Array<{ la
 function buildTrend(events: SalesEvent[] | SpendEvent[], period: ResolvedPeriod, gran: TrendGranularity): Trend {
   const buckets = makeBuckets(period.start, period.end, gran).map((b) => ({
     label: b.label,
+    subLabel: gran === "day" ? WEEKDAY_SHORT[b.start.getDay()] : undefined,
     valueKopeks: sumInRange(events, b.start, b.end),
   }));
   const currentKopeks = sumInRange(events, period.start, period.end);
@@ -308,6 +349,7 @@ function buildTrend(events: SalesEvent[] | SpendEvent[], period: ResolvedPeriod,
 function buildProfitTrend(sales: SalesEvent[], spend: SpendEvent[], period: ResolvedPeriod, gran: TrendGranularity): Trend {
   const buckets = makeBuckets(period.start, period.end, gran).map((b) => ({
     label: b.label,
+    subLabel: gran === "day" ? WEEKDAY_SHORT[b.start.getDay()] : undefined,
     valueKopeks: sumInRange(sales, b.start, b.end) - sumInRange(spend, b.start, b.end),
   }));
   const cur = sumInRange(sales, period.start, period.end) - sumInRange(spend, period.start, period.end);
@@ -459,6 +501,51 @@ export function buildAnalyticsReport(
         r.personal_training.planKopeks > 0 || r.personal_training.factKopeks > 0,
     );
 
+  // Sales by weekday (confirmed daily reports only, current period).
+  const reportsInPeriod = data.reportSplit.filter((r) => inRange(r.date, period.start, period.end));
+  const weekdayAcc = new Map<number, { revenue: number; count: number }>();
+  for (const r of reportsInPeriod) {
+    const wd = r.date.getDay();
+    const acc = weekdayAcc.get(wd) ?? { revenue: 0, count: 0 };
+    acc.revenue += r.total;
+    acc.count += 1;
+    weekdayAcc.set(wd, acc);
+  }
+  const bestRevenue = Math.max(0, ...[...weekdayAcc.values()].map((a) => a.revenue));
+  const weekdaySales: WeekdayRow[] = WEEKDAY_FULL_MON_FIRST.map(({ day, label }) => {
+    const acc = weekdayAcc.get(day) ?? { revenue: 0, count: 0 };
+    return {
+      weekday: day,
+      label,
+      revenueKopeks: acc.revenue,
+      reportCount: acc.count,
+      avgPerReportKopeks: acc.count > 0 ? Math.round(acc.revenue / acc.count) : 0,
+      isBest: acc.revenue > 0 && acc.revenue === bestRevenue,
+    };
+  });
+
+  // Sales by manager (confirmed daily reports only, current period).
+  const managerAcc = new Map<string, { count: number; total: number; subs: number; pt: number }>();
+  for (const r of reportsInPeriod) {
+    const name = r.managerName?.trim() || "Не указан";
+    const acc = managerAcc.get(name) ?? { count: 0, total: 0, subs: 0, pt: 0 };
+    acc.count += 1;
+    acc.total += r.total;
+    acc.subs += r.subscriptions;
+    acc.pt += r.personal_training;
+    managerAcc.set(name, acc);
+  }
+  const managerSales: ManagerRow[] = [...managerAcc.entries()]
+    .map(([manager, a]) => ({
+      manager,
+      reportCount: a.count,
+      totalKopeks: a.total,
+      subscriptionsKopeks: a.subs,
+      personalTrainingKopeks: a.pt,
+      avgPerShiftKopeks: a.count > 0 ? Math.round(a.total / a.count) : 0,
+    }))
+    .sort((x, y) => y.totalKopeks - x.totalKopeks);
+
   // Block 7: budget performance (reuse existing budget report for the period's month)
   const budgetPerformance = computeBudgetFactReport(
     data.budgets,
@@ -503,6 +590,8 @@ export function buildAnalyticsReport(
     clubRanking,
     planPerformance,
     planSplitByClub,
+    weekdaySales,
+    managerSales,
     budgetPerformance,
     topExpenses,
     criticalZones,

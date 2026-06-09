@@ -61,7 +61,47 @@ export const CASH_OOO_KEY = "cash_ooo";
 export const WITHDRAWAL_KEY = "withdrawal";
 export const REVENUE_OOO_KEY = "revenue_ooo";
 export const REVENUE_IP_KEY = "revenue_ip";
+export const SUBSCRIPTIONS_OOO_KEY = "subscriptions_ooo";
+export const PERSONAL_TRAINING_TOTAL_KEY = "personal_training_total";
 export const CASH_REMAINING_LABEL = "Остаток наличности ООО";
+
+// Line keys needed to compute the plan/fact breakdown (kept together so queries
+// can fetch exactly these rows).
+export const FACT_BREAKDOWN_KEYS = [
+  REVENUE_LINE_KEY,
+  SUBSCRIPTIONS_OOO_KEY,
+  PERSONAL_TRAINING_TOTAL_KEY,
+  REVENUE_IP_KEY,
+];
+
+export type SalesReportFactBreakdown = {
+  totalRevenue: number;
+  subscriptionsRevenue: number;
+  personalTrainingRevenue: number;
+};
+
+/**
+ * Split a report's confirmed revenue into the three plan directions.
+ *
+ * Business rule: all ИП revenue counts as personal-training revenue. So:
+ *   subscriptionsRevenue     = subscriptions_ooo
+ *   personalTrainingRevenue  = personal_training_total + revenue_ip
+ *   totalRevenue             = total_revenue
+ *
+ * `personal_training_total` is the ООО personal-training line only (it does not
+ * include ИП), so adding revenue_ip does not double-count.
+ */
+export function getSalesReportFactBreakdown(
+  lines: Array<{ key: string; amountKopeks: number }>,
+): SalesReportFactBreakdown {
+  const m = linesToMap(lines);
+  const v = (k: string) => m[k] ?? 0;
+  return {
+    totalRevenue: v(REVENUE_LINE_KEY),
+    subscriptionsRevenue: v(SUBSCRIPTIONS_OOO_KEY),
+    personalTrainingRevenue: v(PERSONAL_TRAINING_TOTAL_KEY) + v(REVENUE_IP_KEY),
+  };
+}
 
 /** Cash left in the club after collection: cash_ooo − encashment_ooo. */
 export function cashOooRemaining(cashOooKopeks: number, encashmentKopeks: number): number {
