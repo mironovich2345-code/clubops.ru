@@ -63,6 +63,34 @@ export function expenseCategoryLabel(category: string | null): string {
   return EXPENSE_CATEGORY_LABELS[category] ?? category;
 }
 
+// --- statuses --------------------------------------------------------------
+
+export const EXPENSE_STATUS_CANCELED = "canceled";
+export const EXPENSE_STATUS_IMPORT_REVERTED = "import_reverted";
+
+// "Active financial" rows are the ones that count toward dashboards / budgets.
+export const EXPENSE_ACTIVE_STATUSES = ["confirmed", "waiting_budget_approval"] as const;
+// Statuses a user may cancel (not already canceled / rejected / reverted).
+export const EXPENSE_CANCELABLE_STATUSES = ["confirmed", "waiting_budget_approval"] as const;
+// Excluded from default exports + the default list view.
+export const EXPENSE_INACTIVE_STATUSES = ["canceled", "import_reverted"] as const;
+
+export const EXPENSE_STATUS_LABELS: Record<string, string> = {
+  confirmed: "Подтверждён",
+  waiting_budget_approval: "Ожидает согласования бюджета",
+  budget_rejected: "Отклонён (бюджет)",
+  canceled: "Отменён",
+  import_reverted: "Импорт отменён",
+};
+
+export function expenseStatusLabel(status: string): string {
+  return EXPENSE_STATUS_LABELS[status] ?? status;
+}
+
+export function isExpenseCancelable(status: string): boolean {
+  return (EXPENSE_CANCELABLE_STATUSES as readonly string[]).includes(status);
+}
+
 export type ExpenseWithRelations = Expense & {
   club: { id: string; name: string; city: string };
   createdBy: { id: string; name: string };

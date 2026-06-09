@@ -54,6 +54,7 @@ const EXPENSE_STATUS_LABELS: Record<string, string> = {
   confirmed: "Подтверждён",
   waiting_budget_approval: "Ожидает согласования бюджета",
   budget_rejected: "Отклонён (бюджет)",
+  canceled: "Отменён",
   import_reverted: "Импорт отменён",
 };
 
@@ -101,7 +102,15 @@ export async function buildSalesExport(companyId: string, clubIds: string[], sta
 
 export async function buildExpensesExport(companyId: string, clubIds: string[], start: Date, end: Date, opts: ExportOpts): Promise<ExportResult> {
   const expenses = await prisma.expense.findMany({
-    where: { companyId, clubId: { in: clubIds }, expenseDate: { gte: start, lt: end }, ...(opts.status ? { status: opts.status } : {}), ...(opts.category ? { category: opts.category } : {}) },
+    where: {
+      companyId,
+      clubId: { in: clubIds },
+      expenseDate: { gte: start, lt: end },
+      // Default export excludes canceled / reverted rows; an explicit status
+      // filter (e.g. status=canceled) can still include them.
+      ...(opts.status ? { status: opts.status } : { status: { notIn: ["canceled", "import_reverted"] } }),
+      ...(opts.category ? { category: opts.category } : {}),
+    },
     orderBy: { expenseDate: "desc" },
     include: { club: { select: { name: true } }, createdBy: { select: { name: true } }, legalEntity: { select: { name: true } } },
   });

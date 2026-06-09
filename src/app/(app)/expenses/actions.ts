@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
-import { getExpenseForContext } from "@/lib/expenses";
+import { getExpenseForContext, EXPENSE_STATUS_CANCELED, EXPENSE_ACTIVE_STATUSES, isExpenseCancelable } from "@/lib/expenses";
 import {
   evaluateExpenseBudget,
   currentMonthKey,
@@ -380,4 +380,166 @@ export async function updateExpense(
   revalidatePath("/expenses");
   revalidatePath(`/expenses/${expenseId}`);
   return { ok: true, expenseId };
+}
+
+// --- cancellation (soft delete) --------------------------------------------
+
+type CancelState = { ok: boolean; error?: string };
+
+function revalidateFinancial() {
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  revalidatePath("/budgets");
+  revalidatePath("/analytics");
+}
+
+/**
+ * Soft-cancel a single expense (status -> canceled). It then no longer counts in
+ * dashboard / analytics / budgets / exports. A pending budget-approval request,
+ * if any, is removed. Manager/regional only; a manager may cancel only their own
+ * expense, a regional director any expense in assigned clubs.
+ */
+export async function cancelExpense(
+  _prev: CancelState | undefined,
+  formData: FormData,
+): Promise<CancelState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) return { ok: false, error: "Нет доступа" };
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Отменять расходы могут управляющие и региональные директора" };
+  }
+
+  const expenseId = String(formData.get("expenseId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  const existing = await getExpenseForContext(ctx, expenseId);
+  if (!existing) return { ok: false, error: "Расход не найден или нет доступа" };
+
+  const isRegional = ctx.effectiveRoles.includes("regional_director");
+  if (!isRegional && existing.createdByUserId !== ctx.user.id) {
+    return { ok: false, error: "Управляющий может отменить только свой расход" };
+  }
+  if (!isExpenseCancelable(existing.status)) {
+    return { ok: false, error: "Этот расход нельзя отменить" };
+  }
+
+  await prisma.budgetApprovalRequest.deleteMany({ where: { sourceType: "expense", sourceId: existing.id, status: "pending" } });
+  await prisma.expense.update({ where: { id: existing.id }, data: { status: EXPENSE_STATUS_CANCELED } });
+
+  await recordAudit({
+    action: "expense.canceled",
+    entityType: "Expense",
+    entityId: existing.id,
+    companyId: existing.companyId,
+    clubId: existing.clubId,
+    userId: ctx.user.id,
+    metadata: { prevStatus: existing.status, amountKopeks: existing.amountKopeks, category: existing.category, reason },
+  });
+
+  revalidateFinancial();
+  revalidatePath(`/expenses/${existing.id}`);
+  return { ok: true };
+}
+
+// --- monthly bulk cancel ---------------------------------------------------
+
+type BulkState = { ok: boolean; error?: string; count?: number; totalKopeks?: number; done?: boolean };
+
+function monthRangeDates(month: string): { start: Date; end: Date } | null {
+  const m = month.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  return { start: new Date(y, mo, 1), end: new Date(y, mo + 1, 1) };
+}
+
+type BulkWhere = {
+  where: import("@prisma/client").Prisma.ExpenseWhereInput;
+  month: string;
+  clubId: string;
+  category: string | null;
+};
+
+/** Scoped WHERE for the bulk cancel — only active rows in one club + month,
+ * never trusting client values beyond the user's allowed clubs. */
+async function buildBulkWhere(
+  ctx: NonNullable<Awaited<ReturnType<typeof getCurrentAccessContext>>>,
+  formData: FormData,
+): Promise<BulkWhere | { error: string }> {
+  const month = String(formData.get("month") ?? "").trim();
+  const clubId = String(formData.get("clubId") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim();
+  const range = monthRangeDates(month);
+  if (!range) return { error: "Укажите месяц в формате ГГГГ-ММ" };
+  if (!clubId) return { error: "Выберите клуб" };
+  if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
+    return { error: "Нет доступа к выбранному клубу" };
+  }
+  const isRegional = ctx.effectiveRoles.includes("regional_director");
+  const where: import("@prisma/client").Prisma.ExpenseWhereInput = {
+    companyId: ctx.selectedCompanyId!,
+    clubId,
+    expenseDate: { gte: range.start, lt: range.end },
+    // Only active financial rows — never already canceled / rejected / reverted.
+    status: { in: [...EXPENSE_ACTIVE_STATUSES] },
+    ...(category ? { category } : {}),
+    // A manager can bulk-cancel only their own expenses in their own club.
+    ...(isRegional ? {} : { createdByUserId: ctx.user.id }),
+  };
+  return { where, month, clubId, category: category || null };
+}
+
+export async function previewBulkCancelExpenses(
+  _prev: BulkState | undefined,
+  formData: FormData,
+): Promise<BulkState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !ctx.selectedCompanyId || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCreateOperational(ctx.effectiveRoles)) return { ok: false, error: "Недостаточно прав" };
+  const built = await buildBulkWhere(ctx, formData);
+  if ("error" in built) return { ok: false, error: built.error };
+  const agg = await prisma.expense.aggregate({ where: built.where, _count: true, _sum: { amountKopeks: true } });
+  return { ok: true, count: agg._count, totalKopeks: agg._sum.amountKopeks ?? 0 };
+}
+
+export async function cancelExpensesForMonth(
+  _prev: BulkState | undefined,
+  formData: FormData,
+): Promise<BulkState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !ctx.selectedCompanyId || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  if (!canCreateOperational(ctx.effectiveRoles)) {
+    return { ok: false, error: "Массовую отмену могут делать управляющие и региональные директора" };
+  }
+  if (String(formData.get("confirm") ?? "").trim() !== "ОТМЕНИТЬ") {
+    return { ok: false, error: "Введите ОТМЕНИТЬ заглавными буквами для подтверждения" };
+  }
+  const built = await buildBulkWhere(ctx, formData);
+  if ("error" in built) return { ok: false, error: built.error };
+
+  const matches = await prisma.expense.findMany({ where: built.where, select: { id: true, amountKopeks: true } });
+  if (matches.length === 0) {
+    return { ok: true, count: 0, totalKopeks: 0, done: true };
+  }
+  const ids = matches.map((m) => m.id);
+  const totalKopeks = matches.reduce((s, m) => s + m.amountKopeks, 0);
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+
+  await prisma.budgetApprovalRequest.deleteMany({ where: { sourceType: "expense", sourceId: { in: ids }, status: "pending" } });
+  await prisma.expense.updateMany({ where: { id: { in: ids } }, data: { status: EXPENSE_STATUS_CANCELED } });
+
+  await recordAudit({
+    action: "expense.bulk_canceled",
+    entityType: "Expense",
+    companyId: ctx.selectedCompanyId,
+    clubId: built.clubId,
+    userId: ctx.user.id,
+    metadata: { month: built.month, clubId: built.clubId, category: built.category, count: ids.length, totalAmount: totalKopeks, reason },
+  });
+
+  revalidateFinancial();
+  return { ok: true, count: ids.length, totalKopeks, done: true };
 }

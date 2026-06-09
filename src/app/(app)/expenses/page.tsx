@@ -12,13 +12,16 @@ import {
   getExpensesForScope,
   summarizeExpenses,
   expenseCategoryLabel,
+  expenseStatusLabel,
   EXPENSE_CATEGORY_OPTIONS,
   EXPENSE_TYPE_LABELS,
+  EXPENSE_ACTIVE_STATUSES,
   type ExpenseSummary,
 } from "@/lib/expenses";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { ExpenseUpload } from "./_components/ExpenseUpload";
+import { BulkCancelExpenses } from "./_components/BulkCancelExpenses";
 import { ExcelImportPanel } from "@/components/ExcelImportPanel";
 import { importExpenses } from "./expense-import-actions";
 import { revertImportBatch } from "../import-revert-actions";
@@ -39,7 +42,20 @@ const monthFormatter = new Intl.DateTimeFormat("ru-RU", {
   year: "numeric",
 });
 
-export default async function ExpensesPage() {
+const STATUS_FILTERS: { key: string; label: string; match: (s: string) => boolean }[] = [
+  { key: "active", label: "Активные", match: (s) => (EXPENSE_ACTIVE_STATUSES as readonly string[]).includes(s) },
+  { key: "confirmed", label: "Подтверждённые", match: (s) => s === "confirmed" },
+  { key: "waiting_budget_approval", label: "Ожидают бюджет", match: (s) => s === "waiting_budget_approval" },
+  { key: "canceled", label: "Отменённые", match: (s) => s === "canceled" },
+  { key: "import_reverted", label: "Импорт отменён", match: (s) => s === "import_reverted" },
+  { key: "all", label: "Все", match: () => true },
+];
+
+export default async function ExpensesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
   const user = await requirePageAccess("expenses");
 
   const scope = await getCurrentCompanyAndClub(user);
@@ -53,6 +69,10 @@ export default async function ExpensesPage() {
     getCurrentAccessContext(),
   ]);
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
+
+  const { status: statusParam } = await searchParams;
+  const statusFilter = STATUS_FILTERS.find((f) => f.key === statusParam) ?? STATUS_FILTERS[0];
+  const visibleExpenses = expenses.filter((e) => statusFilter.match(e.status));
   const lastImport = canCreate && ctx
     ? await getLastImportBatch(scope.company.id, "expenses", scope.clubIds, ctx.user.id)
     : null;
@@ -119,6 +139,33 @@ export default async function ExpensesPage() {
         />
       ) : null}
 
+      {/* Monthly bulk cancel (regional / manager-own-club) */}
+      {canCreate && clubs.length > 0 ? (
+        <BulkCancelExpenses
+          clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
+          categories={EXPENSE_CATEGORY_OPTIONS}
+          defaultClubId={scope.club?.id ?? clubs[0].id}
+          defaultMonth={`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`}
+        />
+      ) : null}
+
+      {/* Status filter */}
+      <div className="mb-3 flex flex-wrap gap-2">
+        {STATUS_FILTERS.map((f) => (
+          <Link
+            key={f.key}
+            href={f.key === "active" ? "/expenses" : `/expenses?status=${f.key}`}
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+              statusFilter.key === f.key
+                ? "border-brand-300 bg-brand-600 text-white"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {f.label}
+          </Link>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full divide-y divide-slate-200">
@@ -134,14 +181,16 @@ export default async function ExpensesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {expenses.length === 0 ? (
+              {visibleExpenses.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                    Пока нет расходов. Загрузите чек/перевод или заполните вручную.
+                    {expenses.length === 0
+                      ? "Пока нет расходов. Загрузите чек/перевод или заполните вручную."
+                      : "Нет расходов с выбранным статусом."}
                   </td>
                 </tr>
               ) : (
-                expenses.map((expense) => (
+                visibleExpenses.map((expense) => (
                   <tr key={expense.id} className="hover:bg-slate-50">
                     <Td className="whitespace-nowrap">{dateFormatter.format(expense.expenseDate)}</Td>
                     <Td className="whitespace-nowrap">
@@ -323,6 +372,13 @@ function ExpenseStatusBadge({ status }: { status: string }) {
     return (
       <div className="mt-1 inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200">
         Отклонён (бюджет)
+      </div>
+    );
+  }
+  if (status === "canceled" || status === "import_reverted") {
+    return (
+      <div className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-inset ring-slate-200">
+        {expenseStatusLabel(status)}
       </div>
     );
   }
