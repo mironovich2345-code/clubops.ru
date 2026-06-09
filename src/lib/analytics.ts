@@ -272,9 +272,14 @@ export type PlanSplitClubRow = {
 export type WeekdayRow = {
   weekday: number; // Date.getDay()
   label: string;
-  revenueKopeks: number;
   reportCount: number;
-  avgPerReportKopeks: number;
+  totalKopeks: number;
+  subscriptionsKopeks: number;
+  personalTrainingKopeks: number;
+  avgTotalKopeks: number;
+  avgSubscriptionsKopeks: number;
+  avgPersonalTrainingKopeks: number;
+  // Best weekday is the one with the highest average total per report.
   isBest: boolean;
 };
 
@@ -284,7 +289,11 @@ export type ManagerRow = {
   totalKopeks: number;
   subscriptionsKopeks: number;
   personalTrainingKopeks: number;
-  avgPerShiftKopeks: number;
+  avgTotalKopeks: number;
+  avgSubscriptionsKopeks: number;
+  avgPersonalTrainingKopeks: number;
+  // Best manager is the one with the highest average total per shift.
+  isBest: boolean;
 };
 
 export type TopExpenseRow = { category: string; label: string; amountKopeks: number; sharePercent: number };
@@ -501,50 +510,76 @@ export function buildAnalyticsReport(
         r.personal_training.planKopeks > 0 || r.personal_training.factKopeks > 0,
     );
 
-  // Sales by weekday (confirmed daily reports only, current period).
+  // Confirmed daily reports in the current period, split into total / subs / PT.
   const reportsInPeriod = data.reportSplit.filter((r) => inRange(r.date, period.start, period.end));
-  const weekdayAcc = new Map<number, { revenue: number; count: number }>();
+  type SalesAcc = { count: number; total: number; subs: number; pt: number };
+  const accumulate = (rows: typeof reportsInPeriod): SalesAcc => {
+    const a: SalesAcc = { count: 0, total: 0, subs: 0, pt: 0 };
+    for (const r of rows) {
+      a.count += 1;
+      a.total += r.total;
+      a.subs += r.subscriptions;
+      a.pt += r.personal_training;
+    }
+    return a;
+  };
+  const avg = (sum: number, count: number) => (count > 0 ? Math.round(sum / count) : 0);
+
+  // Sales by weekday. Best weekday = highest AVERAGE total per report.
+  const weekdayAcc = new Map<number, SalesAcc>();
   for (const r of reportsInPeriod) {
     const wd = r.date.getDay();
-    const acc = weekdayAcc.get(wd) ?? { revenue: 0, count: 0 };
-    acc.revenue += r.total;
-    acc.count += 1;
-    weekdayAcc.set(wd, acc);
+    const a = weekdayAcc.get(wd) ?? { count: 0, total: 0, subs: 0, pt: 0 };
+    a.count += 1;
+    a.total += r.total;
+    a.subs += r.subscriptions;
+    a.pt += r.personal_training;
+    weekdayAcc.set(wd, a);
   }
-  const bestRevenue = Math.max(0, ...[...weekdayAcc.values()].map((a) => a.revenue));
+  const bestWeekdayAvg = Math.max(0, ...[...weekdayAcc.values()].map((a) => avg(a.total, a.count)));
   const weekdaySales: WeekdayRow[] = WEEKDAY_FULL_MON_FIRST.map(({ day, label }) => {
-    const acc = weekdayAcc.get(day) ?? { revenue: 0, count: 0 };
+    const a = weekdayAcc.get(day) ?? { count: 0, total: 0, subs: 0, pt: 0 };
+    const avgTotal = avg(a.total, a.count);
     return {
       weekday: day,
       label,
-      revenueKopeks: acc.revenue,
-      reportCount: acc.count,
-      avgPerReportKopeks: acc.count > 0 ? Math.round(acc.revenue / acc.count) : 0,
-      isBest: acc.revenue > 0 && acc.revenue === bestRevenue,
-    };
-  });
-
-  // Sales by manager (confirmed daily reports only, current period).
-  const managerAcc = new Map<string, { count: number; total: number; subs: number; pt: number }>();
-  for (const r of reportsInPeriod) {
-    const name = r.managerName?.trim() || "Не указан";
-    const acc = managerAcc.get(name) ?? { count: 0, total: 0, subs: 0, pt: 0 };
-    acc.count += 1;
-    acc.total += r.total;
-    acc.subs += r.subscriptions;
-    acc.pt += r.personal_training;
-    managerAcc.set(name, acc);
-  }
-  const managerSales: ManagerRow[] = [...managerAcc.entries()]
-    .map(([manager, a]) => ({
-      manager,
       reportCount: a.count,
       totalKopeks: a.total,
       subscriptionsKopeks: a.subs,
       personalTrainingKopeks: a.pt,
-      avgPerShiftKopeks: a.count > 0 ? Math.round(a.total / a.count) : 0,
-    }))
-    .sort((x, y) => y.totalKopeks - x.totalKopeks);
+      avgTotalKopeks: avgTotal,
+      avgSubscriptionsKopeks: avg(a.subs, a.count),
+      avgPersonalTrainingKopeks: avg(a.pt, a.count),
+      isBest: a.count > 0 && avgTotal === bestWeekdayAvg,
+    };
+  });
+
+  // Sales by manager. Best manager + sort key = highest AVERAGE total per shift
+  // (NOT total revenue); ties broken by total revenue desc.
+  const managerAcc = new Map<string, SalesAcc>();
+  for (const r of reportsInPeriod) {
+    const name = r.managerName?.trim() || "Не указан";
+    const a = managerAcc.get(name) ?? { count: 0, total: 0, subs: 0, pt: 0 };
+    a.count += 1;
+    a.total += r.total;
+    a.subs += r.subscriptions;
+    a.pt += r.personal_training;
+    managerAcc.set(name, a);
+  }
+  const managerRows = [...managerAcc.entries()].map(([manager, a]) => ({
+    manager,
+    reportCount: a.count,
+    totalKopeks: a.total,
+    subscriptionsKopeks: a.subs,
+    personalTrainingKopeks: a.pt,
+    avgTotalKopeks: avg(a.total, a.count),
+    avgSubscriptionsKopeks: avg(a.subs, a.count),
+    avgPersonalTrainingKopeks: avg(a.pt, a.count),
+  }));
+  const bestManagerAvg = Math.max(0, ...managerRows.map((m) => m.avgTotalKopeks));
+  const managerSales: ManagerRow[] = managerRows
+    .map((m) => ({ ...m, isBest: m.avgTotalKopeks === bestManagerAvg && m.reportCount > 0 }))
+    .sort((x, y) => y.avgTotalKopeks - x.avgTotalKopeks || y.totalKopeks - x.totalKopeks);
 
   // Block 7: budget performance (reuse existing budget report for the period's month)
   const budgetPerformance = computeBudgetFactReport(

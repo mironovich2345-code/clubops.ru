@@ -405,35 +405,46 @@ function PlanSplitBlock({ rows }: { rows: PlanSplitClubRow[] }) {
 
 function WeekdaySalesBlock({ rows }: { rows: WeekdayRow[] }) {
   const hasData = rows.some((r) => r.reportCount > 0);
+  const dash = (k: number, count: number) => (count > 0 ? formatKopeks(k) : "—");
   return (
     <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <SectionHeader title="Продажи по дням недели" />
+      <SectionHeader title="Продажи по дням недели" right={<BestBadge text="Лучший день по средней выручке" />} />
       {!hasData ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Нет данных за период</div>
       ) : (
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
-            <tr>
-              <Th>День недели</Th>
-              <Th className="text-right">Продажи</Th>
-              <Th className="text-right">Средняя выручка дня</Th>
-              <Th className="text-right">Отчётов</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {rows.map((r) => (
-              <tr key={r.weekday} className={r.isBest ? "bg-emerald-50/60" : "hover:bg-slate-50"}>
-                <Td className="font-medium text-slate-900">
-                  {r.isBest ? <span className="mr-1">⭐</span> : null}
-                  {r.label}
-                </Td>
-                <Td className="text-right font-medium text-slate-900">{formatKopeks(r.revenueKopeks)}</Td>
-                <Td className="text-right text-slate-600">{r.reportCount > 0 ? formatKopeks(r.avgPerReportKopeks) : "—"}</Td>
-                <Td className="text-right text-slate-600">{r.reportCount}</Td>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <Th>День недели</Th>
+                <Th className="text-right">Отчётов</Th>
+                <Th className="text-right">Общая выручка</Th>
+                <Th className="text-right">Средняя общая</Th>
+                <Th className="text-right">Абонементы</Th>
+                <Th className="text-right">Средняя АБ</Th>
+                <Th className="text-right">Персональные</Th>
+                <Th className="text-right">Средняя ПТ</Th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {rows.map((r) => (
+                <tr key={r.weekday} className={r.isBest ? "bg-emerald-50/60" : "hover:bg-slate-50"}>
+                  <Td className="font-medium text-slate-900">
+                    {r.isBest ? <span className="mr-1" title="Лучший день по средней выручке">🏆</span> : null}
+                    {r.label}
+                  </Td>
+                  <Td className="text-right text-slate-600">{r.reportCount}</Td>
+                  <Td className="text-right text-slate-900">{dash(r.totalKopeks, r.reportCount)}</Td>
+                  <Td className="text-right font-medium text-slate-900">{dash(r.avgTotalKopeks, r.reportCount)}</Td>
+                  <Td className="text-right text-slate-600">{dash(r.subscriptionsKopeks, r.reportCount)}</Td>
+                  <Td className="text-right text-slate-600">{dash(r.avgSubscriptionsKopeks, r.reportCount)}</Td>
+                  <Td className="text-right text-slate-600">{dash(r.personalTrainingKopeks, r.reportCount)}</Td>
+                  <Td className="text-right text-slate-600">{dash(r.avgPersonalTrainingKopeks, r.reportCount)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -442,7 +453,7 @@ function WeekdaySalesBlock({ rows }: { rows: WeekdayRow[] }) {
 function ManagerSalesBlock({ rows }: { rows: ManagerRow[] }) {
   return (
     <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <SectionHeader title="Продажи по менеджерам" />
+      <SectionHeader title="Продажи по менеджерам" right={<BestBadge text="Лучший по средней выручке" />} />
       {rows.length === 0 ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Нет данных за период</div>
       ) : (
@@ -453,23 +464,27 @@ function ManagerSalesBlock({ rows }: { rows: ManagerRow[] }) {
                 <Th>Менеджер</Th>
                 <Th className="text-right">Отчётов</Th>
                 <Th className="text-right">Общая выручка</Th>
+                <Th className="text-right">Средняя общая</Th>
                 <Th className="text-right">Абонементы</Th>
+                <Th className="text-right">Средняя АБ</Th>
                 <Th className="text-right">Персональные</Th>
-                <Th className="text-right">Средняя за смену</Th>
+                <Th className="text-right">Средняя ПТ</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {rows.map((r, i) => (
-                <tr key={r.manager} className="hover:bg-slate-50">
+              {rows.map((r) => (
+                <tr key={r.manager} className={r.isBest ? "bg-emerald-50/60" : "hover:bg-slate-50"}>
                   <Td className="font-medium text-slate-900">
-                    <span className="mr-1">{i === 0 ? "🥇" : ""}</span>
+                    {r.isBest ? <span className="mr-1" title="Лучший по средней выручке">🏆</span> : null}
                     {r.manager}
                   </Td>
                   <Td className="text-right text-slate-600">{r.reportCount}</Td>
-                  <Td className="text-right font-medium text-slate-900">{formatKopeks(r.totalKopeks)}</Td>
+                  <Td className="text-right text-slate-900">{formatKopeks(r.totalKopeks)}</Td>
+                  <Td className="text-right font-medium text-slate-900">{formatKopeks(r.avgTotalKopeks)}</Td>
                   <Td className="text-right text-slate-600">{formatKopeks(r.subscriptionsKopeks)}</Td>
+                  <Td className="text-right text-slate-600">{formatKopeks(r.avgSubscriptionsKopeks)}</Td>
                   <Td className="text-right text-slate-600">{formatKopeks(r.personalTrainingKopeks)}</Td>
-                  <Td className="text-right text-slate-600">{formatKopeks(r.avgPerShiftKopeks)}</Td>
+                  <Td className="text-right text-slate-600">{formatKopeks(r.avgPersonalTrainingKopeks)}</Td>
                 </tr>
               ))}
             </tbody>
@@ -477,6 +492,14 @@ function ManagerSalesBlock({ rows }: { rows: ManagerRow[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+function BestBadge({ text }: { text: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+      🏆 {text}
+    </span>
   );
 }
 
