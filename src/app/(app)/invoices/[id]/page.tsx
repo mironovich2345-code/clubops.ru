@@ -1,10 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
-import {
-  requirePageAccess,
-  getCurrentAccessContext,
-} from "@/lib/access";
+import { getCurrentAccessContext } from "@/lib/access";
+import { canAnyRoleAccessPage } from "@/lib/auth";
 import {
   getInvoiceForContext,
   availableInvoiceActions,
@@ -37,11 +35,15 @@ export default async function InvoiceDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePageAccess("invoices");
   const { id } = await params;
 
   const ctx = await getCurrentAccessContext();
   if (!ctx) notFound();
+  // Viewable by anyone with invoices OR payments access (the payment calendar
+  // links here). Scope is still enforced by getInvoiceForContext.
+  if (!canAnyRoleAccessPage(ctx.effectiveRoles, "invoices") && !canAnyRoleAccessPage(ctx.effectiveRoles, "payments")) {
+    notFound();
+  }
 
   const invoice = await getInvoiceForContext(ctx, id);
   if (!invoice) notFound();

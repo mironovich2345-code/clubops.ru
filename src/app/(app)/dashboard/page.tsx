@@ -25,6 +25,7 @@ import { SalesPlanForm } from "./_components/SalesPlanForm";
 import { SalesPlanImport } from "./_components/SalesPlanImport";
 import { MonthCloseBlock } from "./_components/MonthCloseBlock";
 import { getMonthCloseInfo } from "@/lib/month-close";
+import { getPaymentSummary } from "@/lib/payments";
 import { profitSummary, clubRanking, type ClubRankRow } from "@/lib/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -102,6 +103,10 @@ export default async function DashboardPage({
   const canReopenMonth = roles.some((r) => r === "general_director" || r === "owner");
   const monthInfo = await getMonthCloseInfo(scope.company.id, null, manageMonth);
   const manageMonthLabel = monthFormatter.format(new Date(`${manageMonth}-01T00:00:00`));
+
+  // Payment calendar widget (Part 10): owner / GD / accountant / regional only.
+  const canSeePayments = roles.some((r) => r === "owner" || r === "general_director" || r === "accountant" || r === "regional_director");
+  const paymentSummary = canSeePayments ? await getPaymentSummary(scope.company.id, scope.clubIds, now) : null;
 
   // Realized expenses = confirmed expenses + paid invoices + paid refunds.
   const expenseEvents = [
@@ -276,6 +281,26 @@ export default async function DashboardPage({
         canClose={canCloseMonth}
         canReopen={canReopenMonth}
       />
+
+      {/* Платежи (компактный виджет) */}
+      {paymentSummary ? (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-slate-700">Платежи</div>
+            <Link href="/payments" className="text-xs font-medium text-brand-600 hover:text-brand-700">Открыть календарь</Link>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-6">
+            <div>
+              <div className="text-xs text-slate-500">Просрочено</div>
+              <div className={`text-lg font-semibold ${paymentSummary.overdueKopeks > 0 ? "text-rose-700" : "text-slate-900"}`}>{formatKopeks(paymentSummary.overdueKopeks)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">7 дней</div>
+              <div className="text-lg font-semibold text-slate-900">{formatKopeks(paymentSummary.within7Kopeks)}</div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Block 1: главные показатели */}
       <div className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">

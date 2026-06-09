@@ -11,6 +11,7 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "analytics", href: "/analytics", label: "Аналитика" },
   { page: "expenses", href: "/expenses", label: "Расходы" },
   { page: "invoices", href: "/invoices", label: "Счета" },
+  { page: "payments", href: "/payments", label: "Календарь платежей" },
   { page: "refunds", href: "/refunds", label: "Возвраты" },
   { page: "budgets", href: "/budgets", label: "Бюджеты" },
   { page: "sales", href: "/sales", label: "Продажи" },
