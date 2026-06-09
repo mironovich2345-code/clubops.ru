@@ -35,7 +35,7 @@ const WEEKDAY_FULL_MON_FIRST = [
 // caller from effective roles; these helpers never widen it.
 // ---------------------------------------------------------------------------
 
-export type AnalyticsPeriodKey = "current_month" | "previous_month" | "custom";
+export type AnalyticsPeriodKey = "current_month" | "previous_month" | "custom" | "week" | "year";
 
 export type ResolvedPeriod = {
   key: AnalyticsPeriodKey;
@@ -75,6 +75,19 @@ export function resolvePeriod(
     const end = new Date(y, m, 1);
     const prevStart = new Date(y, m - 2, 1);
     return { key, label: "Прошлый месяц", start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+  }
+  if (key === "week") {
+    // Rolling last 7 days (including today); previous 7 days for comparison.
+    const start = new Date(y, m, now.getDate() - 6);
+    const end = new Date(y, m, now.getDate() + 1);
+    const prevStart = new Date(y, m, now.getDate() - 13);
+    return { key, label: "Последние 7 дней", start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
+  }
+  if (key === "year") {
+    const start = new Date(y, 0, 1);
+    const end = new Date(y + 1, 0, 1);
+    const prevStart = new Date(y - 1, 0, 1);
+    return { key, label: String(y), start, end, prevStart, prevEnd: start, months: monthsBetween(start, end), primaryMonth: monthStr(start) };
   }
   if (key === "custom" && from && to) {
     const start = new Date(from.getFullYear(), from.getMonth(), from.getDate());
@@ -222,7 +235,10 @@ function changePercent(cur: number, prev: number): number | null {
 
 export type ExecutiveSummary = {
   salesKopeks: number;
+  subscriptionsKopeks: number; // фактические продажи абонементов (confirmed reports)
+  personalTrainingKopeks: number; // фактические продажи ПТ (ИП-выручка уже свёрнута сюда)
   expensesKopeks: number;
+  budgetTotalKopeks: number; // план расходов (лимит бюджета за период); 0 если не задан
   profitKopeks: number;
   prevProfitKopeks: number;
   planTargetKopeks: number;
@@ -239,6 +255,15 @@ export type Trend = {
   currentKopeks: number;
   previousKopeks: number;
   changePercent: number | null;
+};
+
+// Dual-series sales dynamics: абонементы vs персональные тренировки per bucket.
+// Built from confirmed daily reports (same source as the weekday/manager tables).
+export type SplitTrendBucket = { label: string; subLabel?: string; subsKopeks: number; ptKopeks: number };
+export type SalesSplitTrend = {
+  buckets: SplitTrendBucket[];
+  subsCurrentKopeks: number;
+  ptCurrentKopeks: number;
 };
 
 export type ClubRankRow = {
@@ -308,6 +333,7 @@ export type AnalyticsReport = {
   granularity: TrendGranularity;
   summary: ExecutiveSummary;
   salesTrend: Trend;
+  salesSplitTrend: SalesSplitTrend;
   expenseTrend: Trend;
   profitTrend: Trend;
   clubRanking: ClubRankRow[];
@@ -356,6 +382,31 @@ function buildTrend(events: SalesEvent[] | SpendEvent[], period: ResolvedPeriod,
   const currentKopeks = sumInRange(events, period.start, period.end);
   const previousKopeks = sumInRange(events, period.prevStart, period.prevEnd);
   return { buckets, currentKopeks, previousKopeks, changePercent: changePercent(currentKopeks, previousKopeks) };
+}
+
+/** Dual-series sales dynamics (абонементы / ПТ) from confirmed daily reports. */
+function buildSalesSplitTrend(
+  reportSplit: AnalyticsData["reportSplit"],
+  period: ResolvedPeriod,
+  gran: TrendGranularity,
+): SalesSplitTrend {
+  const buckets = makeBuckets(period.start, period.end, gran).map((b) => {
+    let subsKopeks = 0;
+    let ptKopeks = 0;
+    for (const r of reportSplit) {
+      if (inRange(r.date, b.start, b.end)) {
+        subsKopeks += r.subscriptions;
+        ptKopeks += r.personal_training;
+      }
+    }
+    return { label: b.label, subLabel: gran === "day" ? WEEKDAY_SHORT[b.start.getDay()] : undefined, subsKopeks, ptKopeks };
+  });
+  const inPeriod = reportSplit.filter((r) => inRange(r.date, period.start, period.end));
+  return {
+    buckets,
+    subsCurrentKopeks: inPeriod.reduce((s, r) => s + r.subscriptions, 0),
+    ptCurrentKopeks: inPeriod.reduce((s, r) => s + r.personal_training, 0),
+  };
 }
 
 function buildProfitTrend(sales: SalesEvent[], spend: SpendEvent[], period: ResolvedPeriod, gran: TrendGranularity): Trend {
@@ -421,9 +472,21 @@ export function buildAnalyticsReport(
   const cashOooRemainingKopeks = data.reportCash
     .filter((r) => inRange(r.reportDate, period.start, period.end))
     .reduce((s, r) => s + (r.cashOooKopeks - r.encashmentKopeks), 0);
+  // Фактические продажи АБ / ПТ за период — из подтверждённых отчётов (тот же
+  // источник, что у таблиц по дням/менеджерам). ИП-выручка уже свёрнута в ПТ.
+  const splitInPeriod = data.reportSplit.filter((r) => inRange(r.date, period.start, period.end));
+  const subscriptionsKopeks = splitInPeriod.reduce((s, r) => s + r.subscriptions, 0);
+  const personalTrainingKopeks = splitInPeriod.reduce((s, r) => s + r.personal_training, 0);
+  // План расходов = сумма лимитов бюджета за месяцы периода (по разрешённым
+  // категориям, если задано ограничение для маркетолога).
+  const budgetTotalKopeks = (allowed ? data.budgets.filter((b) => allowed.has(b.category)) : data.budgets)
+    .reduce((s, b) => s + b.limitAmountKopeks, 0);
   const summary: ExecutiveSummary = {
     salesKopeks: curSales,
+    subscriptionsKopeks,
+    personalTrainingKopeks,
     expensesKopeks: curSpend,
+    budgetTotalKopeks,
     profitKopeks: curSales - curSpend,
     prevProfitKopeks: prevSales - prevSpend,
     planTargetKopeks,
@@ -433,6 +496,7 @@ export function buildAnalyticsReport(
 
   // Blocks 2/3/4: trends
   const salesTrend = buildTrend(sales, period, granularity);
+  const salesSplitTrend = buildSalesSplitTrend(data.reportSplit, period, granularity);
   const expenseTrend = buildTrend(spendForCats, period, granularity);
   const profitTrend = buildProfitTrend(sales, spendForCats, period, granularity);
 
@@ -623,6 +687,7 @@ export function buildAnalyticsReport(
     granularity,
     summary,
     salesTrend,
+    salesSplitTrend,
     expenseTrend,
     profitTrend,
     clubRanking,
