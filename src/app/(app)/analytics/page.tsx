@@ -3,6 +3,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
 import { SalesDynamicsChart } from "@/components/SalesDynamicsChart";
+import { MonthlyForecastBlock } from "@/components/MonthlyForecastBlock";
+import { buildMonthlyForecast } from "@/lib/forecast";
 import {
   requirePageAccess,
   getCurrentAccessContext,
@@ -93,10 +95,36 @@ export default async function AnalyticsPage({
   const report = buildAnalyticsReport(data, period, granularity);
   const s = report.summary;
 
+  // --- Monthly forecast inputs (reusing the report's source-of-truth values) ---
+  const salesFact = s.subscriptionsKopeks + s.personalTrainingKopeks;
+  // Total plan if set, otherwise subscriptions + personal-training plans.
+  const splitPlan = report.planTotals.subscriptions.planKopeks + report.planTotals.personal_training.planKopeks;
+  const salesPlan = s.planTargetKopeks > 0 ? s.planTargetKopeks : splitPlan;
+  // Previous-month forecast only makes sense for the current calendar month,
+  // where loadAnalyticsData already covers the previous month (period.prevStart
+  // → period.end). Sum the same day-of-month onward from last month.
+  let previousMonthRemainingSales: number | null = null;
+  if (period.key === "current_month") {
+    const prevRows = data.reportSplit.filter((r) => r.date >= period.prevStart && r.date < period.prevEnd);
+    if (prevRows.length > 0) {
+      const cutoffDay = now.getDate();
+      previousMonthRemainingSales = prevRows
+        .filter((r) => r.date.getDate() >= cutoffDay)
+        .reduce((acc, r) => acc + r.subscriptions + r.personal_training, 0);
+    }
+  }
+  const forecast = buildMonthlyForecast({
+    salesFact,
+    salesPlan,
+    expenseBudget: s.budgetTotalKopeks,
+    periodStart: period.start,
+    periodEnd: period.end,
+    now,
+    previousMonthRemainingSales,
+  });
+
   const fromValue = sp.from ?? drillFrom;
   const toValue = sp.to ?? isoLocal(lastDay);
-  // Part 3 — chart spans the side area only when the financial cards are present.
-  const chartSpan = financials ? "lg:col-span-2" : "lg:col-span-4";
 
   return (
     <div className="mx-auto max-w-[1440px]">
@@ -170,31 +198,39 @@ export default async function AnalyticsPage({
         ) : null}
       </div>
 
-      {/* Part 3 — sales dynamics + profit + cash */}
-      <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className={`min-w-0 md:col-span-2 ${chartSpan}`}>
+      {/* Part 1/2 — monthly forecast fills the area above the chart */}
+      <div className="mb-5">
+        <MonthlyForecastBlock forecast={forecast} financials={financials} hint={period.label} />
+      </div>
+
+      {/* Part 3/6 — sales dynamics + combined financial summary card */}
+      <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className={`min-w-0 ${financials ? "lg:col-span-2" : "lg:col-span-3"}`}>
           <Panel title="Динамика продаж" hint={rangeLabel}>
             <SalesDynamicsChart buckets={report.salesSplitTrend.buckets} height={180} />
           </Panel>
         </div>
         {financials ? (
-          <>
-            <ProfitCard profit={s.profitKopeks} prev={s.prevProfitKopeks} sub={rangeLabel} />
-            <CashCard oooKopeks={s.cashOooRemainingKopeks} />
-          </>
+          <FinancialSummaryCard
+            profit={s.profitKopeks}
+            prevProfit={s.prevProfitKopeks}
+            oooKopeks={s.cashOooRemainingKopeks}
+            sub={rangeLabel}
+          />
         ) : null}
       </div>
 
-      {/* Part 5 — lower analytics grid (sales left, expenses/forecast right) */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {/* Part 5 — lower analytics grid (managers + weekday; expenses for financial) */}
+      <div className={`grid grid-cols-1 gap-4 ${financials ? "xl:grid-cols-2" : ""}`}>
         <div className="flex min-w-0 flex-col gap-4">
           <ManagerSalesBlock rows={report.managerSales} />
           <WeekdaySalesBlock rows={report.weekdaySales} />
         </div>
-        <div className="flex min-w-0 flex-col gap-4">
-          {financials ? <TopExpensesBlock rows={report.topExpenses} from={drillFrom} to={drillTo} /> : null}
-          <ForecastBlock />
-        </div>
+        {financials ? (
+          <div className="flex min-w-0 flex-col gap-4">
+            <TopExpensesBlock rows={report.topExpenses} from={drillFrom} to={drillTo} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -277,36 +313,42 @@ function KpiCard({
   );
 }
 
-function ProfitCard({ profit, prev, sub }: { profit: number; prev: number; sub: string }) {
-  const accent = profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400";
+/** Part 6 — combined card replacing the separate Прибыль and Наличные cards. */
+function FinancialSummaryCard({
+  profit,
+  prevProfit,
+  oooKopeks,
+  sub,
+}: {
+  profit: number;
+  prevProfit: number;
+  oooKopeks: number;
+  sub: string;
+}) {
+  const profitAccent = profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400";
   return (
     <div className={`flex h-full flex-col p-5 ${CARD}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Прибыль</div>
-        <TrendChip cur={profit} prev={prev} goodWhenUp />
+      <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Финансовый итог</div>
+      <div className="mt-3 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-xs text-slate-400 dark:text-slate-500">Прибыль</div>
+          <div className={`truncate text-2xl font-semibold tracking-tight ${profitAccent}`}>{formatKopeks(profit)}</div>
+        </div>
+        <TrendChip cur={profit} prev={prevProfit} goodWhenUp />
       </div>
-      <div className={`mt-3 truncate text-3xl font-semibold tracking-tight ${accent}`}>{formatKopeks(profit)}</div>
-      <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{sub}</div>
-    </div>
-  );
-}
-
-function CashCard({ oooKopeks }: { oooKopeks: number }) {
-  return (
-    <div className={`flex h-full flex-col p-5 ${CARD}`}>
-      <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Наличные на клубе</div>
-      <dl className="mt-3 space-y-3">
+      <dl className="mt-4 space-y-2.5 border-t border-slate-100 pt-3 dark:border-slate-800">
         <div className="flex items-baseline justify-between gap-2">
-          <dt className="text-xs text-slate-400 dark:text-slate-500">ООО</dt>
-          <dd className={`text-xl font-semibold tracking-tight ${oooKopeks < 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100"}`}>
+          <dt className="text-xs text-slate-400 dark:text-slate-500">Наличные ООО</dt>
+          <dd className={`text-sm font-semibold ${oooKopeks < 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100"}`}>
             {formatKopeks(oooKopeks)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-2">
-          <dt className="text-xs text-slate-400 dark:text-slate-500">ИП</dt>
+          <dt className="text-xs text-slate-400 dark:text-slate-500">Наличные ИП</dt>
           <dd className="text-sm font-medium text-slate-400 dark:text-slate-500">скоро</dd>
         </div>
       </dl>
+      <div className="mt-3 text-xs text-slate-400 dark:text-slate-500">{sub}</div>
     </div>
   );
 }
@@ -455,15 +497,6 @@ function TopExpensesBlock({ rows, from, to }: { rows: TopExpenseRow[]; from: str
         </div>
       )}
     </Panel>
-  );
-}
-
-function ForecastBlock() {
-  return (
-    <div className={`flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-8 text-center dark:border-slate-700 dark:bg-slate-900`}>
-      <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">Прогноз</div>
-      <div className="mx-auto mt-1 max-w-xs text-sm text-slate-400 dark:text-slate-500">Модуль прогнозирования будет подключён позже</div>
-    </div>
   );
 }
 
