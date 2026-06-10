@@ -112,6 +112,45 @@ export async function loadPaymentInvoices(
   return { obligations: obligations.map(toPayment), paid: paid.map(toPayment) };
 }
 
+/** End of the current Monday-first week (Sunday), at day-start. */
+export function endOfWeek(now: Date): Date {
+  const today = dayStart(now);
+  const isoIdx = (today.getDay() + 6) % 7; // Mon=0 … Sun=6
+  return addDays(today, 6 - isoIdx);
+}
+
+export type CalendarKpis = {
+  todayKopeks: number;
+  weekKopeks: number; // today → end of current week (inclusive)
+  monthEndKopeks: number; // today → last day of the selected month (inclusive)
+  overdueKopeks: number;
+  overdueCount: number;
+};
+
+/**
+ * KPI windows for the calendar header (Part 1). Reuses the same dueDate-based
+ * obligation set; `selectedMonthLastDay` is the last day (day-start) of the month
+ * shown in the calendar, so "До конца месяца" follows the selected month.
+ */
+export function computeCalendarKpis(obligations: PaymentInvoice[], now: Date, selectedMonthLastDay: Date): CalendarKpis {
+  const today = dayStart(now);
+  const week = endOfWeek(now);
+  let todayKopeks = 0, weekKopeks = 0, monthEndKopeks = 0, overdueKopeks = 0, overdueCount = 0;
+  for (const i of obligations) {
+    if (!i.dueDate) continue;
+    const d = dayStart(i.dueDate);
+    if (d < today) {
+      overdueKopeks += i.amountKopeks;
+      overdueCount += 1;
+      continue;
+    }
+    if (d.getTime() === today.getTime()) todayKopeks += i.amountKopeks;
+    if (d <= week) weekKopeks += i.amountKopeks; // d >= today already
+    if (d <= selectedMonthLastDay) monthEndKopeks += i.amountKopeks;
+  }
+  return { todayKopeks, weekKopeks, monthEndKopeks, overdueKopeks, overdueCount };
+}
+
 export type PaymentSummary = {
   overdueKopeks: number;
   overdueCount: number;
