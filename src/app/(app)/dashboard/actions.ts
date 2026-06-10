@@ -1,11 +1,27 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { canManageSalesPlans } from "@/lib/auth";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { rublesToKopeks } from "@/lib/money";
 import { normalizeMonth, PLAN_TYPES } from "@/lib/sales-plans";
+import { setActiveScope } from "../scope-actions";
+
+/**
+ * Open Analytics scoped to a single club (dashboard club-card click). Reuses the
+ * existing scope switch, which independently access-checks the club against the
+ * caller's accessible clubs — a forged/unassigned club id is dropped (scope
+ * falls back to all clubs), so there is no cross-club leak. Analytics then reads
+ * the narrowed scope via getCurrentAccessContext.allowedClubIds.
+ */
+export async function openClubAnalytics(clubId: string): Promise<void> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx?.selectedCompanyId) redirect("/analytics");
+  await setActiveScope(ctx.selectedCompanyId, clubId);
+  redirect("/analytics");
+}
 
 type SavePlanState = { ok: boolean; error?: string; saved?: number };
 
