@@ -7,7 +7,6 @@ import { expenseCategoryLabel } from "@/lib/expenses";
 import { INVOICE_STATUS_LABELS } from "@/lib/invoices";
 import { getConfirmedReportCashControl } from "@/lib/sales-reports";
 import {
-  loadPaymentInvoices,
   computeCalendarKpis,
   obligationsByCity,
   obligationsByClub,
@@ -16,8 +15,12 @@ import {
   endOfWeek,
   monthKeyOf,
   monthBounds,
-  type PaymentInvoice,
 } from "@/lib/payments";
+import {
+  loadPaymentObligationsForScope,
+  calculateCashGap,
+  type PaymentObligation,
+} from "@/lib/payment-obligations";
 
 export const dynamic = "force-dynamic";
 
@@ -86,8 +89,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   // Load enough to cover overdue + the selected month + the 7/30-day KPI windows.
   const loadEnd = new Date(Math.max(bounds.end.getTime(), addDays(today, 30).getTime(), endOfWeek(now).getTime()));
 
+  // Source-agnostic obligations (invoices today; mandatory/payroll later).
   const [{ obligations }, cashRows] = await Promise.all([
-    loadPaymentInvoices(companyId, scope.clubIds, loadEnd, monthKey),
+    loadPaymentObligationsForScope({ companyId, clubIds: scope.clubIds, loadEnd, monthKey }),
     getConfirmedReportCashControl(scope),
   ]);
 
@@ -107,7 +111,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const cashOooKopeks = cashAvailable ? cashRowsThisMonth.reduce((s, r) => s + (r.cashOooKopeks - r.encashmentKopeks), 0) : null;
 
   // Part 3 — day → obligations map for the selected month.
-  const byDay = new Map<number, PaymentInvoice[]>();
+  const byDay = new Map<number, PaymentObligation[]>();
   for (const i of obligations) {
     if (!i.dueDate) continue;
     const d = dayStart(i.dueDate);
@@ -134,8 +138,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const cityRows = obligationsByCity(obligations, now);
   const clubRows = obligationsByClub(obligations);
 
-  const remainingAfterWeek = cashOooKopeks === null ? null : cashOooKopeks - kpis.weekKopeks;
-  const cashGap = cashOooKopeks === null ? null : cashOooKopeks - within7Kopeks;
+  // Part 6 — projected balance after the week's / 7-day obligations (pure helper).
+  const remainingAfterWeek = calculateCashGap({ currentCashKopeks: cashOooKopeks, obligationsKopeks: kpis.weekKopeks }).projectedBalanceKopeks;
+  const cashGap = calculateCashGap({ currentCashKopeks: cashOooKopeks, obligationsKopeks: within7Kopeks }).projectedBalanceKopeks;
 
   const dayHref = (d: Date) => `/payments?month=${monthKey}&day=${iso(d)}`;
 
@@ -310,7 +315,7 @@ function PanelCard({ title, hint, children }: { title: string; hint?: string; ch
   );
 }
 
-function SelectedDayCard({ date, rows, total }: { date: Date | null; rows: PaymentInvoice[]; total: number }) {
+function SelectedDayCard({ date, rows, total }: { date: Date | null; rows: PaymentObligation[]; total: number }) {
   return (
     <PanelCard title="Платежи дня" hint={date ? dayLongFmt.format(date) : undefined}>
       {!date ? (
@@ -326,15 +331,15 @@ function SelectedDayCard({ date, rows, total }: { date: Date | null; rows: Payme
           <ul className="divide-y divide-slate-100 dark:divide-slate-800/70">
             {rows.map((r) => (
               <li key={r.id}>
-                <Link href={`/invoices/${r.id}`} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                <Link href={r.href ?? `/invoices/${r.sourceId}`} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {expenseCategoryLabel(r.expenseCategory)}
+                      {expenseCategoryLabel(r.categoryRaw ?? null)}
                       {r.counterpartyName ? <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">· {r.counterpartyName}</span> : null}
                     </div>
                     <div className="truncate text-xs text-slate-500 dark:text-slate-400">
                       {r.clubName} · {r.city}
-                      {r.legalEntityName ? ` · ${r.legalEntityName}` : ""} · {INVOICE_STATUS_LABELS[r.status] ?? r.status}
+                      {r.legalEntityName ? ` · ${r.legalEntityName}` : ""} · {INVOICE_STATUS_LABELS[r.rawStatus ?? ""] ?? r.rawStatus}
                     </div>
                   </div>
                   <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
@@ -400,7 +405,7 @@ function CashGapCard({ cashOooKopeks, within7Kopeks, gap }: { cashOooKopeks: num
   );
 }
 
-function UpcomingCard({ rows, today }: { rows: PaymentInvoice[]; today: Date }) {
+function UpcomingCard({ rows, today }: { rows: PaymentObligation[]; today: Date }) {
   return (
     <PanelCard title="Ближайшие платежи">
       {rows.length === 0 ? (
@@ -413,10 +418,10 @@ function UpcomingCard({ rows, today }: { rows: PaymentInvoice[]; today: Date }) 
               rel.tone === "bad" ? "text-rose-600 dark:text-rose-400" : rel.tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-slate-400 dark:text-slate-500";
             return (
               <li key={r.id}>
-                <Link href={`/invoices/${r.id}`} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                <Link href={r.href ?? `/invoices/${r.sourceId}`} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {expenseCategoryLabel(r.expenseCategory)}
+                      {expenseCategoryLabel(r.categoryRaw ?? null)}
                       {r.counterpartyName ? <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">· {r.counterpartyName}</span> : null}
                     </div>
                     <div className={`truncate text-xs ${relCls}`}>{rel.text} · {r.clubName}</div>

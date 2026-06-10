@@ -119,6 +119,17 @@ export function endOfWeek(now: Date): Date {
   return addDays(today, 6 - isoIdx);
 }
 
+// Minimal structural shape the calendar calculations need. Both PaymentInvoice
+// and the source-agnostic PaymentObligation satisfy it, so these helpers work
+// for invoices today and for any future payment source unchanged.
+export type CalendarObligationLike = {
+  amountKopeks: number;
+  dueDate: Date | null;
+  clubId: string;
+  clubName: string;
+  city: string | null;
+};
+
 export type CalendarKpis = {
   todayKopeks: number;
   weekKopeks: number; // today → end of current week (inclusive)
@@ -132,7 +143,7 @@ export type CalendarKpis = {
  * obligation set; `selectedMonthLastDay` is the last day (day-start) of the month
  * shown in the calendar, so "До конца месяца" follows the selected month.
  */
-export function computeCalendarKpis(obligations: PaymentInvoice[], now: Date, selectedMonthLastDay: Date): CalendarKpis {
+export function computeCalendarKpis(obligations: CalendarObligationLike[], now: Date, selectedMonthLastDay: Date): CalendarKpis {
   const today = dayStart(now);
   const week = endOfWeek(now);
   let todayKopeks = 0, weekKopeks = 0, monthEndKopeks = 0, overdueKopeks = 0, overdueCount = 0;
@@ -161,7 +172,7 @@ export type PaymentSummary = {
 };
 
 /** Summary cards (Part 2/3) from already-loaded obligations + paid. */
-export function computePaymentSummary(obligations: PaymentInvoice[], paid: PaymentInvoice[], now: Date): PaymentSummary {
+export function computePaymentSummary(obligations: CalendarObligationLike[], paid: { amountKopeks: number }[], now: Date): PaymentSummary {
   const today = dayStart(now);
   const tomorrow = addDays(today, 1);
   const in7 = addDays(today, 7);
@@ -194,21 +205,22 @@ export async function getPaymentSummary(companyId: string, clubIds: string[], no
 
 export type CityObligation = { city: string; toPayKopeks: number; overdueKopeks: number };
 
-export function obligationsByCity(obligations: PaymentInvoice[], now: Date): CityObligation[] {
+export function obligationsByCity(obligations: CalendarObligationLike[], now: Date): CityObligation[] {
   const today = dayStart(now);
   const map = new Map<string, CityObligation>();
   for (const i of obligations) {
-    const row = map.get(i.city) ?? { city: i.city, toPayKopeks: 0, overdueKopeks: 0 };
+    const city = i.city ?? "—"; // invoices always have a city; null only for future sources
+    const row = map.get(city) ?? { city, toPayKopeks: 0, overdueKopeks: 0 };
     row.toPayKopeks += i.amountKopeks;
     if (i.dueDate && i.dueDate < today) row.overdueKopeks += i.amountKopeks;
-    map.set(i.city, row);
+    map.set(city, row);
   }
   return [...map.values()].sort((a, b) => b.toPayKopeks - a.toPayKopeks);
 }
 
 export type ClubObligation = { clubId: string; clubName: string; toPayKopeks: number };
 
-export function obligationsByClub(obligations: PaymentInvoice[]): ClubObligation[] {
+export function obligationsByClub(obligations: CalendarObligationLike[]): ClubObligation[] {
   const map = new Map<string, ClubObligation>();
   for (const i of obligations) {
     const row = map.get(i.clubId) ?? { clubId: i.clubId, clubName: i.clubName, toPayKopeks: 0 };
