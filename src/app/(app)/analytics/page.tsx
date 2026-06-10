@@ -15,6 +15,7 @@ import {
   buildAnalyticsReport,
   type AnalyticsPeriodKey,
   type TrendGranularity,
+  type PlanSplitCell,
   type WeekdayRow,
   type ManagerRow,
   type TopExpenseRow,
@@ -22,7 +23,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// Period selector options (Part 1). `custom` reads the from/to date inputs.
+// Period selector options. `custom` reads the from/to date inputs.
 const PERIOD_OPTIONS: { value: AnalyticsPeriodKey; label: string }[] = [
   { value: "current_week", label: "Текущая неделя" },
   { value: "previous_week", label: "Прошлая неделя" },
@@ -33,14 +34,14 @@ const PERIOD_OPTIONS: { value: AnalyticsPeriodKey; label: string }[] = [
   { value: "custom", label: "Произвольный период" },
 ];
 
-// Financial blocks (expenses, expense plan, cash balances, top expenses) are for
+// Financial blocks (expenses, obligations, cash, profit, top expenses) are for
 // financial roles only. Managers are sales-only and marketers have no financial
 // view — both see only the sales blocks. Page access itself is unchanged.
 const FINANCIAL_ROLES = new Set<Role>(["owner", "general_director", "regional_director", "accountant"]);
 
-// Shared, dark-theme-ready surface classes (dormant `dark:` until a `.dark`
-// ancestor exists — see tailwind.config darkMode: "class").
-const CARD = "rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
+// Shared, dark-theme-ready surface (dormant `dark:` until a `.dark` ancestor
+// exists — see tailwind.config darkMode: "class").
+const CARD = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
 const dfmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 const isoLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -83,7 +84,6 @@ export default async function AnalyticsPage({
   const now = new Date();
   const period = resolvePeriod(periodKey, now, parseDay(sp.from), parseDay(sp.to));
   const granularity = granularityFor(period.key, period.months.length);
-  // Local-date bounds for the expense drilldown links (exclusive end).
   const drillFrom = isoLocal(period.start);
   const drillTo = isoLocal(period.end);
   const lastDay = new Date(period.end.getTime() - 24 * 60 * 60 * 1000);
@@ -93,16 +93,16 @@ export default async function AnalyticsPage({
   const report = buildAnalyticsReport(data, period, granularity);
   const s = report.summary;
 
-  // Custom inputs default to the resolved window so switching to «Произвольный» is seamless.
   const fromValue = sp.from ?? drillFrom;
   const toValue = sp.to ?? isoLocal(lastDay);
+  // Part 3 — chart spans the side area only when the financial cards are present.
+  const chartSpan = financials ? "lg:col-span-2" : "lg:col-span-4";
 
   return (
-    <div>
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="mx-auto max-w-[1440px]">
+      {/* Header + period selector */}
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <PageHeader title="Аналитика" description="Бизнес-обзор клуба" />
-
-        {/* Part 1 — period selector: dropdown + from + to + «Показать» */}
         <form method="get" className={`flex flex-wrap items-end gap-2 p-2 ${CARD}`}>
           <label className="block">
             <span className="mb-1 block px-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Период</span>
@@ -127,52 +127,75 @@ export default async function AnalyticsPage({
       </div>
 
       {/* Selected-period chip */}
-      <div className="mb-6 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+      <div className="mb-5 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
         <span className="font-medium text-slate-700 dark:text-slate-200">{period.label}</span>
         <span className="text-slate-300 dark:text-slate-600">·</span>
         <span>{rangeLabel}</span>
       </div>
 
-      {/* BLOCK 1 — KPI cards (Part 3) */}
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
-        <KpiCard label="Продажи абонементов" value={formatKopeks(s.subscriptionsKopeks)} sub={rangeLabel} accent="text-emerald-600 dark:text-emerald-400" trend={{ cur: s.subscriptionsKopeks, prev: s.prevSubscriptionsKopeks, goodWhenUp: true }} />
-        <KpiCard label="Продажи персональных тренировок" value={formatKopeks(s.personalTrainingKopeks)} sub={rangeLabel} accent="text-sky-600 dark:text-sky-400" trend={{ cur: s.personalTrainingKopeks, prev: s.prevPersonalTrainingKopeks, goodWhenUp: true }} />
+      {/* Part 2 — top KPI grid (2×2) with plan progress on the sales cards */}
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <KpiCard
+          label="Продажи абонементов"
+          value={formatKopeks(s.subscriptionsKopeks)}
+          sub={rangeLabel}
+          accent="text-emerald-600 dark:text-emerald-400"
+          trend={{ cur: s.subscriptionsKopeks, prev: s.prevSubscriptionsKopeks, goodWhenUp: true }}
+          progress={report.planTotals.subscriptions}
+        />
+        <KpiCard
+          label="Продажи персональных тренировок"
+          value={formatKopeks(s.personalTrainingKopeks)}
+          sub={rangeLabel}
+          accent="text-sky-600 dark:text-sky-400"
+          trend={{ cur: s.personalTrainingKopeks, prev: s.prevPersonalTrainingKopeks, goodWhenUp: true }}
+          progress={report.planTotals.personal_training}
+        />
         {financials ? (
           <>
-            <KpiCard label="Фактические расходы" value={formatKopeks(s.expensesKopeks)} sub={rangeLabel} accent="text-rose-600 dark:text-rose-400" trend={{ cur: s.expensesKopeks, prev: s.prevExpensesKopeks, goodWhenUp: false }} />
             <KpiCard
-              label="План расходов"
-              value={s.budgetTotalKopeks > 0 ? formatKopeks(s.budgetTotalKopeks) : "Не задан"}
-              sub={s.budgetTotalKopeks > 0 ? rangeLabel : "бюджет не настроен"}
-              muted={s.budgetTotalKopeks === 0}
+              label="Фактические расходы"
+              value={formatKopeks(s.expensesKopeks)}
+              sub={rangeLabel}
+              accent="text-rose-600 dark:text-rose-400"
+              trend={{ cur: s.expensesKopeks, prev: s.prevExpensesKopeks, goodWhenUp: false }}
             />
             <KpiCard
-              label="Остаток наличности ООО"
-              value={formatKopeks(s.cashOooRemainingKopeks)}
-              sub="наличные ООО − инкассация"
-              accent={s.cashOooRemainingKopeks < 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100"}
+              label="Долги / обязательства"
+              value={formatKopeks(s.obligationsKopeks)}
+              sub="согласованные неоплаченные счета и возвраты"
+              accent={s.obligationsKopeks > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-slate-100"}
             />
-            <KpiCard label="Остаток наличности ИП" value="Скоро" sub="модуль в разработке" muted />
           </>
         ) : null}
       </div>
 
-      {/* BLOCK 2 — sales dynamics (Part 4) */}
-      <Panel title="Динамика продаж" hint={rangeLabel}>
-        <SalesDynamicsChart buckets={report.salesSplitTrend.buckets} />
-      </Panel>
+      {/* Part 3 — sales dynamics + profit + cash */}
+      <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className={`min-w-0 md:col-span-2 ${chartSpan}`}>
+          <Panel title="Динамика продаж" hint={rangeLabel}>
+            <SalesDynamicsChart buckets={report.salesSplitTrend.buckets} height={180} />
+          </Panel>
+        </div>
+        {financials ? (
+          <>
+            <ProfitCard profit={s.profitKopeks} prev={s.prevProfitKopeks} sub={rangeLabel} />
+            <CashCard oooKopeks={s.cashOooRemainingKopeks} />
+          </>
+        ) : null}
+      </div>
 
-      {/* BLOCK 3 — sales by weekday (Part 5) */}
-      <WeekdaySalesBlock rows={report.weekdaySales} />
-
-      {/* BLOCK 4 — sales by manager (Part 5) */}
-      <ManagerSalesBlock rows={report.managerSales} />
-
-      {/* BLOCK 5 — top expense categories, financial roles only (Part 6) */}
-      {financials ? <TopExpensesBlock rows={report.topExpenses} from={drillFrom} to={drillTo} /> : null}
-
-      {/* BLOCK 6 — forecast placeholder (Part 7) */}
-      <ForecastBlock />
+      {/* Part 5 — lower analytics grid (sales left, expenses/forecast right) */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
+          <ManagerSalesBlock rows={report.managerSales} />
+          <WeekdaySalesBlock rows={report.weekdaySales} />
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          {financials ? <TopExpensesBlock rows={report.topExpenses} from={drillFrom} to={drillTo} /> : null}
+          <ForecastBlock />
+        </div>
+      </div>
     </div>
   );
 }
@@ -196,9 +219,29 @@ function TrendChip({ cur, prev, goodWhenUp }: { cur: number; prev: number; goodW
       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
       : "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400";
   return (
-    <span className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${cls}`} title="к предыдущему периоду">
+    <span className={`inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${cls}`} title="к предыдущему периоду">
       {flat ? "→" : up ? "↑" : "↓"} {Math.abs(d).toFixed(0)}%
     </span>
+  );
+}
+
+/** Plan-completion bar: <80% red, 80–99% amber, ≥100% green. */
+function PlanProgress({ cell }: { cell: PlanSplitCell }) {
+  if (cell.planKopeks <= 0) {
+    return <div className="mt-3 text-xs text-slate-400 dark:text-slate-500">План не задан</div>;
+  }
+  const pct = cell.percent ?? 0;
+  const tone = pct >= 100 ? "bg-emerald-500" : pct >= 80 ? "bg-amber-500" : "bg-rose-500";
+  return (
+    <div className="mt-3">
+      <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+        <span>План: {formatKopeks(cell.planKopeks)}</span>
+        <span className="font-semibold text-slate-700 dark:text-slate-200">{pct.toFixed(0)}%</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -209,6 +252,7 @@ function KpiCard({
   accent,
   muted,
   trend,
+  progress,
 }: {
   label: string;
   value: string;
@@ -216,9 +260,10 @@ function KpiCard({
   accent?: string;
   muted?: boolean;
   trend?: { cur: number; prev: number; goodWhenUp: boolean };
+  progress?: PlanSplitCell;
 }) {
   return (
-    <div className={`flex h-full flex-col justify-between p-5 ${CARD}`}>
+    <div className={`flex h-full flex-col p-5 ${CARD}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="text-sm font-medium leading-tight text-slate-500 dark:text-slate-400">{label}</div>
         {trend ? <TrendChip cur={trend.cur} prev={trend.prev} goodWhenUp={trend.goodWhenUp} /> : null}
@@ -227,19 +272,62 @@ function KpiCard({
         {value}
       </div>
       {sub ? <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{sub}</div> : null}
+      {progress ? <PlanProgress cell={progress} /> : null}
+    </div>
+  );
+}
+
+function ProfitCard({ profit, prev, sub }: { profit: number; prev: number; sub: string }) {
+  const accent = profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400";
+  return (
+    <div className={`flex h-full flex-col p-5 ${CARD}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Прибыль</div>
+        <TrendChip cur={profit} prev={prev} goodWhenUp />
+      </div>
+      <div className={`mt-3 truncate text-3xl font-semibold tracking-tight ${accent}`}>{formatKopeks(profit)}</div>
+      <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{sub}</div>
+    </div>
+  );
+}
+
+function CashCard({ oooKopeks }: { oooKopeks: number }) {
+  return (
+    <div className={`flex h-full flex-col p-5 ${CARD}`}>
+      <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Наличные на клубе</div>
+      <dl className="mt-3 space-y-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <dt className="text-xs text-slate-400 dark:text-slate-500">ООО</dt>
+          <dd className={`text-xl font-semibold tracking-tight ${oooKopeks < 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100"}`}>
+            {formatKopeks(oooKopeks)}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-2">
+          <dt className="text-xs text-slate-400 dark:text-slate-500">ИП</dt>
+          <dd className="text-sm font-medium text-slate-400 dark:text-slate-500">скоро</dd>
+        </div>
+      </dl>
     </div>
   );
 }
 
 function Panel({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className={`mb-8 overflow-hidden ${CARD}`}>
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+    <div className={`flex h-full flex-col overflow-hidden ${CARD}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
         <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</span>
-        {hint ? <span className="text-xs text-slate-400 dark:text-slate-500">{hint}</span> : null}
+        {hint ? <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{hint}</span> : null}
       </div>
       {children}
     </div>
+  );
+}
+
+function BestBadge({ text }: { text: string }) {
+  return (
+    <span className="ml-2 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20">
+      {text}
+    </span>
   );
 }
 
@@ -247,7 +335,7 @@ function WeekdaySalesBlock({ rows }: { rows: WeekdayRow[] }) {
   const hasData = rows.some((r) => r.reportCount > 0);
   const dash = (k: number, count: number) => (count > 0 ? formatKopeks(k) : "—");
   return (
-    <Panel title="Продажи по дням недели" hint="🏆 — лучший день по средней выручке">
+    <Panel title="Продажи по дням недели" hint="лучший — по средней выручке">
       {!hasData ? (
         <EmptyRow />
       ) : (
@@ -266,9 +354,9 @@ function WeekdaySalesBlock({ rows }: { rows: WeekdayRow[] }) {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
               {rows.map((r) => (
                 <tr key={r.weekday} className={r.isBest ? "bg-emerald-50/60 dark:bg-emerald-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-800/40"}>
-                  <Td className="font-medium text-slate-900 dark:text-slate-100">
-                    {r.isBest ? <span className="mr-1" title="Лучший день по средней выручке">🏆</span> : null}
+                  <Td className="whitespace-nowrap font-medium text-slate-900 dark:text-slate-100">
                     {r.label}
+                    {r.isBest ? <BestBadge text="Лучший день" /> : null}
                   </Td>
                   <Td className="text-right">{dash(r.subscriptionsKopeks, r.reportCount)}</Td>
                   <Td className="text-right">{dash(r.personalTrainingKopeks, r.reportCount)}</Td>
@@ -287,7 +375,7 @@ function WeekdaySalesBlock({ rows }: { rows: WeekdayRow[] }) {
 
 function ManagerSalesBlock({ rows }: { rows: ManagerRow[] }) {
   return (
-    <Panel title="Продажи по менеджерам" hint="🏆 — лучший по средней выручке за смену">
+    <Panel title="Продажи по менеджерам" hint="лучший — по средней выручке за смену">
       {rows.length === 0 ? (
         <EmptyRow />
       ) : (
@@ -301,15 +389,15 @@ function ManagerSalesBlock({ rows }: { rows: ManagerRow[] }) {
                 <Th className="text-right">Средняя АБ</Th>
                 <Th className="text-right">Средняя ПТ</Th>
                 <Th className="text-right">Общая выручка</Th>
-                <Th className="text-right">Средняя выручка за смену</Th>
+                <Th className="text-right">Средняя за смену</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
               {rows.map((r) => (
                 <tr key={r.manager} className={r.isBest ? "bg-emerald-50/60 dark:bg-emerald-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-800/40"}>
-                  <Td className="font-medium text-slate-900 dark:text-slate-100">
-                    {r.isBest ? <span className="mr-1" title="Лучший по средней выручке за смену">🏆</span> : null}
+                  <Td className="whitespace-nowrap font-medium text-slate-900 dark:text-slate-100">
                     {r.manager}
+                    {r.isBest ? <BestBadge text="Лучший менеджер" /> : null}
                   </Td>
                   <Td className="text-right">{formatKopeks(r.subscriptionsKopeks)}</Td>
                   <Td className="text-right">{formatKopeks(r.personalTrainingKopeks)}</Td>
@@ -330,39 +418,41 @@ function ManagerSalesBlock({ rows }: { rows: ManagerRow[] }) {
 function TopExpensesBlock({ rows, from, to }: { rows: TopExpenseRow[]; from: string; to: string }) {
   const href = (category: string) => `/analytics/expenses?category=${encodeURIComponent(category)}&from=${from}&to=${to}`;
   return (
-    <Panel title="Топ расходов по статьям" hint="Нажмите статью для детализации →">
+    <Panel title="Статистика по статьям расхода" hint="нажмите статью для детализации">
       {rows.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">Расходов за период нет.</div>
       ) : (
-        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-          <thead className="bg-slate-50 dark:bg-slate-800/50">
-            <tr>
-              <Th>Статья</Th>
-              <Th className="text-right">Сумма</Th>
-              <Th className="text-right">Доля</Th>
-              <Th />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-            {rows.map((r) => (
-              <tr key={r.category} className="group cursor-pointer hover:bg-brand-50/50 dark:hover:bg-brand-500/10">
-                <Td>
-                  <Link href={href(r.category)} className="flex items-center gap-1 font-medium text-brand-700 group-hover:underline dark:text-brand-500">
-                    {r.label}
-                    <span aria-hidden className="text-brand-400 opacity-0 transition group-hover:opacity-100">→</span>
-                  </Link>
-                </Td>
-                <Td className="text-right">{formatKopeks(r.amountKopeks)}</Td>
-                <Td className="text-right text-slate-600 dark:text-slate-300">{r.sharePercent.toFixed(0)}%</Td>
-                <Td className="w-40">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, r.sharePercent)}%` }} />
-                  </div>
-                </Td>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+            <thead className="bg-slate-50 dark:bg-slate-800/50">
+              <tr>
+                <Th>Статья</Th>
+                <Th className="text-right">Сумма</Th>
+                <Th className="text-right">Доля</Th>
+                <Th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+              {rows.map((r) => (
+                <tr key={r.category} className="group cursor-pointer hover:bg-brand-50/50 dark:hover:bg-brand-500/10">
+                  <Td>
+                    <Link href={href(r.category)} className="flex items-center gap-1 font-medium text-brand-700 group-hover:underline dark:text-brand-500">
+                      {r.label}
+                      <span aria-hidden className="text-brand-400 opacity-0 transition group-hover:opacity-100">→</span>
+                    </Link>
+                  </Td>
+                  <Td className="text-right">{formatKopeks(r.amountKopeks)}</Td>
+                  <Td className="text-right text-slate-600 dark:text-slate-300">{r.sharePercent.toFixed(0)}%</Td>
+                  <Td className="w-32">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                      <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, r.sharePercent)}%` }} />
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Panel>
   );
@@ -370,10 +460,9 @@ function TopExpensesBlock({ rows, from, to }: { rows: TopExpenseRow[]; from: str
 
 function ForecastBlock() {
   return (
-    <div className="mb-8 flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-gradient-to-b from-slate-50 to-white p-10 text-center shadow-sm dark:border-slate-700 dark:from-slate-900 dark:to-slate-900">
-      <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400">✨</div>
-      <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Прогноз</div>
-      <div className="mx-auto mt-1 max-w-md text-sm text-slate-400 dark:text-slate-500">Модуль прогнозирования будет подключён позже</div>
+    <div className={`flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-8 text-center dark:border-slate-700 dark:bg-slate-900`}>
+      <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">Прогноз</div>
+      <div className="mx-auto mt-1 max-w-xs text-sm text-slate-400 dark:text-slate-500">Модуль прогнозирования будет подключён позже</div>
     </div>
   );
 }
@@ -384,12 +473,12 @@ function EmptyRow() {
 
 function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
   return (
-    <th scope="col" className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 ${className ?? ""}`}>
+    <th scope="col" className={`whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 ${className ?? ""}`}>
       {children}
     </th>
   );
 }
 
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-4 py-3 align-top text-sm text-slate-700 dark:text-slate-300 ${className ?? ""}`}>{children}</td>;
+  return <td className={`px-3 py-2.5 align-middle text-sm text-slate-700 dark:text-slate-300 ${className ?? ""}`}>{children}</td>;
 }

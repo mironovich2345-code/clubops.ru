@@ -267,6 +267,8 @@ export type ExecutiveSummary = {
   planTargetKopeks: number;
   planPercent: number | null;
   cashOooRemainingKopeks: number;
+  // Долги / обязательства: approved-but-unpaid invoices + refunds (network debt).
+  obligationsKopeks: number;
 };
 
 export type TrendGranularity = "day" | "week" | "month";
@@ -312,6 +314,8 @@ export type PlanPerfRow = {
 };
 
 export type PlanSplitCell = { planKopeks: number; factKopeks: number; percent: number | null };
+// Company-wide plan/fact totals by direction, for the KPI plan-progress bars.
+export type PlanTotals = { subscriptions: PlanSplitCell; personal_training: PlanSplitCell };
 export type PlanSplitClubRow = {
   clubId: string;
   clubName: string;
@@ -362,6 +366,7 @@ export type AnalyticsReport = {
   clubRanking: ClubRankRow[];
   planPerformance: PlanPerfRow[];
   planSplitByClub: PlanSplitClubRow[];
+  planTotals: PlanTotals;
   weekdaySales: WeekdayRow[];
   managerSales: ManagerRow[];
   budgetPerformance: BudgetFactReport;
@@ -521,6 +526,7 @@ export function buildAnalyticsReport(
     planTargetKopeks,
     planPercent: planTargetKopeks > 0 ? (curSales / planTargetKopeks) * 100 : null,
     cashOooRemainingKopeks,
+    obligationsKopeks: data.debtKopeks,
   };
 
   // Blocks 2/3/4: trends
@@ -605,6 +611,19 @@ export function buildAnalyticsReport(
         r.subscriptions.planKopeks > 0 || r.subscriptions.factKopeks > 0 ||
         r.personal_training.planKopeks > 0 || r.personal_training.factKopeks > 0,
     );
+
+  // Company-wide plan/fact by direction for the KPI progress bars (same per-club
+  // SalesPlan source as planSplitByClub; fact reuses the period subs/PT totals).
+  let planSubsTarget = 0;
+  let planPtTarget = 0;
+  for (const acc of planByClubType.values()) {
+    planSubsTarget += acc.subscriptions;
+    planPtTarget += acc.personal_training;
+  }
+  const planTotals: PlanTotals = {
+    subscriptions: cell(planSubsTarget, subscriptionsKopeks),
+    personal_training: cell(planPtTarget, personalTrainingKopeks),
+  };
 
   // Confirmed daily reports in the current period, split into total / subs / PT.
   const reportsInPeriod = data.reportSplit.filter((r) => inRange(r.date, period.start, period.end));
@@ -722,6 +741,7 @@ export function buildAnalyticsReport(
     clubRanking,
     planPerformance,
     planSplitByClub,
+    planTotals,
     weekdaySales,
     managerSales,
     budgetPerformance,
