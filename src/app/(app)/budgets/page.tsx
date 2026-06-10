@@ -21,6 +21,7 @@ import {
   BUDGET_REQUEST_STATUS_LABELS,
   type BudgetFactReport,
 } from "@/lib/budgets";
+import { canManageBudgets } from "@/lib/auth";
 import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { BudgetLimitForm } from "./_components/BudgetForms";
 import { RequestActions } from "./_components/RequestActions";
@@ -77,7 +78,9 @@ export default async function BudgetsPage({
     getManageableClubIds(user.id, scope.company.id),
   ]);
   const manageable = new Set(manageableClubIds);
-  const canManageSelected = manageable.has(selectedClubId);
+  // Setting/updating budget limits is owner/GD only (strategic limits). This is
+  // distinct from approval rights below, which also include regional directors.
+  const canSetLimits = canManageBudgets(ctx.effectiveRoles);
 
   // Plan vs Fact for the selected club (loaded only when that tab is open).
   const factReport: BudgetFactReport =
@@ -165,11 +168,15 @@ export default async function BudgetsPage({
         </div>
       ) : (
       <>
-      {canManageSelected ? (
+      {canSetLimits ? (
         <div className="mb-6">
           <BudgetLimitForm clubId={selectedClubId} month={month} categories={BUDGET_CATEGORIES} />
         </div>
-      ) : null}
+      ) : (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+          Управлять бюджетами может собственник или ген.директор
+        </div>
+      )}
 
       {/* Overview */}
       <div className="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

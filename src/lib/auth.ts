@@ -54,11 +54,13 @@ const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
 //  - "operational.create": create invoices/expenses/refunds/sales/imports
 //    (managers + regional directors only — NOT owners/GD/accountants/marketers).
 //  - "sales_plan.manage": create/update sales plans (general director only).
-export type Capability = "operational.create" | "sales_plan.manage";
+//  - "budget.manage": set/update monthly budget limits — strategic limits, so
+//    owner + general director only (regional directors view but cannot edit).
+export type Capability = "operational.create" | "sales_plan.manage" | "budget.manage";
 
 const ROLE_CAPABILITIES: Record<Role, ReadonlyArray<Capability>> = {
-  owner: [],
-  general_director: ["sales_plan.manage"],
+  owner: ["budget.manage"],
+  general_director: ["sales_plan.manage", "budget.manage"],
   regional_director: ["operational.create"],
   manager: ["operational.create"],
   accountant: [],
@@ -77,6 +79,11 @@ export function canCreateOperational(roles: readonly Role[]): boolean {
 /** Create/update sales plans (general director). */
 export function canManageSalesPlans(roles: readonly Role[]): boolean {
   return can(roles, "sales_plan.manage");
+}
+
+/** Set/update monthly budget limits (owner / general director). */
+export function canManageBudgets(roles: readonly Role[]): boolean {
+  return can(roles, "budget.manage");
 }
 
 export function canAccessPage(role: Role, page: AppPage): boolean {

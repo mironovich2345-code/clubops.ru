@@ -2,12 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage } from "@/lib/auth";
+import { canAnyRoleAccessPage, canManageBudgets } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import {
   getCurrentAccessContext,
   canAccessClub,
-  userHasClubRole,
   getManageableClubIds,
   recordAudit,
 } from "@/lib/access";
@@ -51,9 +50,10 @@ export async function createOrUpdateBudget(
   if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
     return { ok: false, error: "Нет доступа к выбранному клубу" };
   }
-  // Only owner / regional director may manage budgets.
-  if (!(await userHasClubRole(ctx.user.id, clubId, ["regional_director"]))) {
-    return { ok: false, error: "Управлять бюджетами может владелец или региональный директор" };
+  // Budget limits are strategic — only owner / general director may set them
+  // (regional directors may view but not edit).
+  if (!canManageBudgets(ctx.effectiveRoles)) {
+    return { ok: false, error: "Управлять бюджетами может собственник или ген.директор" };
   }
   if (!CATEGORY_KEYS.has(category)) return { ok: false, error: "Неверная статья" };
   if (!isValidMonth(month)) return { ok: false, error: "Неверный месяц" };
