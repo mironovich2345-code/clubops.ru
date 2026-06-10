@@ -7,6 +7,7 @@ export type NavItem = {
 };
 
 export const NAV_ITEMS: ReadonlyArray<NavItem> = [
+  { page: "workspace", href: "/workspace", label: "Рабочий стол" },
   { page: "dashboard", href: "/dashboard", label: "Дашборд" },
   { page: "analytics", href: "/analytics", label: "Аналитика" },
   { page: "expenses", href: "/expenses", label: "Наличные расходы" },
@@ -32,6 +33,7 @@ export type NavSection =
   | { type: "group"; id: string; label: string; pages: AppPage[] };
 
 export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
+  { type: "item", page: "workspace" },
   { type: "item", page: "dashboard" },
   { type: "item", page: "analytics" },
   { type: "item", page: "sales" },

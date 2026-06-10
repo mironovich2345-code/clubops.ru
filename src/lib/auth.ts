@@ -15,6 +15,7 @@ export type Role =
   | "marketer";
 
 export type AppPage =
+  | "workspace"
   | "dashboard"
   | "analytics"
   | "expenses"
@@ -43,8 +44,12 @@ const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
   owner: ["dashboard", "analytics", "expenses", "invoices", "payments", "refunds", "budgets", "sales", "activity", "users", "settings"],
   general_director: ["dashboard", "analytics", "payments", "sales", "budgets", "activity", "users", "settings"],
   regional_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "refunds", "budgets", "sales", "imports", "documents", "activity", "users"],
-  manager: ["dashboard", "analytics", "expenses", "invoices", "refunds", "budgets", "sales", "documents", "activity"],
-  accountant: ["dashboard", "analytics", "expenses", "invoices", "payments", "refunds", "budgets", "sales", "documents", "activity"],
+  // Manager: operational, own-club only. No network analytics financials and no
+  // audit/activity log.
+  manager: ["dashboard", "analytics", "expenses", "invoices", "refunds", "budgets", "sales", "documents"],
+  // Accountant lands on a dedicated workspace (рабочий стол) instead of the owner
+  // dashboard / analytics, which are not part of the accountant's job.
+  accountant: ["workspace", "expenses", "invoices", "payments", "refunds", "budgets", "sales", "documents", "activity"],
   // Marketer: limited analytics (sales / plans / advertising only); no other
   // financial pages.
   marketer: ["dashboard", "analytics"],

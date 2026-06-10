@@ -198,10 +198,13 @@ export default async function AnalyticsPage({
         ) : null}
       </div>
 
-      {/* Part 1/2 — monthly forecast fills the area above the chart */}
-      <div className="mb-5">
-        <MonthlyForecastBlock forecast={forecast} financials={financials} hint={period.label} />
-      </div>
+      {/* Part 1/2 — monthly forecast (financial roles only; hidden from
+          manager/marketer, who see operational sales metrics only) */}
+      {financials ? (
+        <div className="mb-5">
+          <MonthlyForecastBlock forecast={forecast} financials={financials} hint={period.label} />
+        </div>
+      ) : null}
 
       {/* Part 3/6 — sales dynamics + combined financial summary card */}
       <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
