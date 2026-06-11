@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
+import { monthClosedError } from "@/lib/month-close";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { getRefundForContext, REFUND_ACTION_AUDIT, type RefundDocument } from "@/lib/refunds";
 import {
@@ -184,6 +185,10 @@ export async function saveRefund(
   const parsed = parseRefundFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
+  // Block mutations in a closed accounting month (same guard as expenses/invoices).
+  const closedSave = await monthClosedError(companyId, clubId, parsed.data.refundDate ?? new Date());
+  if (closedSave) return { ok: false, error: closedSave };
+
   const confidenceRaw = String(formData.get("confidence") ?? "low");
   const confidence = ["low", "medium", "high"].includes(confidenceRaw) ? confidenceRaw : "low";
 
@@ -230,6 +235,9 @@ export async function updateRefund(
     return { ok: false, error: "Оплаченный возврат может редактировать только владелец или бухгалтер" };
   }
 
+  const closedUpd = await monthClosedError(existing.companyId, existing.clubId, existing.paidAt ?? existing.refundDate ?? existing.createdAt);
+  if (closedUpd) return { ok: false, error: closedUpd };
+
   const parsed = parseRefundFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
@@ -261,6 +269,9 @@ export async function transitionRefund(formData: FormData): Promise<void> {
 
   const existing = await getRefundForContext(ctx, refundId);
   if (!existing) throw new Error("Возврат не найден или нет доступа");
+
+  const closedTx = await monthClosedError(existing.companyId, existing.clubId, existing.paidAt ?? existing.refundDate ?? existing.createdAt);
+  if (closedTx) throw new Error(closedTx);
 
   const result = applyApprovalAction(action, existing.status, ctx.effectiveRoles);
   if (!result.ok) throw new Error(result.error);

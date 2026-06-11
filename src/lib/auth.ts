@@ -137,11 +137,21 @@ const SESSION_COOKIE = "club_ops_session";
 const SESSION_TTL_DAYS = 30;
 // SESSION_SECRET keys the token HMAC: a leaked tokenHash can't be reversed into
 // a usable cookie without the secret. Set it in production (see .env.example).
-const SESSION_SECRET = process.env.SESSION_SECRET ?? "dev-insecure-session-secret";
+// Resolved lazily so production fails fast on the first auth request when the
+// secret is missing, without throwing during `next build` (which sets
+// NODE_ENV=production but never hashes a token at build time).
+function sessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("SESSION_SECRET is required in production");
+  }
+  return "dev-insecure-session-secret";
+}
 
 // Exported so invite tokens use the same keyed hash (raw token never stored).
 export function hashToken(token: string): string {
-  return createHmac("sha256", SESSION_SECRET).update(token).digest("hex");
+  return createHmac("sha256", sessionSecret()).update(token).digest("hex");
 }
 
 export async function createSession(userId: string): Promise<void> {
