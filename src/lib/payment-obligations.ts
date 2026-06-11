@@ -7,10 +7,12 @@
 //
 // Nothing here changes current behaviour: the invoice adapter is loss-less and
 // mandatory/payroll loaders return [] for now (documented TODOs below).
+import { prisma } from "@/lib/prisma";
 import { expenseCategoryLabel } from "@/lib/expenses";
 import {
   loadPaymentInvoices,
   monthKeyOf,
+  dayStart,
   type PaymentInvoice,
 } from "@/lib/payments";
 
@@ -90,6 +92,26 @@ export function invoiceToPaymentObligation(invoice: PaymentInvoice, companyId: s
   };
 }
 
+/** Human source label for a calendar row (Part 5): Счёт / Обязательный платёж. */
+export function paymentSourceLabel(sourceType: PaymentSourceType): string {
+  switch (sourceType) {
+    case "invoice":
+      return "Счёт";
+    case "mandatory_payment":
+      return "Обязательный платёж";
+    case "payroll":
+      return "Зарплата";
+  }
+}
+
+/** Category label resolved per source (mandatory categories differ from expense). */
+export function paymentObligationCategoryLabel(o: PaymentObligation): string {
+  if (o.sourceType === "mandatory_payment") {
+    return MANDATORY_PAYMENT_CATEGORY_LABELS[o.category] ?? o.category;
+  }
+  return expenseCategoryLabel(o.categoryRaw ?? null);
+}
+
 // ---------------------------------------------------------------------------
 // Part 2 — mandatory payment categories
 // ---------------------------------------------------------------------------
@@ -140,17 +162,137 @@ export type MandatoryPaymentPlan = {
   notes: string | null;
 };
 
+// Active plan shape needed to expand into obligations.
+export type MandatoryPlanRow = {
+  id: string;
+  companyId: string;
+  clubId: string;
+  clubName: string;
+  city: string | null;
+  category: string;
+  title: string;
+  amountKopeks: number;
+  dueDayOfMonth: number | null;
+  dueDate: Date | null;
+  recurrence: string;
+  responsibleUserId: string | null;
+  status: string;
+  isActive: boolean;
+  notes: string | null;
+};
+
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+function planToObligation(p: MandatoryPlanRow, due: Date, today: Date): PaymentObligation {
+  const overdue = dayStart(due).getTime() < today.getTime();
+  return {
+    id: `mp_${p.id}_${isoDay(due)}`,
+    sourceType: "mandatory_payment",
+    sourceId: p.id,
+    companyId: p.companyId,
+    clubId: p.clubId,
+    clubName: p.clubName,
+    city: p.city,
+    category: p.category,
+    title: p.title,
+    amountKopeks: p.amountKopeks,
+    dueDate: due,
+    status: overdue ? "overdue" : "planned",
+    paidAt: null,
+    responsibleUserId: p.responsibleUserId,
+    notes: p.notes,
+    href: "/mandatory-payments",
+    rawStatus: p.status,
+    categoryRaw: p.category,
+    counterpartyName: p.title, // shown as the secondary label in calendar rows
+    legalEntityName: null,
+  };
+}
+
 /**
- * TODO adapter — returns [] until the MandatoryPaymentPlan model exists. When
- * implemented it must expand active plans (by recurrence) into PaymentObligation[]
- * within [now, loadEnd] and merge into loadPaymentObligationsForScope below.
+ * Pure expansion of active plans into obligations within [windowStart, windowEnd]
+ * (both day-inclusive). Monthly plans emit one occurrence per month on
+ * dueDayOfMonth (clamped to the month length); one-time plans emit their dueDate.
+ * Only planned + active plans generate (paused / canceled disappear).
+ */
+export function generateMandatoryObligations(
+  plans: MandatoryPlanRow[],
+  windowStart: Date,
+  windowEnd: Date,
+  now: Date,
+): PaymentObligation[] {
+  const start = dayStart(windowStart);
+  const end = dayStart(windowEnd);
+  const today = dayStart(now);
+  const out: PaymentObligation[] = [];
+  if (start.getTime() > end.getTime()) return out;
+
+  for (const p of plans) {
+    if (!p.isActive || p.status !== "planned") continue;
+
+    if (p.recurrence === "monthly") {
+      if (p.dueDayOfMonth == null) continue;
+      let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+      const lastMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+      while (cur.getTime() <= lastMonth.getTime()) {
+        const daysInMonth = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+        const day = Math.min(Math.max(1, p.dueDayOfMonth), daysInMonth);
+        const occ = new Date(cur.getFullYear(), cur.getMonth(), day);
+        if (occ.getTime() >= start.getTime() && occ.getTime() <= end.getTime()) {
+          out.push(planToObligation(p, occ, today));
+        }
+        cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+      }
+    } else {
+      // recurrence "none" — one-time payment on dueDate
+      if (!p.dueDate) continue;
+      const occ = dayStart(p.dueDate);
+      if (occ.getTime() >= start.getTime() && occ.getTime() <= end.getTime()) {
+        out.push(planToObligation(p, occ, today));
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Loads active mandatory plans for the scope and expands them into obligations
+ * within [windowStart, windowEnd]. Scope-safe: companyId + allowed clubIds only.
  */
 export async function loadMandatoryPaymentObligations(
-  _companyId: string,
-  _clubIds: string[],
-  _loadEnd: Date,
+  companyId: string,
+  clubIds: string[],
+  windowStart: Date,
+  windowEnd: Date,
 ): Promise<PaymentObligation[]> {
-  return [];
+  if (clubIds.length === 0) return [];
+  const plans = await prisma.mandatoryPaymentPlan.findMany({
+    where: { companyId, clubId: { in: clubIds }, isActive: true, status: "planned" },
+    select: {
+      id: true, companyId: true, clubId: true, category: true, title: true, amountKopeks: true,
+      dueDayOfMonth: true, dueDate: true, recurrence: true, responsibleUserId: true, status: true,
+      isActive: true, notes: true,
+      club: { select: { name: true, city: true } },
+    },
+  });
+  const rows: MandatoryPlanRow[] = plans.map((p) => ({
+    id: p.id,
+    companyId: p.companyId,
+    clubId: p.clubId,
+    clubName: p.club.name,
+    city: p.club.city,
+    category: p.category,
+    title: p.title,
+    amountKopeks: p.amountKopeks,
+    dueDayOfMonth: p.dueDayOfMonth,
+    dueDate: p.dueDate,
+    recurrence: p.recurrence,
+    responsibleUserId: p.responsibleUserId,
+    status: p.status,
+    isActive: p.isActive,
+    notes: p.notes,
+  }));
+  return generateMandatoryObligations(rows, windowStart, windowEnd, new Date());
 }
 
 // ---------------------------------------------------------------------------
@@ -203,13 +345,17 @@ export async function loadPaymentObligationsForScope(args: {
   clubIds: string[];
   loadEnd: Date;
   monthKey?: string;
+  // Lower bound for expanding recurring mandatory payments. Defaults to the start
+  // of the previous month so recent overdue + the current window are covered.
+  windowStart?: Date;
 }): Promise<{ obligations: PaymentObligation[] }> {
   const { companyId, clubIds, loadEnd } = args;
   if (clubIds.length === 0) return { obligations: [] };
+  const windowStart = args.windowStart ?? new Date(loadEnd.getFullYear(), loadEnd.getMonth() - 1, 1);
 
   const [{ obligations: invoices }, mandatory, payroll] = await Promise.all([
     loadPaymentInvoices(companyId, clubIds, loadEnd, args.monthKey ?? monthKeyOf(loadEnd)),
-    loadMandatoryPaymentObligations(companyId, clubIds, loadEnd),
+    loadMandatoryPaymentObligations(companyId, clubIds, windowStart, loadEnd),
     buildPayrollObligations(companyId, clubIds, loadEnd),
   ]);
 

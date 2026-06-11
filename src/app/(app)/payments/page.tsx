@@ -3,8 +3,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks, formatKopeksShort } from "@/lib/money";
 import { requirePageAccess, getCurrentCompanyAndClub } from "@/lib/access";
-import { expenseCategoryLabel } from "@/lib/expenses";
-import { INVOICE_STATUS_LABELS } from "@/lib/invoices";
 import { getConfirmedReportCashControl } from "@/lib/sales-reports";
 import {
   computeCalendarKpis,
@@ -19,6 +17,8 @@ import {
 import {
   loadPaymentObligationsForScope,
   calculateCashGap,
+  paymentObligationCategoryLabel,
+  paymentSourceLabel,
   type PaymentObligation,
 } from "@/lib/payment-obligations";
 
@@ -89,9 +89,15 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   // Load enough to cover overdue + the selected month + the 7/30-day KPI windows.
   const loadEnd = new Date(Math.max(bounds.end.getTime(), addDays(today, 30).getTime(), endOfWeek(now).getTime()));
 
-  // Source-agnostic obligations (invoices today; mandatory/payroll later).
+  // Mandatory recurring payments are expanded from one month before the earlier
+  // of the selected / current month, so recent overdue is covered too.
+  const curMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const earlierMonth = monthStart.getTime() < curMonthStart.getTime() ? monthStart : curMonthStart;
+  const mandatoryWindowStart = new Date(earlierMonth.getFullYear(), earlierMonth.getMonth() - 1, 1);
+
+  // Source-agnostic obligations: invoices + mandatory payments (payroll later).
   const [{ obligations }, cashRows] = await Promise.all([
-    loadPaymentObligationsForScope({ companyId, clubIds: scope.clubIds, loadEnd, monthKey }),
+    loadPaymentObligationsForScope({ companyId, clubIds: scope.clubIds, loadEnd, monthKey, windowStart: mandatoryWindowStart }),
     getConfirmedReportCashControl(scope),
   ]);
 
@@ -334,12 +340,12 @@ function SelectedDayCard({ date, rows, total }: { date: Date | null; rows: Payme
                 <Link href={r.href ?? `/invoices/${r.sourceId}`} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {expenseCategoryLabel(r.categoryRaw ?? null)}
+                      {paymentObligationCategoryLabel(r)}
                       {r.counterpartyName ? <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">· {r.counterpartyName}</span> : null}
                     </div>
                     <div className="truncate text-xs text-slate-500 dark:text-slate-400">
                       {r.clubName} · {r.city}
-                      {r.legalEntityName ? ` · ${r.legalEntityName}` : ""} · {INVOICE_STATUS_LABELS[r.rawStatus ?? ""] ?? r.rawStatus}
+                      {r.legalEntityName ? ` · ${r.legalEntityName}` : ""} · {paymentSourceLabel(r.sourceType)}
                     </div>
                   </div>
                   <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
@@ -421,10 +427,10 @@ function UpcomingCard({ rows, today }: { rows: PaymentObligation[]; today: Date 
                 <Link href={r.href ?? `/invoices/${r.sourceId}`} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {expenseCategoryLabel(r.categoryRaw ?? null)}
+                      {paymentObligationCategoryLabel(r)}
                       {r.counterpartyName ? <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">· {r.counterpartyName}</span> : null}
                     </div>
-                    <div className={`truncate text-xs ${relCls}`}>{rel.text} · {r.clubName}</div>
+                    <div className={`truncate text-xs ${relCls}`}>{rel.text} · {r.clubName} · {paymentSourceLabel(r.sourceType)}</div>
                   </div>
                   <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
                 </Link>

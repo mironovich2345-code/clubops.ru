@@ -21,6 +21,7 @@ export type AppPage =
   | "expenses"
   | "invoices"
   | "payments"
+  | "mandatory_payments"
   | "refunds"
   | "budgets"
   | "sales"
@@ -41,15 +42,15 @@ export type CurrentUser = {
 // ROLE_CAPABILITIES) so an owner/general_director can VIEW invoices/expenses but
 // not create them.
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
-  owner: ["dashboard", "analytics", "expenses", "invoices", "payments", "refunds", "budgets", "sales", "activity", "users", "settings"],
-  general_director: ["dashboard", "analytics", "payments", "sales", "budgets", "activity", "users", "settings"],
-  regional_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "refunds", "budgets", "sales", "imports", "documents", "activity", "users"],
+  owner: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "refunds", "budgets", "sales", "activity", "users", "settings"],
+  general_director: ["dashboard", "analytics", "payments", "mandatory_payments", "sales", "budgets", "activity", "users", "settings"],
+  regional_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "refunds", "budgets", "sales", "imports", "documents", "activity", "users"],
   // Manager: operational, own-club only. No network analytics financials and no
   // audit/activity log.
   manager: ["dashboard", "analytics", "expenses", "invoices", "refunds", "budgets", "sales", "documents"],
   // Accountant lands on a dedicated workspace (рабочий стол) instead of the owner
   // dashboard / analytics, which are not part of the accountant's job.
-  accountant: ["workspace", "expenses", "invoices", "payments", "refunds", "budgets", "sales", "documents", "activity"],
+  accountant: ["workspace", "expenses", "invoices", "payments", "mandatory_payments", "refunds", "budgets", "sales", "documents", "activity"],
   // Marketer: limited analytics (sales / plans / advertising only); no other
   // financial pages.
   marketer: ["dashboard", "analytics"],
@@ -61,11 +62,13 @@ const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
 //  - "sales_plan.manage": create/update sales plans (general director only).
 //  - "budget.manage": set/update monthly budget limits — strategic limits, so
 //    owner + general director only (regional directors view but cannot edit).
-export type Capability = "operational.create" | "sales_plan.manage" | "budget.manage";
+//  - "mandatory_payment.manage": create/edit/pause/cancel mandatory payment
+//    plans — owner + general director (accountant / regional view only).
+export type Capability = "operational.create" | "sales_plan.manage" | "budget.manage" | "mandatory_payment.manage";
 
 const ROLE_CAPABILITIES: Record<Role, ReadonlyArray<Capability>> = {
-  owner: ["budget.manage"],
-  general_director: ["sales_plan.manage", "budget.manage"],
+  owner: ["budget.manage", "mandatory_payment.manage"],
+  general_director: ["sales_plan.manage", "budget.manage", "mandatory_payment.manage"],
   regional_director: ["operational.create"],
   manager: ["operational.create"],
   accountant: [],
@@ -89,6 +92,11 @@ export function canManageSalesPlans(roles: readonly Role[]): boolean {
 /** Set/update monthly budget limits (owner / general director). */
 export function canManageBudgets(roles: readonly Role[]): boolean {
   return can(roles, "budget.manage");
+}
+
+/** Create/edit/pause/cancel mandatory payment plans (owner / general director). */
+export function canManageMandatoryPayments(roles: readonly Role[]): boolean {
+  return can(roles, "mandatory_payment.manage");
 }
 
 export function canAccessPage(role: Role, page: AppPage): boolean {

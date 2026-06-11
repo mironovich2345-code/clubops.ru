@@ -42,6 +42,7 @@ model Company {
   salesReports  SalesReport[]
   importBatches ImportBatch[]
   monthCloses   MonthClose[]
+  mandatoryPayments MandatoryPaymentPlan[]
 }
 
 model LegalEntity {
@@ -110,6 +111,8 @@ model User {
   payrollStatements       PayrollStatement[]
   salesPlans              SalesPlan[]
   salesReportsCreated     SalesReport[]           @relation("SalesReportCreatedBy")
+  mandatoryPaymentsCreated     MandatoryPaymentPlan[] @relation("MandatoryPaymentCreatedBy")
+  mandatoryPaymentsResponsible MandatoryPaymentPlan[] @relation("MandatoryPaymentResponsible")
 }
 
 model Session {
@@ -152,6 +155,7 @@ model Club {
   payrollStatements PayrollStatement[]
   salesPlans    SalesPlan[]
   salesReports  SalesReport[]
+  mandatoryPayments MandatoryPaymentPlan[]
 
   @@index([companyId])
 }
@@ -293,6 +297,40 @@ model Budget {
   createdBy User    @relation("BudgetCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   @@unique([clubId, category, month])
+  @@index([companyId])
+  @@index([clubId])
+}
+
+// Recurring or one-time mandatory payment (rent, salary, cleaning, security…).
+// Feeds the payment calendar via PaymentObligation (sourceType = mandatory_payment).
+// Allowed values enforced in src/lib/mandatory-payments.ts:
+//   recurrence -> none | monthly
+//   status     -> planned | paused | canceled
+model MandatoryPaymentPlan {
+  id                String    @id @default(cuid())
+  companyId         String
+  clubId            String
+  category          String
+  title             String
+  amountKopeks      Int       @default(0)
+  // For recurrence = monthly: the day-of-month the payment is due (1..31).
+  dueDayOfMonth     Int?
+  // For recurrence = none: the single due date.
+  dueDate           DateTime?
+  recurrence        String    @default("monthly")
+  responsibleUserId String?
+  status            String    @default("planned")
+  notes             String?
+  isActive          Boolean   @default(true)
+  createdByUserId   String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club        Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy   User    @relation("MandatoryPaymentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  responsible User?   @relation("MandatoryPaymentResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+
   @@index([companyId])
   @@index([clubId])
 }

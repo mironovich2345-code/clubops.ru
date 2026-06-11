@@ -8,7 +8,7 @@ import { getRefundsForScope } from "@/lib/refunds";
 import { getPendingSalesReports } from "@/lib/sales-reports";
 import { APPROVAL_STATUS_LABELS } from "@/lib/approval";
 import { dayStart, addDays, monthKeyOf } from "@/lib/payments";
-import { loadPaymentObligationsForScope, type PaymentObligation } from "@/lib/payment-obligations";
+import { loadPaymentObligationsForScope, paymentObligationCategoryLabel, type PaymentObligation } from "@/lib/payment-obligations";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,13 @@ export default async function WorkspacePage() {
     getExpensesForScope(scope),
     getRefundsForScope(scope),
     getPendingSalesReports(scope),
-    loadPaymentObligationsForScope({ companyId, clubIds: scope.clubIds, loadEnd: addDays(today, 60), monthKey: monthKeyOf(now) }),
+    loadPaymentObligationsForScope({
+      companyId,
+      clubIds: scope.clubIds,
+      loadEnd: addDays(today, 60),
+      monthKey: monthKeyOf(now),
+      windowStart: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+    }),
   ]);
 
   const expensesPending = expenses.filter((e) => e.status === EXPENSE_REVIEW_STATUS);
@@ -173,7 +179,7 @@ export default async function WorkspacePage() {
 }
 
 function paymentTitle(o: PaymentObligation): string {
-  const cat = expenseCategoryLabel(o.categoryRaw ?? null);
+  const cat = paymentObligationCategoryLabel(o);
   return o.counterpartyName ? `${cat} · ${o.counterpartyName}` : cat;
 }
 
