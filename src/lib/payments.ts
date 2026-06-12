@@ -39,6 +39,7 @@ export type PaymentInvoice = {
   clubName: string;
   city: string;
   legalEntityName: string | null;
+  legalEntityType: string | null; // raw entity type (normalized downstream)
 };
 
 type Row = {
@@ -52,7 +53,7 @@ type Row = {
   counterpartyName: string | null;
   clubId: string;
   club: { name: string; city: string };
-  legalEntity: { name: string } | null;
+  legalEntity: { name: string; type: string } | null;
 };
 const toPayment = (r: Row): PaymentInvoice => ({
   id: r.id,
@@ -67,6 +68,7 @@ const toPayment = (r: Row): PaymentInvoice => ({
   clubName: r.club.name,
   city: r.club.city,
   legalEntityName: r.legalEntity?.name ?? null,
+  legalEntityType: r.legalEntity?.type ?? null,
 });
 
 const ROW_SELECT = {
@@ -80,7 +82,7 @@ const ROW_SELECT = {
   counterpartyName: true,
   clubId: true,
   club: { select: { name: true, city: true } },
-  legalEntity: { select: { name: true } },
+  legalEntity: { select: { name: true, type: true } },
 } as const;
 
 /**

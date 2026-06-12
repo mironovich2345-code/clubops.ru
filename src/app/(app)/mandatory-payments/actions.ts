@@ -41,6 +41,7 @@ export async function createOrUpdateMandatoryPayment(
   const dueDayRaw = String(formData.get("dueDayOfMonth") ?? "").trim();
   const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
   const responsibleUserId = String(formData.get("responsibleUserId") ?? "").trim() || null;
+  const legalEntityId = String(formData.get("legalEntityId") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
 
   if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
@@ -72,6 +73,11 @@ export async function createOrUpdateMandatoryPayment(
     const inClub = inCompany ? null : await prisma.clubUserAccess.findFirst({ where: { userId: responsibleUserId, club: { companyId } }, select: { id: true } });
     if (!inCompany && !inClub) return { ok: false, error: "Ответственный не найден в компании" };
   }
+  // Legal entity (which pays this) is optional, but if set it must belong to this company.
+  if (legalEntityId) {
+    const ent = await prisma.legalEntity.findUnique({ where: { id: legalEntityId }, select: { companyId: true } });
+    if (!ent || ent.companyId !== companyId) return { ok: false, error: "Юрлицо не найдено" };
+  }
 
   if (id) {
     const existing = await prisma.mandatoryPaymentPlan.findUnique({ where: { id }, select: { companyId: true, clubId: true } });
@@ -80,7 +86,7 @@ export async function createOrUpdateMandatoryPayment(
     }
     await prisma.mandatoryPaymentPlan.update({
       where: { id },
-      data: { clubId, category, title, amountKopeks, recurrence, dueDayOfMonth, dueDate, responsibleUserId, notes },
+      data: { clubId, category, title, amountKopeks, recurrence, dueDayOfMonth, dueDate, responsibleUserId, legalEntityId, notes },
     });
     await recordAudit({
       action: "mandatory_payment.updated",
@@ -93,7 +99,7 @@ export async function createOrUpdateMandatoryPayment(
     });
   } else {
     const created = await prisma.mandatoryPaymentPlan.create({
-      data: { companyId, clubId, category, title, amountKopeks, recurrence, dueDayOfMonth, dueDate, responsibleUserId, notes, status: "planned", isActive: true, createdByUserId: ctx.user.id },
+      data: { companyId, clubId, category, title, amountKopeks, recurrence, dueDayOfMonth, dueDate, responsibleUserId, legalEntityId, notes, status: "planned", isActive: true, createdByUserId: ctx.user.id },
     });
     await recordAudit({
       action: "mandatory_payment.created",

@@ -9,6 +9,7 @@
 // mandatory/payroll loaders return [] for now (documented TODOs below).
 import { prisma } from "@/lib/prisma";
 import { expenseCategoryLabel } from "@/lib/expenses";
+import { normalizeEntityType, type LegalEntityType } from "@/lib/legal-entities";
 import {
   loadPaymentInvoices,
   monthKeyOf,
@@ -53,7 +54,36 @@ export type PaymentObligation = {
   categoryRaw?: string | null; // original nullable category for exact labelling
   counterpartyName?: string | null;
   legalEntityName?: string | null;
+  // Which legal entity (ООО / ИП) owes this — drives per-entity cash gaps. null
+  // = unassigned ("Юрлицо не указано"); such rows never count toward either gap.
+  legalEntityType: LegalEntityType | null;
 };
+
+/** ООО / ИП / fallback label for an obligation's legal entity. */
+export function paymentEntityLabel(type: LegalEntityType | null): string {
+  if (type === "ooo") return "ООО";
+  if (type === "ip") return "ИП";
+  return "Юрлицо не указано";
+}
+
+export type EntityObligationSums = { ooo: number; ip: number; unassigned: number };
+
+/**
+ * Sum obligation amounts per legal-entity type, optionally only those due on/before
+ * `until` (includes overdue — money still owed). ООО and ИП are kept strictly
+ * separate; unassigned (null entity) is tracked but never merged into either.
+ */
+export function sumObligationsByEntity(obligations: PaymentObligation[], until?: Date): EntityObligationSums {
+  const cut = until ? dayStart(until).getTime() : null;
+  const out: EntityObligationSums = { ooo: 0, ip: 0, unassigned: 0 };
+  for (const o of obligations) {
+    if (cut !== null && (!o.dueDate || dayStart(o.dueDate).getTime() > cut)) continue;
+    if (o.legalEntityType === "ooo") out.ooo += o.amountKopeks;
+    else if (o.legalEntityType === "ip") out.ip += o.amountKopeks;
+    else out.unassigned += o.amountKopeks;
+  }
+  return out;
+}
 
 function mapInvoiceStatus(status: string): PaymentObligationStatus {
   if (status === "paid") return "paid";
@@ -89,6 +119,7 @@ export function invoiceToPaymentObligation(invoice: PaymentInvoice, companyId: s
     categoryRaw: invoice.expenseCategory,
     counterpartyName: invoice.counterpartyName,
     legalEntityName: invoice.legalEntityName,
+    legalEntityType: normalizeEntityType(invoice.legalEntityType ?? ""),
   };
 }
 
@@ -179,6 +210,8 @@ export type MandatoryPlanRow = {
   status: string;
   isActive: boolean;
   notes: string | null;
+  legalEntityName: string | null;
+  legalEntityType: LegalEntityType | null;
 };
 
 const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -205,7 +238,8 @@ function planToObligation(p: MandatoryPlanRow, due: Date, today: Date): PaymentO
     rawStatus: p.status,
     categoryRaw: p.category,
     counterpartyName: p.title, // shown as the secondary label in calendar rows
-    legalEntityName: null,
+    legalEntityName: p.legalEntityName,
+    legalEntityType: p.legalEntityType,
   };
 }
 
@@ -273,6 +307,7 @@ export async function loadMandatoryPaymentObligations(
       dueDayOfMonth: true, dueDate: true, recurrence: true, responsibleUserId: true, status: true,
       isActive: true, notes: true,
       club: { select: { name: true, city: true } },
+      legalEntity: { select: { name: true, type: true } },
     },
   });
   const rows: MandatoryPlanRow[] = plans.map((p) => ({
@@ -291,6 +326,8 @@ export async function loadMandatoryPaymentObligations(
     status: p.status,
     isActive: p.isActive,
     notes: p.notes,
+    legalEntityName: p.legalEntity?.name ?? null,
+    legalEntityType: normalizeEntityType(p.legalEntity?.type ?? ""),
   }));
   return generateMandatoryObligations(rows, windowStart, windowEnd, new Date());
 }

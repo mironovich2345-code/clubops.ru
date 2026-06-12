@@ -109,6 +109,32 @@ export function balanceRiskLevel(forecast: BalanceForecast): BalanceRisk {
   return forecast.hasRisk ? "high" : "low";
 }
 
+// Per-legal-entity cash gap (Parts 2/4). ООО and ИП are computed independently
+// and NEVER offset each other — an ИП surplus cannot cover an ООО deficit.
+export type EntityCashGap = {
+  type: LegalEntityType;
+  currentBalanceKopeks: number | null;
+  obligationsKopeks: number;
+  projectedBalanceKopeks: number | null;
+  risk: BalanceRisk;
+};
+
+function oneEntityGap(type: LegalEntityType, balanceKopeks: number | null, obligationsKopeks: number): EntityCashGap {
+  const f = calculateBalanceForecast({ currentCashKopeks: balanceKopeks, obligationsKopeks });
+  return { type, currentBalanceKopeks: balanceKopeks, obligationsKopeks, projectedBalanceKopeks: f.projectedBalanceKopeks, risk: balanceRiskLevel(f) };
+}
+
+/** Build the ООО and ИП cash gaps separately (no merging, ever). */
+export function buildEntityCashGaps(args: {
+  ooo: { balanceKopeks: number | null; obligationsKopeks: number };
+  ip: { balanceKopeks: number | null; obligationsKopeks: number };
+}): { ooo: EntityCashGap; ip: EntityCashGap } {
+  return {
+    ooo: oneEntityGap("ooo", args.ooo.balanceKopeks, args.ooo.obligationsKopeks),
+    ip: oneEntityGap("ip", args.ip.balanceKopeks, args.ip.obligationsKopeks),
+  };
+}
+
 export type MoneyRequiredResult = {
   projectedBalanceKopeks: number | null;
   additionalSalesRequiredKopeks: number | null; // = cash gap; 0 when no gap; null if unknown

@@ -16,12 +16,13 @@ import {
 } from "@/lib/payments";
 import {
   loadPaymentObligationsForScope,
-  calculateCashGap,
   paymentObligationCategoryLabel,
   paymentSourceLabel,
+  paymentEntityLabel,
+  sumObligationsByEntity,
   type PaymentObligation,
 } from "@/lib/payment-obligations";
-import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
+import { buildEntityCashGaps, type EntityCashGap } from "@/lib/balance";
 import { getLatestBalancesForScope } from "@/lib/balance-snapshots";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,8 @@ const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
 const CARD = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
-type SP = { month?: string; day?: string };
+type SP = { month?: string; day?: string; entity?: string };
+type EntityFilter = "all" | "ooo" | "ip";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -104,12 +106,12 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     getLatestBalancesForScope(companyId, scope.clubIds),
   ]);
 
-  // Part 1 — KPI windows (reuse the dueDate-based obligation set).
-  const kpis = computeCalendarKpis(obligations, now, monthLastDay);
-  // 7-day upcoming window (for the cash-gap card).
-  const within7Kopeks = obligations
-    .filter((i) => i.dueDate && dayStart(i.dueDate) >= today && dayStart(i.dueDate) <= addDays(today, 7))
-    .reduce((s, i) => s + i.amountKopeks, 0);
+  // Part 3 — legal-entity filter (Все / ООО / ИП) for the calendar display.
+  const entityFilter: EntityFilter = sp.entity === "ooo" || sp.entity === "ip" ? sp.entity : "all";
+  const displayObligations = entityFilter === "all" ? obligations : obligations.filter((o) => o.legalEntityType === entityFilter);
+
+  // Part 1 — KPI windows (follow the filter; dueDate-based obligation set).
+  const kpis = computeCalendarKpis(displayObligations, now, monthLastDay);
 
   // Part 4 — cash source priority: latest BalanceSnapshot → legacy confirmed
   // report cash → null (insufficient). Never invents a balance.
@@ -122,12 +124,10 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const oooBalanceKopeks = balances.ooo.kopeks ?? legacyCashOooKopeks;
   const ipBalanceKopeks = balances.ip.kopeks; // snapshot only; null when none
   const totalAvailableKopeks = balances.totalKopeks ?? legacyCashOooKopeks;
-  // The existing ООО-labelled cards keep their ООО semantics, now snapshot-first.
-  const cashOooKopeks = oooBalanceKopeks;
 
-  // Part 3 — day → obligations map for the selected month.
+  // Part 3 — day → obligations map for the selected month (filtered).
   const byDay = new Map<number, PaymentObligation[]>();
-  for (const i of obligations) {
+  for (const i of displayObligations) {
     if (!i.dueDate) continue;
     const d = dayStart(i.dueDate);
     if (d < monthStart || d >= bounds.end) continue;
@@ -143,25 +143,26 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const selectedDayRows = selectedDay ? (byDay.get(selectedDay.getTime()) ?? []) : [];
   const selectedDayTotal = selectedDayRows.reduce((s, r) => s + r.amountKopeks, 0);
 
-  // Part 5 — upcoming (nearest first, overdue surfaced), max 5.
-  const upcoming = obligations
+  // Part 5 — upcoming (nearest first, overdue surfaced), max 5 (filtered).
+  const upcoming = displayObligations
     .filter((i) => i.dueDate)
     .sort((a, b) => a.dueDate!.getTime() - b.dueDate!.getTime())
     .slice(0, 5);
 
-  // Part 8 — city / club aggregation (existing helpers).
-  const cityRows = obligationsByCity(obligations, now);
-  const clubRows = obligationsByClub(obligations);
+  // Part 8 — city / club aggregation (filtered).
+  const cityRows = obligationsByCity(displayObligations, now);
+  const clubRows = obligationsByClub(displayObligations);
 
-  // Part 6 — projected balance after the week's / 7-day obligations (pure helper).
-  const remainingAfterWeek = calculateCashGap({ currentCashKopeks: cashOooKopeks, obligationsKopeks: kpis.weekKopeks }).projectedBalanceKopeks;
-  const cashGap = calculateCashGap({ currentCashKopeks: cashOooKopeks, obligationsKopeks: within7Kopeks }).projectedBalanceKopeks;
+  // Part 2/4 — per-entity cash gaps (ООО / ИП computed SEPARATELY, never merged).
+  // Obligations due within the next 30 days (incl. overdue), split by entity.
+  const sums = sumObligationsByEntity(obligations, addDays(today, 30));
+  const gaps = buildEntityCashGaps({
+    ooo: { balanceKopeks: oooBalanceKopeks, obligationsKopeks: sums.ooo },
+    ip: { balanceKopeks: ipBalanceKopeks, obligationsKopeks: sums.ip },
+  });
 
-  // Part 3/5–7 — total-available forecast (ООО + ИП snapshots) vs this week.
-  const totalForecast = calculateBalanceForecast({ currentCashKopeks: totalAvailableKopeks, obligationsKopeks: kpis.weekKopeks });
-  const balanceRisk = balanceRiskLevel(totalForecast);
-
-  const dayHref = (d: Date) => `/payments?month=${monthKey}&day=${iso(d)}`;
+  const dayHref = (d: Date) => `/payments?month=${monthKey}&day=${iso(d)}${entityFilter === "all" ? "" : `&entity=${entityFilter}`}`;
+  const entityHref = (e: EntityFilter) => `/payments?month=${monthKey}${e === "all" ? "" : `&entity=${e}`}`;
 
   return (
     <div className="mx-auto max-w-[1440px]">
@@ -197,33 +198,33 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         />
       </div>
 
-      {/* Part 3/4/7 — financial balance block (ООО / ИП / Всего / obligations / projected / risk) */}
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-6">
+      {/* Current balances (ООО / ИП kept separate; Всего is display-only). */}
+      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-3">
         <KpiCard
           label="Остаток ООО"
           value={oooBalanceKopeks === null ? "нет данных" : formatKopeks(oooBalanceKopeks)}
           tone={oooBalanceKopeks !== null && oooBalanceKopeks < 0 ? "bad" : "neutral"}
         />
-        <KpiCard
-          label="Остаток ИП"
-          value={ipBalanceKopeks === null ? "нет данных" : formatKopeks(ipBalanceKopeks)}
-        />
+        <KpiCard label="Остаток ИП" value={ipBalanceKopeks === null ? "нет данных" : formatKopeks(ipBalanceKopeks)} />
         <KpiCard
           label="Всего доступно"
           value={totalAvailableKopeks === null ? "нет данных" : formatKopeks(totalAvailableKopeks)}
+          sub="ООО + ИП (справочно)"
           tone={totalAvailableKopeks !== null && totalAvailableKopeks < 0 ? "bad" : "neutral"}
         />
-        <KpiCard label="Обязательства до конца недели" value={formatKopeks(kpis.weekKopeks)} />
-        <KpiCard
-          label="Прогноз остатка"
-          value={totalForecast.projectedBalanceKopeks === null ? "нет данных" : formatKopeks(totalForecast.projectedBalanceKopeks)}
-          tone={totalForecast.projectedBalanceKopeks !== null && totalForecast.projectedBalanceKopeks < 0 ? "bad" : "neutral"}
-        />
-        <KpiCard
-          label="Риск кассового разрыва"
-          value={balanceRisk === "unknown" ? "Нет данных" : balanceRisk === "high" ? "Высокий" : "Низкий"}
-          tone={balanceRisk === "high" ? "bad" : "neutral"}
-        />
+      </div>
+
+      {/* Part 3 — legal-entity filter */}
+      <div className="mb-5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 text-sm dark:border-slate-800 dark:bg-slate-900">
+        {([["all", "Все"], ["ooo", "ООО"], ["ip", "ИП"]] as const).map(([key, label]) => (
+          <Link
+            key={key}
+            href={entityHref(key)}
+            className={`rounded-md px-3 py-1.5 font-medium transition ${entityFilter === key ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+          >
+            {label}
+          </Link>
+        ))}
       </div>
 
       {/* Calendar + right rail */}
@@ -263,11 +264,11 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
 
-        {/* Right rail: selected day + financial load + cash gap */}
+        {/* Right rail: selected day + per-entity cash gaps (ООО / ИП separately) */}
         <div className="flex min-w-0 flex-col gap-4">
           <SelectedDayCard date={selectedDay} rows={selectedDayRows} total={selectedDayTotal} />
-          <FinancialLoadCard cashOooKopeks={cashOooKopeks} weekKopeks={kpis.weekKopeks} remaining={remainingAfterWeek} />
-          <CashGapCard cashOooKopeks={cashOooKopeks} within7Kopeks={within7Kopeks} gap={cashGap} />
+          <EntityGapCard gap={gaps.ooo} />
+          <EntityGapCard gap={gaps.ip} />
         </div>
       </div>
 
@@ -399,7 +400,10 @@ function SelectedDayCard({ date, rows, total }: { date: Date | null; rows: Payme
                       {r.legalEntityName ? ` · ${r.legalEntityName}` : ""} · {paymentSourceLabel(r.sourceType)}
                     </div>
                   </div>
-                  <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
+                    <EntityBadge type={r.legalEntityType} />
+                  </div>
                 </Link>
               </li>
             ))}
@@ -410,54 +414,35 @@ function SelectedDayCard({ date, rows, total }: { date: Date | null; rows: Payme
   );
 }
 
-function FinancialLoadCard({ cashOooKopeks, weekKopeks, remaining }: { cashOooKopeks: number | null; weekKopeks: number; remaining: number | null }) {
-  return (
-    <PanelCard title="Финансовая нагрузка">
-      <dl className="space-y-2.5 px-4 py-3 text-sm">
-        <Row label="Остаток ООО" value={cashOooKopeks === null ? "нет данных" : formatKopeks(cashOooKopeks)} muted={cashOooKopeks === null} />
-        <Row label="Платежей до конца недели" value={formatKopeks(weekKopeks)} />
-        <div className="border-t border-slate-100 pt-2.5 dark:border-slate-800">
-          <Row
-            label="Остаток после оплат"
-            value={remaining === null ? "нет данных" : formatKopeks(remaining)}
-            muted={remaining === null}
-            tone={remaining !== null && remaining < 0 ? "bad" : undefined}
-            bold
-          />
-        </div>
-      </dl>
-    </PanelCard>
-  );
+function EntityBadge({ type }: { type: "ooo" | "ip" | null }) {
+  const cls = type === "ooo"
+    ? "bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-500/10 dark:text-sky-400 dark:ring-sky-500/20"
+    : type === "ip"
+      ? "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:ring-violet-500/20"
+      : "bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700";
+  return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${cls}`}>{paymentEntityLabel(type)}</span>;
 }
 
-function CashGapCard({ cashOooKopeks, within7Kopeks, gap }: { cashOooKopeks: number | null; within7Kopeks: number; gap: number | null }) {
+function EntityGapCard({ gap }: { gap: EntityCashGap }) {
+  const label = gap.type === "ooo" ? "ООО" : "ИП";
+  const riskText = gap.risk === "unknown" ? "Нет данных" : gap.risk === "high" ? "Высокий риск" : "Низкий риск";
+  const tone = gap.risk === "unknown"
+    ? "bg-slate-50 text-slate-500 ring-slate-200 dark:bg-slate-800/50 dark:text-slate-400 dark:ring-slate-700"
+    : gap.risk === "high"
+      ? "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:ring-rose-500/20"
+      : "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20";
   return (
-    <PanelCard title="Риск кассового разрыва">
-      {cashOooKopeks === null || gap === null ? (
-        <div className="px-4 py-3">
-          <dl className="space-y-2.5 text-sm">
-            <Row label="Предстоящие платежи (7 дней)" value={formatKopeks(within7Kopeks)} />
-          </dl>
-          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-inset ring-slate-200 dark:bg-slate-800/50 dark:text-slate-400 dark:ring-slate-700">
-            Недостаточно данных для прогноза
-          </div>
+    <PanelCard title={`Кассовый разрыв · ${label}`}>
+      <div className="px-4 py-3">
+        <dl className="space-y-2.5 text-sm">
+          <Row label="Остаток" value={gap.currentBalanceKopeks === null ? "нет данных" : formatKopeks(gap.currentBalanceKopeks)} muted={gap.currentBalanceKopeks === null} />
+          <Row label="Обязательства (30 дн.)" value={formatKopeks(gap.obligationsKopeks)} />
+        </dl>
+        <div className={`mt-3 flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-semibold ring-1 ring-inset ${tone}`}>
+          <span>{gap.projectedBalanceKopeks === null ? "Прогноз" : "Прогноз остатка"}</span>
+          <span className="text-right">{gap.projectedBalanceKopeks === null ? riskText : `${formatKopeks(gap.projectedBalanceKopeks)} · ${riskText}`}</span>
         </div>
-      ) : (
-        <div className="px-4 py-3">
-          <dl className="space-y-2.5 text-sm">
-            <Row label="Остаток" value={formatKopeks(cashOooKopeks)} />
-            <Row label="Предстоящие платежи (7 дней)" value={formatKopeks(within7Kopeks)} />
-          </dl>
-          <div className={`mt-3 flex items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold ring-1 ring-inset ${
-            gap >= 0
-              ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20"
-              : "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:ring-rose-500/20"
-          }`}>
-            <span>{gap >= 0 ? "Запас" : "Дефицит"}</span>
-            <span>{formatKopeks(Math.abs(gap))}</span>
-          </div>
-        </div>
-      )}
+      </div>
     </PanelCard>
   );
 }
@@ -483,7 +468,10 @@ function UpcomingCard({ rows, today }: { rows: PaymentObligation[]; today: Date 
                     </div>
                     <div className={`truncate text-xs ${relCls}`}>{rel.text} · {r.clubName} · {paymentSourceLabel(r.sourceType)}</div>
                   </div>
-                  <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
+                    <EntityBadge type={r.legalEntityType} />
+                  </div>
                 </Link>
               </li>
             );

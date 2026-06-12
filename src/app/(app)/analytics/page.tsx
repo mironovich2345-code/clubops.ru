@@ -6,8 +6,8 @@ import { SalesDynamicsChart } from "@/components/SalesDynamicsChart";
 import { MonthlyForecastBlock } from "@/components/MonthlyForecastBlock";
 import { buildMonthlyForecast } from "@/lib/forecast";
 import { getLatestBalancesForScope } from "@/lib/balance-snapshots";
-import { loadPaymentObligationsForScope } from "@/lib/payment-obligations";
-import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
+import { loadPaymentObligationsForScope, sumObligationsByEntity } from "@/lib/payment-obligations";
+import { buildEntityCashGaps, type EntityCashGap } from "@/lib/balance";
 import { dayStart, addDays } from "@/lib/payments";
 import {
   requirePageAccess,
@@ -130,32 +130,20 @@ export default async function AnalyticsPage({
   const fromValue = sp.from ?? drillFrom;
   const toValue = sp.to ?? isoLocal(lastDay);
 
-  // Part 6 — financial control cards (financial roles only): real ООО/ИП
-  // balances from snapshots + a 7-day cash-gap forecast. Scoped to allowedClubIds.
-  let balanceCards: {
-    oooKopeks: number | null;
-    ipKopeks: number | null;
-    totalKopeks: number | null;
-    projectedKopeks: number | null;
-    risk: "low" | "high" | "unknown";
-  } | null = null;
+  // Part 6 — financial control cards (financial roles only): ООО and ИП forecasts
+  // computed SEPARATELY (never merged). Scoped to allowedClubIds.
+  let entityGaps: { ooo: EntityCashGap; ip: EntityCashGap } | null = null;
   if (financials) {
+    const horizon = addDays(dayStart(now), 30);
     const [bal, { obligations: payObs }] = await Promise.all([
       getLatestBalancesForScope(scope.company.id, ctx.allowedClubIds),
-      loadPaymentObligationsForScope({ companyId: scope.company.id, clubIds: ctx.allowedClubIds, loadEnd: addDays(dayStart(now), 30) }),
+      loadPaymentObligationsForScope({ companyId: scope.company.id, clubIds: ctx.allowedClubIds, loadEnd: horizon }),
     ]);
-    const t0 = dayStart(now);
-    const within7 = payObs
-      .filter((o) => o.dueDate && dayStart(o.dueDate) >= t0 && dayStart(o.dueDate) <= addDays(t0, 7))
-      .reduce((sum, o) => sum + o.amountKopeks, 0);
-    const f = calculateBalanceForecast({ currentCashKopeks: bal.totalKopeks, obligationsKopeks: within7 });
-    balanceCards = {
-      oooKopeks: bal.ooo.kopeks,
-      ipKopeks: bal.ip.kopeks,
-      totalKopeks: bal.totalKopeks,
-      projectedKopeks: f.projectedBalanceKopeks,
-      risk: balanceRiskLevel(f),
-    };
+    const sums = sumObligationsByEntity(payObs, horizon);
+    entityGaps = buildEntityCashGaps({
+      ooo: { balanceKopeks: bal.ooo.kopeks, obligationsKopeks: sums.ooo },
+      ip: { balanceKopeks: bal.ip.kopeks, obligationsKopeks: sums.ip },
+    });
   }
 
   return (
@@ -230,21 +218,30 @@ export default async function AnalyticsPage({
         ) : null}
       </div>
 
-      {/* Part 6 (Finance Control) — balance cards, financial roles only */}
-      {financials && balanceCards ? (
-        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <KpiCard label="Остаток ООО" value={balanceCards.oooKopeks === null ? "нет данных" : formatKopeks(balanceCards.oooKopeks)} />
-          <KpiCard label="Остаток ИП" value={balanceCards.ipKopeks === null ? "нет данных" : formatKopeks(balanceCards.ipKopeks)} />
-          <KpiCard label="Всего доступно" value={balanceCards.totalKopeks === null ? "нет данных" : formatKopeks(balanceCards.totalKopeks)} />
+      {/* Part 6 (Finance Control) — ООО / ИП forecasts kept separate (no merge) */}
+      {financials && entityGaps ? (
+        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <KpiCard
-            label="Прогноз остатка"
-            value={balanceCards.projectedKopeks === null ? "нет данных" : formatKopeks(balanceCards.projectedKopeks)}
-            accent={balanceCards.projectedKopeks !== null && balanceCards.projectedKopeks < 0 ? "text-rose-600 dark:text-rose-400" : undefined}
+            label="Прогноз ООО"
+            value={entityGaps.ooo.projectedBalanceKopeks === null ? "нет данных" : formatKopeks(entityGaps.ooo.projectedBalanceKopeks)}
+            sub={entityGaps.ooo.currentBalanceKopeks === null ? "остаток не задан" : `остаток ${formatKopeks(entityGaps.ooo.currentBalanceKopeks)}`}
+            accent={entityGaps.ooo.projectedBalanceKopeks !== null && entityGaps.ooo.projectedBalanceKopeks < 0 ? "text-rose-600 dark:text-rose-400" : undefined}
           />
           <KpiCard
-            label="Риск кассового разрыва"
-            value={balanceCards.risk === "unknown" ? "Нет данных" : balanceCards.risk === "high" ? "Высокий" : "Низкий"}
-            accent={balanceCards.risk === "high" ? "text-rose-600 dark:text-rose-400" : balanceCards.risk === "low" ? "text-emerald-600 dark:text-emerald-400" : undefined}
+            label="Прогноз ИП"
+            value={entityGaps.ip.projectedBalanceKopeks === null ? "нет данных" : formatKopeks(entityGaps.ip.projectedBalanceKopeks)}
+            sub={entityGaps.ip.currentBalanceKopeks === null ? "остаток не задан" : `остаток ${formatKopeks(entityGaps.ip.currentBalanceKopeks)}`}
+            accent={entityGaps.ip.projectedBalanceKopeks !== null && entityGaps.ip.projectedBalanceKopeks < 0 ? "text-rose-600 dark:text-rose-400" : undefined}
+          />
+          <KpiCard
+            label="Риск ООО"
+            value={entityGaps.ooo.risk === "unknown" ? "Нет данных" : entityGaps.ooo.risk === "high" ? "Высокий" : "Низкий"}
+            accent={entityGaps.ooo.risk === "high" ? "text-rose-600 dark:text-rose-400" : entityGaps.ooo.risk === "low" ? "text-emerald-600 dark:text-emerald-400" : undefined}
+          />
+          <KpiCard
+            label="Риск ИП"
+            value={entityGaps.ip.risk === "unknown" ? "Нет данных" : entityGaps.ip.risk === "high" ? "Высокий" : "Низкий"}
+            accent={entityGaps.ip.risk === "high" ? "text-rose-600 dark:text-rose-400" : entityGaps.ip.risk === "low" ? "text-emerald-600 dark:text-emerald-400" : undefined}
           />
         </div>
       ) : null}

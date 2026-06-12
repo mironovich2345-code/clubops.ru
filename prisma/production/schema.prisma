@@ -82,6 +82,7 @@ model LegalEntity {
   sales           Sale[]
   salesReportLines SalesReportLine[]
   balanceSnapshots BalanceSnapshot[]
+  mandatoryPayments MandatoryPaymentPlan[]
 
   @@index([companyId])
 }
@@ -326,6 +327,9 @@ model MandatoryPaymentPlan {
   dueDate           DateTime?
   recurrence        String    @default("monthly")
   responsibleUserId String?
+  // Which legal entity (ООО / ИП) pays this obligation. Nullable: existing rows
+  // and unassigned plans fall back to "Юрлицо не указано".
+  legalEntityId     String?
   status            String    @default("planned")
   notes             String?
   isActive          Boolean   @default(true)
@@ -333,10 +337,11 @@ model MandatoryPaymentPlan {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  club        Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  createdBy   User    @relation("MandatoryPaymentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  responsible User?   @relation("MandatoryPaymentResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  createdBy   User         @relation("MandatoryPaymentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  responsible User?        @relation("MandatoryPaymentResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
 
   @@index([companyId])
   @@index([clubId])

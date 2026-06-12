@@ -48,6 +48,8 @@ export type MandatoryPaymentRow = {
   dueDate: Date | null;
   recurrence: string;
   responsibleName: string | null;
+  legalEntityId: string | null;
+  legalEntityName: string | null;
   status: string;
   isActive: boolean;
   notes: string | null;
@@ -59,7 +61,7 @@ export async function getMandatoryPaymentsForScope(scope: DataScope): Promise<Ma
   const rows = await prisma.mandatoryPaymentPlan.findMany({
     where: { companyId: scope.company.id, clubId: { in: scope.clubIds } },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-    include: { club: { select: { name: true } }, responsible: { select: { name: true } } },
+    include: { club: { select: { name: true } }, responsible: { select: { name: true } }, legalEntity: { select: { name: true } } },
   });
   return rows.map((r) => ({
     id: r.id,
@@ -72,6 +74,8 @@ export async function getMandatoryPaymentsForScope(scope: DataScope): Promise<Ma
     dueDate: r.dueDate,
     recurrence: r.recurrence,
     responsibleName: r.responsible?.name ?? null,
+    legalEntityId: r.legalEntityId,
+    legalEntityName: r.legalEntity?.name ?? null,
     status: r.status,
     isActive: r.isActive,
     notes: r.notes,

@@ -17,6 +17,7 @@ export type EditingPlan = {
   dueDayOfMonth: number | null;
   dueDate: string; // YYYY-MM-DD or ""
   responsibleUserId: string;
+  legalEntityId: string;
   notes: string;
 };
 
@@ -32,17 +33,21 @@ function Submit({ idle }: { idle: string }) {
   );
 }
 
+type EntityOption = { id: string; label: string };
+
 export function MandatoryPaymentForm({
   clubs,
   categories,
   recurrences,
   users,
+  entities,
   editing,
 }: {
   clubs: Option[];
   categories: Option[];
   recurrences: Option[];
   users: UserOption[];
+  entities: EntityOption[];
   editing?: EditingPlan;
 }) {
   const [state, action] = useFormState(createOrUpdateMandatoryPayment, initial);
@@ -94,6 +99,13 @@ export function MandatoryPaymentForm({
             <input name="dueDate" type="date" defaultValue={editing?.dueDate ?? ""} className="input" />
           </Field>
         )}
+
+        <Field label="Юрлицо (кто платит)">
+          <select name="legalEntityId" defaultValue={editing?.legalEntityId ?? ""} className="input">
+            <option value="">Не указано</option>
+            {entities.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
+          </select>
+        </Field>
 
         <Field label="Ответственный">
           <select name="responsibleUserId" defaultValue={editing?.responsibleUserId ?? ""} className="input">

@@ -10,6 +10,7 @@ import {
   getCompanyMembers,
 } from "@/lib/access";
 import { canManageMandatoryPayments } from "@/lib/auth";
+import { getLegalEntitiesForCompany, legalEntityTypeLabel } from "@/lib/legal-entities";
 import {
   getMandatoryPaymentsForScope,
   getMandatoryPaymentForContext,
@@ -42,14 +43,19 @@ export default async function MandatoryPaymentsPage({ searchParams }: { searchPa
   const sp = await searchParams;
   const [clubs, plans] = await Promise.all([getClubsInScope(scope), getMandatoryPaymentsForScope(scope)]);
 
-  // Responsible-user options + the edited plan are only needed when managing.
+  // Responsible-user + legal-entity options + the edited plan: only when managing.
   let users: { id: string; name: string }[] = [];
+  let entityOptions: { id: string; label: string }[] = [];
   let editing: EditingPlan | undefined;
   if (canManage) {
-    const members = await getCompanyMembers(scope.company.id);
+    const [members, entities] = await Promise.all([
+      getCompanyMembers(scope.company.id),
+      getLegalEntitiesForCompany(scope.company.id),
+    ]);
     const byId = new Map<string, string>();
     for (const m of members) if (m.user.isActive) byId.set(m.user.id, m.user.name);
     users = [...byId.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    entityOptions = entities.map((e) => ({ id: e.id, label: `${e.name} (${legalEntityTypeLabel(e.type)})` }));
 
     if (sp.edit) {
       const plan = await getMandatoryPaymentForContext(ctx, sp.edit);
@@ -64,6 +70,7 @@ export default async function MandatoryPaymentsPage({ searchParams }: { searchPa
           dueDayOfMonth: plan.dueDayOfMonth,
           dueDate: plan.dueDate ? isoDay(plan.dueDate) : "",
           responsibleUserId: plan.responsibleUserId ?? "",
+          legalEntityId: plan.legalEntityId ?? "",
           notes: plan.notes ?? "",
         };
       }
@@ -88,6 +95,7 @@ export default async function MandatoryPaymentsPage({ searchParams }: { searchPa
             categories={MANDATORY_PAYMENT_CATEGORIES.map((c) => ({ key: c.key, label: c.label }))}
             recurrences={MANDATORY_RECURRENCES.map((r) => ({ key: r.key, label: r.label }))}
             users={users}
+            entities={entityOptions}
             editing={editing}
           />
         </div>
@@ -114,6 +122,7 @@ export default async function MandatoryPaymentsPage({ searchParams }: { searchPa
                   <Th className="text-right">Сумма</Th>
                   <Th>День оплаты</Th>
                   <Th>Повтор</Th>
+                  <Th>Юрлицо</Th>
                   <Th>Ответственный</Th>
                   <Th>Статус</Th>
                   {canManage ? <Th className="text-right">Действия</Th> : null}
@@ -130,6 +139,7 @@ export default async function MandatoryPaymentsPage({ searchParams }: { searchPa
                       {p.recurrence === "monthly" ? (p.dueDayOfMonth ?? "—") : p.dueDate ? dueDateFmt.format(p.dueDate) : "—"}
                     </Td>
                     <Td className="whitespace-nowrap">{MANDATORY_RECURRENCE_LABELS[p.recurrence] ?? p.recurrence}</Td>
+                    <Td className="whitespace-nowrap">{p.legalEntityName ?? <span className="text-slate-400 dark:text-slate-500">Не указано</span>}</Td>
                     <Td className="whitespace-nowrap">{p.responsibleName ?? "—"}</Td>
                     <Td className="whitespace-nowrap"><StatusBadge status={p.status} /></Td>
                     {canManage ? (
