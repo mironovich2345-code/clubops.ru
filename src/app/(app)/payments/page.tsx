@@ -21,6 +21,7 @@ import {
   paymentSourceLabel,
   type PaymentObligation,
 } from "@/lib/payment-obligations";
+import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
 
 export const dynamic = "force-dynamic";
 
@@ -148,17 +149,32 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const remainingAfterWeek = calculateCashGap({ currentCashKopeks: cashOooKopeks, obligationsKopeks: kpis.weekKopeks }).projectedBalanceKopeks;
   const cashGap = calculateCashGap({ currentCashKopeks: cashOooKopeks, obligationsKopeks: within7Kopeks }).projectedBalanceKopeks;
 
+  // Part 5–7 — per-entity balances. ООО balance comes from confirmed report cash;
+  // ИП has no cash-control source yet → "нет данных" (never an invented balance).
+  const ipBalanceKopeks: number | null = null;
+  const oooForecast = calculateBalanceForecast({ currentCashKopeks: cashOooKopeks, obligationsKopeks: kpis.weekKopeks });
+  const balanceRisk = balanceRiskLevel(oooForecast);
+
   const dayHref = (d: Date) => `/payments?month=${monthKey}&day=${iso(d)}`;
 
   return (
     <div className="mx-auto max-w-[1440px]">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <PageHeader title="Календарь платежей" description="Что и когда нужно оплатить" />
-        {/* Part 2 — month navigation */}
-        <div className={`inline-flex items-center gap-1 p-1 ${CARD}`}>
-          <Link href={`/payments?month=${prevMonth}`} aria-label="Предыдущий месяц" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">‹</Link>
-          <span className="min-w-[8.5rem] text-center text-sm font-semibold text-slate-800 dark:text-slate-100">{monthLabel}</span>
-          <Link href={`/payments?month=${nextMonth}`} aria-label="Следующий месяц" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">›</Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Part 1 — quick action into the existing Mandatory Payments page */}
+          <Link
+            href="/mandatory-payments"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            + Обязательный платёж
+          </Link>
+          {/* Part 2 — month navigation */}
+          <div className={`inline-flex items-center gap-1 p-1 ${CARD}`}>
+            <Link href={`/payments?month=${prevMonth}`} aria-label="Предыдущий месяц" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">‹</Link>
+            <span className="min-w-[8.5rem] text-center text-sm font-semibold text-slate-800 dark:text-slate-100">{monthLabel}</span>
+            <Link href={`/payments?month=${nextMonth}`} aria-label="Следующий месяц" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">›</Link>
+          </div>
         </div>
       </div>
 
@@ -172,6 +188,27 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
           value={formatKopeks(kpis.overdueKopeks)}
           tone={kpis.overdueKopeks > 0 ? "bad" : "neutral"}
           sub={kpis.overdueCount > 0 ? `${kpis.overdueCount} счёт(ов)` : "нет"}
+        />
+      </div>
+
+      {/* Part 5–7 — financial balance block (ООО / ИП / obligations / projected / risk) */}
+      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <KpiCard
+          label="Остаток ООО"
+          value={cashOooKopeks === null ? "нет данных" : formatKopeks(cashOooKopeks)}
+          tone={cashOooKopeks !== null && cashOooKopeks < 0 ? "bad" : "neutral"}
+        />
+        <KpiCard label="Остаток ИП" value={ipBalanceKopeks === null ? "нет данных" : formatKopeks(ipBalanceKopeks)} sub={ipBalanceKopeks === null ? "скоро" : undefined} />
+        <KpiCard label="Обязательства до конца недели" value={formatKopeks(kpis.weekKopeks)} />
+        <KpiCard
+          label="Прогноз остатка"
+          value={oooForecast.projectedBalanceKopeks === null ? "нет данных" : formatKopeks(oooForecast.projectedBalanceKopeks)}
+          tone={oooForecast.projectedBalanceKopeks !== null && oooForecast.projectedBalanceKopeks < 0 ? "bad" : "neutral"}
+        />
+        <KpiCard
+          label="Риск кассового разрыва"
+          value={balanceRisk === "unknown" ? "Нет данных" : balanceRisk === "high" ? "Высокий" : "Низкий"}
+          tone={balanceRisk === "high" ? "bad" : "neutral"}
         />
       </div>
 

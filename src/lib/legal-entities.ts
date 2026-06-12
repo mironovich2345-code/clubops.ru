@@ -109,6 +109,20 @@ export async function getClubEntityByType(
   return ofType.find((e) => e.isPrimary) ?? ofType[0];
 }
 
+/**
+ * Business rule: a club may have at most ONE active ООО and ONE active ИП.
+ * Returns the existing active entity of `type` attached to the club (excluding
+ * `excludeEntityId`), or null if there is no conflict. Read-only / migration-safe.
+ */
+export async function findClubActiveEntityOfType(
+  clubId: string,
+  type: LegalEntityType,
+  excludeEntityId?: string,
+): Promise<LegalEntity | null> {
+  const entities = await getClubLegalEntities(clubId); // active + attached only
+  return entities.find((e) => normalizeEntityType(e.type) === type && e.id !== excludeEntityId) ?? null;
+}
+
 /** Single legal entity scoped to the current company (no cross-company access). */
 export async function getLegalEntityForContext(
   ctx: AccessContext,

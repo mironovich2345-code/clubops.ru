@@ -296,11 +296,29 @@ export async function loadMandatoryPaymentObligations(
 }
 
 // ---------------------------------------------------------------------------
-// Part 4 — future payroll calendar (design only)
+// Part 4 / Payroll preparation — future payroll calendar (design only, no module
+// built yet). These types + the buildPayrollObligations() placeholder define the
+// integration contract so payroll plugs into the SAME PaymentObligation pipeline.
+//
+// TODO Future module: payroll calendar. Each employee pay period yields up to two
+// payroll obligations — an Advance (аванс) and a Final Salary payout (расчёт).
+// When implemented, buildPayrollObligations() must emit PaymentObligation[] with
+// sourceType "payroll", and they will AUTOMATICALLY appear in:
+//   • Payment Calendar (day details / KPIs)        — via loadPaymentObligationsForScope
+//   • Upcoming Payments                              — same obligation list
+//   • Cash Gap / Balance Forecast (lib/balance.ts)   — obligations feed the forecast
+//   • Accountant Workspace                           — same loader
+//   • Dashboard payment widget (if relevant)
+// No calendar/forecast maths change — only this loader needs a real body.
 // ---------------------------------------------------------------------------
 
-// TODO Future module: payroll calendar. Each employee period yields up to two
-// obligations — an advance and a final salary payout.
+/** Payroll payout kind: advance (аванс) or final salary (расчёт). */
+export type PayrollType = "advance" | "final_salary";
+
+/** Lifecycle of a payroll payout (mirrors the obligation lifecycle). */
+export type PayrollStatus = "planned" | "approved" | "paid" | "canceled";
+
+// One employee pay-period record the payroll module will own.
 export type PayrollCalendarItem = {
   id: string;
   companyId: string;
@@ -314,6 +332,21 @@ export type PayrollCalendarItem = {
   finalAmountKopeks: number;
   payoutDate: Date;
   status: PaymentObligationStatus;
+};
+
+// A single payroll payout that becomes a PaymentObligation on the calendar.
+// (sourceType maps to "payroll"; category to "salary".)
+export type PayrollObligation = {
+  id: string;
+  payrollItemId: string;
+  companyId: string;
+  clubId: string;
+  employeeName: string;
+  payrollType: PayrollType; // advance | final_salary
+  amountKopeks: number;
+  dueDate: Date;
+  status: PayrollStatus;
+  paidAt: Date | null;
 };
 
 /**

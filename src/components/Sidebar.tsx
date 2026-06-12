@@ -10,7 +10,8 @@ type SidebarProps = {
   items: ReadonlyArray<NavItem>;
 };
 
-const STORAGE_PREFIX = "clubops:nav:";
+// Single open group (accordion). One localStorage key holds the open group id.
+const STORAGE_KEY = "clubops:nav:open";
 
 const itemClass = (active: boolean) =>
   [
@@ -34,37 +35,30 @@ export function Sidebar({ items }: SidebarProps) {
         })()
       : [],
   );
-  const activeGroupId = (id: string) => groups.find((g) => g.id === id)?.children.some((c) => isActive(c.href)) ?? false;
+  // The group containing the active page (deterministic from pathname → same on
+  // SSR and first client render, so hydration matches). null when none.
+  const activeGroup = groups.find((g) => g.children.some((c) => isActive(c.href)))?.id ?? null;
 
-  // Expansion state. Initial (SSR + first client render) is deterministic — only
-  // the group containing the active page is open — so hydration matches. The
-  // saved localStorage state is merged in after mount.
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    for (const g of groups) if (g.children.some((c) => isActive(c.href))) init[g.id] = true;
-    return init;
-  });
+  // Single-open accordion: only one group expanded at a time. Initial state is
+  // the active group (deterministic); the saved/preferred group is applied after
+  // mount, but the active group always wins (opening a page expands its group).
+  const [openGroup, setOpenGroup] = useState<string | null>(() => activeGroup);
 
   useEffect(() => {
-    setExpanded((prev) => {
-      const next = { ...prev };
-      for (const s of NAV_SECTIONS) {
-        if (s.type !== "group") continue;
-        const saved = typeof window !== "undefined" ? window.localStorage.getItem(`${STORAGE_PREFIX}${s.id}`) : null;
-        if (saved !== null) next[s.id] = saved === "1";
-        // Opening a page inside a group always expands that group.
-        if (activeGroupId(s.id)) next[s.id] = true;
-      }
-      return next;
-    });
+    if (activeGroup) {
+      setOpenGroup(activeGroup);
+      return;
+    }
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
+    setOpenGroup(saved || null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
   const toggle = (id: string) => {
-    setExpanded((prev) => {
-      const value = !prev[id];
-      if (typeof window !== "undefined") window.localStorage.setItem(`${STORAGE_PREFIX}${id}`, value ? "1" : "0");
-      return { ...prev, [id]: value };
+    setOpenGroup((cur) => {
+      const next = cur === id ? null : id; // open this one (closing any other), or collapse
+      if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, next ?? "");
+      return next;
     });
   };
 
@@ -92,7 +86,7 @@ export function Sidebar({ items }: SidebarProps) {
             const children = section.pages.map((p) => byPage.get(p)).filter((x): x is NavItem => Boolean(x));
             if (children.length === 0) return null;
             const groupActive = children.some((c) => isActive(c.href));
-            const isOpen = expanded[section.id] ?? false;
+            const isOpen = openGroup === section.id;
 
             return (
               <li key={section.id}>

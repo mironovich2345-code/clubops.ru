@@ -9,7 +9,7 @@ import {
   attachLegalEntityToClub,
   detachLegalEntityFromClub,
 } from "../legal-entity-actions";
-import { LEGAL_ENTITY_TYPES, legalEntityTypeLabel } from "@/lib/legal-entities";
+import { LEGAL_ENTITY_TYPES, legalEntityTypeLabel, normalizeEntityType } from "@/lib/legal-entities";
 import { legalEntityFieldWarning } from "@/lib/legal-entity-format";
 
 type EntityView = {
@@ -103,9 +103,23 @@ export function LegalEntities({
   clubs: ClubView[];
   canManage: boolean;
 }) {
+  // Rule (max 1 active ООО + 1 active ИП per club): which active types each club
+  // already uses, so the attach dropdown can hide conflicting clubs.
+  const activeTypeByClub = new Map<string, Set<string>>();
+  for (const ent of entities) {
+    if (!ent.isActive) continue;
+    const t = normalizeEntityType(ent.type);
+    if (!t) continue;
+    for (const c of ent.clubs) {
+      const set = activeTypeByClub.get(c.clubId) ?? new Set<string>();
+      set.add(t);
+      activeTypeByClub.set(c.clubId, set);
+    }
+  }
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-3 text-sm font-semibold text-slate-700">Юридические лица</div>
+      <div className="mb-3 text-xs text-slate-500">Допустимо одно активное ООО и одно активное ИП на клуб.</div>
 
       {entities.length === 0 ? (
         <div className="mb-3 text-sm text-slate-500">Юрлица не добавлены.</div>
@@ -144,7 +158,19 @@ export function LegalEntities({
 
               {canManage ? (
                 <div className="mt-3 flex flex-wrap items-end gap-3">
-                  <AttachForm entityId={e.id} clubs={clubs.filter((c) => !e.clubs.some((x) => x.clubId === c.id))} />
+                  <AttachForm
+                    entityId={e.id}
+                    clubs={clubs.filter((c) => {
+                      if (e.clubs.some((x) => x.clubId === c.id)) return false; // already attached here
+                      // An active entity can't attach to a club that already has an active same-type entity.
+                      const t = normalizeEntityType(e.type);
+                      return !(e.isActive && t && activeTypeByClub.get(c.id)?.has(t));
+                    })}
+                  />
+                  </div>
+              ) : null}
+              {canManage ? (
+                <div className="mt-2 flex flex-wrap items-end gap-3">
                   <form action={setLegalEntityActive}>
                     <input type="hidden" name="legalEntityId" value={e.id} />
                     <input type="hidden" name="active" value={e.isActive ? "false" : "true"} />

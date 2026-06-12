@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage } from "@/lib/auth";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
-import { isEntityType } from "@/lib/legal-entities";
+import {
+  isEntityType,
+  normalizeEntityType,
+  legalEntityTypeLabel,
+  findClubActiveEntityOfType,
+} from "@/lib/legal-entities";
 
 type State = { ok: boolean; error?: string };
 
@@ -109,6 +114,21 @@ export async function setLegalEntityActive(formData: FormData): Promise<void> {
   const guard = await requireManager(existing.companyId);
   if ("error" in guard) throw new Error(guard.error);
 
+  // Rule: max 1 active ООО + 1 active ИП per club. Activating must not create a
+  // second active entity of the same type on any club this entity is attached to.
+  if (active) {
+    const type = normalizeEntityType(existing.type);
+    if (type) {
+      const links = await prisma.clubLegalEntity.findMany({ where: { legalEntityId }, select: { clubId: true } });
+      for (const { clubId } of links) {
+        const conflict = await findClubActiveEntityOfType(clubId, type, legalEntityId);
+        if (conflict) {
+          throw new Error(`У клуба уже есть активное ${legalEntityTypeLabel(existing.type)}: «${conflict.name}». Допустимо одно активное ООО и одно активное ИП на клуб.`);
+        }
+      }
+    }
+  }
+
   await prisma.legalEntity.update({ where: { id: legalEntityId }, data: { isActive: active } });
   await recordAudit({
     action: active ? "legal_entity.activated" : "legal_entity.deactivated",
@@ -129,6 +149,17 @@ export async function attachLegalEntityToClub(formData: FormData): Promise<void>
   if (entity.companyId !== club.companyId) throw new Error("Юрлицо из другой компании");
   const guard = await requireManager(entity.companyId);
   if ("error" in guard) throw new Error(guard.error);
+
+  // Rule: max 1 active ООО + 1 active ИП per club. An active entity may not be
+  // attached to a club that already has a different active entity of the same
+  // type. (Inactive entities don't conflict — activation is guarded separately.)
+  if (entity.isActive) {
+    const type = normalizeEntityType(entity.type);
+    const conflict = type ? await findClubActiveEntityOfType(clubId, type, legalEntityId) : null;
+    if (conflict) {
+      throw new Error(`У клуба уже есть активное ${legalEntityTypeLabel(entity.type)}: «${conflict.name}». Допустимо одно активное ООО и одно активное ИП на клуб.`);
+    }
+  }
 
   await prisma.clubLegalEntity.upsert({
     where: { clubId_legalEntityId: { clubId, legalEntityId } },
