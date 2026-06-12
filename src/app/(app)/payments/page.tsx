@@ -22,6 +22,7 @@ import {
   type PaymentObligation,
 } from "@/lib/payment-obligations";
 import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
+import { getLatestBalancesForScope } from "@/lib/balance-snapshots";
 
 export const dynamic = "force-dynamic";
 
@@ -97,9 +98,10 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const mandatoryWindowStart = new Date(earlierMonth.getFullYear(), earlierMonth.getMonth() - 1, 1);
 
   // Source-agnostic obligations: invoices + mandatory payments (payroll later).
-  const [{ obligations }, cashRows] = await Promise.all([
+  const [{ obligations }, cashRows, balances] = await Promise.all([
     loadPaymentObligationsForScope({ companyId, clubIds: scope.clubIds, loadEnd, monthKey, windowStart: mandatoryWindowStart }),
     getConfirmedReportCashControl(scope),
+    getLatestBalancesForScope(companyId, scope.clubIds),
   ]);
 
   // Part 1 — KPI windows (reuse the dueDate-based obligation set).
@@ -109,13 +111,19 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     .filter((i) => i.dueDate && dayStart(i.dueDate) >= today && dayStart(i.dueDate) <= addDays(today, 7))
     .reduce((s, i) => s + i.amountKopeks, 0);
 
-  // Part 6/7 — cash ООО from confirmed reports of the CURRENT month (same source
-  // as dashboard/analytics). Available only when there is report data this month.
+  // Part 4 — cash source priority: latest BalanceSnapshot → legacy confirmed
+  // report cash → null (insufficient). Never invents a balance.
   const cmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const cmEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const cashRowsThisMonth = cashRows.filter((r) => r.reportDate >= cmStart && r.reportDate < cmEnd);
-  const cashAvailable = cashRowsThisMonth.length > 0;
-  const cashOooKopeks = cashAvailable ? cashRowsThisMonth.reduce((s, r) => s + (r.cashOooKopeks - r.encashmentKopeks), 0) : null;
+  const legacyCashOooKopeks = cashRowsThisMonth.length > 0
+    ? cashRowsThisMonth.reduce((s, r) => s + (r.cashOooKopeks - r.encashmentKopeks), 0)
+    : null;
+  const oooBalanceKopeks = balances.ooo.kopeks ?? legacyCashOooKopeks;
+  const ipBalanceKopeks = balances.ip.kopeks; // snapshot only; null when none
+  const totalAvailableKopeks = balances.totalKopeks ?? legacyCashOooKopeks;
+  // The existing ООО-labelled cards keep their ООО semantics, now snapshot-first.
+  const cashOooKopeks = oooBalanceKopeks;
 
   // Part 3 — day → obligations map for the selected month.
   const byDay = new Map<number, PaymentObligation[]>();
@@ -149,11 +157,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const remainingAfterWeek = calculateCashGap({ currentCashKopeks: cashOooKopeks, obligationsKopeks: kpis.weekKopeks }).projectedBalanceKopeks;
   const cashGap = calculateCashGap({ currentCashKopeks: cashOooKopeks, obligationsKopeks: within7Kopeks }).projectedBalanceKopeks;
 
-  // Part 5–7 — per-entity balances. ООО balance comes from confirmed report cash;
-  // ИП has no cash-control source yet → "нет данных" (never an invented balance).
-  const ipBalanceKopeks: number | null = null;
-  const oooForecast = calculateBalanceForecast({ currentCashKopeks: cashOooKopeks, obligationsKopeks: kpis.weekKopeks });
-  const balanceRisk = balanceRiskLevel(oooForecast);
+  // Part 3/5–7 — total-available forecast (ООО + ИП snapshots) vs this week.
+  const totalForecast = calculateBalanceForecast({ currentCashKopeks: totalAvailableKopeks, obligationsKopeks: kpis.weekKopeks });
+  const balanceRisk = balanceRiskLevel(totalForecast);
 
   const dayHref = (d: Date) => `/payments?month=${monthKey}&day=${iso(d)}`;
 
@@ -191,19 +197,27 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         />
       </div>
 
-      {/* Part 5–7 — financial balance block (ООО / ИП / obligations / projected / risk) */}
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-5">
+      {/* Part 3/4/7 — financial balance block (ООО / ИП / Всего / obligations / projected / risk) */}
+      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-6">
         <KpiCard
           label="Остаток ООО"
-          value={cashOooKopeks === null ? "нет данных" : formatKopeks(cashOooKopeks)}
-          tone={cashOooKopeks !== null && cashOooKopeks < 0 ? "bad" : "neutral"}
+          value={oooBalanceKopeks === null ? "нет данных" : formatKopeks(oooBalanceKopeks)}
+          tone={oooBalanceKopeks !== null && oooBalanceKopeks < 0 ? "bad" : "neutral"}
         />
-        <KpiCard label="Остаток ИП" value={ipBalanceKopeks === null ? "нет данных" : formatKopeks(ipBalanceKopeks)} sub={ipBalanceKopeks === null ? "скоро" : undefined} />
+        <KpiCard
+          label="Остаток ИП"
+          value={ipBalanceKopeks === null ? "нет данных" : formatKopeks(ipBalanceKopeks)}
+        />
+        <KpiCard
+          label="Всего доступно"
+          value={totalAvailableKopeks === null ? "нет данных" : formatKopeks(totalAvailableKopeks)}
+          tone={totalAvailableKopeks !== null && totalAvailableKopeks < 0 ? "bad" : "neutral"}
+        />
         <KpiCard label="Обязательства до конца недели" value={formatKopeks(kpis.weekKopeks)} />
         <KpiCard
           label="Прогноз остатка"
-          value={oooForecast.projectedBalanceKopeks === null ? "нет данных" : formatKopeks(oooForecast.projectedBalanceKopeks)}
-          tone={oooForecast.projectedBalanceKopeks !== null && oooForecast.projectedBalanceKopeks < 0 ? "bad" : "neutral"}
+          value={totalForecast.projectedBalanceKopeks === null ? "нет данных" : formatKopeks(totalForecast.projectedBalanceKopeks)}
+          tone={totalForecast.projectedBalanceKopeks !== null && totalForecast.projectedBalanceKopeks < 0 ? "bad" : "neutral"}
         />
         <KpiCard
           label="Риск кассового разрыва"

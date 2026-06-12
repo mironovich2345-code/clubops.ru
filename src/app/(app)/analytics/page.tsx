@@ -5,6 +5,10 @@ import { formatKopeks } from "@/lib/money";
 import { SalesDynamicsChart } from "@/components/SalesDynamicsChart";
 import { MonthlyForecastBlock } from "@/components/MonthlyForecastBlock";
 import { buildMonthlyForecast } from "@/lib/forecast";
+import { getLatestBalancesForScope } from "@/lib/balance-snapshots";
+import { loadPaymentObligationsForScope } from "@/lib/payment-obligations";
+import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
+import { dayStart, addDays } from "@/lib/payments";
 import {
   requirePageAccess,
   getCurrentAccessContext,
@@ -126,6 +130,34 @@ export default async function AnalyticsPage({
   const fromValue = sp.from ?? drillFrom;
   const toValue = sp.to ?? isoLocal(lastDay);
 
+  // Part 6 — financial control cards (financial roles only): real ООО/ИП
+  // balances from snapshots + a 7-day cash-gap forecast. Scoped to allowedClubIds.
+  let balanceCards: {
+    oooKopeks: number | null;
+    ipKopeks: number | null;
+    totalKopeks: number | null;
+    projectedKopeks: number | null;
+    risk: "low" | "high" | "unknown";
+  } | null = null;
+  if (financials) {
+    const [bal, { obligations: payObs }] = await Promise.all([
+      getLatestBalancesForScope(scope.company.id, ctx.allowedClubIds),
+      loadPaymentObligationsForScope({ companyId: scope.company.id, clubIds: ctx.allowedClubIds, loadEnd: addDays(dayStart(now), 30) }),
+    ]);
+    const t0 = dayStart(now);
+    const within7 = payObs
+      .filter((o) => o.dueDate && dayStart(o.dueDate) >= t0 && dayStart(o.dueDate) <= addDays(t0, 7))
+      .reduce((sum, o) => sum + o.amountKopeks, 0);
+    const f = calculateBalanceForecast({ currentCashKopeks: bal.totalKopeks, obligationsKopeks: within7 });
+    balanceCards = {
+      oooKopeks: bal.ooo.kopeks,
+      ipKopeks: bal.ip.kopeks,
+      totalKopeks: bal.totalKopeks,
+      projectedKopeks: f.projectedBalanceKopeks,
+      risk: balanceRiskLevel(f),
+    };
+  }
+
   return (
     <div className="mx-auto max-w-[1440px]">
       {/* Header + period selector */}
@@ -197,6 +229,25 @@ export default async function AnalyticsPage({
           </>
         ) : null}
       </div>
+
+      {/* Part 6 (Finance Control) — balance cards, financial roles only */}
+      {financials && balanceCards ? (
+        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <KpiCard label="Остаток ООО" value={balanceCards.oooKopeks === null ? "нет данных" : formatKopeks(balanceCards.oooKopeks)} />
+          <KpiCard label="Остаток ИП" value={balanceCards.ipKopeks === null ? "нет данных" : formatKopeks(balanceCards.ipKopeks)} />
+          <KpiCard label="Всего доступно" value={balanceCards.totalKopeks === null ? "нет данных" : formatKopeks(balanceCards.totalKopeks)} />
+          <KpiCard
+            label="Прогноз остатка"
+            value={balanceCards.projectedKopeks === null ? "нет данных" : formatKopeks(balanceCards.projectedKopeks)}
+            accent={balanceCards.projectedKopeks !== null && balanceCards.projectedKopeks < 0 ? "text-rose-600 dark:text-rose-400" : undefined}
+          />
+          <KpiCard
+            label="Риск кассового разрыва"
+            value={balanceCards.risk === "unknown" ? "Нет данных" : balanceCards.risk === "high" ? "Высокий" : "Низкий"}
+            accent={balanceCards.risk === "high" ? "text-rose-600 dark:text-rose-400" : balanceCards.risk === "low" ? "text-emerald-600 dark:text-emerald-400" : undefined}
+          />
+        </div>
+      ) : null}
 
       {/* Part 1/2 — monthly forecast (financial roles only; hidden from
           manager/marketer, who see operational sales metrics only) */}

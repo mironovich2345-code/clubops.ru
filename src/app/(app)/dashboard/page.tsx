@@ -19,6 +19,10 @@ import {
   normalizeMonth,
 } from "@/lib/sales-plans";
 import { getMonthCloseInfo } from "@/lib/month-close";
+import { getLatestBalancesByClub, type ClubBalances } from "@/lib/balance-snapshots";
+import { loadPaymentObligationsForScope } from "@/lib/payment-obligations";
+import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
+import { dayStart, addDays } from "@/lib/payments";
 import { SalesPlanForm } from "./_components/SalesPlanForm";
 import { SalesPlanImport } from "./_components/SalesPlanImport";
 import { MonthCloseBlock } from "./_components/MonthCloseBlock";
@@ -54,6 +58,10 @@ type ClubCard = {
   ptPct: number | null;
   expensesKopeks: number;
   breakEvenKopeks: number;
+  // Finance Control v1.0 — real ООО/ИП balances + cash-gap risk (financial roles).
+  oooKopeks: number | null;
+  ipKopeks: number | null;
+  risk: "low" | "high" | "unknown";
 };
 
 export default async function DashboardPage({
@@ -94,8 +102,27 @@ export default async function DashboardPage({
   const budgetByClub = new Map<string, number>();
   for (const b of data.budgets) budgetByClub.set(b.clubId, (budgetByClub.get(b.clubId) ?? 0) + b.limitAmountKopeks);
 
+  // Finance Control v1.0 — per-club balances (snapshots) + 7-day cash-gap risk.
+  // Financial roles only; one scoped obligations query reused across clubs.
+  const balancesByClub: Map<string, ClubBalances> = financials ? await getLatestBalancesByClub(companyId, clubIds) : new Map();
+  const within7ByClub = new Map<string, number>();
+  if (financials) {
+    const t0 = dayStart(now);
+    const { obligations: payObs } = await loadPaymentObligationsForScope({ companyId, clubIds, loadEnd: addDays(t0, 30) });
+    for (const o of payObs) {
+      if (!o.dueDate) continue;
+      const d = dayStart(o.dueDate);
+      if (d >= t0 && d <= addDays(t0, 7)) within7ByClub.set(o.clubId, (within7ByClub.get(o.clubId) ?? 0) + o.amountKopeks);
+    }
+  }
+
   const cards: ClubCard[] = clubs.map((c) => {
     const split = splitByClub.get(c.id);
+    const bal = balancesByClub.get(c.id);
+    const oooKopeks = bal?.oooKopeks ?? null;
+    const ipKopeks = bal?.ipKopeks ?? null;
+    const available = oooKopeks !== null || ipKopeks !== null ? (oooKopeks ?? 0) + (ipKopeks ?? 0) : null;
+    const risk = balanceRiskLevel(calculateBalanceForecast({ currentCashKopeks: available, obligationsKopeks: within7ByClub.get(c.id) ?? 0 }));
     return {
       id: c.id,
       name: c.name,
@@ -108,6 +135,9 @@ export default async function DashboardPage({
       ptPct: split?.personal_training.percent ?? null,
       expensesKopeks: expensesByClub.get(c.id) ?? 0,
       breakEvenKopeks: budgetByClub.get(c.id) ?? 0,
+      oooKopeks,
+      ipKopeks,
+      risk,
     };
   });
 
@@ -211,15 +241,34 @@ function ClubOverviewCard({ card, financials, daysLeft }: { card: ClubCard; fina
 
         {/* Financial fields (hidden from manager/marketer) */}
         {financials ? (
-          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
-            <div>
-              <div className="text-xs text-slate-400 dark:text-slate-500">Расходы</div>
-              <div className="mt-0.5 text-base font-semibold text-rose-600 dark:text-rose-400">{formatKopeks(card.expensesKopeks)}</div>
+          <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs text-slate-400 dark:text-slate-500">Расходы</div>
+                <div className="mt-0.5 text-base font-semibold text-rose-600 dark:text-rose-400">{formatKopeks(card.expensesKopeks)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-400 dark:text-slate-500">Окупаемость</div>
+                <div className="mt-0.5 text-base font-semibold text-slate-700 dark:text-slate-200">
+                  {card.breakEvenKopeks > 0 ? formatKopeks(card.breakEvenKopeks) : <span className="text-sm font-medium text-slate-400 dark:text-slate-500">Бюджет не задан</span>}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-slate-400 dark:text-slate-500">Окупаемость</div>
-              <div className="mt-0.5 text-base font-semibold text-slate-700 dark:text-slate-200">
-                {card.breakEvenKopeks > 0 ? formatKopeks(card.breakEvenKopeks) : <span className="text-sm font-medium text-slate-400 dark:text-slate-500">Бюджет не задан</span>}
+            {/* Finance Control — balances + cash risk */}
+            <div className="mt-3 grid grid-cols-3 gap-4 text-xs">
+              <div>
+                <div className="text-slate-400 dark:text-slate-500">ООО</div>
+                <div className="mt-0.5 font-medium text-slate-700 dark:text-slate-200">{card.oooKopeks === null ? "нет данных" : formatKopeks(card.oooKopeks)}</div>
+              </div>
+              <div>
+                <div className="text-slate-400 dark:text-slate-500">ИП</div>
+                <div className="mt-0.5 font-medium text-slate-700 dark:text-slate-200">{card.ipKopeks === null ? "нет данных" : formatKopeks(card.ipKopeks)}</div>
+              </div>
+              <div>
+                <div className="text-slate-400 dark:text-slate-500">Риск</div>
+                <div className={`mt-0.5 font-medium ${card.risk === "high" ? "text-rose-600 dark:text-rose-400" : card.risk === "low" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`}>
+                  {card.risk === "unknown" ? "Нет данных" : card.risk === "high" ? "Высокий" : "Низкий"}
+                </div>
               </div>
             </div>
           </div>

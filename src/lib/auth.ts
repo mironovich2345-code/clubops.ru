@@ -22,6 +22,7 @@ export type AppPage =
   | "invoices"
   | "payments"
   | "mandatory_payments"
+  | "balances"
   | "refunds"
   | "budgets"
   | "sales"
@@ -42,15 +43,15 @@ export type CurrentUser = {
 // ROLE_CAPABILITIES) so an owner/general_director can VIEW invoices/expenses but
 // not create them.
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
-  owner: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "refunds", "budgets", "sales", "activity", "users", "settings"],
-  general_director: ["dashboard", "analytics", "payments", "mandatory_payments", "sales", "budgets", "activity", "users", "settings"],
-  regional_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "refunds", "budgets", "sales", "imports", "documents", "activity", "users"],
+  owner: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "balances", "refunds", "budgets", "sales", "activity", "users", "settings"],
+  general_director: ["dashboard", "analytics", "payments", "mandatory_payments", "balances", "sales", "budgets", "activity", "users", "settings"],
+  regional_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "balances", "refunds", "budgets", "sales", "imports", "documents", "activity", "users"],
   // Manager: operational, own-club only. No network analytics financials and no
   // audit/activity log.
   manager: ["dashboard", "analytics", "expenses", "invoices", "refunds", "budgets", "sales", "documents"],
   // Accountant lands on a dedicated workspace (рабочий стол) instead of the owner
   // dashboard / analytics, which are not part of the accountant's job.
-  accountant: ["workspace", "expenses", "invoices", "payments", "mandatory_payments", "refunds", "budgets", "sales", "documents", "activity"],
+  accountant: ["workspace", "expenses", "invoices", "payments", "mandatory_payments", "balances", "refunds", "budgets", "sales", "documents", "activity"],
   // Marketer: limited analytics (sales / plans / advertising only); no other
   // financial pages.
   marketer: ["dashboard", "analytics"],
@@ -97,6 +98,13 @@ export function canManageBudgets(roles: readonly Role[]): boolean {
 /** Create/edit/pause/cancel mandatory payment plans (owner / general director). */
 export function canManageMandatoryPayments(roles: readonly Role[]): boolean {
   return can(roles, "mandatory_payment.manage");
+}
+
+/** Record cash-balance snapshots (owner / general director / accountant). Regional
+ * directors and others are view-only. Not a capability flag — balances are a
+ * dedicated control with its own role set. */
+export function canManageBalances(roles: readonly Role[]): boolean {
+  return roles.includes("owner") || roles.includes("general_director") || roles.includes("accountant");
 }
 
 export function canAccessPage(role: Role, page: AppPage): boolean {

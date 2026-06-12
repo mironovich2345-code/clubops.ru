@@ -307,9 +307,13 @@ export async function loadMandatoryPaymentObligations(
 //   • Payment Calendar (day details / KPIs)        — via loadPaymentObligationsForScope
 //   • Upcoming Payments                              — same obligation list
 //   • Cash Gap / Balance Forecast (lib/balance.ts)   — obligations feed the forecast
+//   • Analytics financial-control cards              — uses the same obligations window
+//   • Dashboard club-card risk indicators            — per-club obligations window
 //   • Accountant Workspace                           — same loader
 //   • Dashboard payment widget (if relevant)
-// No calendar/forecast maths change — only this loader needs a real body.
+// All of the above already consume loadPaymentObligationsForScope, so once this
+// loader emits payroll obligations they flow through automatically — no calendar,
+// forecast, analytics or dashboard maths change. Only this body needs filling.
 // ---------------------------------------------------------------------------
 
 /** Payroll payout kind: advance (аванс) or final salary (расчёт). */

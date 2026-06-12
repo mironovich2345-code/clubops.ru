@@ -109,6 +109,30 @@ export function balanceRiskLevel(forecast: BalanceForecast): BalanceRisk {
   return forecast.hasRisk ? "high" : "low";
 }
 
+export type MoneyRequiredResult = {
+  projectedBalanceKopeks: number | null;
+  additionalSalesRequiredKopeks: number | null; // = cash gap; 0 when no gap; null if unknown
+  state: BalanceState;
+};
+
+/**
+ * Part 5 — money required by a date: given the current balance and the
+ * obligations due until that date, how much will remain and how much extra in
+ * sales is needed to avoid a gap. Pure, finite, graceful null when balance is
+ * unknown. Thin wrapper over the forecast (single source of truth).
+ */
+export function calculateMoneyRequiredByDate(args: {
+  currentBalanceKopeks: number | null;
+  obligationsUntilDateKopeks: number;
+}): MoneyRequiredResult {
+  const f = calculateBalanceForecast({ currentCashKopeks: args.currentBalanceKopeks, obligationsKopeks: args.obligationsUntilDateKopeks });
+  return {
+    projectedBalanceKopeks: f.projectedBalanceKopeks,
+    additionalSalesRequiredKopeks: f.requiredAdditionalSalesKopeks,
+    state: f.state,
+  };
+}
+
 /**
  * Build per-type balance snapshots for the scope. `oooCashKopeks` comes from
  * confirmed report cash control; `ipCashKopeks` is null today (no ИП cash source

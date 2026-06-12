@@ -46,6 +46,7 @@ model Company {
   importBatches ImportBatch[]
   monthCloses   MonthClose[]
   mandatoryPayments MandatoryPaymentPlan[]
+  balanceSnapshots BalanceSnapshot[]
 }
 
 model LegalEntity {
@@ -80,6 +81,7 @@ model LegalEntity {
   expenses        Expense[]
   sales           Sale[]
   salesReportLines SalesReportLine[]
+  balanceSnapshots BalanceSnapshot[]
 
   @@index([companyId])
 }
@@ -116,6 +118,7 @@ model User {
   salesReportsCreated     SalesReport[]           @relation("SalesReportCreatedBy")
   mandatoryPaymentsCreated     MandatoryPaymentPlan[] @relation("MandatoryPaymentCreatedBy")
   mandatoryPaymentsResponsible MandatoryPaymentPlan[] @relation("MandatoryPaymentResponsible")
+  balanceSnapshotsCreated      BalanceSnapshot[]      @relation("BalanceSnapshotCreatedBy")
 }
 
 model Session {
@@ -159,6 +162,7 @@ model Club {
   salesPlans    SalesPlan[]
   salesReports  SalesReport[]
   mandatoryPayments MandatoryPaymentPlan[]
+  balanceSnapshots BalanceSnapshot[]
 
   @@index([companyId])
 }
@@ -336,6 +340,32 @@ model MandatoryPaymentPlan {
 
   @@index([companyId])
   @@index([clubId])
+}
+
+// Append-only cash-balance log per club + legal entity. The latest snapshot (by
+// snapshotDate) is the current balance. Old rows are never updated/deleted — a
+// new balance is a new row (financial control history).
+model BalanceSnapshot {
+  id                  String   @id @default(cuid())
+  companyId           String
+  clubId              String
+  legalEntityId       String
+  snapshotDate        DateTime
+  actualBalanceKopeks Int
+  comment             String?
+  createdById         String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  createdBy   User        @relation("BalanceSnapshotCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([legalEntityId])
+  @@index([clubId, legalEntityId, snapshotDate])
 }
 
 // Approval request raised when an operation would exceed the monthly budget.
