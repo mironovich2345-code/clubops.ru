@@ -47,6 +47,7 @@ model Company {
   monthCloses   MonthClose[]
   mandatoryPayments MandatoryPaymentPlan[]
   balanceSnapshots BalanceSnapshot[]
+  clubEmployees ClubEmployee[]
 }
 
 model LegalEntity {
@@ -164,6 +165,7 @@ model Club {
   salesReports  SalesReport[]
   mandatoryPayments MandatoryPaymentPlan[]
   balanceSnapshots BalanceSnapshot[]
+  clubEmployees ClubEmployee[]
 
   @@index([companyId])
 }
@@ -734,9 +736,14 @@ model SalesReport {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  // Controlled shift-manager selection (new reports). managerName stays as a
+  // display snapshot for back-compat + analytics; legacy rows have only the name.
+  managerEmployeeId String?
+
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   club      Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
   createdBy User    @relation("SalesReportCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  managerEmployee ClubEmployee? @relation(fields: [managerEmployeeId], references: [id], onDelete: SetNull)
   lines     SalesReportLine[]
   documents SalesReportDocument[]
 
@@ -745,6 +752,31 @@ model SalesReport {
   @@index([status])
   @@index([reportDate])
   @@index([importBatchId])
+}
+
+// Operational club staff (NOT a system login user). Manager / administrator /
+// trainer / night manager. Dismissed employees stay in history.
+model ClubEmployee {
+  id          String    @id @default(cuid())
+  companyId   String
+  clubId      String
+  fullName    String
+  // manager | administrator | gym_trainer | group_trainer | night_manager
+  position    String
+  // active | dismissed
+  status      String    @default("active")
+  dismissedAt DateTime?
+  comment     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club         Club          @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  salesReports SalesReport[]
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([clubId, position, status])
 }
 
 // Tracks one Excel import run so duplicate files can be blocked and a whole

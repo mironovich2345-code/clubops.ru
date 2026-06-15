@@ -29,6 +29,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "sales_report.comment_added": "Добавлен комментарий к отчёту",
   "sales_report.document_uploaded": "Загружен документ к отчёту",
   "sales_report.encashment_document_uploaded": "Загружен документ инкассации",
+  "sales_report.manager_selected": "Выбран менеджер смены",
+  // Club employees (сотрудники клубов — не системные пользователи)
+  "employee.created": "Добавлен сотрудник",
+  "employee.dismissed": "Сотрудник уволен",
+  "employee.updated": "Обновлён сотрудник",
   // Legal entities
   "legal_entity.created": "Создано юрлицо",
   "legal_entity.updated": "Обновлено юрлицо",
@@ -109,6 +114,7 @@ const OBJECT_BY_PREFIX: Record<string, string> = {
   sale: "Продажа",
   sales_plan: "План продаж",
   sales_report: "Сменный отчёт",
+  employee: "Сотрудник",
   legal_entity: "Юрлицо",
   invoice: "Счёт",
   expense: "Расход",

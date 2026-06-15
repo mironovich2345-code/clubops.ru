@@ -176,6 +176,14 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
           >
             + Обязательный платёж
           </Link>
+          {/* Balances are surfaced here / on the dashboard rather than as a
+              separate menu item — quick link into the balance-snapshot page. */}
+          <Link
+            href="/balances"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Обновить остаток
+          </Link>
           {/* Part 2 — month navigation */}
           <div className={`inline-flex items-center gap-1 p-1 ${CARD}`}>
             <Link href={`/payments?month=${prevMonth}`} aria-label="Предыдущий месяц" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">‹</Link>

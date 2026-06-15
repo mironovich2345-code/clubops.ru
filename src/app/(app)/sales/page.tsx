@@ -15,6 +15,7 @@ import { canCreateOperational } from "@/lib/auth";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { SaleRowActions } from "./_components/SaleRowActions";
 import { SalesReportForm } from "./_components/SalesReportForm";
+import { getActiveManagerCandidates } from "@/lib/club-employees";
 import { ExcelImportPanel } from "@/components/ExcelImportPanel";
 import { importSalesReports } from "./report-import-actions";
 import { revertImportBatch } from "../import-revert-actions";
@@ -68,10 +69,11 @@ export default async function SalesPage({
     return <NoCompanyState title="Продажи" description="Ручной учёт продаж и динамика выручки" />;
   }
 
-  const [clubs, sales, reports] = await Promise.all([
+  const [clubs, sales, reports, managerCandidates] = await Promise.all([
     getClubsInScope(scope),
     getSalesForScope(scope),
     getSalesReportsForScope(scope),
+    getActiveManagerCandidates(scope.company.id, scope.clubIds),
   ]);
   const canCreate = canCreateOperational(ctx.effectiveRoles);
   const lastImport = canCreate
@@ -102,7 +104,7 @@ export default async function SalesPage({
       </div>
 
       {/* Daily sales reports (real-club report structure) */}
-      {canCreate ? <SalesReportForm clubs={clubs} /> : null}
+      {canCreate ? <SalesReportForm clubs={clubs} employees={managerCandidates} /> : null}
 
       {/* Excel import (additional input method; manual form + AI upload unchanged) */}
       {canCreate ? (

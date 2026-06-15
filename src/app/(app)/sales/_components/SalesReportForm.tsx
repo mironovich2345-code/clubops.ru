@@ -13,6 +13,7 @@ import {
   computeSalesReportTotals,
   type ReportSection,
 } from "@/lib/sales-report-rows";
+import { employeePositionLabel, type ManagerCandidate } from "@/lib/club-employees";
 
 const initial: CreateReportState = { ok: false };
 const rub = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -46,9 +47,22 @@ function Submit({ total, disabled }: { total: number; disabled?: boolean }) {
   );
 }
 
-export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: string }> }) {
+export function SalesReportForm({
+  clubs,
+  employees,
+}: {
+  clubs: Array<{ id: string; name: string }>;
+  employees: ManagerCandidate[];
+}) {
   const [state, action] = useFormState(createSalesReport, initial);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [clubId, setClubId] = useState<string>(clubs[0]?.id ?? "");
+
+  // Only managers / night managers of the selected club can close its shift.
+  const managerOptions = useMemo(
+    () => employees.filter((e) => e.clubId === clubId),
+    [employees, clubId],
+  );
 
   // Live calculated rows (rubles) from the base inputs — same formula the server
   // recomputes authoritatively on save.
@@ -79,7 +93,7 @@ export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: st
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Клуб</span>
-            <select name="clubId" defaultValue={clubs[0]?.id ?? ""} className="input w-full">
+            <select name="clubId" value={clubId} onChange={(e) => setClubId(e.target.value)} className="input w-full">
               {clubs.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -88,7 +102,17 @@ export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: st
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Менеджер смены</span>
-            <input type="text" name="managerName" placeholder="ФИО" className="input w-full" />
+            <select name="managerEmployeeId" defaultValue="" required className="input w-full">
+              <option value="" disabled>Выберите менеджера</option>
+              {managerOptions.map((m) => (
+                <option key={m.id} value={m.id}>{m.fullName} · {employeePositionLabel(m.position)}</option>
+              ))}
+            </select>
+            {managerOptions.length === 0 ? (
+              <span className="mt-1 block text-xs text-amber-600">
+                Нет активных менеджеров в этом клубе — добавьте сотрудника на странице «Сотрудники».
+              </span>
+            ) : null}
           </label>
         </div>
 

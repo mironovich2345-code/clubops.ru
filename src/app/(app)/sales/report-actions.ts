@@ -25,6 +25,7 @@ import {
   type SalesReportAction,
 } from "@/lib/sales-reports";
 import { getClubEntityByType } from "@/lib/legal-entities";
+import { SHIFT_MANAGER_POSITIONS } from "@/lib/club-employees";
 import { monthClosedError } from "@/lib/month-close";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { validateReportFile, storeReportFile, MAX_REPORT_FILES } from "@/lib/sales-report-storage";
@@ -65,7 +66,7 @@ export async function createSalesReport(
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   const reportDateRaw = String(formData.get("reportDate") ?? "").trim();
-  const managerName = String(formData.get("managerName") ?? "").trim() || null;
+  const managerEmployeeId = String(formData.get("managerEmployeeId") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim() || null;
 
   const fieldErrors: CreateReportState["fieldErrors"] = {};
@@ -80,6 +81,22 @@ export async function createSalesReport(
   }
   const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
   if (!club || club.companyId !== ctx.selectedCompanyId) return { ok: false, error: "Клуб не найден" };
+
+  // Part 3 — shift manager is an active ClubEmployee (manager / night manager)
+  // belonging to the same company + club. managerName is denormalized so the
+  // report keeps a stable display name even if the employee is later renamed.
+  if (!managerEmployeeId) return { ok: false, error: "Выберите менеджера смены" };
+  const managerEmployee = await prisma.clubEmployee.findUnique({ where: { id: managerEmployeeId } });
+  if (
+    !managerEmployee ||
+    managerEmployee.companyId !== club.companyId ||
+    managerEmployee.clubId !== clubId ||
+    managerEmployee.status !== "active" ||
+    !SHIFT_MANAGER_POSITIONS.includes(managerEmployee.position as (typeof SHIFT_MANAGER_POSITIONS)[number])
+  ) {
+    return { ok: false, error: "Выберите менеджера смены" };
+  }
+  const managerName = managerEmployee.fullName;
 
   const closed = await monthClosedError(club.companyId, clubId, reportDate!);
   if (closed) return { ok: false, error: closed };
@@ -142,6 +159,7 @@ export async function createSalesReport(
       clubId,
       reportDate: reportDate!,
       managerName,
+      managerEmployeeId,
       notes,
       createdByUserId: ctx.user.id,
       status: "pending_accountant",
@@ -157,6 +175,15 @@ export async function createSalesReport(
     clubId,
     userId: ctx.user.id,
     metadata: { reportDate: reportDateRaw, totalRevenueKopeks: allKopeks[REVENUE_LINE_KEY] ?? 0 },
+  });
+  await recordAudit({
+    action: "sales_report.manager_selected",
+    entityType: "SalesReport",
+    entityId: report.id,
+    companyId: club.companyId,
+    clubId,
+    userId: ctx.user.id,
+    metadata: { managerEmployeeId, managerName },
   });
 
   revalidatePath("/sales");
@@ -334,6 +361,12 @@ export async function transitionSalesReport(formData: FormData): Promise<void> {
   // Part 5/6 — confirmation is blocked until the report passes validation
   // (ООО balance + required КМ-6 / encashment / withdrawal documents).
   if (result.to === "confirmed") {
+    // Manager smeny must be present. Legacy reports created before the employee
+    // selector keep a managerName string and still pass; only a report with no
+    // manager at all is blocked.
+    if (!report.managerEmployeeId && !report.managerName) {
+      throw new Error("Выберите менеджера смены");
+    }
     const check = validateSalesReportForConfirmation({
       lines: report.lines.map((l) => ({ key: l.key, amountKopeks: l.amountKopeks })),
       documentTypes: report.documents.map((d) => d.type),
