@@ -11,11 +11,16 @@ import {
   SALES_REPORT_ROW_LABELS,
   BASE_ROWS,
   REVENUE_LINE_KEY,
+  REVENUE_OOO_KEY,
+  SUBSCRIPTIONS_OOO_KEY,
+  PERSONAL_TRAINING_OOO_KEY,
   SALES_REPORT_DOC_TYPE_KEYS,
   computeSalesReportTotals,
+  validateSalesReportForConfirmation,
   SALES_REPORT_ACTION_AUDIT,
   applySalesReportAction,
   canEditReport,
+  canUnconfirmReport,
   getSalesReportForContext,
   type SalesReportAction,
 } from "@/lib/sales-reports";
@@ -105,6 +110,14 @@ export async function createSalesReport(
     baseKopeks[row.key] = rublesToKopeks(rub);
   }
   const allKopeks = computeSalesReportTotals(baseKopeks);
+
+  // Part 3 — ООО revenue must equal Абонементы ООО + ПТ ООО (enforced at creation
+  // when both sides are known; also re-checked at confirmation).
+  const oooRevenue = allKopeks[REVENUE_OOO_KEY] ?? 0;
+  const oooByCategory = (allKopeks[SUBSCRIPTIONS_OOO_KEY] ?? 0) + (allKopeks[PERSONAL_TRAINING_OOO_KEY] ?? 0);
+  if (oooRevenue !== oooByCategory) {
+    return { ok: false, error: "Выручка ООО должна равняться сумме Абонементов ООО и ПТ ООО" };
+  }
 
   // Map each row to the club's matching legal entity (ООО rows -> ООО, ИП rows
   // -> ИП; totals span both -> null). Missing entity -> null (warning on detail).
@@ -317,6 +330,27 @@ export async function transitionSalesReport(formData: FormData): Promise<void> {
   const comment = String(formData.get("accountantComment") ?? "").trim() || null;
   // Rejection requires a reason; confirmation comment is optional.
   if (result.to === "rejected" && !reason) throw new Error("Укажите причину отклонения");
+
+  // Part 5/6 — confirmation is blocked until the report passes validation
+  // (ООО balance + required КМ-6 / encashment / withdrawal documents).
+  if (result.to === "confirmed") {
+    const check = validateSalesReportForConfirmation({
+      lines: report.lines.map((l) => ({ key: l.key, amountKopeks: l.amountKopeks })),
+      documentTypes: report.documents.map((d) => d.type),
+    });
+    if (check.blockingErrors.length > 0) {
+      await recordAudit({
+        action: "sales_report.confirm_blocked",
+        entityType: "SalesReport",
+        entityId: report.id,
+        companyId: report.companyId,
+        clubId: report.clubId,
+        userId: ctx.user.id,
+        metadata: { errors: check.blockingErrors },
+      });
+      throw new Error(check.blockingErrors.join("; "));
+    }
+  }
   const now = new Date();
 
   await prisma.salesReport.update({
@@ -350,6 +384,49 @@ export async function transitionSalesReport(formData: FormData): Promise<void> {
       metadata: { comment },
     });
   }
+
+  revalidatePath("/sales");
+  revalidatePath(`/sales/reports/${report.id}`);
+  revalidatePath("/dashboard");
+}
+
+/**
+ * Part 1 — undo a confirmation. Returns a confirmed report to pending_accountant
+ * (so it stops counting in dashboard/analytics) and clears the verification stamp.
+ * Accountant or owner only; reason required; blocked in a closed month. Documents
+ * and report lines are preserved.
+ */
+export async function unconfirmSalesReport(formData: FormData): Promise<void> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "sales")) throw new Error("Нет доступа");
+  if (!canUnconfirmReport(ctx.effectiveRoles)) throw new Error("Отменить подтверждение может бухгалтер или владелец");
+
+  const reportId = String(formData.get("reportId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!reason) throw new Error("Укажите причину отмены подтверждения");
+
+  const report = await getSalesReportForContext(ctx, reportId);
+  if (!report) throw new Error("Отчёт не найден или нет доступа");
+  if (report.status !== "confirmed") throw new Error("Отменить подтверждение можно только у подтверждённого отчёта");
+
+  const closed = await monthClosedError(report.companyId, report.clubId, report.reportDate);
+  if (closed) throw new Error(closed);
+
+  await prisma.salesReport.update({
+    where: { id: report.id },
+    // Lines + documents are untouched; only the verification stamp is cleared.
+    data: { status: "pending_accountant", verifiedByUserId: null, verifiedAt: null, accountantComment: null },
+  });
+
+  await recordAudit({
+    action: "sales_report.unconfirmed",
+    entityType: "SalesReport",
+    entityId: report.id,
+    companyId: report.companyId,
+    clubId: report.clubId,
+    userId: ctx.user.id,
+    metadata: { from: "confirmed", to: "pending_accountant", reason },
+  });
 
   revalidatePath("/sales");
   revalidatePath(`/sales/reports/${report.id}`);

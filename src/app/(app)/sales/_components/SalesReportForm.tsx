@@ -9,6 +9,7 @@ import {
   CALC_HINT,
   ENCASHMENT_KEY,
   REVENUE_LINE_KEY,
+  CASH_MOVEMENT_KEYS,
   computeSalesReportTotals,
   type ReportSection,
 } from "@/lib/sales-report-rows";
@@ -104,6 +105,9 @@ export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: st
           ))}
         </div>
 
+        {/* Part 4 — encashment / withdrawal kept apart from ООО sales */}
+        <CashMovementBlock onChange={(key, value) => setAmounts((prev) => ({ ...prev, [key]: value }))} />
+
         <label className="mt-4 block">
           <span className="mb-1 block text-sm font-medium text-slate-700">Примечания</span>
           <textarea name="notes" rows={2} className="input w-full" />
@@ -141,6 +145,35 @@ export function SalesReportForm({ clubs }: { clubs: Array<{ id: string; name: st
   );
 }
 
+function CashMovementBlock({ onChange }: { onChange: (key: string, value: string) => void }) {
+  const rows = SALES_REPORT_ROWS.filter((r) => CASH_MOVEMENT_KEYS.includes(r.key) && !r.calc);
+  return (
+    <div className="mt-4 overflow-hidden rounded-md border border-slate-200">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Инкассация и изъятия
+      </div>
+      <div className="divide-y divide-slate-100 sm:grid sm:grid-cols-2 sm:divide-y-0">
+        {rows.map((row) => (
+          <label key={row.key} className="flex items-center justify-between gap-2 px-3 py-1.5">
+            <span className="min-w-0 truncate text-sm text-slate-700">{row.label}</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              name={`amount_${row.key}`}
+              defaultValue="0"
+              onChange={(e) => onChange(row.key, e.target.value)}
+              className="input w-28 text-right sm:w-32"
+            />
+          </label>
+        ))}
+      </div>
+      <div className="border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500">
+        Это движение наличных, а не выручка. Приложите подтверждающие документы на странице отчёта.
+      </div>
+    </div>
+  );
+}
+
 function Section({
   title,
   sectionKey,
@@ -154,12 +187,18 @@ function Section({
   computed: Record<string, number>;
   onChange: (key: string, value: string) => void;
 }) {
-  const rows = SALES_REPORT_ROWS.filter((r) => r.section === sectionKey);
+  // Cash movements (инкассация / изъятие) are rendered in their own block below.
+  const rows = SALES_REPORT_ROWS.filter((r) => r.section === sectionKey && !CASH_MOVEMENT_KEYS.includes(r.key));
   return (
     <div className="overflow-hidden rounded-md border border-slate-200">
       <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
         {title}
       </div>
+      {sectionKey === "ip" ? (
+        <div className="border-b border-slate-100 bg-violet-50/40 px-3 py-1.5 text-[11px] text-violet-700">
+          Выручка ИП автоматически учитывается как ПТ
+        </div>
+      ) : null}
       <div className="divide-y divide-slate-100">
         {rows.map((row) =>
           row.calc ? (

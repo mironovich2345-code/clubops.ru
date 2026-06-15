@@ -22,6 +22,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "sales_report.created": "Создан сменный отчёт",
   "sales_report.verified": "Подтверждён сменный отчёт",
   "sales_report.confirmed": "Подтверждён сменный отчёт",
+  "sales_report.unconfirmed": "Отменено подтверждение отчёта",
+  "sales_report.confirm_blocked": "Подтверждение отчёта заблокировано проверкой",
   "sales_report.rejected": "Отклонён сменный отчёт",
   "sales_report.canceled": "Отменён сменный отчёт",
   "sales_report.comment_added": "Добавлен комментарий к отчёту",

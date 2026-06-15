@@ -8,7 +8,8 @@ import {
   getSalesReportForContext,
   availableSalesReportActions,
   canEditReport,
-  salesReportWarnings,
+  canUnconfirmReport,
+  validateSalesReportForConfirmation,
   linesToMap,
   cashOooRemaining,
   cashReconciliation,
@@ -22,6 +23,9 @@ import {
   SALES_REPORT_STATUS_LABELS,
   SALES_REPORT_STATUS_TONE,
   SALES_REPORT_DOC_TYPES,
+  CASH_MOVEMENT_KEYS,
+  KM6_OOO_DOC_TYPE,
+  KM6_IP_DOC_TYPE,
   WITHDRAWAL_KEY,
   REVENUE_OOO_KEY,
   REVENUE_IP_KEY,
@@ -29,6 +33,7 @@ import {
 } from "@/lib/sales-reports";
 import { SalesReportActions } from "../../_components/SalesReportActions";
 import { SalesReportDocSlots } from "../../_components/SalesReportDocSlots";
+import { UnconfirmReportForm } from "../../_components/UnconfirmReportForm";
 
 export const dynamic = "force-dynamic";
 
@@ -70,22 +75,20 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
   const unmappedEntityRows = report.lines.filter(
     (l) => (ROW_META.get(l.key)?.section ?? "totals") !== "totals" && l.amountKopeks > 0 && !l.legalEntityId,
   ).length;
-  const warnings = salesReportWarnings({
-    cashOooKopeks: cashOoo,
-    encashmentKopeks: encashment,
-    encashmentDocCount: docCount("encashment"),
+  // Server-authoritative confirmation check (same helper the confirm action uses).
+  const { blockingErrors, warnings } = validateSalesReportForConfirmation({
+    lines: report.lines.map((l) => ({ key: l.key, amountKopeks: l.amountKopeks })),
+    documentTypes: report.documents.map((d) => d.type),
     unmappedEntityRows,
-    withdrawalKopeks: withdrawal,
-    withdrawalDocCount: docCount("withdrawal"),
-    revenueOooKopeks: revenueOoo,
-    oooReportDocCount: docCount("ooo_report"),
-    revenueIpKopeks: revenueIp,
-    ipReportDocCount: docCount("ip_report"),
   });
+  const confirmBlocked = blockingErrors.length > 0;
+  const canUnconfirm = report.status === "confirmed" && canUnconfirmReport(ctx.effectiveRoles);
   // Which types must (важно) have a document given the amounts on this report.
   const requiredMissing = (type: string): boolean =>
     (type === "encashment" && encashment > 0 && docCount("encashment") === 0) ||
-    (type === "withdrawal" && withdrawal > 0 && docCount("withdrawal") === 0);
+    (type === "withdrawal" && withdrawal > 0 && docCount("withdrawal") === 0) ||
+    (type === KM6_OOO_DOC_TYPE && revenueOoo > 0 && docCount(KM6_OOO_DOC_TYPE) === 0) ||
+    (type === KM6_IP_DOC_TYPE && revenueIp > 0 && docCount(KM6_IP_DOC_TYPE) === 0);
 
   // Resolve verifier / rejecter names (stored as plain scalar ids).
   const actorIds = [report.verifiedByUserId, report.rejectedByUserId].filter((x): x is string => !!x);
@@ -94,8 +97,12 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
     : [];
   const nameOf = (id: string | null) => (id ? actors.find((a) => a.id === id)?.name ?? "—" : "—");
 
+  // Encashment / withdrawal are shown in the cash-control cards, not mixed into
+  // the ООО sales table (Part 4 — never read as revenue).
   const sectionRows = (section: ReportSection) =>
-    report.lines.filter((l) => (ROW_META.get(l.key)?.section ?? "totals") === section);
+    report.lines.filter(
+      (l) => (ROW_META.get(l.key)?.section ?? "totals") === section && !CASH_MOVEMENT_KEYS.includes(l.key),
+    );
 
   return (
     <div>
@@ -115,6 +122,20 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
         {report.status === "rejected" && report.rejectionReason ? (
           <span className="text-rose-700">Причина: {report.rejectionReason}</span>
         ) : null}
+      </div>
+
+      {/* Part 7 — confirmation validation card */}
+      <div className={`mb-6 rounded-lg border px-4 py-3 text-sm shadow-sm ${confirmBlocked ? "border-rose-200 bg-rose-50" : "border-emerald-200 bg-emerald-50"}`}>
+        <div className={`mb-1 font-semibold ${confirmBlocked ? "text-rose-800" : "text-emerald-800"}`}>Проверка отчёта</div>
+        {confirmBlocked ? (
+          <ul className="list-inside list-disc text-rose-700">
+            {blockingErrors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-emerald-700">Отчёт готов к подтверждению</div>
+        )}
       </div>
 
       {warnings.length > 0 ? (
@@ -198,6 +219,11 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
               <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 {section.label}
               </div>
+              {section.key === "ip" ? (
+                <div className="border-b border-slate-100 bg-violet-50/40 px-4 py-1.5 text-[11px] text-violet-700">
+                  Выручка ИП автоматически учитывается как ПТ
+                </div>
+              ) : null}
               <table className="min-w-full divide-y divide-slate-100">
                 <tbody>
                   {sectionRows(section.key).map((line) => {
@@ -276,7 +302,15 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
       {actions.length > 0 ? (
         <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 text-sm font-semibold text-slate-700">Проверка бухгалтером</div>
-          <SalesReportActions reportId={report.id} actions={actions} />
+          <SalesReportActions reportId={report.id} actions={actions} confirmBlocked={confirmBlocked} blockingErrors={blockingErrors} />
+        </div>
+      ) : null}
+
+      {/* Part 1 — undo confirmation (accountant / owner) */}
+      {canUnconfirm ? (
+        <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 text-sm font-semibold text-slate-700">Отмена подтверждения</div>
+          <UnconfirmReportForm reportId={report.id} />
         </div>
       ) : null}
 

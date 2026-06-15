@@ -4,7 +4,17 @@ import { useState } from "react";
 import { transitionSalesReport } from "../report-actions";
 import type { SalesReportAction } from "@/lib/sales-report-rows";
 
-export function SalesReportActions({ reportId, actions }: { reportId: string; actions: SalesReportAction[] }) {
+export function SalesReportActions({
+  reportId,
+  actions,
+  confirmBlocked = false,
+  blockingErrors = [],
+}: {
+  reportId: string;
+  actions: SalesReportAction[];
+  confirmBlocked?: boolean;
+  blockingErrors?: string[];
+}) {
   const [comment, setComment] = useState("");
   const [reason, setReason] = useState("");
 
@@ -46,13 +56,26 @@ export function SalesReportActions({ reportId, actions }: { reportId: string; ac
         </label>
       ) : null}
 
+      {canConfirm && confirmBlocked ? (
+        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          Подтверждение заблокировано:
+          <ul className="mt-1 list-inside list-disc">
+            {blockingErrors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {canConfirm ? (
           <button
             type="submit"
             name="action"
             value="confirm"
-            className="rounded-md border border-emerald-300 bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+            disabled={confirmBlocked}
+            title={confirmBlocked ? "Устраните ошибки проверки, чтобы подтвердить отчёт" : undefined}
+            className="rounded-md border border-emerald-300 bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Подтвердить
           </button>

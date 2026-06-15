@@ -72,6 +72,14 @@ export function canEditReport(status: string, roles: readonly Role[], isCreator:
   return roles.includes("owner") || isCreator;
 }
 
+/**
+ * Who may undo a confirmation (return a confirmed report to pending). Mirrors the
+ * confirm policy: accountant or owner only — managers / regional / GD cannot.
+ */
+export function canUnconfirmReport(roles: readonly Role[]): boolean {
+  return roles.includes("accountant") || roles.includes("owner");
+}
+
 // --- queries ---------------------------------------------------------------
 
 export type SalesReportWithRelations = SalesReport & {

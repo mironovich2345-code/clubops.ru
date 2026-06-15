@@ -62,8 +62,21 @@ export const WITHDRAWAL_KEY = "withdrawal";
 export const REVENUE_OOO_KEY = "revenue_ooo";
 export const REVENUE_IP_KEY = "revenue_ip";
 export const SUBSCRIPTIONS_OOO_KEY = "subscriptions_ooo";
+export const PERSONAL_TRAINING_OOO_KEY = "personal_training_ooo";
 export const PERSONAL_TRAINING_TOTAL_KEY = "personal_training_total";
 export const CASH_REMAINING_LABEL = "Остаток наличности ООО";
+
+// КМ-6 (Z-report) document types. We reuse the existing ooo_report / ip_report
+// type keys (so previously uploaded documents keep satisfying the requirement)
+// and only relabel them as КМ-6 in the UI — no stored-data migration.
+export const KM6_OOO_DOC_TYPE = "ooo_report";
+export const KM6_IP_DOC_TYPE = "ip_report";
+export const ENCASHMENT_DOC_TYPE = "encashment";
+export const WITHDRAWAL_DOC_TYPE = "withdrawal";
+
+// Cash-movement rows shown in a dedicated "Инкассация и изъятия" block, kept
+// visually apart from ООО sales so they are never read as revenue.
+export const CASH_MOVEMENT_KEYS: readonly string[] = [ENCASHMENT_KEY, WITHDRAWAL_KEY];
 
 // Line keys needed to compute the plan/fact breakdown (kept together so queries
 // can fetch exactly these rows).
@@ -126,8 +139,9 @@ export function cashReconciliation(opts: {
 // Document types for sales-report attachments. Structured so the accountant can
 // see, per report, what supporting documents are present vs missing.
 export const SALES_REPORT_DOC_TYPES: ReadonlyArray<{ key: string; label: string }> = [
-  { key: "ooo_report", label: "Отчёт ООО" },
-  { key: "ip_report", label: "Отчёт ИП" },
+  // Keys unchanged for back-compat; ooo_report / ip_report relabelled as КМ-6.
+  { key: "ooo_report", label: "КМ-6 ООО" },
+  { key: "ip_report", label: "КМ-6 ИП" },
   { key: "encashment", label: "Инкассация" },
   { key: "withdrawal", label: "Изъятие" },
   { key: "cash_report", label: "Кассовый отчёт" },
@@ -252,4 +266,48 @@ export function salesReportWarnings(opts: {
     warnings.push("Для части строк не найдено привязанное юрлицо");
   }
   return warnings;
+}
+
+export type SalesReportConfirmationCheck = { blockingErrors: string[]; warnings: string[] };
+
+/**
+ * Server-authoritative checks that gate confirmation (and partly creation).
+ * Pure + client-safe so the detail page can render the same result. Blocking:
+ *   - ООО revenue must equal Абонементы ООО + ПТ ООО
+ *   - инкассация > 0 requires an encashment document
+ *   - изъятие > 0 requires a withdrawal document
+ *   - ООО revenue > 0 requires КМ-6 ООО (ooo_report)
+ *   - ИП revenue > 0 requires КМ-6 ИП (ip_report)
+ * Warnings stay advisory (do not block). Integer kopeks only — no NaN/Infinity.
+ */
+export function validateSalesReportForConfirmation(input: {
+  lines: Array<{ key: string; amountKopeks: number }>;
+  documentTypes: string[];
+  unmappedEntityRows?: number;
+}): SalesReportConfirmationCheck {
+  const m = linesToMap(input.lines);
+  const v = (k: string) => m[k] ?? 0;
+  const has = (t: string) => input.documentTypes.includes(t);
+  const blockingErrors: string[] = [];
+  const warnings: string[] = [];
+
+  const revenueOoo = v(REVENUE_OOO_KEY);
+  const oooByCategory = v(SUBSCRIPTIONS_OOO_KEY) + v(PERSONAL_TRAINING_OOO_KEY);
+  if (revenueOoo !== oooByCategory) {
+    blockingErrors.push("Выручка ООО должна равняться сумме Абонементов ООО и ПТ ООО");
+  }
+
+  const encashment = v(ENCASHMENT_KEY);
+  if (encashment > 0 && !has(ENCASHMENT_DOC_TYPE)) blockingErrors.push("Для инкассации необходимо приложить документ");
+
+  const withdrawal = v(WITHDRAWAL_KEY);
+  if (withdrawal > 0 && !has(WITHDRAWAL_DOC_TYPE)) blockingErrors.push("Для изъятия необходимо приложить документ");
+
+  if (revenueOoo > 0 && !has(KM6_OOO_DOC_TYPE)) blockingErrors.push("Необходимо приложить КМ-6 по ООО");
+  if (v(REVENUE_IP_KEY) > 0 && !has(KM6_IP_DOC_TYPE)) blockingErrors.push("Необходимо приложить КМ-6 по ИП");
+
+  if (encashment > v(CASH_OOO_KEY)) warnings.push("Инкассация ООО больше наличной выручки ООО");
+  if ((input.unmappedEntityRows ?? 0) > 0) warnings.push("Для части строк не найдено привязанное юрлицо");
+
+  return { blockingErrors, warnings };
 }
