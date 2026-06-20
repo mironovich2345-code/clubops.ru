@@ -392,6 +392,45 @@ export async function userHasClubRole(
   return anyRoleSatisfies(companyRows.map((r) => r.role), roles);
 }
 
+// --- Operational approver resolution (invoices / refunds) ------------------
+// Single source of truth for "who is the expected approver of this club's
+// invoices/refunds". An ACTIVE assigned Regional Director takes precedence;
+// otherwise the Chief Accountant approves as a fallback. Reuses the access
+// models — never duplicated in the invoice/refund modules.
+
+export type OperationalApproverRole = "regional_director" | "chief_accountant";
+
+/**
+ * True if the club has at least one ACTIVE Regional Director with valid access:
+ * a club-level regional_director assignment, OR a company-level regional_director
+ * (which covers every club in the company). Inactive users, other companies and
+ * non-regional roles never count. Drives the Chief Accountant fallback.
+ */
+export async function hasActiveRegionalApproverForClub(companyId: string, clubId: string): Promise<boolean> {
+  const [clubRows, companyRows] = await Promise.all([
+    prisma.clubUserAccess.findMany({
+      where: { clubId, role: "regional_director", user: { isActive: true } },
+      select: { id: true },
+      take: 1,
+    }),
+    prisma.companyUserAccess.findMany({
+      where: { companyId, role: "regional_director", user: { isActive: true } },
+      select: { id: true },
+      take: 1,
+    }),
+  ]);
+  return clubRows.length > 0 || companyRows.length > 0;
+}
+
+/** Expected approver for a club's invoices/refunds (regional if an active one is
+ * assigned, otherwise chief accountant). Derived from live access, never stored. */
+export async function getOperationalApproverForClub(
+  companyId: string,
+  clubId: string,
+): Promise<OperationalApproverRole> {
+  return (await hasActiveRegionalApproverForClub(companyId, clubId)) ? "regional_director" : "chief_accountant";
+}
+
 // --- User-management authorization (rules 1–9) ----------------------------
 // Owner manages all users in their company; a regional director may manage
 // managers for assigned clubs. Managers and accountants cannot invite users.

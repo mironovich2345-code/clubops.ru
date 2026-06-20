@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
+import { canAnyRoleAccessPage, canCreateOperational, canMutateOperationalRecords, STRATEGIC_READONLY_ERROR } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
-import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
+import { getCurrentAccessContext, canAccessClub, recordAudit, hasActiveRegionalApproverForClub } from "@/lib/access";
 import { monthClosedError } from "@/lib/month-close";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { getRefundForContext, REFUND_ACTION_AUDIT, type RefundDocument } from "@/lib/refunds";
@@ -228,11 +228,16 @@ export async function updateRefund(
     return { ok: false, error: "Нет доступа" };
   }
 
+  // Strategic roles (owner / GD) view refunds but never edit them.
+  if (!canMutateOperationalRecords(ctx.effectiveRoles)) {
+    return { ok: false, error: STRATEGIC_READONLY_ERROR };
+  }
+
   const refundId = String(formData.get("refundId") ?? "").trim();
   const existing = await getRefundForContext(ctx, refundId);
   if (!existing) return { ok: false, error: "Возврат не найден или нет доступа" };
   if (!canEditApproval(existing.status, ctx.effectiveRoles)) {
-    return { ok: false, error: "Оплаченный возврат может редактировать только владелец или бухгалтер" };
+    return { ok: false, error: "Оплаченный возврат может редактировать только бухгалтер" };
   }
 
   const closedUpd = await monthClosedError(existing.companyId, existing.clubId, existing.paidAt ?? existing.refundDate ?? existing.createdAt);
@@ -273,22 +278,54 @@ export async function transitionRefund(formData: FormData): Promise<void> {
   const closedTx = await monthClosedError(existing.companyId, existing.clubId, existing.paidAt ?? existing.refundDate ?? existing.createdAt);
   if (closedTx) throw new Error(closedTx);
 
-  const result = applyApprovalAction(action, existing.status, ctx.effectiveRoles);
-  if (!result.ok) throw new Error(result.error);
+  const hasActiveRegional = await hasActiveRegionalApproverForClub(existing.companyId, existing.clubId);
+  const isCreator = existing.createdByUserId === ctx.user.id;
+  const result = applyApprovalAction(action, existing.status, ctx.effectiveRoles, { hasActiveRegional, isCreator });
+  if (!result.ok) {
+    if (action === "approve" || action === "reject") {
+      await recordAudit({
+        action: "refund.approval_blocked",
+        entityType: "Refund",
+        entityId: refundId,
+        companyId: existing.companyId,
+        clubId: existing.clubId,
+        userId: ctx.user.id,
+        metadata: { from: existing.status, action, fallbackAvailable: !hasActiveRegional, reason: result.error },
+      });
+    }
+    throw new Error(result.error);
+  }
 
   await prisma.refund.update({
     where: { id: refundId },
     data: { status: result.to, paidAt: result.to === "paid" ? new Date() : null },
   });
 
+  const approverRole = hasActiveRegional ? "regional_director" : "chief_accountant";
+  const auditAction =
+    action === "approve"
+      ? result.to === "approved_by_chief_accountant"
+        ? "refund.approved_by_chief_accountant"
+        : "refund.approved_by_regional"
+      : action === "reject"
+        ? hasActiveRegional
+          ? "refund.rejected_by_regional"
+          : "refund.rejected_by_chief_accountant"
+        : REFUND_ACTION_AUDIT[action];
+
   await recordAudit({
-    action: REFUND_ACTION_AUDIT[action],
+    action: auditAction,
     entityType: "Refund",
     entityId: refundId,
     companyId: existing.companyId,
     clubId: existing.clubId,
     userId: ctx.user.id,
-    metadata: { from: existing.status, to: result.to, action },
+    metadata: {
+      from: existing.status,
+      to: result.to,
+      action,
+      ...(action === "approve" || action === "reject" ? { approverRole, fallbackUsed: !hasActiveRegional } : {}),
+    },
   });
 
   revalidatePath("/refunds");

@@ -7,10 +7,22 @@ export type InvoiceStatus =
   | "draft"
   | "needs_review"
   | "approved_by_regional"
-  | "approved_by_owner"
+  | "approved_by_chief_accountant"
+  | "approved_by_owner" // legacy — kept readable/payable, never produced by new actions
   | "paid"
   | "rejected"
   | "canceled";
+
+// Denial messages shared by the invoice + refund decision tables (kept as plain
+// strings so the pure decision modules stay free of server-only imports).
+export const APPROVAL_REGIONAL_ONLY_MSG = "Согласование доступно региональному директору этого клуба";
+export const APPROVAL_FALLBACK_CHIEF_MSG =
+  "Согласование может выполнить главный бухгалтер, так как региональный директор не назначен";
+
+// Options resolved by the caller (server action / server page) before applying a
+// workflow action: whether an ACTIVE regional approver exists for the club, and
+// whether the actor created the record (self-approval is forbidden).
+export type ApprovalContext = { hasActiveRegional: boolean; isCreator: boolean };
 
 export type InvoiceConfidence = "low" | "medium" | "high";
 
@@ -80,6 +92,7 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   draft: "Черновик",
   needs_review: "На согласовании",
   approved_by_regional: "Согласовано регионалом",
+  approved_by_chief_accountant: "Согласовано главным бухгалтером",
   approved_by_owner: "Согласовано собственником",
   paid: "Оплачено",
   rejected: "Отклонено",
@@ -137,16 +150,26 @@ function has(roles: readonly Role[], role: Role): boolean {
  * Resolves an action against the current status and the actor's effective
  * roles. Pure function — the single source of truth for who may do what.
  */
+// Pre-payment statuses an invoice can be rejected from.
+const INVOICE_REJECTABLE = ["needs_review", "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
+// Approved statuses an invoice can be paid from (legacy approved_by_owner kept).
+const INVOICE_PAYABLE = ["approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
+
+/**
+ * Pure decision table. Approval routes by club: when an ACTIVE regional approver
+ * exists (opts.hasActiveRegional) only the regional director may approve/reject;
+ * otherwise the chief accountant approves/rejects as fallback. The creator may
+ * never approve their own invoice (opts.isCreator). Owner / GD take no action.
+ */
 export function applyInvoiceAction(
   action: InvoiceAction,
   status: string,
   roles: readonly Role[],
+  opts: ApprovalContext,
 ): TransitionResult {
-  // Owner / general director are strategic (read-only) and take NO invoice
-  // workflow action. The chain runs manager -> regional (approve) -> accountant
-  // (pay); "pay" accepts approved_by_regional, so no owner step is required.
   const isRegional = has(roles, "regional_director");
-  const isAccountant = has(roles, "accountant");
+  const isChief = has(roles, "chief_accountant");
+  const isAccountant = has(roles, "accountant"); // chief inherits accountant
   const isManager = has(roles, "manager");
 
   switch (action) {
@@ -155,22 +178,28 @@ export function applyInvoiceAction(
       if (!(isManager || isRegional)) return { ok: false, error: "Недостаточно прав" };
       return { ok: true, to: "needs_review" };
 
-    case "approve":
-      if (!isRegional) return { ok: false, error: "Недостаточно прав для согласования" };
-      if (status === "needs_review") return { ok: true, to: "approved_by_regional" };
-      return { ok: false, error: "Согласовать можно счёт на согласовании" };
-
-    case "reject":
-      // Regional may reject anything under review or already approved (pre-pay).
-      if (!isRegional) return { ok: false, error: "Недостаточно прав для отклонения" };
-      if (
-        status === "needs_review" ||
-        status === "approved_by_regional" ||
-        status === "approved_by_owner"
-      ) {
-        return { ok: true, to: "rejected" };
+    case "approve": {
+      if (status !== "needs_review") return { ok: false, error: "Согласовать можно счёт на согласовании" };
+      if (opts.isCreator) return { ok: false, error: "Нельзя согласовать собственный счёт" };
+      if (opts.hasActiveRegional) {
+        if (isRegional) return { ok: true, to: "approved_by_regional" };
+        return { ok: false, error: APPROVAL_REGIONAL_ONLY_MSG };
       }
-      return { ok: false, error: "Отклонить можно счёт на согласовании или согласованный (до оплаты)" };
+      if (isChief) return { ok: true, to: "approved_by_chief_accountant" };
+      return { ok: false, error: APPROVAL_FALLBACK_CHIEF_MSG };
+    }
+
+    case "reject": {
+      if (!INVOICE_REJECTABLE.includes(status)) {
+        return { ok: false, error: "Отклонить можно счёт на согласовании или согласованный (до оплаты)" };
+      }
+      if (opts.hasActiveRegional) {
+        if (isRegional) return { ok: true, to: "rejected" };
+        return { ok: false, error: APPROVAL_REGIONAL_ONLY_MSG };
+      }
+      if (isChief) return { ok: true, to: "rejected" };
+      return { ok: false, error: APPROVAL_FALLBACK_CHIEF_MSG };
+    }
 
     case "cancel":
       // A draft may be canceled by the people working on it. Owner is strategic
@@ -180,20 +209,17 @@ export function applyInvoiceAction(
       return { ok: false, error: "Отменить можно только черновик" };
 
     case "pay":
-      // Marking paid is an operational action — accountant / chief accountant
-      // only. Owner is strategic (read-only) and cannot mark invoices paid.
+      // Marking paid — accountant / chief accountant only (owner is read-only).
       if (!isAccountant) return { ok: false, error: "Недостаточно прав для отметки об оплате" };
-      if (status === "approved_by_regional" || status === "approved_by_owner") {
-        return { ok: true, to: "paid" };
-      }
+      if (INVOICE_PAYABLE.includes(status)) return { ok: true, to: "paid" };
       return { ok: false, error: "Оплатить можно только согласованный счёт" };
   }
 }
 
 /** Actions the actor can currently perform — drives which buttons are shown. */
-export function availableInvoiceActions(status: string, roles: readonly Role[]): InvoiceAction[] {
+export function availableInvoiceActions(status: string, roles: readonly Role[], opts: ApprovalContext): InvoiceAction[] {
   return (Object.keys(INVOICE_ACTION_LABELS) as InvoiceAction[]).filter(
-    (action) => applyInvoiceAction(action, status, roles).ok,
+    (action) => applyInvoiceAction(action, status, roles, opts).ok,
   );
 }
 

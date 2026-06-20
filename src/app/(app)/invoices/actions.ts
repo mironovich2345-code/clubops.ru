@@ -8,6 +8,7 @@ import {
   getCurrentAccessContext,
   canAccessClub,
   recordAudit,
+  hasActiveRegionalApproverForClub,
 } from "@/lib/access";
 import {
   getInvoiceForContext,
@@ -551,22 +552,56 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
   const closedTx = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
   if (closedTx) throw new Error(closedTx);
 
-  const result = applyInvoiceAction(action, existing.status, ctx.effectiveRoles);
-  if (!result.ok) throw new Error(result.error);
+  // Resolve approver routing from live access (regional vs chief fallback) + the
+  // self-approval rule, then apply the pure decision table.
+  const hasActiveRegional = await hasActiveRegionalApproverForClub(existing.companyId, existing.clubId);
+  const isCreator = existing.createdByUserId === ctx.user.id;
+  const result = applyInvoiceAction(action, existing.status, ctx.effectiveRoles, { hasActiveRegional, isCreator });
+  if (!result.ok) {
+    if (action === "approve" || action === "reject") {
+      await recordAudit({
+        action: "invoice.approval_blocked",
+        entityType: "Invoice",
+        entityId: invoiceId,
+        companyId: existing.companyId,
+        clubId: existing.clubId,
+        userId: ctx.user.id,
+        metadata: { from: existing.status, action, fallbackAvailable: !hasActiveRegional, reason: result.error },
+      });
+    }
+    throw new Error(result.error);
+  }
 
   await prisma.invoice.update({
     where: { id: invoiceId },
     data: { status: result.to, paidAt: result.to === "paid" ? new Date() : null },
   });
 
+  const approverRole = hasActiveRegional ? "regional_director" : "chief_accountant";
+  const auditAction =
+    action === "approve"
+      ? result.to === "approved_by_chief_accountant"
+        ? "invoice.approved_by_chief_accountant"
+        : "invoice.approved_by_regional"
+      : action === "reject"
+        ? hasActiveRegional
+          ? "invoice.rejected_by_regional"
+          : "invoice.rejected_by_chief_accountant"
+        : INVOICE_ACTION_AUDIT[action];
+
   await recordAudit({
-    action: INVOICE_ACTION_AUDIT[action],
+    action: auditAction,
     entityType: "Invoice",
     entityId: invoiceId,
     companyId: existing.companyId,
     clubId: existing.clubId,
     userId: ctx.user.id,
-    metadata: { from: existing.status, to: result.to, action },
+    metadata: {
+      from: existing.status,
+      to: result.to,
+      action,
+      ...(action === "approve" || action === "reject" ? { approverRole, fallbackUsed: !hasActiveRegional } : {}),
+    },
   });
 
   revalidatePath("/invoices");

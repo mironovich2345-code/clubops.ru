@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
-import { getCurrentAccessContext } from "@/lib/access";
+import { getCurrentAccessContext, hasActiveRegionalApproverForClub } from "@/lib/access";
 import { canAnyRoleAccessPage, canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
 import {
   getInvoiceForContext,
@@ -55,6 +55,16 @@ export default async function InvoiceDetailPage({
     INVOICE_CANCELABLE.includes(invoice.status) &&
     !(isManagerOnly && invoice.status === "paid");
 
+  // Approver routing (live): who is expected to approve, and the action context.
+  const hasActiveRegional = await hasActiveRegionalApproverForClub(invoice.companyId, invoice.clubId);
+  const approvalOpts = { hasActiveRegional, isCreator: invoice.createdByUserId === ctx.user.id };
+  const expectedApprover =
+    invoice.status === "needs_review"
+      ? hasActiveRegional
+        ? "Ожидает согласования регионального директора"
+        : "Региональный директор не назначен — ожидает главного бухгалтера"
+      : null;
+
   const view = {
     id: invoice.id,
     counterpartyName: invoice.counterpartyName ?? "",
@@ -100,10 +110,16 @@ export default async function InvoiceDetailPage({
         </Link>
       </div>
 
+      {expectedApprover ? (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          {expectedApprover}
+        </div>
+      ) : null}
+
       <InvoiceEditForm
         invoice={view}
         categories={EXPENSE_CATEGORY_OPTIONS}
-        availableActions={availableInvoiceActions(invoice.status, ctx.effectiveRoles)}
+        availableActions={availableInvoiceActions(invoice.status, ctx.effectiveRoles, approvalOpts)}
         actionLabels={INVOICE_ACTION_LABELS}
         statusLabel={INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}
         canEdit={canMutateOperationalRecords(ctx.effectiveRoles) && canEditInvoice(invoice.status, ctx.effectiveRoles)}

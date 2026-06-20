@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
-import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
-import { canDownloadDocuments } from "@/lib/auth";
+import { requirePageAccess, getCurrentAccessContext, hasActiveRegionalApproverForClub } from "@/lib/access";
+import { canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
 import {
   getRefundForContext,
   parseRefundDocuments,
@@ -66,6 +66,17 @@ export default async function RefundDetailPage({
     canDownload: canDownloadDocuments(ctx.effectiveRoles),
   };
 
+  // Approver routing (live) + self-approval context for the decision table.
+  const hasActiveRegional = await hasActiveRegionalApproverForClub(refund.companyId, refund.clubId);
+  const approvalOpts = { hasActiveRegional, isCreator: refund.createdByUserId === ctx.user.id };
+  const expectedApprover =
+    refund.status === "needs_review"
+      ? hasActiveRegional
+        ? "Ожидает согласования регионального директора"
+        : "Региональный директор не назначен — ожидает главного бухгалтера"
+      : null;
+  const canEdit = canMutateOperationalRecords(ctx.effectiveRoles) && canEditApproval(refund.status, ctx.effectiveRoles);
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between gap-4">
@@ -81,12 +92,18 @@ export default async function RefundDetailPage({
         </Link>
       </div>
 
+      {expectedApprover ? (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          {expectedApprover}
+        </div>
+      ) : null}
+
       <RefundEditForm
         refund={view}
-        availableActions={availableApprovalActions(refund.status, ctx.effectiveRoles)}
+        availableActions={availableApprovalActions(refund.status, ctx.effectiveRoles, approvalOpts)}
         actionLabels={APPROVAL_ACTION_LABELS}
         statusLabel={APPROVAL_STATUS_LABELS[refund.status] ?? refund.status}
-        canEdit={canEditApproval(refund.status, ctx.effectiveRoles)}
+        canEdit={canEdit}
       />
     </div>
   );
