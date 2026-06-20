@@ -25,7 +25,9 @@ import { isUploadedFile } from "@/lib/uploaded-file";
 import {
   UPLOAD_ERROR_MESSAGES,
   logUploadFailure,
+  newRequestId,
   type UploadErrorCode,
+  type UploadStage,
 } from "@/lib/upload-errors";
 
 type AnalyzeState = {
@@ -37,6 +39,8 @@ type AnalyzeState = {
   fileMime?: string;
   fileSize?: number;
   extraction?: ExpenseExtraction;
+  /** True when the file uploaded but AI recognition failed (recoverable). */
+  analysisFailed?: boolean;
 };
 
 type SaveState = { ok: boolean; error?: string; expenseId?: string; budgetPending?: boolean };
@@ -115,6 +119,7 @@ export async function uploadAndAnalyzeExpense(
   formData: FormData,
 ): Promise<AnalyzeState> {
   let ctx: Awaited<ReturnType<typeof getCurrentAccessContext>> = null;
+  const requestId = newRequestId();
   const clubId = String(formData.get("clubId") ?? "").trim();
   const fileEntry = formData.get("file");
   const file = isUploadedFile(fileEntry) && fileEntry.size > 0 ? fileEntry : null;
@@ -124,10 +129,12 @@ export async function uploadAndAnalyzeExpense(
     fileSize: file?.size ?? null,
   };
 
-  function fail(code: UploadErrorCode, message = ""): AnalyzeState {
+  function fail(code: UploadErrorCode, stage: UploadStage, message = ""): AnalyzeState {
     logUploadFailure("expense", {
       code,
       message,
+      requestId,
+      stage,
       userId: ctx?.user.id ?? null,
       companyId: ctx?.selectedCompanyId ?? null,
       clubId: clubId || null,
@@ -138,12 +145,12 @@ export async function uploadAndAnalyzeExpense(
 
   try {
     ctx = await getCurrentAccessContext();
-    if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) return fail("ACCESS_DENIED");
-    if (!canCreateOperational(ctx.effectiveRoles)) return fail("ACCESS_DENIED");
+    if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) return fail("ACCESS_DENIED", "validate");
+    if (!canCreateOperational(ctx.effectiveRoles)) return fail("ACCESS_DENIED", "validate");
 
-    if (!clubId) return fail("CLUB_REQUIRED");
+    if (!clubId) return fail("CLUB_REQUIRED", "validate");
     if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
-      return fail("ACCESS_DENIED");
+      return fail("ACCESS_DENIED", "validate");
     }
 
     if (!file) {
@@ -152,13 +159,13 @@ export async function uploadAndAnalyzeExpense(
     }
 
     const fileCode = validateExpenseFile(file);
-    if (fileCode) return fail(fileCode);
+    if (fileCode) return fail(fileCode, "validate");
 
     let buffer: Buffer;
     try {
       buffer = Buffer.from(await file.arrayBuffer());
     } catch (readError) {
-      return fail("FILE_READ_FAILED", readError instanceof Error ? readError.message : "read failed");
+      return fail("FILE_READ_FAILED", "upload", readError instanceof Error ? readError.message : "read failed");
     }
 
     // Best-effort persist: recognition still works from the in-memory buffer.
@@ -174,6 +181,8 @@ export async function uploadAndAnalyzeExpense(
       logUploadFailure("expense", {
         code: "STORAGE_FAILED",
         message: storeError instanceof Error ? storeError.message : "store failed",
+        requestId,
+        stage: "upload",
         userId: ctx.user.id,
         companyId: ctx.selectedCompanyId,
         clubId,
@@ -181,7 +190,19 @@ export async function uploadAndAnalyzeExpense(
       });
     }
 
-    const extraction = await analyzeExpenseDocument({ buffer, mime: file.type, fileName: file.name });
+    const { extraction, analysisFailed } = await analyzeExpenseDocument({ buffer, mime: file.type, fileName: file.name });
+    if (analysisFailed) {
+      logUploadFailure("expense", {
+        code: "AI_PROVIDER_FAILED",
+        message: "analysis failed; recoverable",
+        requestId,
+        stage: "analyze",
+        userId: ctx.user.id,
+        companyId: ctx.selectedCompanyId,
+        clubId,
+        ...fileInfo,
+      });
+    }
     if (storageFailed) {
       extraction.warnings = [UPLOAD_ERROR_MESSAGES.STORAGE_FAILED, ...extraction.warnings];
     }
@@ -215,13 +236,33 @@ export async function uploadAndAnalyzeExpense(
       fileMime: file.type,
       fileSize: size,
       extraction,
+      analysisFailed,
     };
   } catch (error) {
-    return fail("UNKNOWN_ERROR", error instanceof Error ? error.message : "unknown");
+    return fail("UNKNOWN_ERROR", "render-response", error instanceof Error ? error.message : "unknown");
   }
 }
 
+/**
+ * Public save action. Wraps the implementation so an unexpected runtime/DB error
+ * surfaces as a clean inline message instead of bubbling to the global error
+ * boundary (which would blank the whole page). All financial/permission/scope
+ * checks live in saveExpenseImpl and are unchanged.
+ */
 export async function saveExpense(
+  prev: SaveState | undefined,
+  formData: FormData,
+): Promise<SaveState> {
+  try {
+    return await saveExpenseImpl(prev, formData);
+  } catch (error) {
+    // Sanitized: no stack trace / payload reaches the client.
+    console.error("[expense:save]", error instanceof Error ? error.message : "unknown save error");
+    return { ok: false, error: "Не удалось сохранить расход. Проверьте поля и повторите." };
+  }
+}
+
+async function saveExpenseImpl(
   _prev: SaveState | undefined,
   formData: FormData,
 ): Promise<SaveState> {

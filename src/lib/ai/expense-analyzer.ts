@@ -40,6 +40,14 @@ export type ExpenseExtraction = {
 
 export type ExpenseAnalysisInput = { buffer: Buffer; mime: string; fileName: string };
 
+/**
+ * Result of an analysis attempt. `analysisFailed` is true ONLY when AI was
+ * attempted and could not produce a usable result (network/HTTP/timeout/invalid
+ * JSON). It is false for the intentional manual modes (AI disabled, PDF) so the
+ * UI does not show a scary "recognition failed" banner for expected paths.
+ */
+export type ExpenseAnalysisResult = { extraction: ExpenseExtraction; analysisFailed: boolean };
+
 const CATEGORY_KEYS = ["advertising", "household", "builders", "rent", "maintenance", "investments", "taxes", "salary", "dismissal_compensation", "recruitment", "it_services", "office_supplies", "consumables", "refunds", "other"];
 const KEY_FIELDS: Array<keyof ExpenseExtraction> = ["amount", "expenseCategory"];
 
@@ -236,14 +244,18 @@ const SYSTEM_PROMPT =
   "Если на фото несколько чеков/документов (multipleReceipts=true) — confidence ОБЯЗАТЕЛЬНО low или medium, " +
   "НИКОГДА не high, и добавь в warnings: «На фото несколько чеков, проверьте сумму и позиции вручную».";
 
-async function openaiAnalyze(input: ExpenseAnalysisInput): Promise<ExpenseExtraction> {
+async function openaiAnalyze(input: ExpenseAnalysisInput): Promise<ExpenseAnalysisResult> {
   if (isPdf(input.mime)) {
-    return emptyExpense(
-      "manual",
-      "ai",
-      ["PDF recognition requires conversion or text extraction — заполните поля вручную"],
-      `PDF "${input.fileName}" не распознаётся напрямую.`,
-    );
+    // PDF is an expected manual path, not a recognition failure.
+    return {
+      extraction: emptyExpense(
+        "manual",
+        "ai",
+        ["PDF не распознаётся напрямую — заполните поля вручную"],
+        `PDF "${input.fileName}" не распознаётся напрямую.`,
+      ),
+      analysisFailed: false,
+    };
   }
 
   const result = await callOpenAIVision({
@@ -252,9 +264,14 @@ async function openaiAnalyze(input: ExpenseAnalysisInput): Promise<ExpenseExtrac
     dataUrl: bufferToDataUrl(input.buffer, input.mime),
   });
 
-  if (result.ok) return mapExpenseJson(result.json, result.raw);
+  if (result.ok) return { extraction: mapExpenseJson(result.json, result.raw), analysisFailed: false };
+  // Invalid JSON / network / HTTP / timeout: recoverable failure — the file is
+  // still uploaded, so the user can retry or continue manually.
   if (result.reason === "parse") {
-    return emptyExpense("manual", "ai", ["ИИ вернул некорректный ответ — заполните поля вручную"], result.raw);
+    return {
+      extraction: emptyExpense("manual", "ai", ["ИИ вернул некорректный ответ — заполните поля вручную"], result.raw),
+      analysisFailed: true,
+    };
   }
   throw new Error(result.message);
 }
@@ -268,18 +285,20 @@ function mockAnalyze(input: ExpenseAnalysisInput): ExpenseExtraction {
   );
 }
 
-export async function analyzeExpenseDocument(input: ExpenseAnalysisInput): Promise<ExpenseExtraction> {
+export async function analyzeExpenseDocument(input: ExpenseAnalysisInput): Promise<ExpenseAnalysisResult> {
   if (selectedAiProvider() === "openai") {
     try {
-      return finalize(await openaiAnalyze(input));
+      const r = await openaiAnalyze(input);
+      return { extraction: finalize(r.extraction), analysisFailed: r.analysisFailed };
     } catch (error) {
       console.error("expense AI analyze failed, using mock", error instanceof Error ? error.message : error);
       const m = mockAnalyze(input);
       m.warnings = ["ИИ не смог обработать документ — заполните поля вручную"];
-      return finalize(m);
+      return { extraction: finalize(m), analysisFailed: true };
     }
   }
-  return finalize(mockAnalyze(input));
+  // AI intentionally disabled (mock): manual mode, not a failure.
+  return { extraction: finalize(mockAnalyze(input)), analysisFailed: false };
 }
 
 /** Empty extraction for manual entry without an uploaded file. */

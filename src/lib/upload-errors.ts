@@ -31,6 +31,15 @@ export function uploadErrorMessage(code: UploadErrorCode): string {
   return UPLOAD_ERROR_MESSAGES[code] ?? UPLOAD_ERROR_MESSAGES.UNKNOWN_ERROR;
 }
 
+// Stages of the upload/recognition pipeline, used for sanitized diagnostics.
+export type UploadStage =
+  | "validate"
+  | "preview"
+  | "upload"
+  | "analyze"
+  | "normalize"
+  | "render-response";
+
 export type UploadFailureInfo = {
   code: UploadErrorCode;
   message: string;
@@ -40,17 +49,34 @@ export type UploadFailureInfo = {
   fileName: string | null;
   fileMime: string | null;
   fileSize: number | null;
+  /** Correlates the log line with the failing request. */
+  requestId?: string;
+  /** Pipeline stage where the failure occurred. */
+  stage?: UploadStage;
 };
 
-/** Server-side sanitized log line for a failed upload (no API key, no file content). */
+/** Short, collision-resistant id for correlating a failed upload in the logs. */
+export function newRequestId(): string {
+  return `up_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Server-side sanitized log line for a failed upload. Deliberately logs only
+ * non-sensitive metadata — never file contents, AI prompt/document text, tokens,
+ * secrets, storage credentials or full stack traces. `message` is a short, host
+ * code/error string already stripped of payloads by callers.
+ */
 export function logUploadFailure(scope: string, info: UploadFailureInfo): void {
   console.error(`[upload:${scope}] ${info.code}`, {
+    requestId: info.requestId ?? null,
+    timestamp: new Date().toISOString(),
+    stage: info.stage ?? null,
     message: info.message,
     userId: info.userId,
     companyId: info.companyId,
     clubId: info.clubId,
-    fileName: info.fileName,
     fileMime: info.fileMime,
     fileSize: info.fileSize,
+    env: process.env.NODE_ENV ?? "unknown",
   });
 }

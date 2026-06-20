@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import type { ExpenseExtraction } from "@/lib/ai/expense-analyzer";
 import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors";
@@ -22,6 +22,7 @@ type AnalyzeState = {
   fileMime?: string;
   fileSize?: number;
   extraction?: ExpenseExtraction;
+  analysisFailed?: boolean;
 };
 type SaveState = { ok: boolean; error?: string; expenseId?: string; budgetPending?: boolean };
 
@@ -125,15 +126,45 @@ function DocumentExpenseForm({
   // Controlled so the selected club survives the form reset after a form action.
   const [clubId, setClubId] = useState(clubs.length === 1 ? clubs[0].id : "");
   const [paymentMethod, setPaymentMethod] = useState("");
+  // The user explicitly chose to continue manually after a failed recognition.
+  const [forceManual, setForceManual] = useState(false);
+  // Guards against firing duplicate parallel retry requests.
+  const [retrying, setRetrying] = useState(false);
+  const analyzeFormRef = useRef<HTMLFormElement>(null);
+
+  // Each analyze result is a fresh object: reset the local manual/retry flags so
+  // a new upload starts clean (a successful retry hides the failure banner).
+  useEffect(() => {
+    setForceManual(false);
+    setRetrying(false);
+  }, [analyze]);
 
   const extraction = analyze.ok ? analyze.extraction : undefined;
+  const analysisFailed = Boolean(analyze.ok && analyze.analysisFailed);
+  // Show the recoverable failure banner until the user retries or continues.
+  const showFailureBanner = analysisFailed && !forceManual;
+  const showReview = Boolean(analyze.ok && extraction && !showFailureBanner);
+  // Optional AI fields may be absent on a partial/failed response — never assume.
+  const warnings = extraction?.warnings ?? [];
+  const items = extraction?.items ?? [];
   // Default the review "Тип" to the AI result, falling back to the chosen kind.
   const typeDefault =
-    extraction && extraction.type !== "manual" ? extraction.type : docKind === "payroll_statement" ? "manual" : docKind;
+    extraction && extraction.type && extraction.type !== "manual"
+      ? extraction.type
+      : docKind === "payroll_statement"
+        ? "manual"
+        : docKind;
+
+  function retryAnalysis() {
+    if (retrying) return; // prevent duplicate parallel requests
+    setRetrying(true);
+    // The chosen file is still in the input — resubmit reuses it.
+    analyzeFormRef.current?.requestSubmit();
+  }
 
   return (
     <div>
-      <form action={analyzeAction} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <form ref={analyzeFormRef} action={analyzeAction} className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Field label="Компания">
           <input value={companyName} disabled className="input bg-slate-50 text-slate-500" />
         </Field>
@@ -173,14 +204,42 @@ function DocumentExpenseForm({
         </div>
       </form>
 
-      {analyze.ok && extraction ? (
+      {/* Recoverable AI failure: the file is uploaded, recognition is not. The
+          page stays usable — retry, or continue filling the form by hand. */}
+      {showFailureBanner ? (
+        <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-4">
+          <div className="text-sm font-semibold text-amber-900">Не удалось распознать чек</div>
+          <p className="mt-1 text-sm text-amber-800">
+            Файл загружен, но распознавание не удалось. Повторите анализ или продолжите заполнение вручную.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={retryAnalysis}
+              disabled={retrying}
+              className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
+            >
+              {retrying ? "Повтор анализа..." : "Повторить анализ"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setForceManual(true)}
+              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              Продолжить вручную
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showReview && extraction ? (
         <form action={saveAction} className="mt-6 border-t border-slate-200 pt-5">
-          <input type="hidden" name="clubId" value={analyze.clubId} />
+          <input type="hidden" name="clubId" value={analyze.clubId ?? ""} />
           <input type="hidden" name="storageKey" value={analyze.storageKey ?? ""} />
           <input type="hidden" name="fileName" value={analyze.fileName ?? ""} />
           <input type="hidden" name="fileMime" value={analyze.fileMime ?? ""} />
           <input type="hidden" name="fileSize" value={analyze.fileSize ?? ""} />
-          <input type="hidden" name="confidence" value={extraction.confidence} />
+          <input type="hidden" name="confidence" value={extraction.confidence ?? "low"} />
           <input type="hidden" name="rawExtractedJson" value={JSON.stringify(extraction)} />
 
           <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
@@ -203,13 +262,13 @@ function DocumentExpenseForm({
                     : "bg-slate-100 text-slate-600 ring-slate-200"
               }`}
             >
-              Уверенность: {CONFIDENCE_LABELS[extraction.confidence] ?? extraction.confidence}
+              Уверенность: {CONFIDENCE_LABELS[extraction.confidence ?? "low"] ?? extraction.confidence ?? "—"}
             </span>
           </div>
 
-          {extraction.warnings.length > 0 ? (
+          {warnings.length > 0 ? (
             <ul className="mb-4 space-y-1 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
-              {extraction.warnings.map((w, i) => (
+              {warnings.map((w, i) => (
                 <li key={i}>• {w}</li>
               ))}
             </ul>
@@ -272,7 +331,7 @@ function DocumentExpenseForm({
             />
             <div className="md:col-span-2">
               <Field label="Список покупок (по строке на позицию)">
-                <textarea name="items" rows={3} defaultValue={extraction.items.join("\n")} className="input" />
+                <textarea name="items" rows={3} defaultValue={items.join("\n")} className="input" />
               </Field>
             </div>
             <div className="md:col-span-2">
