@@ -17,7 +17,8 @@ import {
   type InvoiceAction,
 } from "@/lib/invoices";
 import { getClubLegalEntities } from "@/lib/legal-entities";
-import { monthClosedError, isMonthClosed, MONTH_CLOSED_ERROR } from "@/lib/month-close";
+import { monthClosedError } from "@/lib/month-close";
+import { BULK_MONTHLY_DISABLED_MESSAGE, auditBlockedFeature } from "@/lib/disabled-features";
 import type { Role } from "@/lib/auth";
 import {
   analyzeInvoiceDocument,
@@ -462,7 +463,6 @@ function isManagerOnly(roles: readonly Role[]): boolean {
 }
 
 const INVOICE_CANCELABLE = ["draft", "needs_review", "approved_by_regional", "approved_by_owner", "paid"];
-const INVOICE_BULK_ACTIVE = ["needs_review", "approved_by_regional", "approved_by_owner", "paid"];
 
 type CancelState = { ok: boolean; error?: string };
 
@@ -513,101 +513,21 @@ export async function cancelInvoice(
   return { ok: true };
 }
 
-// --- monthly bulk cancel ----------------------------------------------------
-
+// --- monthly bulk cancel: DISABLED (pre-pilot product decision) -------------
+// Monthly bulk cancellation has been removed. These exported actions remain only
+// to reject any direct invocation with a safe denial and a sanitized audit
+// event. Cancel a single invoice with `cancelInvoice` above; month close/reopen
+// is unaffected. Historical canceled rows are never touched here.
 type BulkState = { ok: boolean; error?: string; count?: number; totalKopeks?: number; done?: boolean };
 
-function monthRangeDatesInv(month: string): { start: Date; end: Date } | null {
-  const m = month.match(/^(\d{4})-(\d{2})$/);
-  if (!m) return null;
-  return { start: new Date(Number(m[1]), Number(m[2]) - 1, 1), end: new Date(Number(m[1]), Number(m[2]), 1) };
+export async function previewBulkCancelInvoices(): Promise<BulkState> {
+  await auditBlockedFeature("invoice.bulk_cancel_preview");
+  return { ok: false, error: BULK_MONTHLY_DISABLED_MESSAGE };
 }
 
-type BulkWhereInv =
-  | { error: string }
-  | { where: import("@prisma/client").Prisma.InvoiceWhereInput; month: string; clubId: string; category: string | null };
-
-async function buildInvoiceBulkWhere(
-  ctx: NonNullable<Awaited<ReturnType<typeof getCurrentAccessContext>>>,
-  formData: FormData,
-): Promise<BulkWhereInv> {
-  const month = String(formData.get("month") ?? "").trim();
-  const clubId = String(formData.get("clubId") ?? "").trim();
-  const category = String(formData.get("category") ?? "").trim();
-  const range = monthRangeDatesInv(month);
-  if (!range) return { error: "Укажите месяц в формате ГГГГ-ММ" };
-  if (!clubId) return { error: "Выберите клуб" };
-  if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
-    return { error: "Нет доступа к выбранному клубу" };
-  }
-  // Active invoices in the month (by invoiceDate, fallback createdAt).
-  const active = isManagerOnly(ctx.effectiveRoles)
-    ? INVOICE_BULK_ACTIVE.filter((s) => s !== "paid")
-    : INVOICE_BULK_ACTIVE;
-  const where: import("@prisma/client").Prisma.InvoiceWhereInput = {
-    companyId: ctx.selectedCompanyId!,
-    clubId,
-    status: { in: active },
-    OR: [{ invoiceDate: { gte: range.start, lt: range.end } }, { invoiceDate: null, createdAt: { gte: range.start, lt: range.end } }],
-    ...(category ? { expenseCategory: category } : {}),
-  };
-  return { where, month, clubId, category: category || null };
-}
-
-export async function previewBulkCancelInvoices(
-  _prev: BulkState | undefined,
-  formData: FormData,
-): Promise<BulkState> {
-  const ctx = await getCurrentAccessContext();
-  if (!ctx || !ctx.selectedCompanyId || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
-    return { ok: false, error: "Нет доступа" };
-  }
-  if (!canCancelInvoiceRole(ctx.effectiveRoles)) return { ok: false, error: "Недостаточно прав" };
-  const built = await buildInvoiceBulkWhere(ctx, formData);
-  if ("error" in built) return { ok: false, error: built.error };
-  const agg = await prisma.invoice.aggregate({ where: built.where, _count: true, _sum: { amountKopeks: true } });
-  return { ok: true, count: agg._count, totalKopeks: agg._sum.amountKopeks ?? 0 };
-}
-
-export async function cancelInvoicesForMonth(
-  _prev: BulkState | undefined,
-  formData: FormData,
-): Promise<BulkState> {
-  const ctx = await getCurrentAccessContext();
-  if (!ctx || !ctx.selectedCompanyId || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
-    return { ok: false, error: "Нет доступа" };
-  }
-  if (!canCancelInvoiceRole(ctx.effectiveRoles)) {
-    return { ok: false, error: "Недостаточно прав для массовой отмены" };
-  }
-  if (String(formData.get("confirm") ?? "").trim() !== "ОТМЕНИТЬ") {
-    return { ok: false, error: "Введите ОТМЕНИТЬ заглавными буквами для подтверждения" };
-  }
-  const built = await buildInvoiceBulkWhere(ctx, formData);
-  if ("error" in built) return { ok: false, error: built.error };
-
-  if (await isMonthClosed(ctx.selectedCompanyId, built.clubId, built.month)) {
-    return { ok: false, error: MONTH_CLOSED_ERROR };
-  }
-
-  const matches = await prisma.invoice.findMany({ where: built.where, select: { id: true, amountKopeks: true } });
-  if (matches.length === 0) return { ok: true, count: 0, totalKopeks: 0, done: true };
-  const ids = matches.map((m) => m.id);
-  const totalKopeks = matches.reduce((s, m) => s + m.amountKopeks, 0);
-  const reason = String(formData.get("reason") ?? "").trim() || null;
-
-  await prisma.invoice.updateMany({ where: { id: { in: ids } }, data: { status: "canceled" } });
-  await recordAudit({
-    action: "invoice.bulk_canceled",
-    entityType: "Invoice",
-    companyId: ctx.selectedCompanyId,
-    clubId: built.clubId,
-    userId: ctx.user.id,
-    metadata: { month: built.month, clubId: built.clubId, category: built.category, count: ids.length, totalAmount: totalKopeks, reason },
-  });
-
-  revalidateInvoiceFinancial();
-  return { ok: true, count: ids.length, totalKopeks, done: true };
+export async function cancelInvoicesForMonth(): Promise<BulkState> {
+  await auditBlockedFeature("invoice.bulk_cancel");
+  return { ok: false, error: BULK_MONTHLY_DISABLED_MESSAGE };
 }
 
 export async function transitionInvoice(formData: FormData): Promise<void> {

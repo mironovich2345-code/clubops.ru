@@ -5,9 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
-import { getExpenseForContext, EXPENSE_STATUS_CANCELED, EXPENSE_ACTIVE_STATUSES, isExpenseCancelable } from "@/lib/expenses";
+import { getExpenseForContext, EXPENSE_STATUS_CANCELED, isExpenseCancelable } from "@/lib/expenses";
 import { revertExpenseBatchIfAllInactive } from "@/lib/import-batches";
-import { monthClosedError, isMonthClosed, MONTH_CLOSED_ERROR } from "@/lib/month-close";
+import { monthClosedError } from "@/lib/month-close";
+import { BULK_MONTHLY_DISABLED_MESSAGE, auditBlockedFeature } from "@/lib/disabled-features";
 import {
   evaluateExpenseBudget,
   currentMonthKey,
@@ -502,121 +503,19 @@ export async function cancelExpense(
   return { ok: true };
 }
 
-// --- monthly bulk cancel ---------------------------------------------------
-
+// --- monthly bulk cancel: DISABLED (pre-pilot product decision) -------------
+// Monthly bulk cancellation has been removed. These exported actions remain only
+// to reject any direct invocation with a safe denial and a sanitized audit
+// event. Cancel a single expense with `cancelExpense` above; month close/reopen
+// is unaffected. Historical canceled / reverted rows are never touched here.
 type BulkState = { ok: boolean; error?: string; count?: number; totalKopeks?: number; done?: boolean };
 
-function monthRangeDates(month: string): { start: Date; end: Date } | null {
-  const m = month.match(/^(\d{4})-(\d{2})$/);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]) - 1;
-  return { start: new Date(y, mo, 1), end: new Date(y, mo + 1, 1) };
+export async function previewBulkCancelExpenses(): Promise<BulkState> {
+  await auditBlockedFeature("expense.bulk_cancel_preview");
+  return { ok: false, error: BULK_MONTHLY_DISABLED_MESSAGE };
 }
 
-type BulkWhere = {
-  where: import("@prisma/client").Prisma.ExpenseWhereInput;
-  month: string;
-  clubId: string;
-  category: string | null;
-};
-
-/** Scoped WHERE for the bulk cancel — only active rows in one club + month,
- * never trusting client values beyond the user's allowed clubs. */
-async function buildBulkWhere(
-  ctx: NonNullable<Awaited<ReturnType<typeof getCurrentAccessContext>>>,
-  formData: FormData,
-): Promise<BulkWhere | { error: string }> {
-  const month = String(formData.get("month") ?? "").trim();
-  const clubId = String(formData.get("clubId") ?? "").trim();
-  const category = String(formData.get("category") ?? "").trim();
-  const range = monthRangeDates(month);
-  if (!range) return { error: "Укажите месяц в формате ГГГГ-ММ" };
-  if (!clubId) return { error: "Выберите клуб" };
-  if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
-    return { error: "Нет доступа к выбранному клубу" };
-  }
-  const isRegional = ctx.effectiveRoles.includes("regional_director");
-  const where: import("@prisma/client").Prisma.ExpenseWhereInput = {
-    companyId: ctx.selectedCompanyId!,
-    clubId,
-    expenseDate: { gte: range.start, lt: range.end },
-    // Only active financial rows — never already canceled / rejected / reverted.
-    status: { in: [...EXPENSE_ACTIVE_STATUSES] },
-    ...(category ? { category } : {}),
-    // A manager can bulk-cancel only their own expenses in their own club.
-    ...(isRegional ? {} : { createdByUserId: ctx.user.id }),
-  };
-  return { where, month, clubId, category: category || null };
-}
-
-export async function previewBulkCancelExpenses(
-  _prev: BulkState | undefined,
-  formData: FormData,
-): Promise<BulkState> {
-  const ctx = await getCurrentAccessContext();
-  if (!ctx || !ctx.selectedCompanyId || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
-    return { ok: false, error: "Нет доступа" };
-  }
-  if (!canCreateOperational(ctx.effectiveRoles)) return { ok: false, error: "Недостаточно прав" };
-  const built = await buildBulkWhere(ctx, formData);
-  if ("error" in built) return { ok: false, error: built.error };
-  const agg = await prisma.expense.aggregate({ where: built.where, _count: true, _sum: { amountKopeks: true } });
-  return { ok: true, count: agg._count, totalKopeks: agg._sum.amountKopeks ?? 0 };
-}
-
-export async function cancelExpensesForMonth(
-  _prev: BulkState | undefined,
-  formData: FormData,
-): Promise<BulkState> {
-  const ctx = await getCurrentAccessContext();
-  if (!ctx || !ctx.selectedCompanyId || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
-    return { ok: false, error: "Нет доступа" };
-  }
-  if (!canCreateOperational(ctx.effectiveRoles)) {
-    return { ok: false, error: "Массовую отмену могут делать управляющие и региональные директора" };
-  }
-  if (String(formData.get("confirm") ?? "").trim() !== "ОТМЕНИТЬ") {
-    return { ok: false, error: "Введите ОТМЕНИТЬ заглавными буквами для подтверждения" };
-  }
-  const built = await buildBulkWhere(ctx, formData);
-  if ("error" in built) return { ok: false, error: built.error };
-  if (await isMonthClosed(ctx.selectedCompanyId, built.clubId, built.month)) {
-    return { ok: false, error: MONTH_CLOSED_ERROR };
-  }
-
-  const matches = await prisma.expense.findMany({ where: built.where, select: { id: true, amountKopeks: true, importBatchId: true } });
-  if (matches.length === 0) {
-    return { ok: true, count: 0, totalKopeks: 0, done: true };
-  }
-  const ids = matches.map((m) => m.id);
-  const totalKopeks = matches.reduce((s, m) => s + m.amountKopeks, 0);
-  const reason = String(formData.get("reason") ?? "").trim() || null;
-
-  await prisma.budgetApprovalRequest.deleteMany({ where: { sourceType: "expense", sourceId: { in: ids }, status: "pending" } });
-  await prisma.expense.updateMany({ where: { id: { in: ids } }, data: { status: EXPENSE_STATUS_CANCELED } });
-
-  await recordAudit({
-    action: "expense.bulk_canceled",
-    entityType: "Expense",
-    companyId: ctx.selectedCompanyId,
-    clubId: built.clubId,
-    userId: ctx.user.id,
-    metadata: { month: built.month, clubId: built.clubId, category: built.category, count: ids.length, totalAmount: totalKopeks, reason },
-  });
-
-  // Flip any import batch whose rows are now all inactive so the file can be
-  // re-imported (Part 2).
-  const batchIds = [...new Set(matches.map((m) => m.importBatchId).filter((b): b is string => !!b))];
-  for (const batchId of batchIds) {
-    await revertExpenseBatchIfAllInactive(batchId, {
-      userId: ctx.user.id,
-      companyId: ctx.selectedCompanyId,
-      clubId: built.clubId,
-      action: "import.reverted_by_bulk_cancel",
-    });
-  }
-
-  revalidateFinancial();
-  return { ok: true, count: ids.length, totalKopeks, done: true };
+export async function cancelExpensesForMonth(): Promise<BulkState> {
+  await auditBlockedFeature("expense.bulk_cancel");
+  return { ok: false, error: BULK_MONTHLY_DISABLED_MESSAGE };
 }

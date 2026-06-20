@@ -19,7 +19,6 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "refunds", href: "/refunds", label: "Возвраты" },
   { page: "budgets", href: "/budgets", label: "Бюджеты" },
   { page: "sales", href: "/sales", label: "Продажи" },
-  { page: "imports", href: "/imports", label: "Импорт" },
   { page: "documents", href: "/documents", label: "Документы" },
   { page: "activity", href: "/activity", label: "История действий" },
   { page: "users", href: "/users", label: "Пользователи" },
@@ -46,7 +45,6 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // payment calendar and balances are surfaced in dashboard cards.
   { type: "group", id: "planning", label: "Планирование", pages: ["payments", "budgets"] },
   { type: "item", page: "employees" },
-  { type: "item", page: "imports" },
   { type: "item", page: "documents" },
   { type: "group", id: "admin", label: "Администрирование", pages: ["users", "activity", "settings"] },
 ];

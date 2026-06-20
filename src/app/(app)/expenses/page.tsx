@@ -21,13 +21,6 @@ import {
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { ExpenseUpload } from "./_components/ExpenseUpload";
-import { BulkCancelExpenses } from "./_components/BulkCancelExpenses";
-import { ExcelImportPanel } from "@/components/ExcelImportPanel";
-import { importExpenses } from "./expense-import-actions";
-import { revertImportBatch } from "../import-revert-actions";
-import { getLastImportBatch } from "@/lib/import-batches";
-import { ExportButton } from "@/components/ExportButton";
-import { canExport } from "@/lib/exports";
 
 export const dynamic = "force-dynamic";
 
@@ -73,9 +66,6 @@ export default async function ExpensesPage({
   const { status: statusParam } = await searchParams;
   const statusFilter = STATUS_FILTERS.find((f) => f.key === statusParam) ?? STATUS_FILTERS[0];
   const visibleExpenses = expenses.filter((e) => statusFilter.match(e.status));
-  const lastImport = canCreate && ctx
-    ? await getLastImportBatch(scope.company.id, "expenses", scope.clubIds, ctx.user.id)
-    : null;
 
   // Active legal entities per club for the expense form (cash -> ИП routing).
   const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null }>> = {};
@@ -107,7 +97,6 @@ export default async function ExpensesPage({
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader title="Расходы" description="Чеки, переводы и динамика по статьям" />
-        {ctx && canExport(ctx.effectiveRoles, "expenses") ? <div className="pt-1"><ExportButton type="expenses" /></div> : null}
       </div>
 
       <SummarySection
@@ -125,29 +114,6 @@ export default async function ExpensesPage({
         />
       ) : null}
 
-      {/* Excel import (additional input method; manual form + AI upload unchanged) */}
-      {canCreate && clubs.length > 0 ? (
-        <ExcelImportPanel
-          title="Импорт расходов из Excel"
-          description="Скачайте шаблон, заполните и загрузите. Наличные расходы автоматически относятся на ИП клуба; превышение бюджета уходит на согласование."
-          templateHref="/api/expenses/template"
-          templateLabel="Скачать шаблон расходов"
-          uploadLabel="Загрузить расходы из Excel"
-          action={importExpenses}
-          lastBatch={lastImport}
-          revertAction={revertImportBatch}
-        />
-      ) : null}
-
-      {/* Monthly bulk cancel (regional / manager-own-club) */}
-      {canCreate && clubs.length > 0 ? (
-        <BulkCancelExpenses
-          clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
-          categories={EXPENSE_CATEGORY_OPTIONS}
-          defaultClubId={scope.club?.id ?? clubs[0].id}
-          defaultMonth={`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`}
-        />
-      ) : null}
 
       {/* Status filter */}
       <div className="mb-3 flex flex-wrap gap-2">

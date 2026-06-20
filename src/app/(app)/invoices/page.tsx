@@ -18,13 +18,6 @@ import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 import { HistoricalInvoiceForm } from "./_components/HistoricalInvoiceForm";
-import { BulkCancelInvoices } from "./_components/BulkCancelInvoices";
-import { ExcelImportPanel } from "@/components/ExcelImportPanel";
-import { importInvoices } from "./invoice-import-actions";
-import { revertImportBatch } from "../import-revert-actions";
-import { getLastImportBatch } from "@/lib/import-batches";
-import { ExportButton } from "@/components/ExportButton";
-import { canExport } from "@/lib/exports";
 
 export const dynamic = "force-dynamic";
 
@@ -54,14 +47,6 @@ export default async function InvoicesPage() {
     getCurrentAccessContext(),
   ]);
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
-  const canCancelInv = ctx
-    ? ctx.effectiveRoles.some((r) => ["manager", "regional_director", "general_director", "owner", "accountant"].includes(r))
-    : false;
-  const lastImport = canCreate && ctx
-    ? await getLastImportBatch(scope.company.id, "invoices", scope.clubIds, ctx.user.id)
-    : null;
-  const now = new Date();
-  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null }>> = {};
   if (canCreate) {
@@ -83,7 +68,6 @@ export default async function InvoicesPage() {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
-        {ctx && canExport(ctx.effectiveRoles, "invoices") ? <div className="pt-1"><ExportButton type="invoices" /></div> : null}
       </div>
 
       {canCreate ? (
@@ -97,33 +81,12 @@ export default async function InvoicesPage() {
               legalEntitiesByClub={legalEntitiesByClub}
               defaultClubId={scope.club?.id ?? clubs[0].id}
             />
-            {/* Excel import (additional input method; manual form + AI upload unchanged) */}
-            <ExcelImportPanel
-              title="Импорт счетов из Excel"
-              description="Скачайте шаблон, заполните и загрузите. Если указана «Дата оплаты» — счёт создаётся оплаченным и сразу учитывается; иначе — со статусом «На согласовании»."
-              templateHref="/api/invoices/template"
-              templateLabel="Скачать шаблон счетов"
-              uploadLabel="Загрузить счета из Excel"
-              action={importInvoices}
-              lastBatch={lastImport}
-              revertAction={revertImportBatch}
-            />
           </>
         ) : (
           <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
             Нет доступных клубов для создания счёта.
           </div>
         )
-      ) : null}
-
-      {/* Monthly bulk cancel (manager / regional / GD / owner / accountant) */}
-      {canCancelInv && clubs.length > 0 ? (
-        <BulkCancelInvoices
-          clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
-          categories={EXPENSE_CATEGORY_OPTIONS}
-          defaultClubId={scope.club?.id ?? clubs[0].id}
-          defaultMonth={defaultMonth}
-        />
       ) : null}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

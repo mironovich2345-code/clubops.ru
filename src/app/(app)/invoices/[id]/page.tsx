@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { getCurrentAccessContext } from "@/lib/access";
-import { canAnyRoleAccessPage } from "@/lib/auth";
+import { canAnyRoleAccessPage, canDownloadDocuments } from "@/lib/auth";
 import {
   getInvoiceForContext,
   availableInvoiceActions,
@@ -78,6 +78,8 @@ export default async function InvoiceDetailPage({
     clubName: invoice.club.name,
     hasFile: Boolean(invoice.originalFileStorageKey),
     originalFileName: invoice.originalFileName ?? "",
+    // Accounting contour only: explicit download (attachment). Others view inline.
+    canDownload: canDownloadDocuments(ctx.effectiveRoles),
   };
 
   return (

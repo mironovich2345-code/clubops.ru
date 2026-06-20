@@ -16,12 +16,6 @@ import { NoCompanyState } from "@/components/NoCompanyState";
 import { SaleRowActions } from "./_components/SaleRowActions";
 import { SalesReportForm } from "./_components/SalesReportForm";
 import { getActiveManagerCandidates } from "@/lib/club-employees";
-import { ExcelImportPanel } from "@/components/ExcelImportPanel";
-import { importSalesReports } from "./report-import-actions";
-import { revertImportBatch } from "../import-revert-actions";
-import { getLastImportBatch } from "@/lib/import-batches";
-import { ExportButton } from "@/components/ExportButton";
-import { canExport } from "@/lib/exports";
 import {
   getSalesReportsForScope,
   SALES_REPORT_STATUS_LABELS,
@@ -76,9 +70,6 @@ export default async function SalesPage({
     getActiveManagerCandidates(scope.company.id, scope.clubIds),
   ]);
   const canCreate = canCreateOperational(ctx.effectiveRoles);
-  const lastImport = canCreate
-    ? await getLastImportBatch(scope.company.id, "sales_reports", scope.clubIds, ctx.user.id)
-    : null;
 
   const now = new Date();
   // Revenue cards reflect only confirmed sales — pending/rejected are not revenue.
@@ -100,25 +91,10 @@ export default async function SalesPage({
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader title="Продажи" description="Сменные отчёты, ручной учёт продаж и динамика выручки" />
-        {canExport(ctx.effectiveRoles, "sales") ? <div className="pt-1"><ExportButton type="sales" /></div> : null}
       </div>
 
       {/* Daily sales reports (real-club report structure) */}
       {canCreate ? <SalesReportForm clubs={clubs} employees={managerCandidates} /> : null}
-
-      {/* Excel import (additional input method; manual form + AI upload unchanged) */}
-      {canCreate ? (
-        <ExcelImportPanel
-          title="Импорт сменных отчётов из Excel"
-          description="Скачайте шаблон, заполните по одной строке на смену и загрузите. Итоги считаются автоматически."
-          templateHref="/api/sales-reports/template"
-          templateLabel="Скачать шаблон сменного отчёта"
-          uploadLabel="Загрузить сменный отчёт из Excel"
-          action={importSalesReports}
-          lastBatch={lastImport}
-          revertAction={revertImportBatch}
-        />
-      ) : null}
 
       <div className="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">

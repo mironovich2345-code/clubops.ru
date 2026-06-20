@@ -21,6 +21,7 @@ type RefundView = {
   notes: string;
   clubName: string;
   documents: RefundDoc[];
+  canDownload: boolean;
 };
 
 type SaveState = { ok: boolean; error?: string; refundId?: string };
@@ -94,7 +95,7 @@ export function RefundEditForm({
             <div className="mb-2 text-sm font-medium text-slate-700">Документы</div>
             <ul className="space-y-1">
               {refund.documents.map((doc) => (
-                <li key={doc.storageKey}>
+                <li key={doc.storageKey} className="flex flex-wrap items-center gap-3">
                   <a
                     href={`/api/refunds/${refund.id}/file?key=${encodeURIComponent(doc.storageKey)}`}
                     target="_blank"
@@ -103,6 +104,15 @@ export function RefundEditForm({
                   >
                     {doc.typeLabel}: {doc.fileName}
                   </a>
+                  {/* Accounting contour only: explicit download (attachment). */}
+                  {refund.canDownload ? (
+                    <a
+                      href={`/api/refunds/${refund.id}/file?key=${encodeURIComponent(doc.storageKey)}&download=1`}
+                      className="text-xs font-medium text-slate-600 underline hover:text-slate-800"
+                    >
+                      Скачать
+                    </a>
+                  ) : null}
                 </li>
               ))}
             </ul>

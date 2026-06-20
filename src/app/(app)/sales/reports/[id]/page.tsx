@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
 import { formatKopeks } from "@/lib/money";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
+import { canDownloadDocuments } from "@/lib/auth";
 import {
   getSalesReportForContext,
   availableSalesReportActions,
@@ -53,6 +54,8 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
   if (!report) notFound();
 
   const isCreator = report.createdByUserId === ctx.user.id;
+  // Accounting contour only: explicit download (attachment). Others view inline.
+  const canDownload = canDownloadDocuments(ctx.effectiveRoles);
   const actions = availableSalesReportActions(report.status, ctx.effectiveRoles, isCreator);
   const editable = canEditReport(report.status, ctx.effectiveRoles, isCreator);
   const byKey = linesToMap(report.lines);
@@ -184,14 +187,24 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
           <div className="bg-white px-4 py-3">
             <div className="text-xs text-slate-500">Документ инкассации</div>
             {encashmentDoc ? (
-              <a
-                href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(encashmentDoc.storageKey ?? "")}`}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-1 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
-              >
-                Открыть документ
-              </a>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <a
+                  href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(encashmentDoc.storageKey ?? "")}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
+                >
+                  Открыть документ
+                </a>
+                {canDownload ? (
+                  <a
+                    href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(encashmentDoc.storageKey ?? "")}&download=1`}
+                    className="text-xs font-medium text-slate-600 underline hover:text-slate-800"
+                  >
+                    Скачать
+                  </a>
+                ) : null}
+              </div>
             ) : encashment > 0 ? (
               <div className="mt-1 text-sm font-medium text-rose-600">Документ не приложен</div>
             ) : (
@@ -271,7 +284,7 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
                   {docs.length > 0 ? (
                     <ul className="mt-1 space-y-1">
                       {docs.map((doc) => (
-                        <li key={doc.id} className="text-sm">
+                        <li key={doc.id} className="flex flex-wrap items-center gap-2 text-sm">
                           <a
                             href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(doc.storageKey ?? "")}`}
                             target="_blank"
@@ -280,7 +293,15 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
                           >
                             {doc.originalFileName}
                           </a>
-                          <span className="ml-2 text-xs text-slate-400">{Math.round(doc.originalFileSize / 1024)} КБ</span>
+                          <span className="text-xs text-slate-400">{Math.round(doc.originalFileSize / 1024)} КБ</span>
+                          {canDownload ? (
+                            <a
+                              href={`/api/sales-reports/${report.id}/file?key=${encodeURIComponent(doc.storageKey ?? "")}&download=1`}
+                              className="text-xs font-medium text-slate-600 underline hover:text-slate-800"
+                            >
+                              Скачать
+                            </a>
+                          ) : null}
                         </li>
                       ))}
                     </ul>

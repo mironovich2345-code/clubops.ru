@@ -27,7 +27,6 @@ export type AppPage =
   | "refunds"
   | "budgets"
   | "sales"
-  | "imports"
   | "documents"
   | "activity"
   | "users"
@@ -46,7 +45,7 @@ export type CurrentUser = {
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
   owner: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "activity", "users", "settings"],
   general_director: ["dashboard", "analytics", "payments", "mandatory_payments", "balances", "employees", "sales", "budgets", "activity", "users", "settings"],
-  regional_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "imports", "documents", "activity", "users"],
+  regional_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity", "users"],
   // Manager: operational, own-club only. No network analytics financials and no
   // audit/activity log.
   manager: ["dashboard", "analytics", "expenses", "invoices", "employees", "refunds", "budgets", "sales", "documents"],
@@ -106,6 +105,18 @@ export function canManageMandatoryPayments(roles: readonly Role[]): boolean {
  * dedicated control with its own role set. */
 export function canManageBalances(roles: readonly Role[]): boolean {
   return roles.includes("owner") || roles.includes("general_director") || roles.includes("accountant");
+}
+
+/**
+ * Accounting contour: who may explicitly DOWNLOAD a supporting document
+ * (Content-Disposition: attachment). Currently only the accountant. The future
+ * chief_accountant role must be added here in a later task — keep this the single
+ * source of truth so the accounting download capability lives in one place.
+ * Every other role may still VIEW documents inline (no explicit download).
+ */
+export function canDownloadDocuments(roles: readonly Role[]): boolean {
+  // TODO(chief_accountant): add "chief_accountant" here when that role lands.
+  return roles.includes("accountant");
 }
 
 export function canAccessPage(role: Role, page: AppPage): boolean {

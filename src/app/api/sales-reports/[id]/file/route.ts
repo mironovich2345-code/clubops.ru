@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
-import { getCurrentAccessContext } from "@/lib/access";
+import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { canAnyRoleAccessPage } from "@/lib/auth";
 import { getSalesReportForContext } from "@/lib/sales-reports";
 import { readReportFile } from "@/lib/sales-report-storage";
+import { wantsAttachment, dispositionHeader, isInitialDocumentRequest } from "@/lib/document-access";
 
+export const dynamic = "force-dynamic";
+
+// Sales-report documents (КМ-6 ООО / ИП, encashment, withdrawal, reports).
+// Viewed inline by every role that can see the sales page (marketer cannot);
+// the accounting contour may request an explicit download via ?download=1.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const key = new URL(req.url).searchParams.get("key");
@@ -25,10 +31,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const buffer = await readReportFile(doc.storageKey);
   if (!buffer) return new NextResponse("Not found", { status: 404 });
 
+  const attachment = wantsAttachment(req, ctx.effectiveRoles);
+
+  if (isInitialDocumentRequest(req)) {
+    await recordAudit({
+      action: attachment ? "document.downloaded" : "document.viewed",
+      entityType: "SalesReport",
+      entityId: report.id,
+      companyId: report.companyId,
+      clubId: report.clubId,
+      userId: ctx.user.id,
+      metadata: { documentType: doc.type ?? "sales_report_document" },
+    });
+  }
+
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": doc.originalFileMime || "application/octet-stream",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(doc.originalFileName || "document")}"`,
+      "Content-Disposition": dispositionHeader(attachment, doc.originalFileName || "document"),
       "Cache-Control": "private, no-store",
     },
   });

@@ -96,6 +96,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "access.granted": "Выдан доступ",
   "access.removed": "Удалён доступ",
   // Organisation
+  // Documents (supporting accounting files)
+  "document.viewed": "Просмотр документа",
+  "document.downloaded": "Скачивание документа",
+  // Disabled features (blocked direct attempts)
+  "feature.blocked": "Операция отключена",
   "company.created": "Создана компания",
   "company.updated": "Обновлена компания",
   "club.created": "Создан клуб",
@@ -115,6 +120,8 @@ const OBJECT_BY_PREFIX: Record<string, string> = {
   sales_plan: "План продаж",
   sales_report: "Сменный отчёт",
   employee: "Сотрудник",
+  document: "Документ",
+  feature: "Операция",
   legal_entity: "Юрлицо",
   invoice: "Счёт",
   expense: "Расход",

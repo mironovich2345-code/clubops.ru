@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
-import { canCreateOperational } from "@/lib/auth";
+import { canCreateOperational, canDownloadDocuments } from "@/lib/auth";
 import {
   getExpenseForContext,
   expenseStatusLabel,
@@ -66,6 +66,8 @@ export default async function ExpenseDetailPage({
     clubName: expense.club.name,
     hasFile: Boolean(expense.originalFileStorageKey),
     originalFileName: expense.originalFileName ?? "",
+    // Accounting contour only: explicit download (attachment). Others view inline.
+    canDownload: canDownloadDocuments(ctx.effectiveRoles),
   };
 
   return (

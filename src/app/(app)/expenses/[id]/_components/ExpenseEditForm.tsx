@@ -19,6 +19,7 @@ type ExpenseView = {
   clubName: string;
   hasFile: boolean;
   originalFileName: string;
+  canDownload: boolean;
 };
 
 type CategoryOption = { key: string; label: string };
@@ -57,7 +58,7 @@ export function ExpenseEditForm({
   return (
     <div className="space-y-6">
       {expense.hasFile ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <a
             href={`/api/expenses/${expense.id}/file`}
             target="_blank"
@@ -66,6 +67,15 @@ export function ExpenseEditForm({
           >
             Открыть исходный файл{expense.originalFileName ? ` (${expense.originalFileName})` : ""}
           </a>
+          {/* Accounting contour only: explicit download (Content-Disposition: attachment). */}
+          {expense.canDownload ? (
+            <a
+              href={`/api/expenses/${expense.id}/file?download=1`}
+              className="text-sm font-medium text-slate-600 underline hover:text-slate-800"
+            >
+              Скачать
+            </a>
+          ) : null}
         </div>
       ) : null}
 

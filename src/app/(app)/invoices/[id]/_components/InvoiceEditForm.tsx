@@ -27,6 +27,7 @@ type InvoiceView = {
   clubName: string;
   hasFile: boolean;
   originalFileName: string;
+  canDownload: boolean;
 };
 
 type SaveState = { ok: boolean; error?: string; invoiceId?: string };
@@ -106,14 +107,25 @@ export function InvoiceEditForm({
             </div>
           </div>
           {invoice.hasFile ? (
-            <a
-              href={`/api/invoices/${invoice.id}/file`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm font-medium text-brand-600 hover:text-brand-700"
-            >
-              Открыть исходный файл{invoice.originalFileName ? ` (${invoice.originalFileName})` : ""}
-            </a>
+            <div className="flex flex-wrap items-center gap-4">
+              <a
+                href={`/api/invoices/${invoice.id}/file`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm font-medium text-brand-600 hover:text-brand-700"
+              >
+                Открыть исходный файл{invoice.originalFileName ? ` (${invoice.originalFileName})` : ""}
+              </a>
+              {/* Accounting contour only: explicit download (attachment). */}
+              {invoice.canDownload ? (
+                <a
+                  href={`/api/invoices/${invoice.id}/file?download=1`}
+                  className="text-sm font-medium text-slate-600 underline hover:text-slate-800"
+                >
+                  Скачать
+                </a>
+              ) : null}
+            </div>
           ) : null}
         </div>
 

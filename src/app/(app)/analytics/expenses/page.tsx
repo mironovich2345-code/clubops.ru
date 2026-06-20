@@ -67,20 +67,11 @@ export default async function ExpenseDrilldownPage({ searchParams }: { searchPar
   const cashRows = rows.filter((r) => r.cash).sort(byDateDesc);
   const nonCashRows = rows.filter((r) => !r.cash).sort(byDateDesc);
 
-  const exportQs = new URLSearchParams({ category, from: sp.from ?? "", to: sp.to ?? "" });
-  if (wantClub) exportQs.set("club", wantClub);
-  if (wantEntity) exportQs.set("entity", wantEntity);
-  if (pay !== "all") exportQs.set("pay", pay);
-  if (source !== "all") exportQs.set("source", source);
-
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <PageHeader title={`Расходы: ${expenseCategoryLabel(category)}`} description={monthLabel} />
         <div className="flex items-center gap-2 pt-1">
-          <a href={`/api/analytics/expenses/export?${exportQs.toString()}`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-            Экспорт CSV
-          </a>
           <Link href="/analytics" className="text-sm font-medium text-brand-600 hover:text-brand-700">← К аналитике</Link>
         </div>
       </div>
