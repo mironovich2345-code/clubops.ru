@@ -137,7 +137,8 @@ export type SnapshotTarget = { clubId: string; clubName: string; legalEntityId: 
 export async function getSnapshotTargetsForScope(companyId: string, clubIds: string[]): Promise<SnapshotTarget[]> {
   if (clubIds.length === 0) return [];
   const links = await prisma.clubLegalEntity.findMany({
-    where: { clubId: { in: clubIds }, legalEntity: { companyId, isActive: true } },
+    // Active associations only (join.isActive) of globally-active entities.
+    where: { clubId: { in: clubIds }, isActive: true, legalEntity: { companyId, isActive: true } },
     select: { clubId: true, club: { select: { name: true } }, legalEntityId: true, legalEntity: { select: { name: true, type: true } } },
   });
   return links

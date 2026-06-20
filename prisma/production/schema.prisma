@@ -172,13 +172,21 @@ model Club {
 }
 
 // A club can be served by multiple legal entities (e.g. ООО + ИП).
+// `isActive` marks the CURRENTLY-active association for its (club, entity-type):
+// replacing the active ООО/ИП soft-closes the previous row (isActive=false,
+// deactivatedAt set) instead of deleting it, so truthful history is preserved.
+// The "one active ООО + one active ИП per club" invariant is enforced in code
+// inside a transaction (Prisma cannot express a partial unique index); the
+// @@unique([clubId, legalEntityId]) below still prevents duplicate associations.
 model ClubLegalEntity {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   clubId        String
   legalEntityId String
-  isPrimary     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @default(now()) @updatedAt
+  isPrimary     Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
 
   club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
   legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)

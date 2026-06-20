@@ -34,13 +34,17 @@ export async function createBalanceSnapshot(_prev: State | undefined, formData: 
   if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
     return { ok: false, error: "Нет доступа к выбранному клубу" };
   }
-  // The entity must belong to this company and be attached to the chosen club.
+  // The entity must belong to this company and be ACTIVELY attached to the
+  // chosen club (closed/historical or archived entities are not valid targets).
   const link = await prisma.clubLegalEntity.findUnique({
     where: { clubId_legalEntityId: { clubId, legalEntityId } },
-    select: { legalEntity: { select: { companyId: true } } },
+    select: { isActive: true, legalEntity: { select: { companyId: true, isActive: true } } },
   });
   if (!link || link.legalEntity.companyId !== companyId) {
     return { ok: false, error: "Юрлицо не найдено для выбранного клуба" };
+  }
+  if (!link.isActive || !link.legalEntity.isActive) {
+    return { ok: false, error: "Юрлицо неактивно для выбранного клуба" };
   }
 
   const snapshotDate = parseDay(String(formData.get("date") ?? "")) ?? new Date();

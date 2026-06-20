@@ -2,7 +2,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
 import { requirePageAccess, getAccessibleClubsDetailed, type AccessibleClubRow } from "@/lib/access";
 import { ROLE_LABELS } from "@/lib/navigation";
-import { getCompanyLegalEntitiesWithClubs } from "@/lib/legal-entities";
+import {
+  getCompanyLegalEntitiesWithClubs,
+  getLegalEntitiesForCompany,
+  getActiveClubLegalEntities,
+  normalizeEntityType,
+} from "@/lib/legal-entities";
 import { AddCompanyForm, CompanyEditor } from "./_components/SettingsClient";
 import { LegalEntities } from "./_components/LegalEntities";
 
@@ -27,6 +32,34 @@ export default async function SettingsPage() {
     }),
   ]);
   const companies = [...new Map(access.map((a) => [a.companyId, a.company])).values()];
+  // Companies where this user is the owner — drives owner-only assignment controls.
+  const ownerCompanyIds = new Set(companies.map((c) => c.id));
+
+  // Owner Club-administration views: active ООО/ИП options per Company plus each
+  // club's current active ООО/ИП (for creation selectors + reassignment).
+  const ownerCompanyViews = await Promise.all(
+    companies.map(async (company) => {
+      const entities = await getLegalEntitiesForCompany(company.id); // active only
+      const oooOptions = entities.filter((e) => normalizeEntityType(e.type) === "ooo").map((e) => ({ id: e.id, name: e.name }));
+      const ipOptions = entities.filter((e) => normalizeEntityType(e.type) === "ip").map((e) => ({ id: e.id, name: e.name }));
+      const clubs = await Promise.all(
+        company.clubs.map(async (c) => {
+          const { ooo, ip } = await getActiveClubLegalEntities(c.id);
+          return {
+            id: c.id,
+            name: c.name,
+            city: c.city,
+            isActive: c.isActive,
+            oooId: ooo?.id ?? "",
+            oooName: ooo?.name ?? "",
+            ipId: ip?.id ?? "",
+            ipName: ip?.name ?? "",
+          };
+        }),
+      );
+      return { id: company.id, name: company.name, oooOptions, ipOptions, clubs };
+    }),
+  );
 
   const leCompanies = [...new Map(leAccess.map((a) => [a.companyId, a.company])).values()];
   const legalEntitySections = await Promise.all(
@@ -54,6 +87,7 @@ export default async function SettingsPage() {
               <LegalEntities
                 companyId={company.id}
                 canManage
+                canAssign={ownerCompanyIds.has(company.id)}
                 clubs={company.clubs.map((c) => ({ id: c.id, name: c.name }))}
                 entities={entities.map((e) => ({
                   id: e.id,
@@ -93,20 +127,8 @@ export default async function SettingsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {companies.map((company) => (
-            <CompanyEditor
-              key={company.id}
-              company={{
-                id: company.id,
-                name: company.name,
-                clubs: company.clubs.map((c) => ({
-                  id: c.id,
-                  name: c.name,
-                  city: c.city,
-                  isActive: c.isActive,
-                })),
-              }}
-            />
+          {ownerCompanyViews.map((company) => (
+            <CompanyEditor key={company.id} company={company} />
           ))}
         </div>
       )}

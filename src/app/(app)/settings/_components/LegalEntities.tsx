@@ -97,11 +97,15 @@ export function LegalEntities({
   entities,
   clubs,
   canManage,
+  canAssign = canManage,
 }: {
   companyId: string;
   entities: EntityView[];
   clubs: ClubView[];
   canManage: boolean;
+  // canManage: create/edit/activate entity profiles (owner or GD).
+  // canAssign: attach/detach entity to/from a club (owner only — Part 3).
+  canAssign?: boolean;
 }) {
   // Rule (max 1 active ООО + 1 active ИП per club): which active types each club
   // already uses, so the attach dropdown can hide conflicting clubs.
@@ -144,7 +148,7 @@ export function LegalEntities({
                   e.clubs.map((c) => (
                     <span key={c.clubId} className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-600 ring-1 ring-inset ring-slate-200">
                       {c.clubName}
-                      {canManage ? (
+                      {canAssign ? (
                         <form action={detachLegalEntityFromClub} className="inline">
                           <input type="hidden" name="legalEntityId" value={e.id} />
                           <input type="hidden" name="clubId" value={c.clubId} />
@@ -156,7 +160,7 @@ export function LegalEntities({
                 )}
               </div>
 
-              {canManage ? (
+              {canAssign ? (
                 <div className="mt-3 flex flex-wrap items-end gap-3">
                   <AttachForm
                     entityId={e.id}
