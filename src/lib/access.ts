@@ -487,7 +487,7 @@ export async function getCompanyMembers(companyId: string): Promise<CompanyMembe
 }
 
 /** Raw roles the user holds in a company (company-level + club-level), no implications. */
-async function rawRolesInCompany(userId: string, companyId: string): Promise<Set<string>> {
+export async function rawRolesInCompany(userId: string, companyId: string): Promise<Set<string>> {
   const [companyRows, clubRows] = await Promise.all([
     prisma.companyUserAccess.findMany({ where: { userId, companyId }, select: { role: true } }),
     prisma.clubUserAccess.findMany({ where: { userId, club: { companyId } }, select: { role: true } }),
@@ -536,6 +536,81 @@ export async function getManageableClubIds(userId: string, companyId: string): P
     select: { clubId: true },
   });
   return rows.map((r) => r.clubId);
+}
+
+// --- User-management authority hierarchy (Part 9) -------------------------
+// Centralized authority check for administrative actions on ANOTHER user
+// (session revocation, deactivation). Scope-aware: numeric rank alone is never
+// enough — Company/Club scope is always required. Default-deny.
+
+export type ManageDecision = { ok: true } | { ok: false; error: string };
+const MANAGE_DENY: ManageDecision = { ok: false, error: "У вас нет прав для управления этим пользователем." };
+
+/** True if the target user is the only active Owner of the company. */
+export async function isLastActiveOwner(companyId: string, targetUserId: string): Promise<boolean> {
+  const owners = await prisma.companyUserAccess.findMany({
+    where: { companyId, role: "owner", user: { isActive: true } },
+    select: { userId: true },
+  });
+  const distinct = new Set(owners.map((o) => o.userId));
+  return distinct.has(targetUserId) && distinct.size <= 1;
+}
+
+/**
+ * May `actorId` administratively manage `targetUserId` within `companyId`?
+ *  - Owner: any member of the company (last-Owner protection handled by caller).
+ *  - General Director: anyone EXCEPT Owner / another General Director.
+ *  - Regional Director: only a Manager assigned to a Club within the RD's scope.
+ *  - everyone else: denied.
+ * Platform/superadmin targets and unknown roles are always denied. Never trusts
+ * a self-action (caller also blocks self where relevant).
+ */
+export async function assertCanManageUser(
+  actorId: string,
+  targetUserId: string,
+  companyId: string,
+): Promise<ManageDecision> {
+  if (actorId === targetUserId) {
+    return { ok: false, error: "Нельзя управлять собственной учётной записью." };
+  }
+  if (!(await canAccessCompany(actorId, companyId)) && !(await getManageableClubIds(actorId, companyId)).length) {
+    return MANAGE_DENY;
+  }
+
+  const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { role: true } });
+  if (target && isPlatformSuperadmin(target.role)) return MANAGE_DENY;
+
+  const targetRoles = await rawRolesInCompany(targetUserId, companyId);
+  if (targetRoles.size === 0) {
+    // Do not disclose existence of users outside the actor's company.
+    return MANAGE_DENY;
+  }
+  for (const r of targetRoles) if (!isKnownRole(r)) return MANAGE_DENY; // default-deny unknown
+
+  if (await userHasCompanyRole(actorId, companyId, ["owner"])) return { ok: true };
+
+  if (await userHasCompanyRole(actorId, companyId, ["general_director"])) {
+    if (targetRoles.has("owner") || targetRoles.has("general_director")) return MANAGE_DENY;
+    return { ok: true };
+  }
+
+  // Regional Director: managers within the RD's manageable clubs only.
+  const isRD = (await prisma.clubUserAccess.findFirst({
+    where: { userId: actorId, role: "regional_director", club: { companyId } },
+    select: { id: true },
+  })) !== null;
+  if (isRD) {
+    const onlyManager = [...targetRoles].every((r) => r === "manager");
+    if (!onlyManager) return MANAGE_DENY;
+    const manageableClubIds = await getManageableClubIds(actorId, companyId);
+    const inScope = await prisma.clubUserAccess.findFirst({
+      where: { userId: targetUserId, role: "manager", clubId: { in: manageableClubIds } },
+      select: { id: true },
+    });
+    return inScope ? { ok: true } : MANAGE_DENY;
+  }
+
+  return MANAGE_DENY;
 }
 
 // --- Audit log ------------------------------------------------------------

@@ -8,8 +8,11 @@ import {
   getInvitableRoles,
   canManageClubUsers,
   userHasCompanyRole,
+  assertCanManageUser,
+  isLastActiveOwner,
   recordAudit,
 } from "@/lib/access";
+import { revokeAllSessionsForUser } from "@/lib/session";
 import { generateInviteToken, inviteExpiry, isClubScopedRole } from "@/lib/invites";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -144,7 +147,16 @@ export async function removeAccess(formData: FormData): Promise<void> {
     if (!isOwner && (row.role === "owner" || row.role === "general_director")) {
       throw new Error("Только собственник может изменять доступ этого уровня");
     }
-    await prisma.companyUserAccess.delete({ where: { id: accessId } });
+    // Never remove the last active Owner of a company.
+    if (row.role === "owner" && (await isLastActiveOwner(row.companyId, row.userId))) {
+      throw new Error("Нельзя отключить последнего собственника компании.");
+    }
+    // Atomic: remove access AND revoke the affected user's sessions. Even a
+    // privilege removal forces re-login before the new permission set applies.
+    const revoked = await prisma.$transaction(async (tx) => {
+      await tx.companyUserAccess.delete({ where: { id: accessId } });
+      return revokeAllSessionsForUser(row.userId, "access_changed", user.id, tx);
+    });
     await recordAudit({
       action: "access.removed",
       entityType: "CompanyUserAccess",
@@ -153,6 +165,14 @@ export async function removeAccess(formData: FormData): Promise<void> {
       userId: user.id,
       metadata: { targetUserId: row.userId, role: row.role },
     });
+    await recordAudit({
+      action: "user.access_changed",
+      entityType: "User",
+      entityId: row.userId,
+      companyId: row.companyId,
+      userId: user.id,
+      metadata: { targetUserId: row.userId, role: row.role, change: "company_access_removed", revokedSessions: revoked },
+    });
   } else if (scope === "club") {
     const row = await prisma.clubUserAccess.findUnique({ where: { id: accessId } });
     if (!row) throw new Error("Доступ не найден");
@@ -160,7 +180,10 @@ export async function removeAccess(formData: FormData): Promise<void> {
     if (!(await canManageClubUsers(user.id, row.clubId))) {
       throw new Error("Недостаточно прав");
     }
-    await prisma.clubUserAccess.delete({ where: { id: accessId } });
+    const revoked = await prisma.$transaction(async (tx) => {
+      await tx.clubUserAccess.delete({ where: { id: accessId } });
+      return revokeAllSessionsForUser(row.userId, "access_changed", user.id, tx);
+    });
     await recordAudit({
       action: "access.removed",
       entityType: "ClubUserAccess",
@@ -169,9 +192,105 @@ export async function removeAccess(formData: FormData): Promise<void> {
       userId: user.id,
       metadata: { targetUserId: row.userId, role: row.role },
     });
+    await recordAudit({
+      action: "user.access_changed",
+      entityType: "User",
+      entityId: row.userId,
+      clubId: row.clubId,
+      userId: user.id,
+      metadata: { targetUserId: row.userId, role: row.role, change: "club_access_removed", revokedSessions: revoked },
+    });
   } else {
     throw new Error("Неверный тип доступа");
   }
 
   revalidatePath("/users");
+}
+
+type AdminState = { ok: boolean; error?: string };
+
+/**
+ * Administrative: revoke EVERY active session of a managed user. The target's
+ * cookie cannot be deleted remotely, but their DB sessions become invalid
+ * immediately, so the next request/server action is denied and requires login.
+ */
+export async function adminRevokeUserSessions(_prev: AdminState | undefined, formData: FormData): Promise<AdminState> {
+  const user = await requireUser();
+  const targetUserId = String(formData.get("targetUserId") ?? "").trim();
+  try {
+    const scope = await getCurrentCompanyAndClub(user);
+    if (!scope.company) return { ok: false, error: "Нет доступной компании" };
+    const companyId = scope.company.id;
+
+    const decision = await assertCanManageUser(user.id, targetUserId, companyId);
+    if (!decision.ok) {
+      await recordAudit({
+        action: "user.session_revocation_blocked",
+        entityType: "User", entityId: targetUserId, companyId, userId: user.id,
+        metadata: { targetUserId, reason: "not_authorized" },
+      });
+      return { ok: false, error: decision.error };
+    }
+
+    const revoked = await revokeAllSessionsForUser(targetUserId, "admin_revoked", user.id);
+    await recordAudit({
+      action: "session.revoked_all",
+      entityType: "User", entityId: targetUserId, companyId, userId: user.id,
+      metadata: { targetUserId, revokedSessions: revoked, by: "admin" },
+    });
+    revalidatePath("/users");
+    return { ok: true };
+  } catch (error) {
+    console.error("adminRevokeUserSessions failed", error);
+    return { ok: false, error: "Не удалось завершить сессии. Обновите страницу и повторите попытку." };
+  }
+}
+
+/**
+ * Administrative: deactivate or reactivate a managed user. Deactivation sets
+ * isActive=false AND revokes all sessions atomically (blocks new logins +
+ * invalidates open tabs). Reactivation sets isActive=true but never restores old
+ * sessions — the user must log in again. User, access rows and history are kept.
+ */
+export async function adminSetUserActive(_prev: AdminState | undefined, formData: FormData): Promise<AdminState> {
+  const user = await requireUser();
+  const targetUserId = String(formData.get("targetUserId") ?? "").trim();
+  const active = String(formData.get("active") ?? "") === "true";
+  try {
+    const scope = await getCurrentCompanyAndClub(user);
+    if (!scope.company) return { ok: false, error: "Нет доступной компании" };
+    const companyId = scope.company.id;
+
+    const decision = await assertCanManageUser(user.id, targetUserId, companyId);
+    if (!decision.ok) return { ok: false, error: decision.error };
+
+    // Never deactivate the last active Owner of the company.
+    if (!active && (await isLastActiveOwner(companyId, targetUserId))) {
+      return { ok: false, error: "Нельзя отключить последнего собственника компании." };
+    }
+
+    if (active) {
+      await prisma.user.update({ where: { id: targetUserId }, data: { isActive: true } });
+      await recordAudit({
+        action: "user.reactivated",
+        entityType: "User", entityId: targetUserId, companyId, userId: user.id,
+        metadata: { targetUserId },
+      });
+    } else {
+      const revoked = await prisma.$transaction(async (tx) => {
+        await tx.user.update({ where: { id: targetUserId }, data: { isActive: false } });
+        return revokeAllSessionsForUser(targetUserId, "user_deactivated", user.id, tx);
+      });
+      await recordAudit({
+        action: "user.deactivated",
+        entityType: "User", entityId: targetUserId, companyId, userId: user.id,
+        metadata: { targetUserId, revokedSessions: revoked },
+      });
+    }
+    revalidatePath("/users");
+    return { ok: true };
+  } catch (error) {
+    console.error("adminSetUserActive failed", error);
+    return { ok: false, error: "Не удалось изменить статус пользователя. Обновите страницу и повторите попытку." };
+  }
 }

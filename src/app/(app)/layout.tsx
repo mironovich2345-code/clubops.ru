@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { UserBadge } from "@/components/UserBadge";
@@ -51,6 +52,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           )}
           <div className="flex items-center gap-3">
             <UserBadge user={user} roleLabel={roleLabel} />
+            <Link
+              href="/settings/security"
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Безопасность
+            </Link>
             <form action={logoutAction}>
               <button
                 type="submit"

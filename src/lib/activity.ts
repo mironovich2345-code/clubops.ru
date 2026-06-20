@@ -129,6 +129,19 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "club.archived": "Клуб архивирован",
   "club.restored": "Клуб восстановлен",
   "onboarding.completed": "Завершён онбординг",
+  // Sessions & account security
+  "session.created": "Сессия создана",
+  "session.signed_out": "Выход из системы",
+  "session.revoked": "Сессия завершена",
+  "session.revoked_all": "Завершены все сессии",
+  "session.revoked_others": "Завершены другие сессии",
+  "user.deactivated": "Пользователь отключён",
+  "user.reactivated": "Пользователь восстановлен",
+  "user.access_changed": "Изменён доступ пользователя",
+  "user.role_changed": "Изменена роль пользователя",
+  "user.email_changed": "Изменён email пользователя",
+  "user.password_changed": "Изменён пароль пользователя",
+  "user.session_revocation_blocked": "Завершение сессий отклонено",
 };
 
 export function auditActionLabel(action: string): string {

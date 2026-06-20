@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { createHmac, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/tokens";
+import { createSession, getValidSession, revokeCurrentSession } from "@/lib/session";
 
 // Business role hierarchy (highest -> lowest authority):
 // owner > general_director > regional_director > manager > chief_accountant >
@@ -268,60 +268,25 @@ export function verifyPassword(password: string, hash: string): Promise<boolean>
 
 // ---------------------------------------------------------------------------
 // Sessions (DB-backed, httpOnly cookie holding a random token)
+//
+// The session lifecycle (creation, validation, revocation, listing, cleanup)
+// lives in @/lib/session. hashToken lives in @/lib/tokens. They are re-exported
+// here so existing import sites keep working.
 // ---------------------------------------------------------------------------
 
-const SESSION_COOKIE = "club_ops_session";
-const SESSION_TTL_DAYS = 30;
-// SESSION_SECRET keys the token HMAC: a leaked tokenHash can't be reversed into
-// a usable cookie without the secret. Set it in production (see .env.example).
-// Resolved lazily so production fails fast on the first auth request when the
-// secret is missing, without throwing during `next build` (which sets
-// NODE_ENV=production but never hashes a token at build time).
-function sessionSecret(): string {
-  const secret = process.env.SESSION_SECRET;
-  if (secret) return secret;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("SESSION_SECRET is required in production");
-  }
-  return "dev-insecure-session-secret";
-}
+// Re-exported so existing import sites (invites, auth-actions) keep working.
+export { hashToken, createSession };
 
-// Exported so invite tokens use the same keyed hash (raw token never stored).
-export function hashToken(token: string): string {
-  return createHmac("sha256", sessionSecret()).update(token).digest("hex");
-}
-
-export async function createSession(userId: string): Promise<void> {
-  const token = randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
-
-  await prisma.session.create({
-    data: { userId, tokenHash: hashToken(token), expiresAt },
-  });
-
-  const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    expires: expiresAt,
-  });
-}
-
+/**
+ * The current authenticated user, or null. Resolution is fully revocation-aware:
+ * it validates the session token, that the session is not revoked, not expired,
+ * and that the user is active (delegated to getValidSession). A fresh DB read on
+ * every call — there is NO cross-request caching of the user/session (Part 5).
+ */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-
-  const session = await prisma.session.findUnique({
-    where: { tokenHash: hashToken(token) },
-    include: { user: true },
-  });
-  if (!session || session.expiresAt.getTime() < Date.now()) return null;
-  if (!session.user.isActive) return null;
-
-  const u = session.user;
+  const valid = await getValidSession();
+  if (!valid) return null;
+  const u = valid.user;
   return { id: u.id, email: u.email, name: u.name, role: asRole(u.role) };
 }
 
@@ -378,11 +343,11 @@ export async function signIn(email: string, password: string): Promise<AuthResul
   return { ok: true };
 }
 
+/**
+ * Sign out: soft-revoke the current Session row AND clear the cookie (never just
+ * the cookie, which would leave a valid DB session). Idempotent — calling it
+ * again with no/invalid cookie is a no-op.
+ */
 export async function signOut(): Promise<void> {
-  const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
-  if (token) {
-    await prisma.session.deleteMany({ where: { tokenHash: hashToken(token) } });
-    store.delete(SESSION_COOKIE);
-  }
+  await revokeCurrentSession("signed_out");
 }

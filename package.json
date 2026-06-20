@@ -17,6 +17,8 @@
     "smoke:manager": "node scripts/smoke-manager-access.mjs",
     "smoke:manager-dashboard": "node scripts/smoke-manager-dashboard.mjs",
     "pilot:club": "node scripts/pilot-club-legal-entity.mjs",
+    "sessions:cleanup": "node scripts/cleanup-sessions.mjs",
+    "pilot:sessions": "node scripts/pilot-sessions.mjs",
     "docker:build": "docker build -t club-ops:latest .",
     "docker:prod": "docker compose -f docker-compose.production.yml up -d --build"
   },

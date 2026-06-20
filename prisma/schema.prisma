@@ -129,10 +129,23 @@ model Session {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Activity + revocation metadata (Part 2). A session is valid only when
+  // revokedAt IS NULL, expiresAt is in the future, and the owner is active.
+  // Revoked rows are kept for security investigation (retention cleanup later).
+  lastSeenAt      DateTime  @default(now())
+  revokedAt       DateTime?
+  revokedReason   String?
+  revokedByUserId String? // opaque actor id; nullable for self/system revokes
+  // Sanitized user-agent + derived human label ("Chrome · Windows"). No raw IP
+  // and no geolocation is stored (documented future extension if ever needed).
+  userAgent       String?
+  deviceLabel     String?
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([revokedAt])
 }
 
 model Club {

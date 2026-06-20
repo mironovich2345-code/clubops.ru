@@ -8,11 +8,14 @@ import {
   getManageableClubIds,
   getClubsInScope,
   userHasCompanyRole,
+  assertCanManageUser,
   type CompanyMember,
 } from "@/lib/access";
+import { countActiveSessionsForUser } from "@/lib/session";
 import { INVITE_ROLE_LABELS } from "@/lib/invites";
 import { ROLE_LABELS } from "@/lib/navigation";
 import { InviteForm } from "./_components/InviteForm";
+import { UserAdminControls } from "./_components/UserAdminControls";
 import { removeAccess } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +44,23 @@ export default async function UsersPage() {
     value,
     label: INVITE_ROLE_LABELS[value] ?? value,
   }));
+
+  // Per-user active session counts + which users the actor may administer
+  // (deactivate / revoke sessions). Computed per DISTINCT user.
+  const distinctUserIds = [...new Set(members.map((m) => m.user.id))];
+  const sessionCounts = new Map<string, number>();
+  const adminUsers = new Set<string>();
+  await Promise.all(
+    distinctUserIds.map(async (uid) => {
+      sessionCounts.set(uid, await countActiveSessionsForUser(uid));
+      if (uid !== user.id) {
+        const decision = await assertCanManageUser(user.id, uid, companyId);
+        if (decision.ok) adminUsers.add(uid);
+      }
+    }),
+  );
+  // Show the per-user admin block once (on the first row of each user).
+  const seenUser = new Set<string>();
 
   function canRemove(member: CompanyMember): boolean {
     if (member.user.id === user.id) return false; // no self-lockout
@@ -101,20 +121,36 @@ export default async function UsersPage() {
                     )}
                   </Td>
                   <Td>
-                    {canRemove(member) ? (
-                      <form action={removeAccess}>
-                        <input type="hidden" name="scope" value={member.scope} />
-                        <input type="hidden" name="accessId" value={member.accessId} />
-                        <button
-                          type="submit"
-                          className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
-                        >
-                          Удалить доступ
-                        </button>
-                      </form>
-                    ) : (
-                      <span className="text-xs text-slate-400">—</span>
-                    )}
+                    <div className="flex flex-col gap-2">
+                      {canRemove(member) ? (
+                        <form action={removeAccess}>
+                          <input type="hidden" name="scope" value={member.scope} />
+                          <input type="hidden" name="accessId" value={member.accessId} />
+                          <button
+                            type="submit"
+                            className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                          >
+                            Удалить доступ
+                          </button>
+                        </form>
+                      ) : null}
+                      {(() => {
+                        // Per-user admin block, rendered once per user.
+                        if (seenUser.has(member.user.id)) return null;
+                        seenUser.add(member.user.id);
+                        if (!adminUsers.has(member.user.id)) return null;
+                        return (
+                          <UserAdminControls
+                            targetUserId={member.user.id}
+                            isActive={member.user.isActive}
+                            sessionCount={sessionCounts.get(member.user.id) ?? 0}
+                          />
+                        );
+                      })()}
+                      {!canRemove(member) && !adminUsers.has(member.user.id) ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : null}
+                    </div>
                   </Td>
                 </tr>
               ))
