@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { canManageSalesPlans } from "@/lib/auth";
-import { getCurrentAccessContext, recordAudit } from "@/lib/access";
+import { getCurrentAccessContext, recordAudit, canAccessClub } from "@/lib/access";
 import { rublesToKopeks } from "@/lib/money";
 import { normalizeMonth, PLAN_TYPES } from "@/lib/sales-plans";
 import { setActiveScope } from "../scope-actions";
@@ -18,8 +18,14 @@ import { setActiveScope } from "../scope-actions";
  */
 export async function openClubAnalytics(clubId: string): Promise<void> {
   const ctx = await getCurrentAccessContext();
-  if (!ctx?.selectedCompanyId) redirect("/analytics");
-  await setActiveScope(ctx.selectedCompanyId, clubId);
+  if (!ctx) redirect("/analytics");
+  // Cross-Company safe: switch scope to the CLUB's own company (strategic owners
+  // may open a club from a company other than the active-scope cookie). Access is
+  // independently re-checked; an unassigned club is dropped by setActiveScope.
+  const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
+  if (club && (await canAccessClub(ctx!.user.id, clubId))) {
+    await setActiveScope(club.companyId, clubId);
+  }
   redirect("/analytics");
 }
 

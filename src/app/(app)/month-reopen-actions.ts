@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getCurrentAccessContext, recordAudit } from "@/lib/access";
+import { getCurrentAccessContext, recordAudit, userHasCompanyRole, type AccessContext } from "@/lib/access";
 import {
   canRequestMonthReopen,
   canApproveMonthReopen,
@@ -74,11 +74,17 @@ export async function requestMonthReopen(_prev: ReopenState | undefined, formDat
   return { ok: true };
 }
 
-/** Loads a request and verifies it belongs to the caller's selected company. */
-async function loadScopedRequest(companyId: string, requestId: string) {
+/**
+ * Loads a request and INDEPENDENTLY verifies the caller holds one of `roles` in
+ * the REQUEST's own company (not merely the cookie-selected company). This keeps
+ * multi-Company approval safe: an owner of company A cannot act on company B's
+ * request, and the active-scope cookie never grants authority.
+ */
+async function loadScopedRequest(ctx: AccessContext, requestId: string, roles: readonly string[]) {
   if (!requestId) return null;
   const req = await prisma.monthReopenRequest.findUnique({ where: { id: requestId } });
-  if (!req || req.companyId !== companyId) return null; // cross-company access denied
+  if (!req) return null;
+  if (!(await userHasCompanyRole(ctx.user.id, req.companyId, roles))) return null; // access denied
   return req;
 }
 
@@ -89,8 +95,8 @@ export async function approveMonthReopen(_prev: ReopenState | undefined, formDat
   if (!canApproveMonthReopen(ctx.effectiveRoles)) {
     return { ok: false, error: "Согласовать переоткрытие может только собственник" };
   }
-  const companyId = ctx.selectedCompanyId;
-  const req = await loadScopedRequest(companyId, String(formData.get("requestId") ?? "").trim());
+  // Owner of the REQUEST's company (independent of the active-scope cookie).
+  const req = await loadScopedRequest(ctx, String(formData.get("requestId") ?? "").trim(), ["owner"]);
   if (!req) return { ok: false, error: "Запрос не найден" };
   if (req.status !== "pending") return { ok: false, error: "Запрос уже обработан" };
   // A requester can never approve their own request.
@@ -107,7 +113,7 @@ export async function approveMonthReopen(_prev: ReopenState | undefined, formDat
     action: "month.reopen_approved",
     entityType: "MonthReopenRequest",
     entityId: req.id,
-    companyId,
+    companyId: req.companyId,
     userId: ctx.user.id,
     metadata: { month: req.month, ...(comment ? { comment } : {}) },
   });
@@ -123,8 +129,7 @@ export async function rejectMonthReopen(_prev: ReopenState | undefined, formData
   if (!canApproveMonthReopen(ctx.effectiveRoles)) {
     return { ok: false, error: "Отклонить переоткрытие может только собственник" };
   }
-  const companyId = ctx.selectedCompanyId;
-  const req = await loadScopedRequest(companyId, String(formData.get("requestId") ?? "").trim());
+  const req = await loadScopedRequest(ctx, String(formData.get("requestId") ?? "").trim(), ["owner"]);
   if (!req) return { ok: false, error: "Запрос не найден" };
   if (req.status !== "pending") return { ok: false, error: "Запрос уже обработан" };
   if (req.requestedByUserId === ctx.user.id) {
@@ -141,7 +146,7 @@ export async function rejectMonthReopen(_prev: ReopenState | undefined, formData
     action: "month.reopen_rejected",
     entityType: "MonthReopenRequest",
     entityId: req.id,
-    companyId,
+    companyId: req.companyId,
     userId: ctx.user.id,
     metadata: { month: req.month, comment },
   });
@@ -161,9 +166,10 @@ export async function executeMonthReopen(_prev: ReopenState | undefined, formDat
   if (!canExecuteMonthReopen(ctx.effectiveRoles)) {
     return { ok: false, error: "Переоткрыть месяц может только главный бухгалтер" };
   }
-  const companyId = ctx.selectedCompanyId;
-  const req = await loadScopedRequest(companyId, String(formData.get("requestId") ?? "").trim());
+  // Chief accountant of the REQUEST's company (independent of active scope).
+  const req = await loadScopedRequest(ctx, String(formData.get("requestId") ?? "").trim(), ["chief_accountant"]);
   if (!req) return { ok: false, error: "Запрос не найден" };
+  const companyId = req.companyId;
 
   if (req.status !== "approved") {
     await recordAudit({

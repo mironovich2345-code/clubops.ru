@@ -7,6 +7,9 @@ const dttf = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit"
 
 export type UnconfirmedRow = {
   id: string;
+  companyId: string;
+  companyName: string;
+  clubId: string;
   clubName: string;
   reportDate: string; // ISO
   createdAt: string; // ISO
@@ -19,8 +22,10 @@ export type UnconfirmedRow = {
 
 /**
  * Read-only "Неподтверждённые продажи" block for the Owner/GD dashboard. Shows
- * count / revenue / affected clubs / oldest pending, and up to five reports with
- * a link to the report detail (opened read-only). No verify/reject controls.
+ * count / revenue / affected clubs / oldest pending, and up to five reports. No
+ * verify/reject controls. When `safeOpenAction` is given (strategic multi-Company
+ * view) rows submit a context-switch-and-open form (the report may belong to a
+ * Company other than the active scope); otherwise a plain read-only link is used.
  */
 export function UnconfirmedSalesBlock({
   rows,
@@ -30,6 +35,8 @@ export function UnconfirmedSalesBlock({
   oldestDate,
   oldestAgeDays,
   monthLabel,
+  showCompany = false,
+  safeOpenAction,
 }: {
   rows: UnconfirmedRow[];
   count: number;
@@ -38,6 +45,8 @@ export function UnconfirmedSalesBlock({
   oldestDate: string | null;
   oldestAgeDays: number | null;
   monthLabel: string;
+  showCompany?: boolean;
+  safeOpenAction?: (formData: FormData) => void | Promise<void>;
 }) {
   return (
     <div className={`mb-6 overflow-hidden ${CARD}`}>
@@ -63,28 +72,41 @@ export function UnconfirmedSalesBlock({
             />
           </div>
           <div className="divide-y divide-slate-100 dark:divide-slate-800/70">
-            {rows.map((r) => (
-              <Link
-                key={r.id}
-                href={`/sales/reports/${r.id}`}
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40"
-              >
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    {dtf.format(new Date(r.reportDate))} · {r.clubName}
+            {rows.map((r) => {
+              const inner = (
+                <>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {dtf.format(new Date(r.reportDate))} · {r.clubName}
+                      {showCompany ? <span className="ml-1 text-xs font-normal text-slate-400">· {r.companyName}</span> : null}
+                    </div>
+                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      Менеджер: {r.managerName ?? r.createdByName} · создан {dttf.format(new Date(r.createdAt))}
+                    </div>
                   </div>
-                  <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    Менеджер: {r.managerName ?? r.createdByName} · создан {dttf.format(new Date(r.createdAt))}
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.totalKopeks)}</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      ООО {formatKopeks(r.oooKopeks)} · ИП {formatKopeks(r.ipKopeks)}
+                    </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.totalKopeks)}</div>
-                  <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                    ООО {formatKopeks(r.oooKopeks)} · ИП {formatKopeks(r.ipKopeks)}
-                  </div>
-                </div>
-              </Link>
-            ))}
+                </>
+              );
+              const rowCls = "flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800/40";
+              return safeOpenAction ? (
+                <form key={r.id} action={safeOpenAction}>
+                  <input type="hidden" name="target" value="sales_report" />
+                  <input type="hidden" name="companyId" value={r.companyId} />
+                  <input type="hidden" name="clubId" value={r.clubId} />
+                  <input type="hidden" name="objectId" value={r.id} />
+                  <button type="submit" className={rowCls}>{inner}</button>
+                </form>
+              ) : (
+                <Link key={r.id} href={`/sales/reports/${r.id}`} className={rowCls}>
+                  {inner}
+                </Link>
+              );
+            })}
           </div>
           {count > rows.length ? (
             <div className="px-4 py-2 text-center text-xs text-slate-400">… и ещё {count - rows.length}</div>

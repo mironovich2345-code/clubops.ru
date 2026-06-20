@@ -67,8 +67,15 @@ export async function getLatestReopenRequestView(
 
 /** All pending requests in a company — the Owner approval queue. */
 export async function getPendingReopenRequestsForCompany(companyId: string): Promise<ReopenRequestView[]> {
+  return getPendingReopenRequestsForCompanies([companyId]);
+}
+
+/** Pending requests across ANY set of accessible companies (strategic owner view).
+ * One scoped query (companyId IN). Caller passes only accessible company ids. */
+export async function getPendingReopenRequestsForCompanies(companyIds: string[]): Promise<ReopenRequestView[]> {
+  if (companyIds.length === 0) return [];
   const rows = await prisma.monthReopenRequest.findMany({
-    where: { companyId, status: "pending" },
+    where: { companyId: { in: companyIds }, status: "pending" },
     orderBy: { requestedAt: "asc" },
   });
   return Promise.all(rows.map((r) => decorateRequest(r as ReopenRequest)));

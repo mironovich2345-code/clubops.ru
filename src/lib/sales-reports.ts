@@ -218,6 +218,8 @@ export async function getPendingSalesReports(scope: DataScope): Promise<PendingR
 
 export type UnconfirmedReportRow = {
   id: string;
+  companyId: string;
+  companyName: string;
   clubId: string;
   clubName: string;
   reportDate: Date;
@@ -229,47 +231,74 @@ export type UnconfirmedReportRow = {
   ipKopeks: number;
 };
 
+const UNCONFIRMED_INCLUDE = {
+  club: { select: { id: true, name: true, company: { select: { name: true } } } },
+  createdBy: { select: { name: true } },
+  lines: {
+    where: { key: { in: [REVENUE_LINE_KEY, REVENUE_OOO_KEY, REVENUE_IP_KEY] } },
+    select: { key: true, amountKopeks: true },
+  },
+};
+
+type UnconfirmedRowSource = {
+  id: string;
+  companyId: string;
+  clubId: string;
+  reportDate: Date;
+  createdAt: Date;
+  managerName: string | null;
+  club: { name: string; company: { name: string } };
+  createdBy: { name: string };
+  lines: Array<{ key: string; amountKopeks: number }>;
+};
+
+function mapUnconfirmedRow(r: UnconfirmedRowSource): UnconfirmedReportRow {
+  const m = new Map(r.lines.map((l) => [l.key, l.amountKopeks]));
+  return {
+    id: r.id,
+    companyId: r.companyId,
+    companyName: r.club.company.name,
+    clubId: r.clubId,
+    clubName: r.club.name,
+    reportDate: r.reportDate,
+    createdAt: r.createdAt,
+    managerName: r.managerName ?? null,
+    createdByName: r.createdBy.name,
+    totalKopeks: m.get(REVENUE_LINE_KEY) ?? 0,
+    oooKopeks: m.get(REVENUE_OOO_KEY) ?? 0,
+    ipKopeks: m.get(REVENUE_IP_KEY) ?? 0,
+  };
+}
+
 /**
- * Unconfirmed (pending_accountant) sales reports for ONE calendar month, scoped
- * to the caller's company + allowed clubs. Read-only data for the Owner/GD
- * dashboard "Неподтверждённые продажи" block. Returns [] for an invalid month or
- * empty scope. Each row carries total / ООО / ИП revenue from the stored lines.
+ * Unconfirmed (pending_accountant) sales reports for one month across ANY set of
+ * accessible companies + clubs. One scoped query (companyId IN, clubId IN) — used
+ * by the strategic multi-Company dashboard. Caller passes only accessible ids.
  */
-export async function getUnconfirmedReportsForMonth(scope: DataScope, month: string): Promise<UnconfirmedReportRow[]> {
-  if (!scope.company || scope.clubIds.length === 0) return [];
+export async function getUnconfirmedReportsForScope(
+  companyIds: string[],
+  clubIds: string[],
+  month: string,
+): Promise<UnconfirmedReportRow[]> {
+  if (companyIds.length === 0 || clubIds.length === 0) return [];
   const bounds = monthBounds(month);
   if (!bounds) return [];
   const rows = await prisma.salesReport.findMany({
     where: {
-      companyId: scope.company.id,
-      clubId: { in: scope.clubIds },
+      companyId: { in: companyIds },
+      clubId: { in: clubIds },
       status: "pending_accountant",
       reportDate: { gte: bounds.start, lt: bounds.end },
     },
     orderBy: [{ reportDate: "asc" }, { createdAt: "asc" }],
-    include: {
-      club: { select: { id: true, name: true } },
-      createdBy: { select: { name: true } },
-      lines: {
-        where: { key: { in: [REVENUE_LINE_KEY, REVENUE_OOO_KEY, REVENUE_IP_KEY] } },
-        select: { key: true, amountKopeks: true },
-      },
-    },
+    include: UNCONFIRMED_INCLUDE,
     take: 200,
   });
-  return rows.map((r) => {
-    const m = new Map(r.lines.map((l) => [l.key, l.amountKopeks]));
-    return {
-      id: r.id,
-      clubId: r.clubId,
-      clubName: r.club.name,
-      reportDate: r.reportDate,
-      createdAt: r.createdAt,
-      managerName: r.managerName ?? null,
-      createdByName: r.createdBy.name,
-      totalKopeks: m.get(REVENUE_LINE_KEY) ?? 0,
-      oooKopeks: m.get(REVENUE_OOO_KEY) ?? 0,
-      ipKopeks: m.get(REVENUE_IP_KEY) ?? 0,
-    };
-  });
+  return rows.map((r) => mapUnconfirmedRow(r as UnconfirmedRowSource));
+}
+
+/** Single-company convenience wrapper (non-strategic dashboard). */
+export async function getUnconfirmedReportsForMonth(scope: DataScope, month: string): Promise<UnconfirmedReportRow[]> {
+  if (!scope.company || scope.clubIds.length === 0) return [];
+  return getUnconfirmedReportsForScope([scope.company.id], scope.clubIds, month);
 }

@@ -7,7 +7,13 @@ import {
   getCurrentAccessContext,
   getUserClubs,
 } from "@/lib/access";
-import { canManageSalesPlans, canApproveMonthReopen, canAnyRoleAccessPage, type Role } from "@/lib/auth";
+import { canManageSalesPlans, canApproveMonthReopen, canAnyRoleAccessPage, isStrategicRole, type Role } from "@/lib/auth";
+import { resolveStrategicScope } from "@/lib/strategic-scope";
+import { loadCompanyClubCards } from "@/lib/dashboard-cards";
+import { getUnconfirmedReportsForScope } from "@/lib/sales-reports";
+import { getPendingReopenRequestsForCompanies } from "@/lib/month-reopen";
+import { StrategicScopeFilter } from "./_components/StrategicScopeFilter";
+import { openInStrategicScope } from "./strategic-actions";
 import {
   loadAnalyticsData,
   buildAnalyticsReport,
@@ -68,12 +74,20 @@ type ClubCard = {
   ipKopeks: number | null;
   oooRisk: "low" | "high" | "unknown";
   ipRisk: "low" | "high" | "unknown";
+  companyName?: string; // shown on cards in the multi-Company strategic view
 };
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; closeMonth?: string }>;
+  searchParams: Promise<{
+    month?: string;
+    closeMonth?: string;
+    scopeMode?: string;
+    companyId?: string;
+    city?: string;
+    clubId?: string;
+  }>;
 }) {
   const user = await requirePageAccess("dashboard");
 
@@ -88,11 +102,14 @@ export default async function DashboardPage({
   const roles = ctx?.effectiveRoles ?? [];
   const financials = roles.some((r) => FINANCIAL_ROLES.has(r));
   const canEditPlan = canManageSalesPlans(roles);
+  const canViewSales = canAnyRoleAccessPage(roles, "sales");
+  const canApproveReopen = canApproveMonthReopen(roles);
 
   const now = new Date();
 
   // --- Selected analytical month (?month=YYYY-MM, validated; fallback current) ---
-  const { month: monthParam } = await searchParams;
+  const sp = await searchParams;
+  const monthParam = sp.month;
   const currentMonth = monthKey(now);
   const selectedMonth = normalizeMonth(monthParam ?? "") ?? currentMonth;
   const period = resolveMonthPeriod(selectedMonth, now);
@@ -105,8 +122,154 @@ export default async function DashboardPage({
   const monthMode: "past" | "current" | "future" =
     now.getTime() >= period.end.getTime() ? "past" : now.getTime() < period.start.getTime() ? "future" : "current";
 
+  // ===== Strategic (owner / general director): multi-Company read-only view =====
+  if (isStrategicRole(roles) && ctx) {
+    const strategic = await resolveStrategicScope(ctx, {
+      scopeMode: sp.scopeMode,
+      companyId: sp.companyId,
+      city: sp.city,
+      clubId: sp.clubId,
+    });
+    const multiCompany = strategic.filteredCompanyIds.length > 1;
+    const daysInSel = new Date(period.start.getFullYear(), period.start.getMonth() + 1, 0).getDate();
+    const daysLeft = monthMode === "past" ? 0 : monthMode === "future" ? daysInSel : daysInSel - now.getDate() + 1;
+
+    // Group filtered clubs by company → ONE scoped loader per company (no N+1).
+    const byCompany = new Map<string, { name: string; clubs: { id: string; name: string; city: string }[] }>();
+    for (const c of strategic.filteredClubs) {
+      const g = byCompany.get(c.companyId) ?? { name: c.companyName, clubs: [] };
+      g.clubs.push({ id: c.id, name: c.name, city: c.city });
+      byCompany.set(c.companyId, g);
+    }
+    const cardGroups = await Promise.all(
+      [...byCompany.entries()].map(([cid, g]) => loadCompanyClubCards(cid, g.name, g.clubs, period, financials, now)),
+    );
+    const cards = cardGroups
+      .flat()
+      .sort(
+        (a, b) =>
+          a.companyName.localeCompare(b.companyName, "ru") ||
+          a.city.localeCompare(b.city, "ru") ||
+          a.name.localeCompare(b.name, "ru"),
+      );
+
+    // Plan management (GD) stays on the cookie-selected company — an operational
+    // surface, not part of the read-only cross-Company aggregation.
+    const planClubs = canEditPlan ? (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name })) : [];
+
+    const filteredClubIds = strategic.filteredClubs.map((c) => c.id);
+    const unconfirmed = await getUnconfirmedReportsForScope(strategic.filteredCompanyIds, filteredClubIds, selectedMonth);
+    const unconfirmedTotalKopeks = unconfirmed.reduce((sum, r) => sum + r.totalKopeks, 0);
+    const unconfirmedClubs = new Set(unconfirmed.map((r) => r.clubId)).size;
+    const oldest = unconfirmed[0] ?? null;
+    const oldestAge = oldest
+      ? Math.max(0, Math.floor((dayStart(now).getTime() - dayStart(oldest.createdAt).getTime()) / 86_400_000))
+      : null;
+
+    const companyNameById = new Map(strategic.accessibleCompanies.map((c) => [c.id, c.name]));
+    const strategicReopenRows: ReopenRow[] = canApproveReopen
+      ? (await getPendingReopenRequestsForCompanies(strategic.filteredCompanyIds)).map((r) => ({
+          id: r.id,
+          month: r.month,
+          monthLabel: capitalize(monthFormatter.format(new Date(`${r.month}-01T00:00:00`))),
+          reason: r.reason,
+          requestedByName: r.requestedByName,
+          requestedAt: r.requestedAt.toISOString(),
+          clubName: r.clubName,
+          companyName: companyNameById.get(r.companyId) ?? "—",
+        }))
+      : [];
+
+    const scopeHeading = strategic.selectedCompanyId
+      ? companyNameById.get(strategic.selectedCompanyId) ?? "Сеть"
+      : "Все доступные сети";
+
+    return (
+      <div className="mx-auto max-w-[1440px]">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <PageHeader title="Дашборд" description={scopeHeading} />
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Сетей: {strategic.filteredCompanyIds.length} · Клубов: {strategic.filteredClubs.length}
+              {strategic.selectedCity ? ` · Город: ${strategic.selectedCity}` : ""} · {monthLabel}
+            </div>
+          </div>
+          <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
+        </div>
+
+        {strategic.accessibleClubs.length > 0 ? (
+          <StrategicScopeFilter
+            companies={strategic.accessibleCompanies}
+            clubs={strategic.accessibleClubs}
+            mode={strategic.mode}
+            companyId={strategic.selectedCompanyId}
+            city={strategic.selectedCity}
+            clubId={strategic.selectedClubId}
+            month={selectedMonth}
+          />
+        ) : null}
+
+        {/* Priority: approvals, then unconfirmed sales, then club cards. */}
+        {canApproveReopen ? <OwnerReopenApprovals requests={strategicReopenRows} /> : null}
+
+        {canViewSales ? (
+          <UnconfirmedSalesBlock
+            rows={unconfirmed.slice(0, 5).map((r) => ({
+              id: r.id,
+              companyId: r.companyId,
+              companyName: r.companyName,
+              clubId: r.clubId,
+              clubName: r.clubName,
+              reportDate: r.reportDate.toISOString(),
+              createdAt: r.createdAt.toISOString(),
+              managerName: r.managerName,
+              createdByName: r.createdByName,
+              totalKopeks: r.totalKopeks,
+              oooKopeks: r.oooKopeks,
+              ipKopeks: r.ipKopeks,
+            }))}
+            count={unconfirmed.length}
+            totalKopeks={unconfirmedTotalKopeks}
+            clubsAffected={unconfirmedClubs}
+            oldestDate={oldest ? oldest.reportDate.toISOString() : null}
+            oldestAgeDays={oldestAge}
+            monthLabel={monthLabel}
+            showCompany={multiCompany}
+            safeOpenAction={openInStrategicScope}
+          />
+        ) : null}
+
+        {strategic.accessibleClubs.length === 0 ? (
+          <div className={`px-4 py-16 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
+            Нет доступных сетей или клубов
+          </div>
+        ) : cards.length === 0 ? (
+          <div className={`px-4 py-16 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
+            Нет клубов по выбранным фильтрам
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {cards.map((c) => (
+              <ClubOverviewCard key={c.id} card={c} financials={financials} daysLeft={daysLeft} showCompany={multiCompany} />
+            ))}
+          </div>
+        )}
+
+        {canEditPlan ? (
+          <ManagementSection
+            companyId={companyId}
+            canEditPlan={canEditPlan}
+            clubs={planClubs}
+            defaultClubId={planClubs[0]?.id ?? ""}
+            searchParams={sp}
+            now={now}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
   // Owner-only: pending month-reopening requests to approve/reject.
-  const canApproveReopen = canApproveMonthReopen(roles);
   const reopenRows: ReopenRow[] = canApproveReopen
     ? (await getPendingReopenRequestsForCompany(companyId)).map((r) => ({
         id: r.id,
@@ -134,7 +297,6 @@ export default async function DashboardPage({
 
   // Unconfirmed (pending_accountant) sales reports for the selected month, scoped.
   // Shown to dashboard viewers who may see sales (not marketer); read-only.
-  const canViewSales = canAnyRoleAccessPage(roles, "sales");
   const unconfirmed = canViewSales ? await getUnconfirmedReportsForMonth(scopeForReports, selectedMonth) : [];
   const unconfirmedTotalKopeks = unconfirmed.reduce((s, r) => s + r.totalKopeks, 0);
   const unconfirmedClubs = new Set(unconfirmed.map((r) => r.clubId)).size;
@@ -243,6 +405,9 @@ export default async function DashboardPage({
         <UnconfirmedSalesBlock
           rows={unconfirmed.slice(0, 5).map((r) => ({
             id: r.id,
+            companyId: r.companyId,
+            companyName: r.companyName,
+            clubId: r.clubId,
             clubName: r.clubName,
             reportDate: r.reportDate.toISOString(),
             createdAt: r.createdAt.toISOString(),
@@ -284,7 +449,7 @@ export default async function DashboardPage({
           canEditPlan={canEditPlan}
           clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
           defaultClubId={scope.club?.id ?? clubs[0]?.id ?? ""}
-          searchParams={await searchParams}
+          searchParams={sp}
           now={now}
         />
       ) : null}
@@ -314,7 +479,7 @@ function dailyTargetLabel(t: DailyTarget): { text: string; cls: string } {
   return { text: `${formatKopeks(t.perDayKopeks)} / день`, cls: "text-slate-700 dark:text-slate-200" };
 }
 
-function ClubOverviewCard({ card, financials, daysLeft }: { card: ClubCard; financials: boolean; daysLeft: number }) {
+function ClubOverviewCard({ card, financials, daysLeft, showCompany = false }: { card: ClubCard; financials: boolean; daysLeft: number; showCompany?: boolean }) {
   const subsDaily = dailyTargetLabel(dailyTarget(card.subsPlan, card.subsFact, daysLeft));
   const ptDaily = dailyTargetLabel(dailyTarget(card.ptPlan, card.ptFact, daysLeft));
   return (
@@ -326,7 +491,9 @@ function ClubOverviewCard({ card, financials, daysLeft }: { card: ClubCard; fina
         {/* Header */}
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">{card.city || "—"}</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+              {showCompany && card.companyName ? `${card.companyName} · ` : ""}{card.city || "—"}
+            </div>
             <div className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">{card.name}</div>
           </div>
           <span aria-hidden className="mt-1 shrink-0 text-slate-300 transition group-hover:text-brand-500 dark:text-slate-600">→</span>
