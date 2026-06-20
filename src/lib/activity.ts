@@ -95,6 +95,14 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "invite.accepted": "Приглашение принято",
   "access.granted": "Выдан доступ",
   "access.removed": "Удалён доступ",
+  "role.chief_accountant_assigned": "Назначен главный бухгалтер",
+  // Month close / controlled reopen
+  "month.closed": "Месяц закрыт",
+  "month.reopen_requested": "Запрошено переоткрытие месяца",
+  "month.reopen_approved": "Переоткрытие месяца согласовано",
+  "month.reopen_rejected": "Переоткрытие месяца отклонено",
+  "month.reopened": "Месяц переоткрыт",
+  "month.reopen_execution_blocked": "Переоткрытие месяца заблокировано",
   // Organisation
   // Documents (supporting accounting files)
   "document.viewed": "Просмотр документа",
@@ -122,6 +130,7 @@ const OBJECT_BY_PREFIX: Record<string, string> = {
   employee: "Сотрудник",
   document: "Документ",
   feature: "Операция",
+  month: "Месяц",
   legal_entity: "Юрлицо",
   invoice: "Счёт",
   expense: "Расход",

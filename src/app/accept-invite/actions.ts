@@ -78,6 +78,15 @@ export async function acceptInvite(formData: FormData): Promise<void> {
     userId: user.id,
     metadata: { role: invite.role, viaInvite: invite.id },
   });
+  if (invite.role === "chief_accountant") {
+    await recordAudit({
+      action: "role.chief_accountant_assigned",
+      entityType: "CompanyUserAccess",
+      companyId: invite.companyId,
+      userId: user.id,
+      metadata: { viaInvite: invite.id },
+    });
+  }
 
   redirect("/dashboard");
 }

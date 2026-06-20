@@ -7,7 +7,7 @@ import {
   getCurrentAccessContext,
   getUserClubs,
 } from "@/lib/access";
-import { canManageSalesPlans, type Role } from "@/lib/auth";
+import { canManageSalesPlans, canApproveMonthReopen, type Role } from "@/lib/auth";
 import {
   resolvePeriod,
   loadAnalyticsData,
@@ -18,14 +18,14 @@ import {
   monthKey,
   normalizeMonth,
 } from "@/lib/sales-plans";
-import { getMonthCloseInfo } from "@/lib/month-close";
 import { getLatestBalancesByClub, type ClubBalances } from "@/lib/balance-snapshots";
+import { getPendingReopenRequestsForCompany } from "@/lib/month-reopen";
 import { loadPaymentObligationsForScope } from "@/lib/payment-obligations";
 import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
 import { dayStart, addDays } from "@/lib/payments";
 import { SalesPlanForm } from "./_components/SalesPlanForm";
 import { SalesPlanImport } from "./_components/SalesPlanImport";
-import { MonthCloseBlock } from "./_components/MonthCloseBlock";
+import { OwnerReopenApprovals, type ReopenRow } from "./_components/OwnerReopenApprovals";
 import { openClubAnalytics } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +77,7 @@ export default async function DashboardPage({
     return <NoCompanyState title="Дашборд" description="Обзор клубов" />;
   }
   const companyId = scope.company.id;
+  const companyName = scope.company.name;
 
   const ctx = await getCurrentAccessContext();
   const roles = ctx?.effectiveRoles ?? [];
@@ -85,6 +86,21 @@ export default async function DashboardPage({
 
   const now = new Date();
   const monthLabel = capitalize(monthFormatter.format(now));
+
+  // Owner-only: pending month-reopening requests to approve/reject.
+  const canApproveReopen = canApproveMonthReopen(roles);
+  const reopenRows: ReopenRow[] = canApproveReopen
+    ? (await getPendingReopenRequestsForCompany(companyId)).map((r) => ({
+        id: r.id,
+        month: r.month,
+        monthLabel: capitalize(monthFormatter.format(new Date(`${r.month}-01T00:00:00`))),
+        reason: r.reason,
+        requestedByName: r.requestedByName,
+        requestedAt: r.requestedAt.toISOString(),
+        clubName: r.clubName,
+        companyName,
+      }))
+    : [];
 
   // Club list = every active club accessible to the user in this company,
   // regardless of the topbar's selected club. getUserClubs is the role-correct
@@ -160,6 +176,8 @@ export default async function DashboardPage({
         <div className="text-sm text-slate-500 dark:text-slate-400">{monthLabel}</div>
       </div>
 
+      {canApproveReopen ? <OwnerReopenApprovals requests={reopenRows} /> : null}
+
       {cards.length === 0 ? (
         <div className={`px-4 py-16 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
           Нет доступных клубов
@@ -172,12 +190,12 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* Management tools preserved (unchanged logic): month close + sales-plan
-          editing/import. These actions live only on the dashboard. */}
-      {canEditPlan || roles.some((r) => r === "accountant" || r === "general_director" || r === "owner") ? (
+      {/* Sales-plan management (general director). Month close / reopen no longer
+          lives on the dashboard — it moved to the Chief Accountant workspace and
+          the Owner approval block above. */}
+      {canEditPlan ? (
         <ManagementSection
           companyId={companyId}
-          roles={roles}
           canEditPlan={canEditPlan}
           clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
           defaultClubId={scope.club?.id ?? clubs[0]?.id ?? ""}
@@ -307,7 +325,6 @@ function MetricBlock({ label, value, pct, accent }: { label: string; value: numb
 
 async function ManagementSection({
   companyId,
-  roles,
   canEditPlan,
   clubs,
   defaultClubId,
@@ -315,7 +332,6 @@ async function ManagementSection({
   now,
 }: {
   companyId: string;
-  roles: readonly Role[];
   canEditPlan: boolean;
   clubs: { id: string; name: string }[];
   defaultClubId: string;
@@ -324,17 +340,8 @@ async function ManagementSection({
 }) {
   const planMonth = monthKey(now);
   const selectedPlanMonth = normalizeMonth(searchParams.month ?? "") ?? planMonth;
-  const prevMonthKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-  const manageMonth = normalizeMonth(searchParams.closeMonth ?? "") ?? prevMonthKey;
 
-  const canCloseMonth = roles.some((r) => r === "accountant" || r === "general_director" || r === "owner");
-  const canReopenMonth = roles.some((r) => r === "general_director" || r === "owner");
-
-  const [splitPlanRows, monthInfo] = await Promise.all([
-    canEditPlan ? getSalesPlansForCompanyMonth(companyId, selectedPlanMonth) : Promise.resolve([]),
-    getMonthCloseInfo(companyId, null, manageMonth),
-  ]);
-  const manageMonthLabel = capitalize(monthFormatter.format(new Date(`${manageMonth}-01T00:00:00`)));
+  const splitPlanRows = canEditPlan ? await getSalesPlansForCompanyMonth(companyId, selectedPlanMonth) : [];
 
   // Per-club plan rows for the bulk-import preview (GD plan management).
   const perClubPlan = new Map<string, { total: number; subscriptions: number; personal_training: number }>();
@@ -357,16 +364,6 @@ async function ManagementSection({
   return (
     <div className="mt-8">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Управление</h2>
-
-      <MonthCloseBlock
-        month={manageMonth}
-        monthLabel={manageMonthLabel}
-        status={monthInfo.status}
-        closedByName={monthInfo.closedByName}
-        closedAt={monthInfo.closedAt ? monthInfo.closedAt.toISOString() : null}
-        canClose={canCloseMonth}
-        canReopen={canReopenMonth}
-      />
 
       {canEditPlan && clubs.length > 0 ? (
         <div className={`mt-4 p-4 ${CARD}`}>

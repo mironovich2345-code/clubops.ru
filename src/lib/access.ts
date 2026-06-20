@@ -7,6 +7,7 @@ import {
   highestRole,
   landingPageForRole,
   isKnownRole,
+  expandEffectiveRoles,
   type CurrentUser,
   type Role,
   type AppPage,
@@ -21,6 +22,7 @@ export const COMPANY_ROLES = [
   "general_director",
   "regional_director",
   "manager",
+  "chief_accountant",
   "accountant",
   "marketer",
 ] as const;
@@ -46,6 +48,8 @@ const ROLE_IMPLICATIONS: Record<string, readonly string[]> = {
   general_director: ["general_director"],
   regional_director: ["regional_director", "manager"],
   manager: ["manager"],
+  // Chief accountant satisfies any ordinary-accountant authority check.
+  chief_accountant: ["chief_accountant", "accountant"],
   accountant: ["accountant"],
   marketer: ["marketer"],
 };
@@ -268,7 +272,9 @@ async function effectiveRolesInCompany(user: CurrentUser, companyId: string): Pr
     }),
   ]);
   const roles = new Set<string>([...companyRows.map((r) => r.role), ...clubRows.map((r) => r.role)]);
-  return [...roles].filter(isKnownRole);
+  // Expand implied roles (e.g. chief_accountant also grants every accountant
+  // permission) so downstream page/capability checks stay centralized.
+  return expandEffectiveRoles([...roles].filter(isKnownRole));
 }
 
 /**
@@ -464,6 +470,7 @@ export async function getInvitableRoles(userId: string, companyId: string): Prom
 
   if (roles.has("owner")) {
     set.add("owner");
+    set.add("chief_accountant");
     const gdExists = await prisma.companyUserAccess.findFirst({
       where: { companyId, role: "general_director" },
       select: { id: true },
@@ -471,7 +478,7 @@ export async function getInvitableRoles(userId: string, companyId: string): Prom
     if (!gdExists) set.add("general_director");
   }
   if (roles.has("general_director")) {
-    ["regional_director", "accountant", "manager", "marketer"].forEach((r) => set.add(r));
+    ["regional_director", "chief_accountant", "accountant", "manager", "marketer"].forEach((r) => set.add(r));
   }
   if (roles.has("regional_director")) {
     set.add("manager");

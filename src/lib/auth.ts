@@ -5,12 +5,20 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
 // Business role hierarchy (highest -> lowest authority):
-// owner > general_director > regional_director > manager > accountant > marketer
+// owner > general_director > regional_director > manager > chief_accountant >
+// accountant > marketer
+//
+// chief_accountant (Главный бухгалтер) is the accounting-contour lead: it
+// inherits every ordinary accountant operational permission (see
+// EFFECTIVE_ROLE_EXPANSION) and additionally owns the month-close / controlled
+// reopen workflow. It deliberately does NOT receive Dashboard, Analytics or any
+// management capability.
 export type Role =
   | "owner"
   | "general_director"
   | "regional_director"
   | "manager"
+  | "chief_accountant"
   | "accountant"
   | "marketer";
 
@@ -52,6 +60,10 @@ const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
   // Accountant lands on a dedicated workspace (рабочий стол) instead of the owner
   // dashboard / analytics, which are not part of the accountant's job.
   accountant: ["workspace", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity"],
+  // Chief accountant: identical page surface to the accountant (workspace-based,
+  // no Dashboard / Analytics). The extra month-management controls are gated by
+  // capabilities, not by page access.
+  chief_accountant: ["workspace", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity"],
   // Marketer: limited analytics (sales / plans / advertising only); no other
   // financial pages.
   marketer: ["dashboard", "analytics"],
@@ -65,19 +77,88 @@ const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
 //    owner + general director only (regional directors view but cannot edit).
 //  - "mandatory_payment.manage": create/edit/pause/cancel mandatory payment
 //    plans — owner + general director (accountant / regional view only).
-export type Capability = "operational.create" | "sales_plan.manage" | "budget.manage" | "mandatory_payment.manage";
+//  Accounting contour + controlled month workflow capabilities:
+//  - "accounting.workspace.view": the accounting рабочий стол (accountant + CA).
+//  - "accounting.documents.view" / ".download": view inline / explicitly download
+//    supporting accounting documents (accountant + CA).
+//  - "accounting.operations.manage": verify/confirm expenses, invoices, refunds,
+//    sales reports — the accountant's operational job (accountant + CA).
+//  - "month.close": close a month — Chief Accountant ONLY.
+//  - "month.reopen.request": create a reopening request — Chief Accountant ONLY.
+//  - "month.reopen.approve": approve/reject a reopening request — Owner ONLY.
+//  - "month.reopen.execute": execute an approved reopening — Chief Accountant ONLY.
+//  - "shared_expenses.manage": future shared network-expense allocation — nobody
+//    yet (TODO: wire to the accounting contour when that feature lands).
+export type Capability =
+  | "operational.create"
+  | "sales_plan.manage"
+  | "budget.manage"
+  | "mandatory_payment.manage"
+  | "accounting.workspace.view"
+  | "accounting.documents.view"
+  | "accounting.documents.download"
+  | "accounting.operations.manage"
+  | "month.close"
+  | "month.reopen.request"
+  | "month.reopen.approve"
+  | "month.reopen.execute"
+  | "shared_expenses.manage";
+
+const ACCOUNTING_BASE: ReadonlyArray<Capability> = [
+  "accounting.workspace.view",
+  "accounting.documents.view",
+  "accounting.documents.download",
+  "accounting.operations.manage",
+];
 
 const ROLE_CAPABILITIES: Record<Role, ReadonlyArray<Capability>> = {
-  owner: ["budget.manage", "mandatory_payment.manage"],
+  owner: ["budget.manage", "mandatory_payment.manage", "month.reopen.approve"],
   general_director: ["sales_plan.manage", "budget.manage", "mandatory_payment.manage"],
   regional_director: ["operational.create"],
   manager: ["operational.create"],
-  accountant: [],
+  // Ordinary accountant: accounting operations + documents, but NO month control.
+  accountant: [...ACCOUNTING_BASE],
+  // Chief accountant: accounting base + the full month-close / controlled-reopen
+  // workflow. shared_expenses.manage is intentionally NOT granted yet.
+  chief_accountant: [...ACCOUNTING_BASE, "month.close", "month.reopen.request", "month.reopen.execute"],
   marketer: [],
 };
 
 export function can(roles: readonly Role[], capability: Capability): boolean {
   return roles.some((role) => ROLE_CAPABILITIES[role]?.includes(capability));
+}
+
+// Effective-role expansion: a stored role can imply additional effective roles
+// for permission resolution. Chief Accountant inherits every ordinary accountant
+// permission (page access + the many `roles.includes("accountant")` checks)
+// without scattering chief-specific conditions across the codebase. Applied once
+// in access.effectiveRolesInCompany.
+const EFFECTIVE_ROLE_EXPANSION: Partial<Record<Role, ReadonlyArray<Role>>> = {
+  chief_accountant: ["accountant"],
+};
+
+export function expandEffectiveRoles(roles: readonly Role[]): Role[] {
+  const set = new Set<Role>(roles);
+  for (const r of roles) for (const extra of EFFECTIVE_ROLE_EXPANSION[r] ?? []) set.add(extra);
+  return [...set];
+}
+
+// --- Month-close / controlled-reopen capability helpers (server-enforced) ---
+/** Close a month — Chief Accountant only. */
+export function canCloseMonth(roles: readonly Role[]): boolean {
+  return can(roles, "month.close");
+}
+/** Create a month-reopen request — Chief Accountant only. */
+export function canRequestMonthReopen(roles: readonly Role[]): boolean {
+  return can(roles, "month.reopen.request");
+}
+/** Approve/reject a month-reopen request — Owner only. */
+export function canApproveMonthReopen(roles: readonly Role[]): boolean {
+  return can(roles, "month.reopen.approve");
+}
+/** Execute an approved month-reopen request — Chief Accountant only. */
+export function canExecuteMonthReopen(roles: readonly Role[]): boolean {
+  return can(roles, "month.reopen.execute");
 }
 
 /** Create/upload operational records (invoices, expenses, refunds, sales, imports). */
@@ -109,14 +190,12 @@ export function canManageBalances(roles: readonly Role[]): boolean {
 
 /**
  * Accounting contour: who may explicitly DOWNLOAD a supporting document
- * (Content-Disposition: attachment). Currently only the accountant. The future
- * chief_accountant role must be added here in a later task — keep this the single
- * source of truth so the accounting download capability lives in one place.
- * Every other role may still VIEW documents inline (no explicit download).
+ * (Content-Disposition: attachment) — accountant + chief accountant, via the
+ * accounting.documents.download capability. Every other role may still VIEW
+ * documents inline (no explicit download).
  */
 export function canDownloadDocuments(roles: readonly Role[]): boolean {
-  // TODO(chief_accountant): add "chief_accountant" here when that role lands.
-  return roles.includes("accountant");
+  return can(roles, "accounting.documents.download");
 }
 
 export function canAccessPage(role: Role, page: AppPage): boolean {
@@ -222,6 +301,7 @@ const ROLE_PRIORITY: readonly Role[] = [
   "general_director",
   "regional_director",
   "manager",
+  "chief_accountant",
   "accountant",
   "marketer",
 ];

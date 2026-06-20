@@ -31,6 +31,7 @@ export const INVITE_ROLE_LABELS: Record<string, string> = {
   general_director: "Ген.директор",
   regional_director: "Региональный директор",
   manager: "Управляющий",
+  chief_accountant: "Главный бухгалтер",
   accountant: "Бухгалтер",
   marketer: "Маркетолог",
 };

@@ -45,6 +45,7 @@ model Company {
   salesReports  SalesReport[]
   importBatches ImportBatch[]
   monthCloses   MonthClose[]
+  monthReopenRequests MonthReopenRequest[]
   mandatoryPayments MandatoryPaymentPlan[]
   balanceSnapshots BalanceSnapshot[]
   clubEmployees ClubEmployee[]
@@ -829,6 +830,37 @@ model MonthClose {
   @@unique([companyId, clubId, month])
   @@index([companyId])
   @@index([month])
+}
+
+// Controlled month reopening: the Chief Accountant requests a reopen for a
+// closed month; the Owner approves/rejects; the Chief Accountant then executes
+// an approved request (which reopens the MonthClose). Direct reopening is not
+// allowed. Scope mirrors MonthClose (clubId null = company-wide). Requests are
+// never hard-deleted; status carries the full history.
+model MonthReopenRequest {
+  id                String    @id @default(cuid())
+  companyId         String
+  clubId            String?
+  month             String // "YYYY-MM"
+  // pending | approved | rejected | executed | canceled
+  status            String    @default("pending")
+  reason            String
+  requestedByUserId String
+  requestedAt       DateTime  @default(now())
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  reviewComment     String?
+  executedByUserId  String?
+  executedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Fast lookup of the (at most one) active request per scope + month.
+  @@index([companyId, clubId, month, status])
+  @@index([companyId])
+  @@index([status])
 }
 
 model SalesReportLine {

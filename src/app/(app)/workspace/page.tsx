@@ -2,15 +2,22 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
-import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
+import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
+import { canCloseMonth } from "@/lib/auth";
 import { getExpensesForScope, expenseCategoryLabel } from "@/lib/expenses";
 import { getRefundsForScope } from "@/lib/refunds";
 import { getPendingSalesReports } from "@/lib/sales-reports";
 import { APPROVAL_STATUS_LABELS } from "@/lib/approval";
 import { dayStart, addDays, monthKeyOf } from "@/lib/payments";
 import { loadPaymentObligationsForScope, paymentObligationCategoryLabel, type PaymentObligation } from "@/lib/payment-obligations";
+import { getMonthCloseInfo, isValidMonth } from "@/lib/month-close";
+import { getActiveReopenRequest, getLatestReopenRequestView } from "@/lib/month-reopen";
+import { WorkspaceMonthControls } from "./_components/WorkspaceMonthControls";
 
 export const dynamic = "force-dynamic";
+
+const monthFmt = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" });
+const capitalize = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 // Refund / invoice statuses that still need work (not finished or dropped).
 const FINAL_STATUSES = new Set(["paid", "rejected", "canceled"]);
@@ -19,15 +26,37 @@ const EXPENSE_REVIEW_STATUS = "waiting_budget_approval";
 const CARD = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const dueFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 
-export default async function WorkspacePage() {
+export default async function WorkspacePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ closeMonth?: string }>;
+}) {
   const user = await requirePageAccess("workspace");
-  const scope = await getCurrentCompanyAndClub(user);
+  const [scope, ctx, params] = await Promise.all([
+    getCurrentCompanyAndClub(user),
+    getCurrentAccessContext(),
+    searchParams ? searchParams : Promise.resolve({} as { closeMonth?: string }),
+  ]);
   if (!scope.company) {
     return <NoCompanyState title="Рабочий стол" description="Задачи бухгалтера" />;
   }
   const companyId = scope.company.id;
   const now = new Date();
   const today = dayStart(now);
+
+  // Month management (Chief Accountant only — ordinary accountant never sees it).
+  const canManageMonth = ctx ? canCloseMonth(ctx.effectiveRoles) : false;
+  const prevMonthKey = monthKeyOf(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  const rawMonth = (params?.closeMonth ?? "").trim();
+  const manageMonth = isValidMonth(rawMonth) ? rawMonth : prevMonthKey;
+  const [monthInfo, latestReopen, activeReopen] = canManageMonth
+    ? await Promise.all([
+        getMonthCloseInfo(companyId, null, manageMonth),
+        getLatestReopenRequestView(companyId, null, manageMonth),
+        getActiveReopenRequest(companyId, null, manageMonth),
+      ])
+    : [null, null, null];
+  const manageMonthLabel = capitalize(monthFmt.format(new Date(`${manageMonth}-01T00:00:00`)));
 
   // All data is the existing scoped source of truth (companyId + allowedClubIds).
   const [clubs, expenses, refunds, pendingReports, { obligations }] = await Promise.all([
@@ -80,6 +109,22 @@ export default async function WorkspacePage() {
   return (
     <div className="mx-auto max-w-[1440px]">
       <PageHeader title="Рабочий стол" description="Задачи бухгалтера" />
+
+      {canManageMonth && monthInfo ? (
+        <WorkspaceMonthControls
+          month={manageMonth}
+          monthLabel={manageMonthLabel}
+          status={monthInfo.status}
+          closedByName={monthInfo.closedByName}
+          closedAt={monthInfo.closedAt ? monthInfo.closedAt.toISOString() : null}
+          latest={
+            latestReopen
+              ? { status: latestReopen.status, reason: latestReopen.reason, reviewComment: latestReopen.reviewComment }
+              : null
+          }
+          activeRequestId={activeReopen?.id ?? null}
+        />
+      ) : null}
 
       {/* Part 4.2 — my tasks */}
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">

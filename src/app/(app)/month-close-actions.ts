@@ -4,32 +4,28 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { isValidMonth } from "@/lib/month-close";
-import type { Role } from "@/lib/auth";
+import { canCloseMonth } from "@/lib/auth";
 
 export type MonthCloseState = { ok: boolean; error?: string };
 
-// Close: accountant / general director / owner. Reopen: general director / owner.
-function canCloseMonth(roles: readonly Role[]): boolean {
-  return roles.some((r) => r === "accountant" || r === "general_director" || r === "owner");
-}
-function canReopenMonth(roles: readonly Role[]): boolean {
-  return roles.some((r) => r === "general_director" || r === "owner");
-}
-
 function revalidateAll() {
+  revalidatePath("/workspace");
   revalidatePath("/dashboard");
   revalidatePath("/expenses");
   revalidatePath("/invoices");
   revalidatePath("/sales");
 }
 
-/** Close a company-wide month (pilot scope). Blocks financial changes for that
- * month until reopened. Accountant / GD / owner only. */
+/**
+ * Close a company-wide month. Blocks financial changes for that month until it
+ * is reopened through the controlled workflow. Chief Accountant only (month.close
+ * capability); Owner / GD / ordinary Accountant can no longer close.
+ */
 export async function closeMonth(_prev: MonthCloseState | undefined, formData: FormData): Promise<MonthCloseState> {
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) return { ok: false, error: "Нет доступа" };
   if (!canCloseMonth(ctx.effectiveRoles)) {
-    return { ok: false, error: "Закрывать месяц могут бухгалтер, ген.директор или собственник" };
+    return { ok: false, error: "Закрывать месяц может только главный бухгалтер" };
   }
   const month = String(formData.get("month") ?? "").trim();
   if (!isValidMonth(month)) return { ok: false, error: "Укажите месяц в формате ГГГГ-ММ" };
@@ -62,30 +58,24 @@ export async function closeMonth(_prev: MonthCloseState | undefined, formData: F
   return { ok: true };
 }
 
-/** Reopen a company-wide month. General director / owner only. */
+/**
+ * DISABLED: direct reopening is no longer allowed. Reopening goes through the
+ * controlled workflow (Chief Accountant request -> Owner approval -> Chief
+ * Accountant execute; see month-reopen-actions.ts). This stub remains only to
+ * deny any direct invocation by a previously-authorized role and audit it.
+ */
 export async function reopenMonth(_prev: MonthCloseState | undefined, formData: FormData): Promise<MonthCloseState> {
   const ctx = await getCurrentAccessContext();
-  if (!ctx || !ctx.selectedCompanyId) return { ok: false, error: "Нет доступа" };
-  if (!canReopenMonth(ctx.effectiveRoles)) {
-    return { ok: false, error: "Открывать месяц могут только ген.директор или собственник" };
-  }
   const month = String(formData.get("month") ?? "").trim();
-  if (!isValidMonth(month)) return { ok: false, error: "Укажите месяц в формате ГГГГ-ММ" };
-  const companyId = ctx.selectedCompanyId;
-
-  const existing = await prisma.monthClose.findFirst({ where: { companyId, clubId: null, month } });
-  if (existing && existing.status === "closed") {
-    await prisma.monthClose.update({ where: { id: existing.id }, data: { status: "open" } });
-    await recordAudit({
-      action: "month.reopened",
-      entityType: "MonthClose",
-      entityId: existing.id,
-      companyId,
-      userId: ctx.user.id,
-      metadata: { month },
-    });
-  }
-
-  revalidateAll();
-  return { ok: true };
+  await recordAudit({
+    action: "month.reopen_execution_blocked",
+    entityType: "MonthClose",
+    companyId: ctx?.selectedCompanyId ?? null,
+    userId: ctx?.user.id ?? null,
+    metadata: { month: isValidMonth(month) ? month : null, reason: "direct_reopen_disabled" },
+  });
+  return {
+    ok: false,
+    error: "Прямое переоткрытие отключено. Переоткрытие выполняет главный бухгалтер после согласования собственника.",
+  };
 }
