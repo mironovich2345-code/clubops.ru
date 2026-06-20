@@ -10,17 +10,22 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; e?: string }>;
 }) {
   // Dev/local only: make sure a demo owner exists so the beta is usable.
   await ensureDevOwner();
 
-  const { next } = await searchParams;
+  const { next, e } = await searchParams;
   const user = await getCurrentUser();
   if (user) redirect(safeNextPath(next));
 
   const registerHref = next ? `/register?next=${encodeURIComponent(next)}` : "/register";
   const devHint = process.env.NODE_ENV !== "production" ? DEV_DEMO_CREDENTIALS : null;
+  const notice =
+    e === "expired" ? "Сеанс подтверждения истёк. Войдите снова."
+    : e === "locked" ? "Слишком много попыток. Войдите снова."
+    : e === "created" ? "Аккаунт создан. Войдите и подтвердите вход кодом из email."
+    : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -31,6 +36,11 @@ export default async function LoginPage({
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="mb-4 text-lg font-semibold text-slate-900">Вход</h1>
+          {notice ? (
+            <div className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
+              {notice}
+            </div>
+          ) : null}
           <LoginForm next={next} />
           <p className="mt-4 text-center text-sm text-slate-500">
             Нет аккаунта?{" "}

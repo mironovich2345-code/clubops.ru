@@ -55,6 +55,10 @@ export async function acceptInvite(formData: FormData): Promise<void> {
       });
     }
     await prisma.invite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } });
+    // Accepting an invite confirms ownership of the invited email (the user is
+    // already OTP-verified for this email at login). Set emailVerifiedAt if not
+    // already set — idempotent, never creates or alters a Session here.
+    await prisma.user.updateMany({ where: { id: user.id, emailVerifiedAt: null }, data: { emailVerifiedAt: new Date() } });
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
       throw error;

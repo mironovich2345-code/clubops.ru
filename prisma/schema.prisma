@@ -105,6 +105,7 @@ model User {
   companyAccess CompanyUserAccess[]
   clubRoles     ClubUserAccess[]
   sessions      Session[]
+  otpChallenges EmailOtpChallenge[]
   invitesSent   Invite[]
   invoices      Invoice[]
   expenses      Expense[]
@@ -145,6 +146,36 @@ model Session {
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+// Email OTP (second factor). Mandatory on every login: a Session is created only
+// after a challenge is verified. Never stores the plaintext OTP (only an
+// HMAC digest keyed by OTP_SECRET) nor the raw challenge token (only its HMAC).
+model EmailOtpChallenge {
+  id                 String    @id @default(cuid())
+  userId             String
+  challengeTokenHash String    @unique // HMAC of the opaque cookie token
+  otpDigest          String              // HMAC(OTP_SECRET, challengeTokenHash:otp)
+  purpose            String    @default("login")
+  expiresAt          DateTime
+  resendAvailableAt  DateTime
+  attemptCount       Int       @default(0)
+  maxAttempts        Int       @default(5)
+  sendCount          Int       @default(1)
+  lastSentAt         DateTime  @default(now())
+  consumedAt         DateTime?
+  revokedAt          DateTime?
+  revokedReason      String?
+  deliveryFailedAt   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([consumedAt])
   @@index([revokedAt])
 }
 

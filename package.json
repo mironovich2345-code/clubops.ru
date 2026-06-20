@@ -18,7 +18,11 @@
     "smoke:manager-dashboard": "node scripts/smoke-manager-dashboard.mjs",
     "pilot:club": "node scripts/pilot-club-legal-entity.mjs",
     "sessions:cleanup": "node scripts/cleanup-sessions.mjs",
+    "security:cleanup": "node scripts/security-cleanup.mjs",
+    "security:change-email": "node scripts/security-change-email.mjs",
+    "security:reset-2fa": "node scripts/security-reset-2fa.mjs",
     "pilot:sessions": "node scripts/pilot-sessions.mjs",
+    "pilot:otp": "node scripts/pilot-otp.mjs",
     "docker:build": "docker build -t club-ops:latest .",
     "docker:prod": "docker compose -f docker-compose.production.yml up -d --build"
   },
@@ -28,6 +32,7 @@
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
     "next": "^15.0.3",
+    "nodemailer": "^6.10.1",
     "prisma": "^5.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -36,6 +41,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.9.0",
+    "@types/nodemailer": "^6.4.24",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",

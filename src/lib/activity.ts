@@ -142,6 +142,20 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.email_changed": "Изменён email пользователя",
   "user.password_changed": "Изменён пароль пользователя",
   "user.session_revocation_blocked": "Завершение сессий отклонено",
+  // Email OTP (two-factor login)
+  "auth.password_verified": "Пароль подтверждён",
+  "auth.otp_challenge_created": "Создан запрос кода входа",
+  "auth.otp_sent": "Код входа отправлен",
+  "auth.otp_delivery_failed": "Сбой отправки кода входа",
+  "auth.otp_resend_blocked": "Повторная отправка кода отклонена",
+  "auth.otp_resent": "Код входа отправлен повторно",
+  "auth.otp_failed": "Неверный код входа",
+  "auth.otp_locked": "Код входа заблокирован",
+  "auth.otp_verified": "Код входа подтверждён",
+  "auth.challenge_expired": "Запрос кода входа истёк",
+  "user.email_verified": "Email подтверждён",
+  "user.email_changed_by_system": "Email изменён администратором",
+  "user.two_factor_reset_by_system": "Сброс 2FA администратором",
 };
 
 export function auditActionLabel(action: string): string {

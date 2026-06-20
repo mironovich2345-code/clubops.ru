@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/tokens";
-import { createSession, getValidSession, revokeCurrentSession } from "@/lib/session";
+import { getValidSession, revokeCurrentSession } from "@/lib/session";
 
 // Business role hierarchy (highest -> lowest authority):
 // owner > general_director > regional_director > manager > chief_accountant >
@@ -274,8 +274,9 @@ export function verifyPassword(password: string, hash: string): Promise<boolean>
 // here so existing import sites keep working.
 // ---------------------------------------------------------------------------
 
-// Re-exported so existing import sites (invites, auth-actions) keep working.
-export { hashToken, createSession };
+// Re-exported so existing import sites (invites) keep working. A Session is now
+// created ONLY by the OTP verification step (lib/login-challenge), never here.
+export { hashToken };
 
 /**
  * The current authenticated user, or null. Resolution is fully revocation-aware:
@@ -325,22 +326,29 @@ export function isKnownRole(role: string): role is Role {
 }
 
 export type AuthResult = { ok: boolean; error?: string };
+export type PasswordResult =
+  | { ok: true; user: { id: string; email: string; isActive: boolean } }
+  | { ok: false; error: string };
 
-export async function signIn(email: string, password: string): Promise<AuthResult> {
+const INVALID_CREDENTIALS = "Неверный email или пароль";
+
+/**
+ * STEP 1 of login: verify email + password ONLY. Never creates a Session — a
+ * Session is created exclusively after email OTP verification (see
+ * lib/login-challenge). Uses one generic message for every failure (missing
+ * user, no password, inactive, wrong password) so login does not enumerate
+ * accounts. An inactive user is rejected here and never receives an OTP.
+ */
+export async function verifyLoginPassword(email: string, password: string): Promise<PasswordResult> {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (!user || !user.passwordHash) {
-    return { ok: false, error: "Неверный email или пароль" };
-  }
-  if (!user.isActive) {
-    return { ok: false, error: "Учётная запись отключена" };
+  if (!user || !user.passwordHash || !user.isActive) {
+    return { ok: false, error: INVALID_CREDENTIALS };
   }
   const valid = await verifyPassword(password, user.passwordHash);
   if (!valid) {
-    return { ok: false, error: "Неверный email или пароль" };
+    return { ok: false, error: INVALID_CREDENTIALS };
   }
-  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-  await createSession(user.id);
-  return { ok: true };
+  return { ok: true, user: { id: user.id, email: user.email, isActive: user.isActive } };
 }
 
 /**

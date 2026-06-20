@@ -3,12 +3,13 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
-  signIn,
+  verifyLoginPassword,
   signOut,
   hashPassword,
-  createSession,
   MIN_PASSWORD_LENGTH,
 } from "@/lib/auth";
+import { startLoginChallenge } from "@/lib/login-challenge";
+import { recordAudit } from "@/lib/access";
 import { isFirstUser, setupDemoCompanyForOwner } from "@/lib/seed";
 import { safeNextPath } from "@/lib/safe-redirect";
 
@@ -28,11 +29,21 @@ export async function loginAction(
   if (!EMAIL_RE.test(email)) return { ok: false, error: "Введите корректный email" };
   if (!password) return { ok: false, error: "Введите пароль" };
 
-  const result = await signIn(email, password);
-  if (!result.ok) return { ok: false, error: result.error ?? "Не удалось войти" };
+  // STEP 1: password only — never creates a Session.
+  const result = await verifyLoginPassword(email, password);
+  if (!result.ok) return { ok: false, error: result.error };
+  await recordAudit({ action: "auth.password_verified", entityType: "User", entityId: result.user.id, userId: result.user.id });
 
-  // Honor a safe return URL (e.g. back to an invite link) when present.
-  redirect(safeNextPath(String(formData.get("next") ?? "")));
+  // STEP 2: create + email an OTP challenge; the Session is created only after
+  // the code is verified on /login/verify.
+  const next = safeNextPath(String(formData.get("next") ?? ""));
+  const challenge = await startLoginChallenge(result.user);
+  const verifyUrl = `/login/verify${next && next !== "/dashboard" ? `?next=${encodeURIComponent(next)}` : ""}`;
+  if (!challenge.ok && !challenge.created) {
+    // Could not even create a challenge (e.g. hourly send ceiling).
+    return { ok: false, error: "Слишком много попыток входа. Повторите позже." };
+  }
+  redirect(challenge.ok ? verifyUrl : `${verifyUrl}${verifyUrl.includes("?") ? "&" : "?"}e=send`);
 }
 
 export async function registerAction(
@@ -74,9 +85,15 @@ export async function registerAction(
     await setupDemoCompanyForOwner(user.id);
   }
 
-  await createSession(user.id);
-  // Honor a safe return URL (e.g. back to an invite link) when present.
-  redirect(safeNextPath(String(formData.get("next") ?? "")));
+  // No Session on registration — the user must complete email OTP. Start the
+  // challenge and route to the verify page (carrying a safe return URL).
+  const next = safeNextPath(String(formData.get("next") ?? ""));
+  const challenge = await startLoginChallenge({ id: user.id, email: user.email, isActive: user.isActive });
+  const verifyUrl = `/login/verify${next && next !== "/dashboard" ? `?next=${encodeURIComponent(next)}` : ""}`;
+  if (!challenge.ok && !challenge.created) {
+    return { ok: false, error: "Не удалось отправить код. Повторите попытку позже." };
+  }
+  redirect(challenge.ok ? verifyUrl : `${verifyUrl}${verifyUrl.includes("?") ? "&" : "?"}e=send`);
 }
 
 export async function logoutAction(): Promise<void> {
