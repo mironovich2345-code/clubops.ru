@@ -21,7 +21,7 @@ import {
   BUDGET_REQUEST_STATUS_LABELS,
   type BudgetFactReport,
 } from "@/lib/budgets";
-import { canManageBudgets } from "@/lib/auth";
+import { canManageBudgets, canApproveBudgetOverrunForCategory } from "@/lib/auth";
 import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { BudgetLimitForm } from "./_components/BudgetForms";
 import { RequestActions } from "./_components/RequestActions";
@@ -81,6 +81,7 @@ export default async function BudgetsPage({
   // Setting/updating budget limits is owner/GD only (strategic limits). This is
   // distinct from approval rights below, which also include regional directors.
   const canSetLimits = canManageBudgets(ctx.effectiveRoles);
+  const effectiveRoles = ctx.effectiveRoles; // captured for closures below
 
   // Plan vs Fact for the selected club (loaded only when that tab is open).
   const factReport: BudgetFactReport =
@@ -90,11 +91,13 @@ export default async function BudgetsPage({
 
   // Approval rights: owner/GD -> all clubs, RD -> assigned clubs (encoded by
   // getManageableClubIds); the requester may never decide their own request.
+  // GD may additionally only decide overruns for advertising / salary.
   function canDecide(req: (typeof requests)[number]): boolean {
     return (
       isBudgetRequestPending(req.status) &&
       manageable.has(req.clubId) &&
-      req.requestedByUserId !== user.id
+      req.requestedByUserId !== user.id &&
+      canApproveBudgetOverrunForCategory(effectiveRoles, req.category)
     );
   }
 

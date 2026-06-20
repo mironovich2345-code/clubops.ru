@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { UserBadge } from "@/components/UserBadge";
-import { canAnyRoleAccessPage } from "@/lib/auth";
+import { canAnyRoleAccessPage, isStrategicRole } from "@/lib/auth";
 import { getCurrentAccessContext, getUserCompanies, getUserClubs } from "@/lib/access";
-import { NAV_ITEMS, ROLE_LABELS } from "@/lib/navigation";
+import { NAV_ITEMS, ROLE_LABELS, STRATEGIC_HIDDEN_PAGES } from "@/lib/navigation";
 import { logoutAction } from "@/app/auth-actions";
 import { ScopeSwitcher } from "./_components/ScopeSwitcher";
 
@@ -18,8 +18,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!ctx.selectedCompanyId || ctx.effectiveRoles.length === 0) redirect("/onboarding");
   const user = ctx.user;
 
-  const visibleItems = NAV_ITEMS.filter((item) =>
-    canAnyRoleAccessPage(ctx.effectiveRoles, item.page),
+  // Strategic roles (owner / GD) keep route access but lose the operational
+  // menu entries (Продажи, Сотрудники, История действий) from the sidebar.
+  const strategic = isStrategicRole(ctx.effectiveRoles);
+  const visibleItems = NAV_ITEMS.filter(
+    (item) =>
+      canAnyRoleAccessPage(ctx.effectiveRoles, item.page) &&
+      !(strategic && STRATEGIC_HIDDEN_PAGES.includes(item.page)),
   );
   const roleLabel = ctx.effectiveRole ? ROLE_LABELS[ctx.effectiveRole] ?? ctx.effectiveRole : "";
 

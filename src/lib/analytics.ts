@@ -123,6 +123,37 @@ export function resolvePeriod(
   return buildPeriod("current_month", "Текущий месяц", start, new Date(y, m + 1, 1), new Date(y, m - 1, 1));
 }
 
+const MONTH_LABEL_FMT = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" });
+
+/**
+ * Period covering exactly one calendar month "YYYY-MM" (with the previous month
+ * as the comparison window). Falls back to the current month for an invalid
+ * value. Local-time boundaries — no UTC off-by-one. The returned `key` is
+ * "current_month" only when the requested month IS the current month, so
+ * forecast/previous-month logic that special-cases the live month still works.
+ */
+export function resolveMonthPeriod(month: string, now: Date): ResolvedPeriod {
+  const mm = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!mm) return resolvePeriod("current_month", now);
+  const y = Number(mm[1]);
+  const mo = Number(mm[2]) - 1;
+  if (mo < 0 || mo > 11) return resolvePeriod("current_month", now);
+  const start = new Date(y, mo, 1);
+  const end = new Date(y, mo + 1, 1);
+  const isCurrent = y === now.getFullYear() && mo === now.getMonth();
+  const label = isCurrent ? "Текущий месяц" : MONTH_LABEL_FMT.format(start);
+  return {
+    key: isCurrent ? "current_month" : "custom",
+    label,
+    start,
+    end,
+    prevStart: new Date(y, mo - 1, 1),
+    prevEnd: start,
+    months: monthsBetween(start, end),
+    primaryMonth: monthStr(start),
+  };
+}
+
 // --- raw data --------------------------------------------------------------
 
 const APPROVED_UNPAID = ["approved_by_regional", "approved_by_owner"];

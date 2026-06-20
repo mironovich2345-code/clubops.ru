@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { getCurrentAccessContext } from "@/lib/access";
-import { canAnyRoleAccessPage, canDownloadDocuments } from "@/lib/auth";
+import { canAnyRoleAccessPage, canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
 import {
   getInvoiceForContext,
   availableInvoiceActions,
@@ -50,6 +50,7 @@ export default async function InvoiceDetailPage({
 
   const isManagerOnly = ctx.effectiveRoles.includes("manager") && !ctx.effectiveRoles.some((r) => ["regional_director", "general_director", "owner", "accountant"].includes(r));
   const canCancel =
+    canMutateOperationalRecords(ctx.effectiveRoles) &&
     ctx.effectiveRoles.some((r) => CANCEL_ROLES.includes(r)) &&
     INVOICE_CANCELABLE.includes(invoice.status) &&
     !(isManagerOnly && invoice.status === "paid");
@@ -105,7 +106,7 @@ export default async function InvoiceDetailPage({
         availableActions={availableInvoiceActions(invoice.status, ctx.effectiveRoles)}
         actionLabels={INVOICE_ACTION_LABELS}
         statusLabel={INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}
-        canEdit={canEditInvoice(invoice.status, ctx.effectiveRoles)}
+        canEdit={canMutateOperationalRecords(ctx.effectiveRoles) && canEditInvoice(invoice.status, ctx.effectiveRoles)}
       />
 
       {canCancel ? (

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
+import { canAnyRoleAccessPage, canCreateOperational, canMutateOperationalRecords, STRATEGIC_READONLY_ERROR } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import { getExpenseForContext, EXPENSE_STATUS_CANCELED, isExpenseCancelable } from "@/lib/expenses";
@@ -404,6 +404,10 @@ export async function updateExpense(
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "expenses")) {
     return { ok: false, error: "Нет доступа" };
+  }
+  // Strategic roles (owner / GD) view expenses but never edit them.
+  if (!canMutateOperationalRecords(ctx.effectiveRoles)) {
+    return { ok: false, error: STRATEGIC_READONLY_ERROR };
   }
 
   const expenseId = String(formData.get("expenseId") ?? "").trim();

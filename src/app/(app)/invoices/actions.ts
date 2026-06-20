@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage, canCreateOperational } from "@/lib/auth";
+import { canAnyRoleAccessPage, canCreateOperational, canMutateOperationalRecords, STRATEGIC_READONLY_ERROR } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import {
   getCurrentAccessContext,
@@ -421,13 +421,17 @@ export async function updateInvoice(
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
     return { ok: false, error: "Нет доступа" };
   }
+  // Strategic roles (owner / GD) view invoices but never edit them.
+  if (!canMutateOperationalRecords(ctx.effectiveRoles)) {
+    return { ok: false, error: STRATEGIC_READONLY_ERROR };
+  }
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   const existing = await getInvoiceForContext(ctx, invoiceId);
   if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
 
   if (!canEditInvoice(existing.status, ctx.effectiveRoles)) {
-    return { ok: false, error: "Оплаченный счёт может редактировать только владелец или бухгалтер" };
+    return { ok: false, error: "Оплаченный счёт может редактировать только бухгалтер" };
   }
   const closedEdit = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
   if (closedEdit) return { ok: false, error: closedEdit };
@@ -453,9 +457,10 @@ export async function updateInvoice(
 
 // --- cancellation (soft) ----------------------------------------------------
 
-// Cancel: manager / regional / general_director / owner / accountant. Marketer denied.
+// Cancel: manager / regional / accountant (chief accountant inherits accountant).
+// Owner and general director are strategic (read-only) and cannot cancel.
 function canCancelInvoiceRole(roles: readonly Role[]): boolean {
-  return roles.some((r) => r === "manager" || r === "regional_director" || r === "general_director" || r === "owner" || r === "accountant");
+  return roles.some((r) => r === "manager" || r === "regional_director" || r === "accountant");
 }
 // A plain manager (no higher role) may not cancel a PAID invoice.
 function isManagerOnly(roles: readonly Role[]): boolean {

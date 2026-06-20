@@ -18,6 +18,7 @@ import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 import { HistoricalInvoiceForm } from "./_components/HistoricalInvoiceForm";
+import { InvoiceAnalytics } from "./_components/InvoiceAnalytics";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,23 @@ export default async function InvoicesPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
       </div>
+
+      {/* Read-only invoice analytics (totals / category / club / upcoming). */}
+      {invoices.length > 0 ? (
+        <InvoiceAnalytics
+          todayISO={new Date().toISOString()}
+          rows={invoices.map((i) => ({
+            status: i.status,
+            amountKopeks: i.amountKopeks,
+            expenseCategory: i.expenseCategory,
+            clubName: i.club.name,
+            dueDate: i.dueDate ? i.dueDate.toISOString() : null,
+            paidAt: i.paidAt ? i.paidAt.toISOString() : null,
+            invoiceNumber: i.invoiceNumber,
+            counterpartyName: i.counterpartyName,
+          }))}
+        />
+      ) : null}
 
       {canCreate ? (
         clubs.length > 0 ? (

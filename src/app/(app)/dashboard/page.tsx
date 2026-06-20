@@ -7,12 +7,13 @@ import {
   getCurrentAccessContext,
   getUserClubs,
 } from "@/lib/access";
-import { canManageSalesPlans, canApproveMonthReopen, type Role } from "@/lib/auth";
+import { canManageSalesPlans, canApproveMonthReopen, canAnyRoleAccessPage, type Role } from "@/lib/auth";
 import {
-  resolvePeriod,
   loadAnalyticsData,
   buildAnalyticsReport,
+  resolveMonthPeriod,
 } from "@/lib/analytics";
+import { buildMonthlyForecast } from "@/lib/forecast";
 import {
   getSalesPlansForCompanyMonth,
   monthKey,
@@ -20,12 +21,16 @@ import {
 } from "@/lib/sales-plans";
 import { getLatestBalancesByClub, type ClubBalances } from "@/lib/balance-snapshots";
 import { getPendingReopenRequestsForCompany } from "@/lib/month-reopen";
+import { getUnconfirmedReportsForMonth } from "@/lib/sales-reports";
 import { loadPaymentObligationsForScope } from "@/lib/payment-obligations";
 import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
 import { dayStart, addDays } from "@/lib/payments";
 import { SalesPlanForm } from "./_components/SalesPlanForm";
 import { SalesPlanImport } from "./_components/SalesPlanImport";
 import { OwnerReopenApprovals, type ReopenRow } from "./_components/OwnerReopenApprovals";
+import { DashboardMonthSelector } from "./_components/DashboardMonthSelector";
+import { UnconfirmedSalesBlock } from "./_components/UnconfirmedSalesBlock";
+import { DashboardForecast } from "./_components/DashboardForecast";
 import { openClubAnalytics } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -85,7 +90,20 @@ export default async function DashboardPage({
   const canEditPlan = canManageSalesPlans(roles);
 
   const now = new Date();
-  const monthLabel = capitalize(monthFormatter.format(now));
+
+  // --- Selected analytical month (?month=YYYY-MM, validated; fallback current) ---
+  const { month: monthParam } = await searchParams;
+  const currentMonth = monthKey(now);
+  const selectedMonth = normalizeMonth(monthParam ?? "") ?? currentMonth;
+  const period = resolveMonthPeriod(selectedMonth, now);
+  const monthLabel = capitalize(monthFormatter.format(period.start));
+  const isCurrentMonth = selectedMonth === currentMonth;
+  // Adjacent months for the selector (local-time arithmetic — no UTC drift).
+  const prevMonth = monthKey(new Date(period.start.getFullYear(), period.start.getMonth() - 1, 1));
+  const nextMonth = monthKey(new Date(period.start.getFullYear(), period.start.getMonth() + 1, 1));
+  // Month phase relative to today drives forecast labeling.
+  const monthMode: "past" | "current" | "future" =
+    now.getTime() >= period.end.getTime() ? "past" : now.getTime() < period.start.getTime() ? "future" : "current";
 
   // Owner-only: pending month-reopening requests to approve/reject.
   const canApproveReopen = canApproveMonthReopen(roles);
@@ -107,21 +125,63 @@ export default async function DashboardPage({
   // scope: owner/GD -> all company clubs; regional -> assigned; manager -> own.
   const clubs = await getUserClubs(user.id, companyId);
   const clubIds = clubs.map((c) => c.id);
+  const scopeForReports = { company: { id: companyId, name: companyName }, club: null, clubIds };
 
-  // Per-club figures reuse the SAME source of truth as Analytics (current month),
-  // so the cards match the Analytics page exactly.
-  const period = resolvePeriod("current_month", now);
+  // Per-club figures reuse the SAME source of truth as Analytics, for the
+  // SELECTED month, so the cards match the Analytics page exactly.
   const data = await loadAnalyticsData(companyId, clubIds, period);
   const report = buildAnalyticsReport(data, period, "day");
+
+  // Unconfirmed (pending_accountant) sales reports for the selected month, scoped.
+  // Shown to dashboard viewers who may see sales (not marketer); read-only.
+  const canViewSales = canAnyRoleAccessPage(roles, "sales");
+  const unconfirmed = canViewSales ? await getUnconfirmedReportsForMonth(scopeForReports, selectedMonth) : [];
+  const unconfirmedTotalKopeks = unconfirmed.reduce((s, r) => s + r.totalKopeks, 0);
+  const unconfirmedClubs = new Set(unconfirmed.map((r) => r.clubId)).size;
+  const oldestUnconfirmed = unconfirmed[0] ?? null; // ordered reportDate asc
+  const oldestAgeDays = oldestUnconfirmed
+    ? Math.max(0, Math.floor((dayStart(now).getTime() - dayStart(oldestUnconfirmed.createdAt).getTime()) / 86_400_000))
+    : null;
+
+  // --- Company-level sales forecast for the selected month (NaN/Infinity-safe) ---
+  const s = report.summary;
+  const abFact = s.subscriptionsKopeks;
+  const ptFact = s.personalTrainingKopeks;
+  const abPlan = report.planTotals.subscriptions.planKopeks;
+  const ptPlan = report.planTotals.personal_training.planKopeks;
+  const salesPlan = s.planTargetKopeks > 0 ? s.planTargetKopeks : abPlan + ptPlan;
+  // Previous-month pacing only applies to the live current month.
+  let previousMonthRemainingSales: number | null = null;
+  if (period.key === "current_month") {
+    const prevRows = data.reportSplit.filter((r) => r.date >= period.prevStart && r.date < period.prevEnd);
+    if (prevRows.length > 0) {
+      const cutoffDay = now.getDate();
+      previousMonthRemainingSales = prevRows
+        .filter((r) => r.date.getDate() >= cutoffDay)
+        .reduce((acc, r) => acc + r.subscriptions + r.personal_training, 0);
+    }
+  }
+  const forecast = buildMonthlyForecast({
+    salesFact: abFact + ptFact,
+    salesPlan,
+    expenseBudget: s.budgetTotalKopeks,
+    periodStart: period.start,
+    periodEnd: period.end,
+    now,
+    previousMonthRemainingSales,
+  });
 
   const expensesByClub = new Map(report.clubRanking.map((r) => [r.clubId, r.expensesKopeks]));
   const splitByClub = new Map(report.planSplitByClub.map((r) => [r.clubId, r]));
   const budgetByClub = new Map<string, number>();
   for (const b of data.budgets) budgetByClub.set(b.clubId, (budgetByClub.get(b.clubId) ?? 0) + b.limitAmountKopeks);
 
-  // Finance Control — per-club ООО/ИП balances (snapshots) + SEPARATE per-entity
-  // cash-gap risk (30-day obligations split by legal entity; never merged).
-  const balancesByClub: Map<string, ClubBalances> = financials ? await getLatestBalancesByClub(companyId, clubIds) : new Map();
+  // Finance Control — per-club ООО/ИП balances as of the END of the selected
+  // month (latest snapshot at or before month end; never falls forward), plus
+  // SEPARATE per-entity cash-gap risk (30-day obligations; never merged).
+  const balancesByClub: Map<string, ClubBalances> = financials
+    ? await getLatestBalancesByClub(companyId, clubIds, period.end)
+    : new Map();
   const oblByClub = new Map<string, { ooo: number; ip: number }>();
   if (financials) {
     const t0 = dayStart(now);
@@ -165,18 +225,43 @@ export default async function DashboardPage({
     };
   });
 
-  // Days remaining in the current month, including today.
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysLeft = daysInMonth - now.getDate() + 1;
+  // Days left in the SELECTED month (forecast helper: 0 for past, full for
+  // future, remaining-incl-today for the live month).
+  const daysLeft = forecast.daysLeft;
 
   return (
     <div className="mx-auto max-w-[1440px]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <PageHeader title="Дашборд" description="Обзор клубов" />
-        <div className="text-sm text-slate-500 dark:text-slate-400">{monthLabel}</div>
+        <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
       </div>
 
+      {/* Priority order: critical approvals, then unconfirmed sales, then forecast + clubs. */}
       {canApproveReopen ? <OwnerReopenApprovals requests={reopenRows} /> : null}
+
+      {canViewSales ? (
+        <UnconfirmedSalesBlock
+          rows={unconfirmed.slice(0, 5).map((r) => ({
+            id: r.id,
+            clubName: r.clubName,
+            reportDate: r.reportDate.toISOString(),
+            createdAt: r.createdAt.toISOString(),
+            managerName: r.managerName,
+            createdByName: r.createdByName,
+            totalKopeks: r.totalKopeks,
+            oooKopeks: r.oooKopeks,
+            ipKopeks: r.ipKopeks,
+          }))}
+          count={unconfirmed.length}
+          totalKopeks={unconfirmedTotalKopeks}
+          clubsAffected={unconfirmedClubs}
+          oldestDate={oldestUnconfirmed ? oldestUnconfirmed.reportDate.toISOString() : null}
+          oldestAgeDays={oldestAgeDays}
+          monthLabel={monthLabel}
+        />
+      ) : null}
+
+      <DashboardForecast mode={monthMode} monthLabel={monthLabel} forecast={forecast} abFact={abFact} ptFact={ptFact} abPlan={abPlan} ptPlan={ptPlan} />
 
       {cards.length === 0 ? (
         <div className={`px-4 py-16 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>

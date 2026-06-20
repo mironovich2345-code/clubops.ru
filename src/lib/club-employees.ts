@@ -32,11 +32,12 @@ export const EMPLOYEE_STATUS_FILTERS = [
 export const SHIFT_MANAGER_POSITIONS: EmployeePosition[] = ["manager", "night_manager"];
 
 /**
- * Create / dismiss employees: owner, general director, regional director and
- * manager (operational). Accountant is view-only; marketer has no access.
+ * Create / dismiss employees: regional director and manager (operational).
+ * Owner and general director are strategic and do NOT manage club employees;
+ * accountant / chief accountant are view-only; marketer has no access.
  */
 export function canManageEmployees(roles: readonly Role[]): boolean {
-  return roles.some((r) => r === "owner" || r === "general_director" || r === "regional_director" || r === "manager");
+  return roles.some((r) => r === "regional_director" || r === "manager");
 }
 
 export type ClubEmployeeRow = ClubEmployee & { clubName: string };

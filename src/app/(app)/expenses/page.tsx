@@ -93,6 +93,20 @@ export default async function ExpensesPage({
     new Date(now.getFullYear(), now.getMonth() - 1, 1),
   );
 
+  // Category drilldown into the existing read-only /analytics/expenses view.
+  // Enabled for analytical (financial) roles — owner / GD / regional / accountant
+  // (chief accountant inherits accountant). source=expense so the drilldown total
+  // matches the expense category card exactly.
+  const DRILL_ROLES = ["owner", "general_director", "regional_director", "accountant"];
+  const drillEnabled = ctx ? ctx.effectiveRoles.some((r) => DRILL_ROLES.includes(r)) : false;
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const drill = drillEnabled
+    ? {
+        from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+        to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+      }
+    : null;
+
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -193,6 +207,7 @@ export default async function ExpensesPage({
           totals={summary.categoryTotals}
           totalKopeks={summary.currentMonthKopeks}
           monthLabel={currentMonthLabel}
+          drill={drill}
         />
       </div>
     </div>
@@ -251,16 +266,18 @@ function CategoryAnalytics({
   totals,
   totalKopeks,
   monthLabel,
+  drill,
 }: {
   totals: ExpenseSummary["categoryTotals"];
   totalKopeks: number;
   monthLabel: string;
+  drill: { from: string; to: string } | null;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
         <div className="text-sm font-semibold text-slate-700">Расходы по статьям</div>
-        <div className="text-xs text-slate-500">{monthLabel}</div>
+        <div className="text-xs text-slate-500">{monthLabel}{drill ? " · нажмите статью для детализации" : ""}</div>
       </div>
       {totals.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-slate-500">
@@ -270,18 +287,31 @@ function CategoryAnalytics({
         <ul className="divide-y divide-slate-100">
           {totals.map((item) => {
             const percent = totalKopeks > 0 ? (item.amountKopeks / totalKopeks) * 100 : 0;
-            return (
-              <li key={item.category} className="px-4 py-3">
+            const label = expenseCategoryLabel(item.category);
+            const inner = (
+              <>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-slate-700">{expenseCategoryLabel(item.category)}</span>
-                  <span className="text-sm font-medium text-slate-900">
-                    {formatKopeks(item.amountKopeks)}
-                  </span>
+                  <span className="text-sm text-slate-700">{label}</span>
+                  <span className="text-sm font-medium text-slate-900">{formatKopeks(item.amountKopeks)}</span>
                 </div>
                 <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                   <div className="h-full rounded-full bg-brand-500" style={{ width: `${percent}%` }} />
                 </div>
                 <div className="mt-1 text-right text-xs text-slate-400">{percent.toFixed(1)}%</div>
+              </>
+            );
+            return (
+              <li key={item.category}>
+                {drill ? (
+                  <Link
+                    href={`/analytics/expenses?category=${encodeURIComponent(item.category)}&source=expense&from=${drill.from}&to=${drill.to}`}
+                    className="block px-4 py-3 transition hover:bg-slate-50"
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <div className="px-4 py-3">{inner}</div>
+                )}
               </li>
             );
           })}

@@ -5,11 +5,14 @@ import type { Role } from "@/lib/auth";
 import {
   SALES_REPORT_ACTION_LABELS,
   REVENUE_LINE_KEY,
+  REVENUE_OOO_KEY,
+  REVENUE_IP_KEY,
   CASH_OOO_KEY,
   ENCASHMENT_KEY,
   type SalesReportAction,
   type SalesReportStatus,
 } from "@/lib/sales-report-rows";
+import { monthBounds } from "@/lib/payments";
 
 // Re-export the client-safe pieces so existing imports from "@/lib/sales-reports"
 // keep working (rows, labels, validation, action map).
@@ -36,22 +39,24 @@ export function applySalesReportAction(
   roles: readonly Role[],
   isCreator: boolean,
 ): ReportTransition {
-  const isOwner = roles.includes("owner");
+  // Verification is an operational accounting action — accountant / chief
+  // accountant only. Owner is strategic (read-only) and cannot verify/reject/
+  // cancel sales reports.
   const isAccountant = roles.includes("accountant");
 
   switch (action) {
     case "confirm":
-      if (!(isAccountant || isOwner)) return { ok: false, error: "Недостаточно прав для подтверждения" };
-      if (isCreator && !isOwner) return { ok: false, error: "Нельзя подтвердить собственный отчёт" };
+      if (!isAccountant) return { ok: false, error: "Недостаточно прав для подтверждения" };
+      if (isCreator) return { ok: false, error: "Нельзя подтвердить собственный отчёт" };
       if (status !== "pending_accountant") return { ok: false, error: "Подтвердить можно отчёт на проверке" };
       return { ok: true, to: "confirmed" };
     case "reject":
-      if (!(isAccountant || isOwner)) return { ok: false, error: "Недостаточно прав для отклонения" };
+      if (!isAccountant) return { ok: false, error: "Недостаточно прав для отклонения" };
       if (status !== "pending_accountant") return { ok: false, error: "Отклонить можно отчёт на проверке" };
       return { ok: true, to: "rejected" };
     case "cancel":
       if (status !== "pending_accountant") return { ok: false, error: "Отменить можно только отчёт на проверке" };
-      if (!(isOwner || isCreator)) return { ok: false, error: "Недостаточно прав для отмены" };
+      if (!isCreator) return { ok: false, error: "Недостаточно прав для отмены" };
       return { ok: true, to: "canceled" };
   }
 }
@@ -66,18 +71,20 @@ export function availableSalesReportActions(
   );
 }
 
-/** A pending report may have documents attached by its creator or an owner. */
+/** A pending report may have documents attached by its creator only. Owner is
+ * strategic (read-only) and does not upload sales-report documents. */
 export function canEditReport(status: string, roles: readonly Role[], isCreator: boolean): boolean {
   if (status !== "pending_accountant") return false;
-  return roles.includes("owner") || isCreator;
+  return isCreator;
 }
 
 /**
- * Who may undo a confirmation (return a confirmed report to pending). Mirrors the
- * confirm policy: accountant or owner only — managers / regional / GD cannot.
+ * Who may undo a confirmation (return a confirmed report to pending). Accountant
+ * / chief accountant only — owner is strategic (read-only); managers / regional
+ * / GD cannot.
  */
 export function canUnconfirmReport(roles: readonly Role[]): boolean {
-  return roles.includes("accountant") || roles.includes("owner");
+  return roles.includes("accountant");
 }
 
 // --- queries ---------------------------------------------------------------
@@ -207,4 +214,62 @@ export async function getPendingSalesReports(scope: DataScope): Promise<PendingR
     totalKopeks: r.lines[0]?.amountKopeks ?? 0,
     by: r.createdBy.name,
   }));
+}
+
+export type UnconfirmedReportRow = {
+  id: string;
+  clubId: string;
+  clubName: string;
+  reportDate: Date;
+  createdAt: Date;
+  managerName: string | null;
+  createdByName: string;
+  totalKopeks: number;
+  oooKopeks: number;
+  ipKopeks: number;
+};
+
+/**
+ * Unconfirmed (pending_accountant) sales reports for ONE calendar month, scoped
+ * to the caller's company + allowed clubs. Read-only data for the Owner/GD
+ * dashboard "Неподтверждённые продажи" block. Returns [] for an invalid month or
+ * empty scope. Each row carries total / ООО / ИП revenue from the stored lines.
+ */
+export async function getUnconfirmedReportsForMonth(scope: DataScope, month: string): Promise<UnconfirmedReportRow[]> {
+  if (!scope.company || scope.clubIds.length === 0) return [];
+  const bounds = monthBounds(month);
+  if (!bounds) return [];
+  const rows = await prisma.salesReport.findMany({
+    where: {
+      companyId: scope.company.id,
+      clubId: { in: scope.clubIds },
+      status: "pending_accountant",
+      reportDate: { gte: bounds.start, lt: bounds.end },
+    },
+    orderBy: [{ reportDate: "asc" }, { createdAt: "asc" }],
+    include: {
+      club: { select: { id: true, name: true } },
+      createdBy: { select: { name: true } },
+      lines: {
+        where: { key: { in: [REVENUE_LINE_KEY, REVENUE_OOO_KEY, REVENUE_IP_KEY] } },
+        select: { key: true, amountKopeks: true },
+      },
+    },
+    take: 200,
+  });
+  return rows.map((r) => {
+    const m = new Map(r.lines.map((l) => [l.key, l.amountKopeks]));
+    return {
+      id: r.id,
+      clubId: r.clubId,
+      clubName: r.club.name,
+      reportDate: r.reportDate,
+      createdAt: r.createdAt,
+      managerName: r.managerName ?? null,
+      createdByName: r.createdBy.name,
+      totalKopeks: m.get(REVENUE_LINE_KEY) ?? 0,
+      oooKopeks: m.get(REVENUE_OOO_KEY) ?? 0,
+      ipKopeks: m.get(REVENUE_IP_KEY) ?? 0,
+    };
+  });
 }

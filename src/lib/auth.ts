@@ -128,6 +128,41 @@ export function can(roles: readonly Role[], capability: Capability): boolean {
   return roles.some((role) => ROLE_CAPABILITIES[role]?.includes(capability));
 }
 
+// --- Strategic vs. operational separation -----------------------------------
+// Owner and General Director are STRATEGIC roles: they view analytics and (for
+// GD) set plans/budgets, but they never create or edit operational records.
+// These roles actually execute operational mutations on records:
+const OPERATIONAL_ROLES: readonly Role[] = ["regional_director", "manager", "accountant", "chief_accountant"];
+
+/** True if the actor holds an operational role (may mutate operational records).
+ * Owner / general_director (strategic, read-only) and marketer are excluded. */
+export function canMutateOperationalRecords(roles: readonly Role[]): boolean {
+  return roles.some((role) => OPERATIONAL_ROLES.includes(role));
+}
+
+/** True if the actor is a strategic role (owner / general director). Used to
+ * present read-only analytical views and to hide operational controls. */
+export function isStrategicRole(roles: readonly Role[]): boolean {
+  return roles.includes("owner") || roles.includes("general_director");
+}
+
+export const STRATEGIC_READONLY_ERROR =
+  "Стратегическая роль работает в режиме просмотра и не изменяет операционные данные";
+
+// --- Budget-overrun approval by category ------------------------------------
+// General Director may approve a budget overrun ONLY for advertising and salary.
+// Owner approves any category; regional director approves any category for its
+// assigned clubs (club scope is enforced separately by getManageableClubIds).
+export const GD_OVERRUN_CATEGORIES: readonly string[] = ["advertising", "salary"];
+export const GD_OVERRUN_CATEGORY_ERROR =
+  "Генеральный директор может согласовывать превышение бюджета только по рекламе и зарплатам";
+
+export function canApproveBudgetOverrunForCategory(roles: readonly Role[], category: string): boolean {
+  if (roles.includes("owner") || roles.includes("regional_director")) return true;
+  if (roles.includes("general_director")) return GD_OVERRUN_CATEGORIES.includes(category);
+  return false;
+}
+
 // Effective-role expansion: a stored role can imply additional effective roles
 // for permission resolution. Chief Accountant inherits every ordinary accountant
 // permission (page access + the many `roles.includes("accountant")` checks)

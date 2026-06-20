@@ -49,9 +49,11 @@ function SaveButton() {
 export function ExpenseEditForm({
   expense,
   categories,
+  readOnly = false,
 }: {
   expense: ExpenseView;
   categories: readonly CategoryOption[];
+  readOnly?: boolean;
 }) {
   const [saved, saveAction] = useFormState(updateExpense, saveInitial);
 
@@ -81,6 +83,7 @@ export function ExpenseEditForm({
 
       <form action={saveAction} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <input type="hidden" name="expenseId" value={expense.id} />
+        <fieldset disabled={readOnly} className="m-0 border-0 p-0">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field label="Тип">
             <select name="type" defaultValue={expense.type} className="input">
@@ -137,20 +140,25 @@ export function ExpenseEditForm({
             </Field>
           </div>
         </div>
+        </fieldset>
 
-        {saved.ok ? (
+        {!readOnly && saved.ok ? (
           <div className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">
             Изменения сохранены.
           </div>
-        ) : saved.error ? (
+        ) : !readOnly && saved.error ? (
           <div className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
             {saved.error}
           </div>
         ) : null}
 
-        <div className="mt-5 flex justify-end">
-          <SaveButton />
-        </div>
+        {readOnly ? (
+          <div className="mt-4 text-sm text-slate-500">Просмотр в режиме чтения — изменение недоступно для вашей роли.</div>
+        ) : (
+          <div className="mt-5 flex justify-end">
+            <SaveButton />
+          </div>
+        )}
       </form>
     </div>
   );

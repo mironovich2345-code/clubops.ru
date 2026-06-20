@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { canAnyRoleAccessPage, canManageBudgets } from "@/lib/auth";
+import { canAnyRoleAccessPage, canManageBudgets, canApproveBudgetOverrunForCategory, GD_OVERRUN_CATEGORY_ERROR } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import {
   getCurrentAccessContext,
@@ -117,6 +117,11 @@ async function loadDecidableRequest(requestId: string) {
   if (!manageableClubIds.includes(req.clubId)) throw new Error("Недостаточно прав для согласования");
   if (req.requestedByUserId === ctx.user.id) {
     throw new Error("Нельзя согласовать собственный запрос");
+  }
+  // General Director may approve an overrun ONLY for advertising / salary;
+  // owner and regional director keep their existing category-agnostic rights.
+  if (!canApproveBudgetOverrunForCategory(ctx.effectiveRoles, req.category)) {
+    throw new Error(GD_OVERRUN_CATEGORY_ERROR);
   }
   return { ctx, req };
 }

@@ -54,12 +54,28 @@ export async function getLatestBalancesForScope(companyId: string, clubIds: stri
 
 export type ClubBalances = { oooKopeks: number | null; ipKopeks: number | null; latestDate: Date | null };
 
-/** Latest ООО / ИП balance per club (for the dashboard club cards). */
-export async function getLatestBalancesByClub(companyId: string, clubIds: string[]): Promise<Map<string, ClubBalances>> {
+/**
+ * Latest ООО / ИП balance per club for the dashboard club cards.
+ *
+ * When `asOfExclusive` is given, only snapshots with `snapshotDate < asOfExclusive`
+ * are considered — i.e. the latest snapshot at or before the end of the selected
+ * month (pass the first day of the FOLLOWING month). This never falls forward to
+ * a future snapshot; a club/entity with no qualifying snapshot stays null
+ * ("Нет данных"). Without the cutoff, returns the absolute latest (today).
+ */
+export async function getLatestBalancesByClub(
+  companyId: string,
+  clubIds: string[],
+  asOfExclusive?: Date,
+): Promise<Map<string, ClubBalances>> {
   const out = new Map<string, ClubBalances>();
   if (clubIds.length === 0) return out;
   const snaps = await prisma.balanceSnapshot.findMany({
-    where: { companyId, clubId: { in: clubIds } },
+    where: {
+      companyId,
+      clubId: { in: clubIds },
+      ...(asOfExclusive ? { snapshotDate: { lt: asOfExclusive } } : {}),
+    },
     orderBy: [{ snapshotDate: "desc" }, { createdAt: "desc" }],
     select: { clubId: true, legalEntityId: true, actualBalanceKopeks: true, snapshotDate: true, legalEntity: { select: { type: true } } },
   });

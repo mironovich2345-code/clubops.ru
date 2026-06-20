@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
-import { canCreateOperational, canDownloadDocuments } from "@/lib/auth";
+import { canCreateOperational, canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
 import {
   getExpenseForContext,
   expenseStatusLabel,
@@ -100,7 +100,7 @@ export default async function ExpenseDetailPage({
         </span>
       </div>
 
-      <ExpenseEditForm expense={view} categories={EXPENSE_CATEGORY_OPTIONS} />
+      <ExpenseEditForm expense={view} categories={EXPENSE_CATEGORY_OPTIONS} readOnly={!canMutateOperationalRecords(ctx.effectiveRoles)} />
 
       {canCancel ? (
         <div className="mt-6 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">

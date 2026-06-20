@@ -49,6 +49,11 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   { type: "group", id: "admin", label: "Администрирование", pages: ["users", "activity", "settings"] },
 ];
 
+// Pages removed from the sidebar for strategic roles (owner / general director).
+// The ROUTES stay accessible (e.g. opening a specific sales report from the
+// dashboard "Неподтверждённые продажи" block) — only the menu entry is hidden.
+export const STRATEGIC_HIDDEN_PAGES: ReadonlyArray<AppPage> = ["sales", "employees", "activity"];
+
 export const ROLE_LABELS: Record<string, string> = {
   owner: "Собственник",
   general_director: "Ген.директор",

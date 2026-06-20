@@ -142,7 +142,9 @@ export function applyInvoiceAction(
   status: string,
   roles: readonly Role[],
 ): TransitionResult {
-  const isOwner = has(roles, "owner");
+  // Owner / general director are strategic (read-only) and take NO invoice
+  // workflow action. The chain runs manager -> regional (approve) -> accountant
+  // (pay); "pay" accepts approved_by_regional, so no owner step is required.
   const isRegional = has(roles, "regional_director");
   const isAccountant = has(roles, "accountant");
   const isManager = has(roles, "manager");
@@ -150,24 +152,17 @@ export function applyInvoiceAction(
   switch (action) {
     case "send_to_review":
       if (status !== "draft") return { ok: false, error: "Отправить на согласование можно только черновик" };
-      if (!(isManager || isRegional || isOwner)) return { ok: false, error: "Недостаточно прав" };
+      if (!(isManager || isRegional)) return { ok: false, error: "Недостаточно прав" };
       return { ok: true, to: "needs_review" };
 
     case "approve":
-      if (!(isRegional || isOwner)) return { ok: false, error: "Недостаточно прав для согласования" };
-      if (isOwner) {
-        if (status === "needs_review" || status === "approved_by_regional") {
-          return { ok: true, to: "approved_by_owner" };
-        }
-        return { ok: false, error: "Согласовать можно счёт на согласовании" };
-      }
+      if (!isRegional) return { ok: false, error: "Недостаточно прав для согласования" };
       if (status === "needs_review") return { ok: true, to: "approved_by_regional" };
       return { ok: false, error: "Согласовать можно счёт на согласовании" };
 
     case "reject":
-      // Regional/owner may reject anything under review or already approved, as
-      // long as it has not been paid.
-      if (!(isRegional || isOwner)) return { ok: false, error: "Недостаточно прав для отклонения" };
+      // Regional may reject anything under review or already approved (pre-pay).
+      if (!isRegional) return { ok: false, error: "Недостаточно прав для отклонения" };
       if (
         status === "needs_review" ||
         status === "approved_by_regional" ||
@@ -178,14 +173,16 @@ export function applyInvoiceAction(
       return { ok: false, error: "Отклонить можно счёт на согласовании или согласованный (до оплаты)" };
 
     case "cancel":
-      // A draft may be canceled by the people working on it. Paid invoices can
-      // never be canceled — only a note may be added.
-      if (!(isManager || isRegional || isOwner)) return { ok: false, error: "Недостаточно прав для отмены" };
+      // A draft may be canceled by the people working on it. Owner is strategic
+      // (read-only) and cannot cancel. Paid invoices can never be canceled.
+      if (!(isManager || isRegional)) return { ok: false, error: "Недостаточно прав для отмены" };
       if (status === "draft") return { ok: true, to: "canceled" };
       return { ok: false, error: "Отменить можно только черновик" };
 
     case "pay":
-      if (!(isAccountant || isOwner)) return { ok: false, error: "Недостаточно прав для отметки об оплате" };
+      // Marking paid is an operational action — accountant / chief accountant
+      // only. Owner is strategic (read-only) and cannot mark invoices paid.
+      if (!isAccountant) return { ok: false, error: "Недостаточно прав для отметки об оплате" };
       if (status === "approved_by_regional" || status === "approved_by_owner") {
         return { ok: true, to: "paid" };
       }
@@ -200,10 +197,12 @@ export function availableInvoiceActions(status: string, roles: readonly Role[]):
   );
 }
 
-/** Paid invoices are locked except for owner/accountant; others editable. */
+/** Paid invoices are locked except for the accountant (chief accountant inherits
+ * the accountant role). Owner is strategic (read-only) and never edits invoices;
+ * the updateInvoice action additionally blocks all strategic roles. */
 export function canEditInvoice(status: string, roles: readonly Role[]): boolean {
   if (status !== "paid") return true;
-  return has(roles, "owner") || has(roles, "accountant");
+  return has(roles, "accountant");
 }
 
 export type InvoiceWithClub = Invoice & {
