@@ -9,6 +9,8 @@ import {
 import { canCreateOperational, isStrategicRole } from "@/lib/auth";
 import { resolveStrategicGroups, strategicQuery } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
+import { openStrategicExpense } from "../dashboard/strategic-actions";
+import { buildReturnTo } from "@/lib/strategic-return";
 import { formatKopeks } from "@/lib/money";
 import {
   getExpensesForScope,
@@ -62,9 +64,8 @@ export default async function ExpensesPage({
 
   const sp = await searchParams;
   const ctx = await getCurrentAccessContext();
-  // Strategic owner: read-only expense analytics across ALL filtered Companies.
-  // (GD has no /expenses page access — owner only.) Non-strategic roles keep the
-  // single-Company experience.
+  // Strategic owner/GD: read-only expense analytics across ALL filtered Companies.
+  // Non-strategic roles keep the single-Company experience.
   const strategic = ctx ? isStrategicRole(ctx.effectiveRoles) : false;
   const groups = strategic && ctx ? await resolveStrategicGroups(ctx, sp) : null;
 
@@ -85,6 +86,7 @@ export default async function ExpensesPage({
   }
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
   const multiCompany = groups?.multiCompany ?? false;
+  const returnQuery = groups ? buildReturnTo("expenses", sp as Record<string, string | undefined>) : "";
 
   const statusParam = sp.status;
   const statusFilter = STATUS_FILTERS.find((f) => f.key === statusParam) ?? STATUS_FILTERS[0];
@@ -233,12 +235,23 @@ export default async function ExpensesPage({
                     </Td>
                     <Td className="whitespace-nowrap text-slate-600">{expense.createdBy.name}</Td>
                     <Td>
-                      <Link
-                        href={`/expenses/${expense.id}`}
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        Открыть
-                      </Link>
+                      {groups ? (
+                        <form action={openStrategicExpense}>
+                          <input type="hidden" name="companyId" value={expense.companyId} />
+                          <input type="hidden" name="objectId" value={expense.id} />
+                          <input type="hidden" name="returnTo" value={returnQuery} />
+                          <button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                            Открыть
+                          </button>
+                        </form>
+                      ) : (
+                        <Link
+                          href={`/expenses/${expense.id}`}
+                          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Открыть
+                        </Link>
+                      )}
                     </Td>
                   </tr>
                 ))

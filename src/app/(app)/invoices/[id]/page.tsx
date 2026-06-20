@@ -14,6 +14,7 @@ import {
   INVOICE_CONFIDENCE_LABELS,
 } from "@/lib/invoices";
 import { EXPENSE_CATEGORY_OPTIONS } from "@/lib/expenses";
+import { safeBackLink } from "@/lib/strategic-return";
 import { InvoiceEditForm } from "./_components/InvoiceEditForm";
 import { CancelInvoiceForm } from "./_components/CancelInvoiceForm";
 
@@ -32,10 +33,14 @@ function isoDay(date: Date | null): string {
 
 export default async function InvoiceDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | undefined>>;
 }) {
   const { id } = await params;
+  const sp = searchParams ? await searchParams : {};
+  const back = safeBackLink(sp, { path: "/invoices", label: "К списку" });
 
   const ctx = await getCurrentAccessContext();
   if (!ctx) notFound();
@@ -103,10 +108,10 @@ export default async function InvoiceDetailPage({
           }`}
         />
         <Link
-          href="/invoices"
+          href={back.href}
           className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
-          К списку
+          {back.label}
         </Link>
       </div>
 

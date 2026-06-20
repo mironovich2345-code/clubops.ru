@@ -9,6 +9,8 @@ import { isStrategicRole, type Role } from "@/lib/auth";
 import { expenseCategoryLabel } from "@/lib/expenses";
 import { resolveStrategicGroups } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../../dashboard/_components/StrategicScopeFilter";
+import { openStrategicExpense, openStrategicInvoice } from "../../dashboard/strategic-actions";
+import { buildReturnTo } from "@/lib/strategic-return";
 import {
   loadCategoryExpenseRows,
   filterDrillRows,
@@ -23,7 +25,7 @@ const FINANCIAL_ROLES = new Set<Role>(["owner", "general_director", "regional_di
 const dayFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 const monthFmt = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" });
 
-type DrillRowX = DrillRow & { companyName?: string };
+type DrillRowX = DrillRow & { companyName?: string; companyId?: string };
 
 type SP = {
   category?: string; from?: string; to?: string; club?: string; entity?: string; pay?: string; source?: string;
@@ -74,7 +76,7 @@ export default async function ExpenseDrilldownPage({ searchParams }: { searchPar
     const perCompany = await Promise.all(
       groups.byCompany.map((g) =>
         loadCategoryExpenseRows({ companyId: g.companyId, clubIds: g.clubIds, category, start, end }).then((rows) =>
-          rows.map((r) => ({ ...r, companyName: g.companyName })),
+          rows.map((r) => ({ ...r, companyName: g.companyName, companyId: g.companyId })),
         ),
       ),
     );
@@ -92,6 +94,7 @@ export default async function ExpenseDrilldownPage({ searchParams }: { searchPar
   const rows = filterDrillRows(allRows, { pay, source, entity: wantEntity, club: wantClub }) as DrillRowX[];
   const summary = summarizeDrill(rows);
   const showCompany = groups?.multiCompany ?? false;
+  const returnQuery = groups ? buildReturnTo("analytics-expenses", sp as Record<string, string | undefined>) : "";
   const cashRows = rows.filter((r) => r.cash).sort(byDateDesc);
   const nonCashRows = rows.filter((r) => !r.cash).sort(byDateDesc);
 
@@ -140,8 +143,8 @@ export default async function ExpenseDrilldownPage({ searchParams }: { searchPar
         <button type="submit" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700">Показать</button>
       </form>
 
-      <Section title="Наличные расходы" rows={cashRows} showCompany={showCompany} />
-      <Section title="Безналичные расходы" rows={nonCashRows} showCompany={showCompany} />
+      <Section title="Наличные расходы" rows={cashRows} showCompany={showCompany} strategic={Boolean(groups)} returnQuery={returnQuery} />
+      <Section title="Безналичные расходы" rows={nonCashRows} showCompany={showCompany} strategic={Boolean(groups)} returnQuery={returnQuery} />
     </div>
   );
 }
@@ -150,7 +153,7 @@ function byDateDesc(a: DrillRow, b: DrillRow): number {
   return (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0);
 }
 
-function Section({ title, rows, showCompany = false }: { title: string; rows: DrillRowX[]; showCompany?: boolean }) {
+function Section({ title, rows, showCompany = false, strategic = false, returnQuery = "" }: { title: string; rows: DrillRowX[]; showCompany?: boolean; strategic?: boolean; returnQuery?: string }) {
   const total = rows.reduce((s, r) => s + r.amountKopeks, 0);
   return (
     <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -190,7 +193,16 @@ function Section({ title, rows, showCompany = false }: { title: string; rows: Dr
                     <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">{DRILL_SOURCE_LABELS[r.source]}</span>
                   </Td>
                   <Td className="whitespace-nowrap text-right">
-                    <Link href={r.href} className="text-xs font-medium text-brand-600 hover:text-brand-700">Открыть</Link>
+                    {strategic && r.companyId && (r.source === "expense" || r.source === "invoice") ? (
+                      <form action={r.source === "expense" ? openStrategicExpense : openStrategicInvoice}>
+                        <input type="hidden" name="companyId" value={r.companyId} />
+                        <input type="hidden" name="objectId" value={r.id} />
+                        <input type="hidden" name="returnTo" value={returnQuery} />
+                        <button type="submit" className="text-xs font-medium text-brand-600 hover:text-brand-700">Открыть</button>
+                      </form>
+                    ) : (
+                      <Link href={r.href} className="text-xs font-medium text-brand-600 hover:text-brand-700">Открыть</Link>
+                    )}
                   </Td>
                 </tr>
               ))}

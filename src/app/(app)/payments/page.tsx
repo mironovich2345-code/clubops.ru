@@ -6,6 +6,8 @@ import { requirePageAccess, getCurrentCompanyAndClub, getCurrentAccessContext } 
 import { isStrategicRole } from "@/lib/auth";
 import { resolveStrategicGroups } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
+import { openStrategicInvoice } from "../dashboard/strategic-actions";
+import { buildReturnTo } from "@/lib/strategic-return";
 import { getConfirmedReportCashControl } from "@/lib/sales-reports";
 import {
   computeCalendarKpis,
@@ -114,6 +116,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const finCompanyId = groups ? groups.filteredCompanyIds[0] ?? null : companyId;
   const finClubIds = groups ? groups.byCompany.find((g) => g.companyId === finCompanyId)?.clubIds ?? [] : scope.clubIds;
   const companyNameById = groups?.companyNameById ?? new Map<string, string>();
+  const strategicNav = Boolean(groups);
+  const returnQuery = groups ? buildReturnTo("payments", sp as Record<string, string | undefined>) : "";
 
   let obligations: PaymentObligation[];
   if (groups) {
@@ -338,7 +342,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
         {/* Right rail: selected day + per-entity cash gaps (ООО / ИП separately) */}
         <div className="flex min-w-0 flex-col gap-4">
-          <SelectedDayCard date={selectedDay} rows={selectedDayRows} total={selectedDayTotal} companyNameById={companyNameById} />
+          <SelectedDayCard date={selectedDay} rows={selectedDayRows} total={selectedDayTotal} companyNameById={companyNameById} strategicNav={strategicNav} returnQuery={returnQuery} />
           {gaps ? (
             <>
               <EntityGapCard gap={gaps.ooo} />
@@ -360,7 +364,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
       {/* Part 5 + Part 8 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <UpcomingCard rows={upcoming} today={today} />
+        <UpcomingCard rows={upcoming} today={today} strategicNav={strategicNav} returnQuery={returnQuery} />
         <CitySummaryCard rows={cityRows} />
         <ClubSummaryCard rows={clubRows} />
       </div>
@@ -459,7 +463,49 @@ function PanelCard({ title, hint, children }: { title: string; hint?: string; ch
   );
 }
 
-function SelectedDayCard({ date, rows, total, companyNameById }: { date: Date | null; rows: PaymentObligation[]; total: number; companyNameById: Map<string, string> }) {
+/**
+ * Row wrapper for a payment obligation. For a strategic (multi-Company) view an
+ * Invoice obligation may belong to another Company, so it must open through the
+ * safe context-switch action (verify access + record ownership → set scope →
+ * allowlisted redirect). Mandatory/payroll obligations have no cross-Company
+ * detail target, so they render non-clickable rather than linking into the
+ * wrong scope. Non-strategic roles keep the existing in-scope Link.
+ */
+function ObligationLink({
+  obligation: r,
+  strategicNav,
+  returnQuery,
+  className,
+  children,
+}: {
+  obligation: PaymentObligation;
+  strategicNav: boolean;
+  returnQuery: string;
+  className: string;
+  children: React.ReactNode;
+}) {
+  if (strategicNav) {
+    if (r.sourceType === "invoice") {
+      return (
+        <form action={openStrategicInvoice}>
+          <input type="hidden" name="companyId" value={r.companyId} />
+          <input type="hidden" name="objectId" value={r.sourceId} />
+          <input type="hidden" name="returnTo" value={returnQuery} />
+          <button type="submit" className={`w-full text-left ${className}`}>{children}</button>
+        </form>
+      );
+    }
+    // Mandatory / payroll: no safe cross-Company detail target — not clickable.
+    return <div className={className}>{children}</div>;
+  }
+  return (
+    <Link href={r.href ?? `/invoices/${r.sourceId}`} className={className}>
+      {children}
+    </Link>
+  );
+}
+
+function SelectedDayCard({ date, rows, total, companyNameById, strategicNav, returnQuery }: { date: Date | null; rows: PaymentObligation[]; total: number; companyNameById: Map<string, string>; strategicNav: boolean; returnQuery: string }) {
   const showCompany = companyNameById.size > 1;
   return (
     <PanelCard title="Платежи дня" hint={date ? dayLongFmt.format(date) : undefined}>
@@ -476,7 +522,7 @@ function SelectedDayCard({ date, rows, total, companyNameById }: { date: Date | 
           <ul className="divide-y divide-slate-100 dark:divide-slate-800/70">
             {rows.map((r) => (
               <li key={r.id}>
-                <Link href={r.href ?? `/invoices/${r.sourceId}`} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                <ObligationLink obligation={r} strategicNav={strategicNav} returnQuery={returnQuery} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
                       {paymentObligationCategoryLabel(r)}
@@ -491,7 +537,7 @@ function SelectedDayCard({ date, rows, total, companyNameById }: { date: Date | 
                     <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
                     <EntityBadge type={r.legalEntityType} />
                   </div>
-                </Link>
+                </ObligationLink>
               </li>
             ))}
           </ul>
@@ -534,7 +580,7 @@ function EntityGapCard({ gap }: { gap: EntityCashGap }) {
   );
 }
 
-function UpcomingCard({ rows, today }: { rows: PaymentObligation[]; today: Date }) {
+function UpcomingCard({ rows, today, strategicNav, returnQuery }: { rows: PaymentObligation[]; today: Date; strategicNav: boolean; returnQuery: string }) {
   return (
     <PanelCard title="Ближайшие платежи">
       {rows.length === 0 ? (
@@ -547,7 +593,7 @@ function UpcomingCard({ rows, today }: { rows: PaymentObligation[]; today: Date 
               rel.tone === "bad" ? "text-rose-600 dark:text-rose-400" : rel.tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-slate-400 dark:text-slate-500";
             return (
               <li key={r.id}>
-                <Link href={r.href ?? `/invoices/${r.sourceId}`} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                <ObligationLink obligation={r} strategicNav={strategicNav} returnQuery={returnQuery} className="flex items-start justify-between gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
                       {paymentObligationCategoryLabel(r)}
@@ -559,7 +605,7 @@ function UpcomingCard({ rows, today }: { rows: PaymentObligation[]; today: Date 
                     <span className="whitespace-nowrap text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(r.amountKopeks)}</span>
                     <EntityBadge type={r.legalEntityType} />
                   </div>
-                </Link>
+                </ObligationLink>
               </li>
             );
           })}

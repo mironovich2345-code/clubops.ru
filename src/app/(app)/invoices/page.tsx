@@ -11,6 +11,8 @@ import {
 import { canCreateOperational, isStrategicRole } from "@/lib/auth";
 import { resolveStrategicGroups } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
+import { openStrategicInvoice } from "../dashboard/strategic-actions";
+import { buildReturnTo } from "@/lib/strategic-return";
 import {
   getInvoicesForScope,
   INVOICE_STATUS_LABELS,
@@ -52,8 +54,7 @@ export default async function InvoicesPage({
 
   const sp = searchParams ? await searchParams : {};
   const ctx = await getCurrentAccessContext();
-  // Strategic owner: read-only invoice analytics across ALL filtered Companies.
-  // (GD has no /invoices page access — owner only.)
+  // Strategic owner/GD: read-only invoice analytics across ALL filtered Companies.
   const strategic = ctx ? isStrategicRole(ctx.effectiveRoles) : false;
   const groups = strategic && ctx ? await resolveStrategicGroups(ctx, sp) : null;
 
@@ -74,6 +75,7 @@ export default async function InvoicesPage({
   }
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
   const multiCompany = groups?.multiCompany ?? false;
+  const returnQuery = groups ? buildReturnTo("invoices", sp as Record<string, string | undefined>) : "";
 
   const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null }>> = {};
   if (canCreate) {
@@ -206,12 +208,23 @@ export default async function InvoicesPage({
                     {dateFormatter.format(invoice.createdAt)}
                   </Td>
                   <Td>
-                    <Link
-                      href={`/invoices/${invoice.id}`}
-                      className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      Открыть
-                    </Link>
+                    {groups ? (
+                      <form action={openStrategicInvoice}>
+                        <input type="hidden" name="companyId" value={invoice.companyId} />
+                        <input type="hidden" name="objectId" value={invoice.id} />
+                        <input type="hidden" name="returnTo" value={returnQuery} />
+                        <button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                          Открыть
+                        </button>
+                      </form>
+                    ) : (
+                      <Link
+                        href={`/invoices/${invoice.id}`}
+                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Открыть
+                      </Link>
+                    )}
                   </Td>
                 </tr>
               ))
