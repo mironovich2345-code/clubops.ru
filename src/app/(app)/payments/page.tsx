@@ -2,7 +2,10 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks, formatKopeksShort } from "@/lib/money";
-import { requirePageAccess, getCurrentCompanyAndClub } from "@/lib/access";
+import { requirePageAccess, getCurrentCompanyAndClub, getCurrentAccessContext } from "@/lib/access";
+import { isStrategicRole } from "@/lib/auth";
+import { resolveStrategicGroups } from "@/lib/strategic-pages";
+import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
 import { getConfirmedReportCashControl } from "@/lib/sales-reports";
 import {
   computeCalendarKpis,
@@ -33,7 +36,7 @@ const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
 const CARD = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
-type SP = { month?: string; day?: string; entity?: string };
+type SP = { month?: string; day?: string; entity?: string; scopeMode?: string; companyId?: string; city?: string; clubId?: string };
 type EntityFilter = "all" | "ooo" | "ip";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -99,11 +102,35 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const earlierMonth = monthStart.getTime() < curMonthStart.getTime() ? monthStart : curMonthStart;
   const mandatoryWindowStart = new Date(earlierMonth.getFullYear(), earlierMonth.getMonth() - 1, 1);
 
-  // Source-agnostic obligations: invoices + mandatory payments (payroll later).
-  const [{ obligations }, cashRows, balances] = await Promise.all([
-    loadPaymentObligationsForScope({ companyId, clubIds: scope.clubIds, loadEnd, monthKey, windowStart: mandatoryWindowStart }),
+  // Strategic owner/GD: obligations may span several accessible Companies. The
+  // calendar/day totals AGGREGATE due amounts (allowed — they are payments due),
+  // but balances + cash-gap stay per-Company and are only shown when exactly one
+  // Company is selected (a merged "available cash" across Companies is forbidden).
+  const ctx = await getCurrentAccessContext();
+  const strategic = ctx ? isStrategicRole(ctx.effectiveRoles) : false;
+  const groups = strategic && ctx ? await resolveStrategicGroups(ctx, sp) : null;
+  // One Company for the cash-gap section (single selected, or the only one).
+  const financialOne = !groups || groups.filteredCompanyIds.length === 1;
+  const finCompanyId = groups ? groups.filteredCompanyIds[0] ?? null : companyId;
+  const finClubIds = groups ? groups.byCompany.find((g) => g.companyId === finCompanyId)?.clubIds ?? [] : scope.clubIds;
+  const companyNameById = groups?.companyNameById ?? new Map<string, string>();
+
+  let obligations: PaymentObligation[];
+  if (groups) {
+    const per = await Promise.all(
+      groups.byCompany.map((g) =>
+        loadPaymentObligationsForScope({ companyId: g.companyId, clubIds: g.clubIds, loadEnd, monthKey, windowStart: mandatoryWindowStart }).then((r) => r.obligations),
+      ),
+    );
+    obligations = per.flat();
+  } else {
+    obligations = (await loadPaymentObligationsForScope({ companyId, clubIds: scope.clubIds, loadEnd, monthKey, windowStart: mandatoryWindowStart })).obligations;
+  }
+  const [cashRows, balances] = await Promise.all([
     getConfirmedReportCashControl(scope),
-    getLatestBalancesForScope(companyId, scope.clubIds),
+    financialOne && finCompanyId
+      ? getLatestBalancesForScope(finCompanyId, finClubIds)
+      : Promise.resolve({ ooo: { kopeks: null, latestDate: null }, ip: { kopeks: null, latestDate: null }, totalKopeks: null }),
   ]);
 
   // Part 3 — legal-entity filter (Все / ООО / ИП) for the calendar display.
@@ -118,12 +145,14 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const cmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const cmEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const cashRowsThisMonth = cashRows.filter((r) => r.reportDate >= cmStart && r.reportDate < cmEnd);
-  const legacyCashOooKopeks = cashRowsThisMonth.length > 0
+  // Legacy fallback only applies to the single-Company cash view (cashRows are
+  // the cookie company's). In a multi-Company view balances stay hidden.
+  const legacyCashOooKopeks = financialOne && cashRowsThisMonth.length > 0
     ? cashRowsThisMonth.reduce((s, r) => s + (r.cashOooKopeks - r.encashmentKopeks), 0)
     : null;
-  const oooBalanceKopeks = balances.ooo.kopeks ?? legacyCashOooKopeks;
-  const ipBalanceKopeks = balances.ip.kopeks; // snapshot only; null when none
-  const totalAvailableKopeks = balances.totalKopeks ?? legacyCashOooKopeks;
+  const oooBalanceKopeks = financialOne ? balances.ooo.kopeks ?? legacyCashOooKopeks : null;
+  const ipBalanceKopeks = financialOne ? balances.ip.kopeks : null;
+  const totalAvailableKopeks = financialOne ? balances.totalKopeks ?? legacyCashOooKopeks : null;
 
   // Part 3 — day → obligations map for the selected month (filtered).
   const byDay = new Map<number, PaymentObligation[]>();
@@ -154,12 +183,17 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const clubRows = obligationsByClub(displayObligations);
 
   // Part 2/4 — per-entity cash gaps (ООО / ИП computed SEPARATELY, never merged).
-  // Obligations due within the next 30 days (incl. overdue), split by entity.
+  // Only for a single Company — a multi-Company gap would offset Companies.
   const sums = sumObligationsByEntity(obligations, addDays(today, 30));
-  const gaps = buildEntityCashGaps({
-    ooo: { balanceKopeks: oooBalanceKopeks, obligationsKopeks: sums.ooo },
-    ip: { balanceKopeks: ipBalanceKopeks, obligationsKopeks: sums.ip },
-  });
+  const gaps = financialOne
+    ? buildEntityCashGaps({
+        ooo: { balanceKopeks: oooBalanceKopeks, obligationsKopeks: sums.ooo },
+        ip: { balanceKopeks: ipBalanceKopeks, obligationsKopeks: sums.ip },
+      })
+    : null;
+  // Unassigned (no legal entity) obligations due in the 30-day window — shown
+  // separately, never folded into ООО/ИП cash gaps.
+  const unassignedKopeks = sums.unassigned;
 
   const dayHref = (d: Date) => `/payments?month=${monthKey}&day=${iso(d)}${entityFilter === "all" ? "" : `&entity=${entityFilter}`}`;
   const entityHref = (e: EntityFilter) => `/payments?month=${monthKey}${e === "all" ? "" : `&entity=${e}`}`;
@@ -169,21 +203,28 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <PageHeader title="Календарь платежей" description="Что и когда нужно оплатить" />
         <div className="flex flex-wrap items-center gap-2">
-          {/* Part 1 — quick action into the existing Mandatory Payments page */}
-          <Link
-            href="/mandatory-payments"
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            + Обязательный платёж
-          </Link>
-          {/* Balances are surfaced here / on the dashboard rather than as a
-              separate menu item — quick link into the balance-snapshot page. */}
-          <Link
-            href="/balances"
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            Обновить остаток
-          </Link>
+          {/* Company-scoped actions: in a multi-Company strategic view they need
+              one Company selected first (a plan/balance belongs to one Company). */}
+          {groups && groups.multiCompany ? (
+            <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              Выберите одну компанию, чтобы добавить обязательный платёж или обновить остаток
+            </span>
+          ) : (
+            <>
+              <Link
+                href="/mandatory-payments"
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                + Обязательный платёж
+              </Link>
+              <Link
+                href="/balances"
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Обновить остаток
+              </Link>
+            </>
+          )}
           {/* Part 2 — month navigation */}
           <div className={`inline-flex items-center gap-1 p-1 ${CARD}`}>
             <Link href={`/payments?month=${prevMonth}`} aria-label="Предыдущий месяц" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">‹</Link>
@@ -192,6 +233,22 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
       </div>
+
+      {groups && groups.scope.accessibleClubs.length > 0 ? (
+        <div className="mb-5">
+          <StrategicScopeFilter
+            companies={groups.scope.accessibleCompanies}
+            clubs={groups.scope.accessibleClubs}
+            mode={groups.scope.mode}
+            companyId={groups.scope.selectedCompanyId}
+            city={groups.scope.selectedCity}
+            clubId={groups.scope.selectedClubId}
+            month=""
+            basePath="/payments"
+            extra={{ month: monthKey, ...(entityFilter !== "all" ? { entity: entityFilter } : {}) }}
+          />
+        </div>
+      ) : null}
 
       {/* Part 1 — KPI cards */}
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -206,21 +263,28 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         />
       </div>
 
-      {/* Current balances (ООО / ИП kept separate; Всего is display-only). */}
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-3">
-        <KpiCard
-          label="Остаток ООО"
-          value={oooBalanceKopeks === null ? "нет данных" : formatKopeks(oooBalanceKopeks)}
-          tone={oooBalanceKopeks !== null && oooBalanceKopeks < 0 ? "bad" : "neutral"}
-        />
-        <KpiCard label="Остаток ИП" value={ipBalanceKopeks === null ? "нет данных" : formatKopeks(ipBalanceKopeks)} />
-        <KpiCard
-          label="Всего доступно"
-          value={totalAvailableKopeks === null ? "нет данных" : formatKopeks(totalAvailableKopeks)}
-          sub="ООО + ИП (справочно)"
-          tone={totalAvailableKopeks !== null && totalAvailableKopeks < 0 ? "bad" : "neutral"}
-        />
-      </div>
+      {/* Current balances (ООО / ИП kept separate; Всего is display-only). In a
+          multi-Company view balances are NOT merged — pick one Company. */}
+      {financialOne ? (
+        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-3">
+          <KpiCard
+            label="Остаток ООО"
+            value={oooBalanceKopeks === null ? "нет данных" : formatKopeks(oooBalanceKopeks)}
+            tone={oooBalanceKopeks !== null && oooBalanceKopeks < 0 ? "bad" : "neutral"}
+          />
+          <KpiCard label="Остаток ИП" value={ipBalanceKopeks === null ? "нет данных" : formatKopeks(ipBalanceKopeks)} />
+          <KpiCard
+            label="Всего доступно"
+            value={totalAvailableKopeks === null ? "нет данных" : formatKopeks(totalAvailableKopeks)}
+            sub="ООО + ИП (справочно)"
+            tone={totalAvailableKopeks !== null && totalAvailableKopeks < 0 ? "bad" : "neutral"}
+          />
+        </div>
+      ) : (
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          Выберите одну компанию, чтобы увидеть остатки и кассовые разрывы по ООО/ИП. Остатки разных сетей не суммируются.
+        </div>
+      )}
 
       {/* Part 3 — legal-entity filter */}
       <div className="mb-5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 text-sm dark:border-slate-800 dark:bg-slate-900">
@@ -274,9 +338,23 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
         {/* Right rail: selected day + per-entity cash gaps (ООО / ИП separately) */}
         <div className="flex min-w-0 flex-col gap-4">
-          <SelectedDayCard date={selectedDay} rows={selectedDayRows} total={selectedDayTotal} />
-          <EntityGapCard gap={gaps.ooo} />
-          <EntityGapCard gap={gaps.ip} />
+          <SelectedDayCard date={selectedDay} rows={selectedDayRows} total={selectedDayTotal} companyNameById={companyNameById} />
+          {gaps ? (
+            <>
+              <EntityGapCard gap={gaps.ooo} />
+              <EntityGapCard gap={gaps.ip} />
+              {unassignedKopeks > 0 ? (
+                <div className={`p-4 ${CARD}`}>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Не распределено (без юрлица), 30 дн.</div>
+                  <div className="mt-1 text-base font-semibold text-slate-700 dark:text-slate-200">{formatKopeks(unassignedKopeks)}</div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className={`p-4 text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
+              Кассовые разрывы по ООО/ИП доступны при выборе одной компании.
+            </div>
+          )}
         </div>
       </div>
 
@@ -381,7 +459,8 @@ function PanelCard({ title, hint, children }: { title: string; hint?: string; ch
   );
 }
 
-function SelectedDayCard({ date, rows, total }: { date: Date | null; rows: PaymentObligation[]; total: number }) {
+function SelectedDayCard({ date, rows, total, companyNameById }: { date: Date | null; rows: PaymentObligation[]; total: number; companyNameById: Map<string, string> }) {
+  const showCompany = companyNameById.size > 1;
   return (
     <PanelCard title="Платежи дня" hint={date ? dayLongFmt.format(date) : undefined}>
       {!date ? (
@@ -404,8 +483,8 @@ function SelectedDayCard({ date, rows, total }: { date: Date | null; rows: Payme
                       {r.counterpartyName ? <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">· {r.counterpartyName}</span> : null}
                     </div>
                     <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                      {r.clubName} · {r.city}
-                      {r.legalEntityName ? ` · ${r.legalEntityName}` : ""} · {paymentSourceLabel(r.sourceType)}
+                      {showCompany ? `${companyNameById.get(r.companyId) ?? "—"} · ` : ""}{r.clubName} · {r.city}
+                      {r.legalEntityName ? ` · ${r.legalEntityName}` : r.legalEntityType === null ? " · Юрлицо не указано" : ""} · {paymentSourceLabel(r.sourceType)}
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">

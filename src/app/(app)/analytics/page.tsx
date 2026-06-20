@@ -14,7 +14,9 @@ import {
   getCurrentAccessContext,
   getCurrentCompanyAndClub,
 } from "@/lib/access";
-import { type Role } from "@/lib/auth";
+import { isStrategicRole, type Role } from "@/lib/auth";
+import { resolveStrategicGroups, type StrategicGroups } from "@/lib/strategic-pages";
+import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
 import {
   resolvePeriod,
   loadAnalyticsData,
@@ -67,7 +69,7 @@ function granularityFor(key: AnalyticsPeriodKey, monthsLen: number): TrendGranul
 export default async function AnalyticsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ period?: string; from?: string; to?: string; scopeMode?: string; companyId?: string; city?: string; clubId?: string }>;
 }) {
   const user = await requirePageAccess("analytics");
   const scope = await getCurrentCompanyAndClub(user);
@@ -95,7 +97,74 @@ export default async function AnalyticsPage({
   const lastDay = new Date(period.end.getTime() - 24 * 60 * 60 * 1000);
   const rangeLabel = `${dfmt.format(period.start)} – ${dfmt.format(lastDay)}`;
 
-  const data = await loadAnalyticsData(scope.company.id, ctx.allowedClubIds, period);
+  // Strategic owner/GD: cross-Company scope. With several Companies selected we
+  // show only SAFE additive sales/expense totals + per-Company sections and
+  // require one Company for detailed/financial analytics (balances never merge).
+  const strategic = isStrategicRole(roles);
+  const groups: StrategicGroups | null = strategic ? await resolveStrategicGroups(ctx, sp) : null;
+  if (groups && groups.multiCompany) {
+    const perCompany = await Promise.all(
+      groups.byCompany.map((g) =>
+        loadAnalyticsData(g.companyId, g.clubIds, period).then((d) => ({ g, r: buildAnalyticsReport(d, period, granularity) })),
+      ),
+    );
+    const tAb = perCompany.reduce((x, p) => x + p.r.summary.subscriptionsKopeks, 0);
+    const tPt = perCompany.reduce((x, p) => x + p.r.summary.personalTrainingKopeks, 0);
+    const tExp = perCompany.reduce((x, p) => x + p.r.summary.expensesKopeks, 0);
+    return (
+      <div className="mx-auto max-w-[1440px]">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <PageHeader title="Аналитика" description="Все доступные сети" />
+          <span className="text-sm text-slate-500 dark:text-slate-400">{period.label} · {rangeLabel}</span>
+        </div>
+        <div className="mb-5">
+          <StrategicScopeFilter
+            companies={groups.scope.accessibleCompanies}
+            clubs={groups.scope.accessibleClubs}
+            mode={groups.scope.mode}
+            companyId={groups.scope.selectedCompanyId}
+            city={groups.scope.selectedCity}
+            clubId={groups.scope.selectedClubId}
+            month=""
+            basePath="/analytics"
+            extra={{ period: periodKey, from: sp.from ?? "", to: sp.to ?? "" }}
+          />
+        </div>
+        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <KpiCard label="Продажи АБ (все сети)" value={formatKopeks(tAb)} accent="text-emerald-600 dark:text-emerald-400" />
+          <KpiCard label="Продажи ПТ (все сети)" value={formatKopeks(tPt)} accent="text-sky-600 dark:text-sky-400" />
+          {financials ? <KpiCard label="Расходы (все сети)" value={formatKopeks(tExp)} accent="text-rose-600 dark:text-rose-400" /> : null}
+          <KpiCard label="Клубов в выборке" value={String(groups.filteredClubIds.length)} />
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">По сетям</div>
+          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+            <thead className="bg-slate-50 dark:bg-slate-800/50">
+              <tr><Th>Сеть</Th><Th className="text-right">Продажи АБ</Th><Th className="text-right">Продажи ПТ</Th>{financials ? <Th className="text-right">Расходы</Th> : null}</tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+              {perCompany.map((p) => (
+                <tr key={p.g.companyId} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                  <Td className="whitespace-nowrap font-medium text-slate-900 dark:text-slate-100">{p.g.companyName}</Td>
+                  <Td className="text-right">{formatKopeks(p.r.summary.subscriptionsKopeks)}</Td>
+                  <Td className="text-right">{formatKopeks(p.r.summary.personalTrainingKopeks)}</Td>
+                  {financials ? <Td className="text-right">{formatKopeks(p.r.summary.expensesKopeks)}</Td> : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          Выберите одну компанию, чтобы увидеть подробную аналитику, остатки и прогноз. Остатки и кассовые разрывы разных сетей не суммируются.
+        </div>
+      </div>
+    );
+  }
+
+  // Single Company in scope (strategic-filtered or non-strategic): full analytics.
+  const aCompanyId = groups ? groups.filteredCompanyIds[0] ?? scope.company.id : scope.company.id;
+  const aClubIds = groups ? groups.filteredClubIds : ctx.allowedClubIds;
+  const data = await loadAnalyticsData(aCompanyId, aClubIds, period);
   const report = buildAnalyticsReport(data, period, granularity);
   const s = report.summary;
 
@@ -136,8 +205,8 @@ export default async function AnalyticsPage({
   if (financials) {
     const horizon = addDays(dayStart(now), 30);
     const [bal, { obligations: payObs }] = await Promise.all([
-      getLatestBalancesForScope(scope.company.id, ctx.allowedClubIds),
-      loadPaymentObligationsForScope({ companyId: scope.company.id, clubIds: ctx.allowedClubIds, loadEnd: horizon }),
+      getLatestBalancesForScope(aCompanyId, aClubIds),
+      loadPaymentObligationsForScope({ companyId: aCompanyId, clubIds: aClubIds, loadEnd: horizon }),
     ]);
     const sums = sumObligationsByEntity(payObs, horizon);
     entityGaps = buildEntityCashGaps({
@@ -152,6 +221,14 @@ export default async function AnalyticsPage({
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <PageHeader title="Аналитика" description="Бизнес-обзор клуба" />
         <form method="get" className={`flex flex-wrap items-end gap-2 p-2 ${CARD}`}>
+          {groups ? (
+            <>
+              <input type="hidden" name="scopeMode" value={groups.scope.mode} />
+              {groups.scope.selectedCompanyId ? <input type="hidden" name="companyId" value={groups.scope.selectedCompanyId} /> : null}
+              {groups.scope.selectedCity ? <input type="hidden" name="city" value={groups.scope.selectedCity} /> : null}
+              {groups.scope.selectedClubId ? <input type="hidden" name="clubId" value={groups.scope.selectedClubId} /> : null}
+            </>
+          ) : null}
           <label className="block">
             <span className="mb-1 block px-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Период</span>
             <select name="period" defaultValue={periodKey} className="input">
@@ -173,6 +250,22 @@ export default async function AnalyticsPage({
           </button>
         </form>
       </div>
+
+      {groups && groups.scope.accessibleClubs.length > 0 ? (
+        <div className="mb-5">
+          <StrategicScopeFilter
+            companies={groups.scope.accessibleCompanies}
+            clubs={groups.scope.accessibleClubs}
+            mode={groups.scope.mode}
+            companyId={groups.scope.selectedCompanyId}
+            city={groups.scope.selectedCity}
+            clubId={groups.scope.selectedClubId}
+            month=""
+            basePath="/analytics"
+            extra={{ period: periodKey, from: sp.from ?? "", to: sp.to ?? "" }}
+          />
+        </div>
+      ) : null}
 
       {/* Selected-period chip */}
       <div className="mb-5 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">

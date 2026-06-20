@@ -8,7 +8,9 @@ import {
   getClubsInScope,
   getCurrentAccessContext,
 } from "@/lib/access";
-import { canCreateOperational } from "@/lib/auth";
+import { canCreateOperational, isStrategicRole } from "@/lib/auth";
+import { resolveStrategicGroups } from "@/lib/strategic-pages";
+import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
 import {
   getInvoicesForScope,
   INVOICE_STATUS_LABELS,
@@ -34,7 +36,13 @@ const CONFIDENCE_BADGE: Record<string, string> = {
   low: "bg-slate-100 text-slate-600 ring-slate-200",
 };
 
-export default async function InvoicesPage() {
+type InvoiceRow = Awaited<ReturnType<typeof getInvoicesForScope>>[number] & { companyName?: string };
+
+export default async function InvoicesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ scopeMode?: string; companyId?: string; city?: string; clubId?: string }>;
+}) {
   const user = await requirePageAccess("invoices");
 
   const scope = await getCurrentCompanyAndClub(user);
@@ -42,12 +50,30 @@ export default async function InvoicesPage() {
     return <NoCompanyState title="Счета" description="Загрузка и распознавание счетов" />;
   }
 
-  const [clubs, invoices, ctx] = await Promise.all([
-    getClubsInScope(scope),
-    getInvoicesForScope(scope),
-    getCurrentAccessContext(),
-  ]);
+  const sp = searchParams ? await searchParams : {};
+  const ctx = await getCurrentAccessContext();
+  // Strategic owner: read-only invoice analytics across ALL filtered Companies.
+  // (GD has no /invoices page access — owner only.)
+  const strategic = ctx ? isStrategicRole(ctx.effectiveRoles) : false;
+  const groups = strategic && ctx ? await resolveStrategicGroups(ctx, sp) : null;
+
+  let clubs: Awaited<ReturnType<typeof getClubsInScope>>;
+  let invoices: InvoiceRow[];
+  if (groups) {
+    const perCompany = await Promise.all(
+      groups.byCompany.map((g) =>
+        getInvoicesForScope({ company: { id: g.companyId, name: g.companyName }, club: null, clubIds: g.clubIds }).then(
+          (rows) => rows.map((r) => ({ ...r, companyName: g.companyName })),
+        ),
+      ),
+    );
+    invoices = perCompany.flat();
+    clubs = [];
+  } else {
+    [clubs, invoices] = await Promise.all([getClubsInScope(scope), getInvoicesForScope(scope)]);
+  }
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
+  const multiCompany = groups?.multiCompany ?? false;
 
   const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null }>> = {};
   if (canCreate) {
@@ -71,14 +97,31 @@ export default async function InvoicesPage() {
         <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
       </div>
 
-      {/* Read-only invoice analytics (totals / category / club / upcoming). */}
+      {groups && groups.scope.accessibleClubs.length > 0 ? (
+        <div className="mt-3">
+          <StrategicScopeFilter
+            companies={groups.scope.accessibleCompanies}
+            clubs={groups.scope.accessibleClubs}
+            mode={groups.scope.mode}
+            companyId={groups.scope.selectedCompanyId}
+            city={groups.scope.selectedCity}
+            clubId={groups.scope.selectedClubId}
+            month=""
+            basePath="/invoices"
+          />
+        </div>
+      ) : null}
+
+      {/* Read-only invoice analytics (totals / category / club / company / upcoming). */}
       {invoices.length > 0 ? (
         <InvoiceAnalytics
           todayISO={new Date().toISOString()}
+          showCompany={multiCompany}
           rows={invoices.map((i) => ({
             status: i.status,
             amountKopeks: i.amountKopeks,
             expenseCategory: i.expenseCategory,
+            companyName: i.companyName ?? scope.company!.name,
             clubName: i.club.name,
             dueDate: i.dueDate ? i.dueDate.toISOString() : null,
             paidAt: i.paidAt ? i.paidAt.toISOString() : null,
@@ -155,7 +198,10 @@ export default async function InvoicesPage() {
                       {INVOICE_CONFIDENCE_LABELS[invoice.confidence] ?? invoice.confidence}
                     </span>
                   </Td>
-                  <Td className="whitespace-nowrap text-slate-600">{invoice.club.name}</Td>
+                  <Td className="whitespace-nowrap text-slate-600">
+                    {multiCompany && invoice.companyName ? <span className="text-xs text-slate-400">{invoice.companyName} · </span> : null}
+                    {invoice.club.name}
+                  </Td>
                   <Td className="whitespace-nowrap text-slate-500">
                     {dateFormatter.format(invoice.createdAt)}
                   </Td>

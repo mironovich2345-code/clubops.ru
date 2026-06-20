@@ -6,7 +6,9 @@ import {
   getClubsInScope,
   getCurrentAccessContext,
 } from "@/lib/access";
-import { canCreateOperational } from "@/lib/auth";
+import { canCreateOperational, isStrategicRole } from "@/lib/auth";
+import { resolveStrategicGroups, strategicQuery } from "@/lib/strategic-pages";
+import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
 import { formatKopeks } from "@/lib/money";
 import {
   getExpensesForScope,
@@ -44,10 +46,12 @@ const STATUS_FILTERS: { key: string; label: string; match: (s: string) => boolea
   { key: "all", label: "Все", match: () => true },
 ];
 
+type ExpenseRow = Awaited<ReturnType<typeof getExpensesForScope>>[number] & { companyName?: string };
+
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; scopeMode?: string; companyId?: string; city?: string; clubId?: string }>;
 }) {
   const user = await requirePageAccess("expenses");
 
@@ -56,14 +60,33 @@ export default async function ExpensesPage({
     return <NoCompanyState title="Расходы" description="Чеки, переводы и динамика по статьям" />;
   }
 
-  const [clubs, expenses, ctx] = await Promise.all([
-    getClubsInScope(scope),
-    getExpensesForScope(scope),
-    getCurrentAccessContext(),
-  ]);
-  const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
+  const sp = await searchParams;
+  const ctx = await getCurrentAccessContext();
+  // Strategic owner: read-only expense analytics across ALL filtered Companies.
+  // (GD has no /expenses page access — owner only.) Non-strategic roles keep the
+  // single-Company experience.
+  const strategic = ctx ? isStrategicRole(ctx.effectiveRoles) : false;
+  const groups = strategic && ctx ? await resolveStrategicGroups(ctx, sp) : null;
 
-  const { status: statusParam } = await searchParams;
+  let clubs: Awaited<ReturnType<typeof getClubsInScope>>;
+  let expenses: ExpenseRow[];
+  if (groups) {
+    const perCompany = await Promise.all(
+      groups.byCompany.map((g) =>
+        getExpensesForScope({ company: { id: g.companyId, name: g.companyName }, club: null, clubIds: g.clubIds }).then(
+          (rows) => rows.map((r) => ({ ...r, companyName: g.companyName })),
+        ),
+      ),
+    );
+    expenses = perCompany.flat();
+    clubs = [];
+  } else {
+    [clubs, expenses] = await Promise.all([getClubsInScope(scope), getExpensesForScope(scope)]);
+  }
+  const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
+  const multiCompany = groups?.multiCompany ?? false;
+
+  const statusParam = sp.status;
   const statusFilter = STATUS_FILTERS.find((f) => f.key === statusParam) ?? STATUS_FILTERS[0];
   const visibleExpenses = expenses.filter((e) => statusFilter.match(e.status));
 
@@ -104,6 +127,9 @@ export default async function ExpensesPage({
     ? {
         from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
         to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+        // Carry the strategic scope into the drilldown so its total matches this
+        // page's category card exactly (same Companies/Clubs).
+        qs: groups ? `&${strategicQuery(groups.scope, null)}` : "",
       }
     : null;
 
@@ -112,6 +138,22 @@ export default async function ExpensesPage({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader title="Расходы" description="Чеки, переводы и динамика по статьям" />
       </div>
+
+      {groups && groups.scope.accessibleClubs.length > 0 ? (
+        <div className="mt-3">
+          <StrategicScopeFilter
+            companies={groups.scope.accessibleCompanies}
+            clubs={groups.scope.accessibleClubs}
+            mode={groups.scope.mode}
+            companyId={groups.scope.selectedCompanyId}
+            city={groups.scope.selectedCity}
+            clubId={groups.scope.selectedClubId}
+            month=""
+            basePath="/expenses"
+            extra={statusParam ? { status: statusParam } : {}}
+          />
+        </div>
+      ) : null}
 
       <SummarySection
         summary={summary}
@@ -180,7 +222,9 @@ export default async function ExpensesPage({
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
                         {expenseCategoryLabel(expense.category)}
                       </span>
-                      <div className="mt-1 text-xs text-slate-500">{expense.club.name}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {multiCompany && expense.companyName ? `${expense.companyName} · ` : ""}{expense.club.name}
+                      </div>
                       <ExpenseStatusBadge status={expense.status} />
                     </Td>
                     <Td>{expense.vendorName ?? expense.recipientName ?? "—"}</Td>
@@ -271,7 +315,7 @@ function CategoryAnalytics({
   totals: ExpenseSummary["categoryTotals"];
   totalKopeks: number;
   monthLabel: string;
-  drill: { from: string; to: string } | null;
+  drill: { from: string; to: string; qs: string } | null;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -304,7 +348,7 @@ function CategoryAnalytics({
               <li key={item.category}>
                 {drill ? (
                   <Link
-                    href={`/analytics/expenses?category=${encodeURIComponent(item.category)}&source=expense&from=${drill.from}&to=${drill.to}`}
+                    href={`/analytics/expenses?category=${encodeURIComponent(item.category)}&source=expense&from=${drill.from}&to=${drill.to}${drill.qs}`}
                     className="block px-4 py-3 transition hover:bg-slate-50"
                   >
                     {inner}

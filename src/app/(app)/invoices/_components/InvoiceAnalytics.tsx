@@ -8,6 +8,7 @@ export type InvoiceAnalyticsRow = {
   status: string;
   amountKopeks: number;
   expenseCategory: string | null;
+  companyName: string;
   clubName: string;
   dueDate: string | null; // ISO
   paidAt: string | null; // ISO
@@ -24,7 +25,7 @@ const FINISHED = new Set(["paid", "canceled", "rejected"]);
  * uses paidAt / dueDate — the two concepts are kept separate, never mixed.
  * Canceled invoices are excluded from totals. No NaN/Infinity.
  */
-export function InvoiceAnalytics({ rows, todayISO }: { rows: InvoiceAnalyticsRow[]; todayISO: string }) {
+export function InvoiceAnalytics({ rows, todayISO, showCompany = false }: { rows: InvoiceAnalyticsRow[]; todayISO: string; showCompany?: boolean }) {
   const today = new Date(todayISO);
   const active = rows.filter((r) => r.status !== "canceled");
 
@@ -35,7 +36,8 @@ export function InvoiceAnalytics({ rows, todayISO }: { rows: InvoiceAnalyticsRow
   const overdueKopeks = overdue.reduce((s, r) => s + r.amountKopeks, 0);
 
   const byCategory = groupSum(active, (r) => r.expenseCategory ?? "—");
-  const byClub = groupSum(active, (r) => r.clubName);
+  const byClub = groupSum(active, (r) => (showCompany ? `${r.companyName} · ${r.clubName}` : r.clubName));
+  const byCompany = groupSum(active, (r) => r.companyName);
 
   const upcoming = active
     .filter((r) => !FINISHED.has(r.status) && r.dueDate)
@@ -53,7 +55,11 @@ export function InvoiceAnalytics({ rows, todayISO }: { rows: InvoiceAnalyticsRow
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Breakdown title="По статьям" rows={byCategory.map((x) => ({ label: expenseCategoryLabel(x.key), amountKopeks: x.amountKopeks }))} total={totalKopeks} />
+        {showCompany ? (
+          <Breakdown title="По сетям" rows={byCompany.map((x) => ({ label: x.key, amountKopeks: x.amountKopeks }))} total={totalKopeks} />
+        ) : (
+          <Breakdown title="По статьям" rows={byCategory.map((x) => ({ label: expenseCategoryLabel(x.key), amountKopeks: x.amountKopeks }))} total={totalKopeks} />
+        )}
         <Breakdown title="По клубам" rows={byClub.map((x) => ({ label: x.key, amountKopeks: x.amountKopeks }))} total={totalKopeks} />
         <div className={`overflow-hidden ${CARD}`}>
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Ближайшие платежи</div>

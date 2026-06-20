@@ -13,12 +13,17 @@ type Props = {
   city: string | null;
   clubId: string | null;
   month: string;
+  /** Page to navigate to (default the dashboard). Lets every strategic page reuse
+   * one filter instead of a copy. */
+  basePath?: string;
+  /** Page-specific params to preserve across scope changes (period/category/...). */
+  extra?: Record<string, string>;
 };
 
 const selectCls =
   "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200";
 
-export function StrategicScopeFilter({ companies, clubs, mode, companyId, city, clubId, month }: Props) {
+export function StrategicScopeFilter({ companies, clubs, mode, companyId, city, clubId, month, basePath = "/dashboard", extra }: Props) {
   const router = useRouter();
 
   const allCities = [...new Set(clubs.map((c) => c.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
@@ -55,7 +60,8 @@ export function StrategicScopeFilter({ companies, clubs, mode, companyId, city, 
     if (nCity !== ALL) params.set("city", nCity);
     if (nClub !== ALL) params.set("clubId", nClub);
     if (month) params.set("month", month);
-    router.push(`/dashboard?${params.toString()}`);
+    for (const [k, v] of Object.entries(extra ?? {})) if (v) params.set(k, v);
+    router.push(`${basePath}?${params.toString()}`);
   }
 
   const CompanyField = (
