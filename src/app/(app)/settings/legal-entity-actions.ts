@@ -12,8 +12,13 @@ import {
   assertLegalEntityAvailableForClub,
   type LegalEntityType,
 } from "@/lib/legal-entities";
+import { lockClubRow, assertClubAssignmentInvariant, ASSIGNMENT_CONFLICT } from "@/lib/db-locking";
 
 type State = { ok: boolean; error?: string };
+
+// Safe Russian message for a concurrent-modification rollback (Part 5).
+const CONCURRENT_MODIFICATION_MSG =
+  "Не удалось изменить юрлицо клуба из-за одновременного изменения. Обновите страницу и повторите попытку.";
 
 function str(formData: FormData, key: string): string | null {
   const v = String(formData.get(key) ?? "").trim();
@@ -171,27 +176,47 @@ export async function attachLegalEntityToClub(formData: FormData): Promise<void>
   if (!entity.isActive) throw new Error("Юрлицо неактивно и не может быть назначено");
   const type = normalizeEntityType(entity.type);
   if (!type) throw new Error("Некорректный тип юрлица");
+  const sameTypeValues = type === "ooo" ? ["ooo", "ООО"] : ["ip", "ИП"];
 
-  // Rule: max 1 active ООО + 1 active ИП per club. An active entity may not be
-  // attached to a club that already has a DIFFERENT active entity of the same
-  // type (use "Заменить" to swap intentionally).
-  const conflict = await findClubActiveEntityOfType(clubId, type, legalEntityId);
-  if (conflict) {
-    await recordAudit({
-      action: "club.legal_entity_assignment_blocked",
-      entityType: "ClubLegalEntity", entityId: clubId, companyId: entity.companyId, clubId, userId: guard.ctx.user.id,
-      metadata: { legalEntityId, legalEntityType: type, reason: "active_type_conflict", conflictLegalEntityId: conflict.id },
+  // Serialize on the Club row, then enforce "max 1 active ООО + 1 active ИП"
+  // INSIDE the lock (re-checked, not from a pre-transaction read). A soft-closed
+  // association for the same pair is reactivated (never duplicated —
+  // @@unique([clubId, legalEntityId])). Invariant verified before commit.
+  try {
+    await prisma.$transaction(async (tx) => {
+      await lockClubRow(tx, clubId);
+      const conflict = await tx.clubLegalEntity.findFirst({
+        where: { clubId, isActive: true, legalEntityId: { not: legalEntityId }, legalEntity: { isActive: true, type: { in: sameTypeValues } } },
+        include: { legalEntity: { select: { name: true } } },
+      });
+      if (conflict) throw new Error(`TYPE_CONFLICT:${conflict.legalEntity.name}`);
+      await tx.clubLegalEntity.upsert({
+        where: { clubId_legalEntityId: { clubId, legalEntityId } },
+        create: { clubId, legalEntityId, isPrimary: true, isActive: true },
+        update: { isActive: true, deactivatedAt: null, isPrimary: true },
+      });
+      await assertClubAssignmentInvariant(tx, clubId, entity.companyId);
     });
-    throw new Error(`У клуба уже есть активное ${legalEntityTypeLabel(entity.type)}: «${conflict.name}». Допустимо одно активное ООО и одно активное ИП на клуб.`);
+  } catch (e) {
+    const m = e instanceof Error ? e.message : "";
+    if (m.startsWith("TYPE_CONFLICT:")) {
+      await recordAudit({
+        action: "club.legal_entity_assignment_blocked",
+        entityType: "ClubLegalEntity", entityId: clubId, companyId: entity.companyId, clubId, userId: guard.ctx.user.id,
+        metadata: { legalEntityId, legalEntityType: type, reason: "active_type_conflict" },
+      });
+      throw new Error(`У клуба уже есть активное ${legalEntityTypeLabel(entity.type)}: «${m.slice("TYPE_CONFLICT:".length)}». Допустимо одно активное ООО и одно активное ИП на клуб.`);
+    }
+    if (m === ASSIGNMENT_CONFLICT) {
+      await recordAudit({
+        action: "club.legal_entity_assignment_blocked",
+        entityType: "ClubLegalEntity", entityId: clubId, companyId: entity.companyId, clubId, userId: guard.ctx.user.id,
+        metadata: { legalEntityId, legalEntityType: type, reason: "concurrent_modification" },
+      });
+      throw new Error(CONCURRENT_MODIFICATION_MSG);
+    }
+    throw new Error("Не удалось назначить юрлицо. Повторите попытку.");
   }
-
-  // History-aware: a soft-closed association for the same pair is reactivated
-  // (never duplicated — @@unique([clubId, legalEntityId])).
-  await prisma.clubLegalEntity.upsert({
-    where: { clubId_legalEntityId: { clubId, legalEntityId } },
-    create: { clubId, legalEntityId, isPrimary: true, isActive: true },
-    update: { isActive: true, deactivatedAt: null, isPrimary: true },
-  });
   await recordAudit({
     action: "club.legal_entity_assigned",
     entityType: "ClubLegalEntity",
@@ -213,11 +238,21 @@ export async function detachLegalEntityFromClub(formData: FormData): Promise<voi
   const guard = await requireOwner(entity.companyId);
   if ("error" in guard) throw new Error(guard.error);
 
-  // Soft-close: preserve truthful history instead of deleting the association.
-  await prisma.clubLegalEntity.updateMany({
-    where: { clubId, legalEntityId, isActive: true },
-    data: { isActive: false, isPrimary: false, deactivatedAt: new Date() },
-  });
+  // Soft-close inside the Club lock (preserve history, never delete). Detach only
+  // deactivates, but it still mutates active status so it takes the same lock to
+  // serialize against concurrent attach/replace.
+  try {
+    await prisma.$transaction(async (tx) => {
+      await lockClubRow(tx, clubId);
+      await tx.clubLegalEntity.updateMany({
+        where: { clubId, legalEntityId, isActive: true },
+        data: { isActive: false, isPrimary: false, deactivatedAt: new Date() },
+      });
+      await assertClubAssignmentInvariant(tx, clubId, entity.companyId);
+    });
+  } catch {
+    throw new Error(CONCURRENT_MODIFICATION_MSG);
+  }
   await recordAudit({
     action: "legal_entity.detached",
     entityType: "ClubLegalEntity",
@@ -272,18 +307,29 @@ export async function replaceClubLegalEntity(_prev: State | undefined, formData:
     }
   }
 
-  const previous = await findClubActiveEntityOfType(clubId, type);
-  const previousId = previous?.id ?? null;
-  if (previousId === (newLegalEntityId || null)) {
-    return { ok: true }; // already in the requested state — no-op
-  }
-
+  // Serialize on the Club row: lock FIRST, then re-read the current active
+  // assignment from inside the locked transaction (never trust a pre-transaction
+  // read), mutate, and verify the invariant before commit (Parts 3-5).
+  const oooTypes = ["ooo", "ООО"];
+  const ipTypes = ["ip", "ИП"];
+  let previousId: string | null = null;
+  let noop = false;
   try {
-    await prisma.$transaction(async (tx) => {
-      // Soft-close the current active association(s) of this type only.
-      if (previousId) {
+    const result = await prisma.$transaction(async (tx) => {
+      await lockClubRow(tx, clubId);
+
+      const currentActive = await tx.clubLegalEntity.findFirst({
+        where: { clubId, isActive: true, legalEntity: { isActive: true, type: { in: type === "ooo" ? oooTypes : ipTypes } } },
+        select: { legalEntityId: true },
+      });
+      const prevId = currentActive?.legalEntityId ?? null;
+      if (prevId === (newLegalEntityId || null)) {
+        return { prevId, noop: true as const };
+      }
+
+      if (prevId) {
         await tx.clubLegalEntity.updateMany({
-          where: { clubId, legalEntityId: previousId, isActive: true },
+          where: { clubId, legalEntityId: prevId, isActive: true },
           data: { isActive: false, isPrimary: false, deactivatedAt: new Date() },
         });
       }
@@ -294,26 +340,27 @@ export async function replaceClubLegalEntity(_prev: State | undefined, formData:
           update: { isActive: true, deactivatedAt: null, isPrimary: true },
         });
       }
-      // Defensive invariant check inside the tx: at most one active of this type.
-      const activeOfType = await tx.clubLegalEntity.findMany({
-        where: { clubId, isActive: true, legalEntity: { type: { in: type === "ooo" ? ["ooo", "ООО"] : ["ip", "ИП"] } } },
-        select: { id: true },
-      });
-      if (activeOfType.length > 1) {
-        throw new Error("CONFLICT_ACTIVE_TYPE");
-      }
+
+      // Full defensive invariant check before commit (≤1 active ООО, ≤1 active
+      // ИП, no duplicate active association, every active points to an active
+      // same-Company entity).
+      await assertClubAssignmentInvariant(tx, clubId, club.companyId);
+      return { prevId, noop: false as const };
     });
+    previousId = result.prevId;
+    noop = result.noop;
   } catch (e) {
-    const msg = e instanceof Error && e.message === "CONFLICT_ACTIVE_TYPE"
-      ? `У клуба уже есть активное ${fieldLabel}. Обновите страницу и повторите.`
-      : "Не удалось изменить юрлицо. Повторите попытку.";
-    await recordAudit({
-      action: "club.legal_entity_assignment_blocked",
-      entityType: "ClubLegalEntity", entityId: clubId, companyId: club.companyId, clubId, userId: guard.ctx.user.id,
-      metadata: { legalEntityId: newLegalEntityId || null, legalEntityType: type, reason: "transaction_conflict" },
-    });
-    return { ok: false, error: msg };
+    if (e instanceof Error && e.message === ASSIGNMENT_CONFLICT) {
+      await recordAudit({
+        action: "club.legal_entity_assignment_blocked",
+        entityType: "ClubLegalEntity", entityId: clubId, companyId: club.companyId, clubId, userId: guard.ctx.user.id,
+        metadata: { legalEntityId: newLegalEntityId || null, legalEntityType: type, reason: "concurrent_modification" },
+      });
+    }
+    return { ok: false, error: CONCURRENT_MODIFICATION_MSG };
   }
+
+  if (noop) return { ok: true }; // already in the requested state
 
   await recordAudit({
     action: "club.legal_entity_replaced",

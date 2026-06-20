@@ -9,15 +9,25 @@ import {
   type LegalEntityType,
   type LegalEntityCheck,
 } from "@/lib/legal-entities";
+import { lockCompanyRow } from "@/lib/db-locking";
 
 // Not exported (a "use server" module may only export async functions).
 type State = { ok: boolean; error?: string; needsConfirm?: boolean; warning?: string };
 
 // Collapse runs of whitespace and trim — keeps Cyrillic intact, removes only
-// accidental double spaces / leading-trailing padding.
+// accidental double spaces / leading-trailing padding. Preserves display form.
 function normalizeText(v: string): string {
   return v.replace(/\s+/g, " ").trim();
 }
+
+// Case-insensitive comparison key for duplicate detection (Cyrillic-safe; no
+// transliteration). Comparison only — never stored or displayed.
+function normalizeKey(v: string): string {
+  return normalizeText(v).toLocaleLowerCase("ru-RU");
+}
+
+// Sentinel for an in-transaction duplicate so the create rolls back cleanly.
+const DUPLICATE_CLUB = "DUPLICATE_CLUB";
 
 // Map a centralized LegalEntity validation failure to a safe Russian message.
 function legalEntityErrorMessage(check: Exclude<LegalEntityCheck, { ok: true }>, field: "ООО" | "ИП"): string {
@@ -120,17 +130,6 @@ export async function createClub(
   const guard = await requireOwnerOf(companyId);
   if ("error" in guard) return { ok: false, error: guard.error };
 
-  // Prevent accidental duplicate club name within the same Company + City
-  // (case-insensitive). Names are not globally unique across Companies.
-  const siblings = await prisma.club.findMany({
-    where: { companyId },
-    select: { name: true, city: true },
-  });
-  const dup = siblings.some(
-    (s) => normalizeText(s.name).toLowerCase() === name.toLowerCase() && normalizeText(s.city).toLowerCase() === city.toLowerCase(),
-  );
-  if (dup) return { ok: false, error: "Клуб с таким названием уже есть в этом городе и сети" };
-
   // Revalidate the selected ООО / ИП server-side (Part 5 steps 2-3). IDs from
   // FormData are never trusted: each must belong to THIS Company, be active and
   // be of the matching type.
@@ -142,20 +141,44 @@ export async function createClub(
     if (!res.ok) return { ok: false, error: legalEntityErrorMessage(res, c.field) };
   }
 
-  // Atomic: club + owner club-access + active ООО/ИП associations all-or-nothing
-  // (Part 5). A failure leaves no partial club, association or access row.
-  const club = await prisma.$transaction(async (tx) => {
-    const c = await tx.club.create({ data: { name, city, companyId } });
-    await tx.clubUserAccess.create({
-      data: { clubId: c.id, userId: guard.ctx.user.id, role: "owner" },
-    });
-    for (const ce of checks) {
-      await tx.clubLegalEntity.create({
-        data: { clubId: c.id, legalEntityId: ce.id, isPrimary: true, isActive: true },
+  // Duplicate identity = same Company + normalized City + normalized name
+  // (case-insensitive, Cyrillic-safe). Archived clubs DO count (preferred
+  // policy: restore instead of recreating). The check runs INSIDE the
+  // transaction AFTER a Company row lock so two concurrent same-identity
+  // creates cannot both pass (Part 6, option A). Atomic: club + owner
+  // club-access + active ООО/ИП associations are all-or-nothing.
+  const nameKey = normalizeKey(name);
+  const cityKey = normalizeKey(city);
+  let club;
+  try {
+    club = await prisma.$transaction(async (tx) => {
+      await lockCompanyRow(tx, companyId);
+      const siblings = await tx.club.findMany({
+        where: { companyId },
+        select: { name: true, city: true },
       });
+      const dup = siblings.some(
+        (s) => normalizeKey(s.name) === nameKey && normalizeKey(s.city) === cityKey,
+      );
+      if (dup) throw new Error(DUPLICATE_CLUB);
+
+      const c = await tx.club.create({ data: { name, city, companyId } });
+      await tx.clubUserAccess.create({
+        data: { clubId: c.id, userId: guard.ctx.user.id, role: "owner" },
+      });
+      for (const ce of checks) {
+        await tx.clubLegalEntity.create({
+          data: { clubId: c.id, legalEntityId: ce.id, isPrimary: true, isActive: true },
+        });
+      }
+      return c;
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === DUPLICATE_CLUB) {
+      return { ok: false, error: "Клуб с таким названием уже есть в этом городе и сети" };
     }
-    return c;
-  });
+    return { ok: false, error: "Не удалось создать клуб. Повторите попытку." };
+  }
 
   await recordAudit({
     action: "club.created",

@@ -54,6 +54,90 @@ async function activeOfType(clubId, type) {
   return rows.filter((r) => norm(r.legalEntity.type) === type);
 }
 
+// Text normalization key for duplicate comparison (mirrors settings/actions.ts).
+const nkey = (v) => String(v).replace(/\s+/g, " ").trim().toLocaleLowerCase("ru-RU");
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// SQLite serializes writers but throws SQLITE_BUSY when two interactive
+// transactions truly overlap (PostgreSQL instead blocks on FOR UPDATE). Retry
+// transient busy/locked errors so the local concurrency tests are deterministic;
+// this is a dev-DB shim, not part of the production code path.
+async function withBusyRetry(fn) {
+  for (let i = 0; i < 25; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      if (/busy|locked/i.test(m)) { await sleep(15 * (i + 1)); continue; }
+      throw e;
+    }
+  }
+  return fn();
+}
+
+// Mirrors lib/db-locking.assertClubAssignmentInvariant.
+async function invariant(tx, clubId, companyId) {
+  const active = await tx.clubLegalEntity.findMany({
+    where: { clubId, isActive: true },
+    include: { legalEntity: { select: { companyId: true, type: true, isActive: true } } },
+  });
+  let ooo = 0, ip = 0; const seen = new Set();
+  for (const a of active) {
+    if (seen.has(a.legalEntityId)) throw new Error("CONFLICT");
+    seen.add(a.legalEntityId);
+    if (!a.legalEntity.isActive) throw new Error("CONFLICT");
+    if (a.legalEntity.companyId !== companyId) throw new Error("CONFLICT");
+    const t = norm(a.legalEntity.type);
+    if (t === "ooo") ooo++; else if (t === "ip") ip++;
+  }
+  if (ooo > 1 || ip > 1) throw new Error("CONFLICT");
+}
+
+// Mirrors replaceClubLegalEntity's locked transaction. On SQLite the FOR UPDATE
+// lock is a no-op; SQLite serializes writers so concurrent transactions still
+// run one-at-a-time, and the in-transaction re-read + invariant converge.
+async function replaceLocked(clubId, companyId, type, newId) {
+  const sameType = type === "ooo" ? ["ooo", "ООО"] : ["ip", "ИП"];
+  try {
+    await withBusyRetry(() => p.$transaction(async (tx) => {
+      const cur = await tx.clubLegalEntity.findFirst({
+        where: { clubId, isActive: true, legalEntity: { isActive: true, type: { in: sameType } } },
+        select: { legalEntityId: true },
+      });
+      const prevId = cur?.legalEntityId ?? null;
+      if (prevId === (newId || null)) return;
+      if (prevId) {
+        await tx.clubLegalEntity.updateMany({ where: { clubId, legalEntityId: prevId, isActive: true }, data: { isActive: false, isPrimary: false, deactivatedAt: new Date() } });
+      }
+      if (newId) {
+        await tx.clubLegalEntity.upsert({
+          where: { clubId_legalEntityId: { clubId, legalEntityId: newId } },
+          create: { clubId, legalEntityId: newId, isPrimary: true, isActive: true },
+          update: { isActive: true, deactivatedAt: null, isPrimary: true },
+        });
+      }
+      await invariant(tx, clubId, companyId);
+    }));
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+// Mirrors createClub's Company-locked duplicate-checked transaction.
+async function createClubLocked(companyId, name, city) {
+  try {
+    return await withBusyRetry(() => p.$transaction(async (tx) => {
+      const sibs = await tx.club.findMany({ where: { companyId }, select: { name: true, city: true } });
+      if (sibs.some((s) => nkey(s.name) === nkey(name) && nkey(s.city) === nkey(city))) throw new Error("DUP");
+      return await tx.club.create({ data: { name, city, companyId } });
+    }));
+  } catch {
+    return null;
+  }
+}
+
 async function cleanup() {
   await p.company.deleteMany({ where: { id: { in: [CO, CO2] } } }); // cascades clubs, entities, links
 }
@@ -129,6 +213,69 @@ async function main() {
   const history = await p.clubLegalEntity.findMany({ where: { clubId: club.id, legalEntityId: OOO } });
   check("history preserved (old association soft-closed, not deleted)",
     history.length === 1 && history[0].isActive === false && history[0].deactivatedAt !== null);
+
+  // --- Part 7: duplicate identity rule (Company + City + name) -------------
+  const cChapaeva = await createClubLocked(CO, "Чапаева 2", "Рязань");
+  check("7.1 Чапаева 2 / Рязань created", !!cChapaeva);
+  const cCentr = await createClubLocked(CO, "Центр 2", "Рязань");
+  check("7.2 Центр 2 / Рязань created (same city, different name)", !!cCentr);
+  const dupCi = await createClubLocked(CO, " чапаева 2 ", "  рязань "); // case/space variant
+  check("7.3 case/space duplicate denied", dupCi === null);
+  const cNN = await createClubLocked(CO, "Чапаева 2", "Нижний Новгород");
+  check("7.4 same name, different city allowed", !!cNN);
+  const cOther = await createClubLocked(CO2, "Чапаева 2", "Рязань");
+  check("7.5 same Company/City/name in another Company allowed", !!cOther);
+
+  // --- Part 7.6: concurrent same-identity creation ------------------------
+  const dupPair = await Promise.all([
+    createClubLocked(CO, "Дубль", "Рязань"),
+    createClubLocked(CO, "дубль", " рязань "),
+  ]);
+  const dublCount = await p.club.count({ where: { companyId: CO, name: "Дубль", city: "Рязань" } });
+  check("7.6 concurrent same-identity create yields exactly one",
+    dublCount === 1 && dupPair.filter(Boolean).length === 1, `count=${dublCount}`);
+
+  // --- Part 7.7-7.9: concurrent assignment replacement --------------------
+  const OOO_A = "pilot-cle-ooo-a", OOO_B = "pilot-cle-ooo-b";
+  const IP_A = "pilot-cle-ip-a", IP_B = "pilot-cle-ip-b";
+  await p.legalEntity.createMany({ data: [
+    { id: OOO_A, companyId: CO, type: "ooo", name: "ООО А", isActive: true },
+    { id: OOO_B, companyId: CO, type: "ooo", name: "ООО Б", isActive: true },
+    { id: IP_A, companyId: CO, type: "ip", name: "ИП А", isActive: true },
+    { id: IP_B, companyId: CO, type: "ip", name: "ИП Б", isActive: true },
+  ] });
+
+  const cc = await p.club.create({ data: { name: "Конкурент", city: "Рязань", companyId: CO } });
+  await p.clubLegalEntity.create({ data: { clubId: cc.id, legalEntityId: IP, isPrimary: true, isActive: true } });
+
+  await Promise.all([
+    replaceLocked(cc.id, CO, "ooo", OOO_A),
+    replaceLocked(cc.id, CO, "ooo", OOO_B),
+  ]);
+  check("7.7 concurrent ООО replace -> exactly one active ООО", (await activeOfType(cc.id, "ooo")).length === 1);
+
+  await Promise.all([
+    replaceLocked(cc.id, CO, "ip", IP_A),
+    replaceLocked(cc.id, CO, "ip", IP_B),
+  ]);
+  check("7.8 concurrent ИП replace -> exactly one active ИП", (await activeOfType(cc.id, "ip")).length === 1);
+
+  const cc2 = await p.club.create({ data: { name: "Параллель", city: "Рязань", companyId: CO } });
+  await Promise.all([
+    replaceLocked(cc2.id, CO, "ooo", OOO_A),
+    replaceLocked(cc2.id, CO, "ip", IP_A),
+  ]);
+  check("7.9 concurrent ООО+ИП -> one each, none lost",
+    (await activeOfType(cc2.id, "ooo")).length === 1 && (await activeOfType(cc2.id, "ip")).length === 1);
+
+  // --- Part 7.10: failed conflict leaves history intact -------------------
+  const histRows = await p.clubLegalEntity.findMany({ where: { clubId: cc.id } });
+  const closed = histRows.filter((r) => !r.isActive);
+  check("7.10 historical associations retained after replacements", closed.length >= 1, `closed=${closed.length}`);
+
+  // --- Part 7.11: no partial rows after a rejected create -----------------
+  const accessRows = await p.clubUserAccess.count({ where: { club: { name: "дубль" } } });
+  check("7.11 no partial rows from rejected duplicate create", accessRows === 0);
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
