@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
-import { requirePageAccess, getCurrentAccessContext, hasActiveRegionalApproverForClub } from "@/lib/access";
-import { canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
+import { getCurrentAccessContext, hasActiveRegionalApproverForClub } from "@/lib/access";
+import { canAnyRoleAccessPage, canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
 import {
   getRefundForContext,
   parseRefundDocuments,
@@ -14,6 +14,7 @@ import {
   APPROVAL_ACTION_LABELS,
   APPROVAL_STATUS_LABELS,
 } from "@/lib/approval";
+import { safeBackLink } from "@/lib/strategic-return";
 import { RefundEditForm } from "./_components/RefundEditForm";
 
 export const dynamic = "force-dynamic";
@@ -28,17 +29,26 @@ function isoDay(date: Date | null): string {
 
 export default async function RefundDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | undefined>>;
 }) {
-  await requirePageAccess("refunds");
   const { id } = await params;
+  const sp = searchParams ? await searchParams : {};
 
   const ctx = await getCurrentAccessContext();
   if (!ctx) notFound();
+  // Viewable by anyone with refunds OR analytics access (the strategic expense
+  // drilldown links here). Scope is still enforced by getRefundForContext.
+  if (!canAnyRoleAccessPage(ctx.effectiveRoles, "refunds") && !canAnyRoleAccessPage(ctx.effectiveRoles, "analytics")) {
+    notFound();
+  }
 
   const refund = await getRefundForContext(ctx, id);
   if (!refund) notFound();
+
+  const back = safeBackLink(sp, { path: "/refunds", label: "К списку" });
 
   const documents = parseRefundDocuments(refund.documentsJson).map((d) => ({
     storageKey: d.storageKey,
@@ -85,10 +95,10 @@ export default async function RefundDetailPage({
           description={`${view.clubName} · ${APPROVAL_STATUS_LABELS[refund.status] ?? refund.status}`}
         />
         <Link
-          href="/refunds"
+          href={back.href}
           className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
-          К списку
+          {back.label}
         </Link>
       </div>
 

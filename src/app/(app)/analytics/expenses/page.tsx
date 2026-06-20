@@ -9,7 +9,7 @@ import { isStrategicRole, type Role } from "@/lib/auth";
 import { expenseCategoryLabel } from "@/lib/expenses";
 import { resolveStrategicGroups } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../../dashboard/_components/StrategicScopeFilter";
-import { openStrategicExpense, openStrategicInvoice } from "../../dashboard/strategic-actions";
+import { openStrategicExpense, openStrategicInvoice, openStrategicRefund } from "../../dashboard/strategic-actions";
 import { buildReturnTo } from "@/lib/strategic-return";
 import {
   loadCategoryExpenseRows,
@@ -196,6 +196,14 @@ function Section({ title, rows, showCompany = false, strategic = false, returnQu
                     {strategic && r.companyId && (r.source === "expense" || r.source === "invoice") ? (
                       <form action={r.source === "expense" ? openStrategicExpense : openStrategicInvoice}>
                         <input type="hidden" name="companyId" value={r.companyId} />
+                        <input type="hidden" name="objectId" value={r.id} />
+                        <input type="hidden" name="returnTo" value={returnQuery} />
+                        <button type="submit" className="text-xs font-medium text-brand-600 hover:text-brand-700">Открыть</button>
+                      </form>
+                    ) : strategic && r.companyId && r.source === "refund" ? (
+                      <form action={openStrategicRefund}>
+                        <input type="hidden" name="companyId" value={r.companyId} />
+                        <input type="hidden" name="clubId" value={r.clubId} />
                         <input type="hidden" name="objectId" value={r.id} />
                         <input type="hidden" name="returnTo" value={returnQuery} />
                         <button type="submit" className="text-xs font-medium text-brand-600 hover:text-brand-700">Открыть</button>

@@ -67,6 +67,37 @@ export async function openStrategicInvoice(formData: FormData): Promise<void> {
   await openStrategicRecord("invoice", formData);
 }
 
+/**
+ * Safe context-switch-and-open for a strategic Refund row that may belong to a
+ * Company other than the active-scope cookie. Unlike expense/invoice, the Club
+ * is supplied by the caller and independently validated: (1) actor is a
+ * strategic role, (2) explicit Company access, (3) explicit Club access AND the
+ * RECORD belongs to the claimed Company + Club. Only then is the scope switched
+ * and the user redirected to the allowlisted /refunds/[id] route (with safe
+ * return filters). The detail page still performs its own object-level
+ * authorization; changing the cookie never grants access.
+ */
+export async function openStrategicRefund(formData: FormData): Promise<void> {
+  const base = "/refunds";
+  const ctx = await getCurrentAccessContext();
+  const ret = safeReturn(String(formData.get("returnTo") ?? ""));
+  if (!ctx || !isStrategicRole(ctx.effectiveRoles)) redirect(base + ret);
+
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const clubId = String(formData.get("clubId") ?? "").trim();
+  const objectId = String(formData.get("objectId") ?? "").trim();
+  if (!companyId || !clubId || !objectId) redirect(base + ret);
+  if (!(await canAccessCompany(ctx!.user.id, companyId))) redirect(base + ret);
+  if (!(await canAccessClub(ctx!.user.id, clubId))) redirect(base + ret);
+
+  const rec = await prisma.refund.findUnique({ where: { id: objectId }, select: { companyId: true, clubId: true } });
+  // The record must belong to the claimed Company AND the claimed (accessible) Club.
+  if (!rec || rec.companyId !== companyId || rec.clubId !== clubId) redirect(base + ret);
+
+  await setActiveScope(companyId, clubId);
+  redirect(`${base}/${encodeURIComponent(objectId)}${ret}`);
+}
+
 // Allowlisted internal destinations only — never an arbitrary redirect URL.
 const DESTINATIONS: Record<string, (id: string) => string> = {
   sales_report: (id) => `/sales/reports/${encodeURIComponent(id)}`,
