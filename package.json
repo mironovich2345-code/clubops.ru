@@ -23,6 +23,7 @@
     "security:reset-2fa": "node scripts/security-reset-2fa.mjs",
     "pilot:sessions": "node scripts/pilot-sessions.mjs",
     "pilot:otp": "node scripts/pilot-otp.mjs",
+    "pilot:appurl": "node scripts/pilot-appurl.mjs",
     "docker:build": "docker build -t club-ops:latest .",
     "docker:prod": "docker compose -f docker-compose.production.yml up -d --build"
   },

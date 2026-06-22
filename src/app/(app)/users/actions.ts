@@ -13,6 +13,7 @@ import {
   recordAudit,
 } from "@/lib/access";
 import { revokeAllSessionsForUser } from "@/lib/session";
+import { absoluteUrlSafe } from "@/lib/app-url";
 import { generateInviteToken, inviteExpiry, isClubScopedRole } from "@/lib/invites";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -23,6 +24,10 @@ type InviteState = {
   ok: boolean;
   error?: string;
   invitePath?: string;
+  // Absolute link built from the configured APP_URL (https://pilot.clubops.ru in
+  // production). null when APP_URL is misconfigured — the client then falls back
+  // to the current origin so invite creation never breaks.
+  inviteUrl?: string;
 };
 
 export async function createInvite(
@@ -122,7 +127,8 @@ export async function createInvite(
   });
 
   revalidatePath("/users");
-  return { ok: true, invitePath: `/accept-invite?token=${token}` };
+  const invitePath = `/accept-invite?token=${token}`;
+  return { ok: true, invitePath, inviteUrl: absoluteUrlSafe(invitePath) ?? undefined };
   } catch (error) {
     // Surface a friendly message but keep the real error in the server logs.
     console.error("createInvite failed", error);

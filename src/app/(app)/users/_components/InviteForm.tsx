@@ -7,7 +7,7 @@ import { createInvite } from "../actions";
 type RoleOption = { value: string; label: string };
 type ClubOption = { id: string; name: string; city: string };
 
-type FormState = { ok: boolean; error?: string; invitePath?: string };
+type FormState = { ok: boolean; error?: string; invitePath?: string; inviteUrl?: string };
 const initialState: FormState = { ok: false };
 
 function SubmitButton() {
@@ -37,10 +37,12 @@ export function InviteForm({
   const [copied, setCopied] = useState(false);
 
   const needsClub = role === "manager";
-  const inviteUrl =
-    state.ok && state.invitePath && typeof window !== "undefined"
-      ? window.location.origin + state.invitePath
-      : "";
+  // Prefer the server-built absolute link (from APP_URL = pilot.clubops.ru in
+  // production); fall back to the current origin if APP_URL is unset/misconfigured.
+  const inviteUrl = state.ok
+    ? state.inviteUrl ??
+      (state.invitePath && typeof window !== "undefined" ? window.location.origin + state.invitePath : "")
+    : "";
 
   return (
     <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
