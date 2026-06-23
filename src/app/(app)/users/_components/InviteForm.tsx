@@ -37,12 +37,11 @@ export function InviteForm({
   const [copied, setCopied] = useState(false);
 
   const needsClub = role === "manager";
-  // Prefer the server-built absolute link (from APP_URL = pilot.clubops.ru in
-  // production); fall back to the current origin if APP_URL is unset/misconfigured.
-  const inviteUrl = state.ok
-    ? state.inviteUrl ??
-      (state.invitePath && typeof window !== "undefined" ? window.location.origin + state.invitePath : "")
-    : "";
+  // Always the server-built absolute link from the configured APP_URL
+  // (https://pilot.clubops.ru in production, localhost in dev). Never derived
+  // from the browser origin — production rejects invite creation outright when
+  // APP_URL is missing/invalid, so a wrong link is never displayed.
+  const inviteUrl = state.ok ? state.inviteUrl ?? "" : "";
 
   return (
     <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">

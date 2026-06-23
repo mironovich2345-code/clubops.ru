@@ -13,7 +13,7 @@ import {
   recordAudit,
 } from "@/lib/access";
 import { revokeAllSessionsForUser } from "@/lib/session";
-import { absoluteUrlSafe } from "@/lib/app-url";
+import { getAppUrlSafe } from "@/lib/app-url";
 import { generateInviteToken, inviteExpiry, isClubScopedRole } from "@/lib/invites";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -103,6 +103,15 @@ export async function createInvite(
   });
   if (pending) return { ok: false, error: "Активное приглашение уже существует" };
 
+  // Production must mint the invitation link from a configured, valid APP_URL —
+  // never from Host / forwarded headers / browser origin. Fail BEFORE creating
+  // the invite so no row exists for a link we cannot build correctly. Outside
+  // production a localhost base is allowed for developer convenience.
+  const appBase = getAppUrlSafe();
+  if (process.env.NODE_ENV === "production" && !appBase) {
+    return { ok: false, error: "Не настроен адрес приложения. Обратитесь к администратору системы." };
+  }
+
   const { token, tokenHash } = generateInviteToken();
   const invite = await prisma.invite.create({
     data: {
@@ -128,7 +137,9 @@ export async function createInvite(
 
   revalidatePath("/users");
   const invitePath = `/accept-invite?token=${token}`;
-  return { ok: true, invitePath, inviteUrl: absoluteUrlSafe(invitePath) ?? undefined };
+  // In production appBase is guaranteed non-null by the guard above; in dev it is
+  // the localhost base. The client only falls back to its origin outside prod.
+  return { ok: true, invitePath, inviteUrl: appBase ? `${appBase}${invitePath}` : undefined };
   } catch (error) {
     // Surface a friendly message but keep the real error in the server logs.
     console.error("createInvite failed", error);

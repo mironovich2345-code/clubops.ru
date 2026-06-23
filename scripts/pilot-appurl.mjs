@@ -31,5 +31,27 @@ check("3 dev defaults to localhost when unset", getAppUrl("", "development") ===
 check("3 dev allows http custom", getAppUrl("http://localhost:4000", "development") === "http://localhost:4000");
 check("dev allows https too", getAppUrl("https://pilot.clubops.ru", "development") === "https://pilot.clubops.ru");
 
+// Mirrors createInvite's production guard: appBase = getAppUrlSafe();
+// in production a missing/invalid base must BLOCK invite creation; dev proceeds.
+function getAppUrlSafe(appUrl, nodeEnv) { try { return getAppUrl(appUrl, nodeEnv); } catch { return null; } }
+function inviteDecision(appUrl, nodeEnv) {
+  const appBase = getAppUrlSafe(appUrl, nodeEnv);
+  if (nodeEnv === "production" && !appBase) {
+    return { ok: false, error: "Не настроен адрес приложения. Обратитесь к администратору системы." };
+  }
+  return { ok: true, inviteUrl: appBase ? `${appBase}/accept-invite?token=T` : undefined };
+}
+
+check("prod + valid APP_URL → invite uses pilot.clubops.ru",
+  inviteDecision("https://pilot.clubops.ru", "production").inviteUrl === "https://pilot.clubops.ru/accept-invite?token=T");
+const miss = inviteDecision("", "production");
+check("prod + missing APP_URL → safe config error, no link",
+  miss.ok === false && miss.inviteUrl === undefined && miss.error === "Не настроен адрес приложения. Обратитесь к администратору системы.");
+const bad = inviteDecision("http://pilot.clubops.ru", "production");
+check("prod + invalid (http) APP_URL → safe config error, no link", bad.ok === false && bad.inviteUrl === undefined);
+const dev = inviteDecision("", "development");
+check("dev without APP_URL → invite still works (localhost link)",
+  dev.ok === true && dev.inviteUrl === "http://localhost:3000/accept-invite?token=T");
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
