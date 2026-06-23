@@ -50,6 +50,11 @@ function getTransport(cfg: SmtpConfig): Transporter {
       port: cfg.port,
       secure: cfg.secure,
       auth: { user: cfg.user, pass: cfg.password },
+      // Bounded timeouts so an unresponsive SMTP server fails fast (sanitized
+      // error + resend) instead of hanging the login request indefinitely.
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 15000,
     });
   }
   return cachedTransport;

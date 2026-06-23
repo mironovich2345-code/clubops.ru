@@ -24,6 +24,8 @@
     "pilot:sessions": "node scripts/pilot-sessions.mjs",
     "pilot:otp": "node scripts/pilot-otp.mjs",
     "pilot:appurl": "node scripts/pilot-appurl.mjs",
+    "pilot:financial": "node scripts/pilot-financial.mjs",
+    "pilot:full": "node scripts/pilot-full.mjs",
     "docker:build": "docker build -t club-ops:latest .",
     "docker:prod": "docker compose -f docker-compose.production.yml up -d --build"
   },

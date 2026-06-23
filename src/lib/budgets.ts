@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import type { DataScope, AccessContext } from "@/lib/access";
 import { EXPENSE_CATEGORY_OPTIONS, EXPENSE_CATEGORY_LABELS } from "@/lib/expenses";
 import { invoiceExpensePeriod } from "@/lib/invoices";
+import { APPROVED_UNPAID_STATUSES } from "@/lib/approval";
 
 // Budget categories reuse the expense category keys.
 export const BUDGET_CATEGORIES = EXPENSE_CATEGORY_OPTIONS;
@@ -56,8 +57,11 @@ function monthRange(month: string): { start: number; end: number } | null {
   return { start: new Date(y, mo - 1, 1).getTime(), end: new Date(y, mo, 1).getTime() };
 }
 
-const APPROVED_INVOICE_STATUSES = ["approved_by_regional", "approved_by_owner", "paid"];
-const APPROVED_REFUND_STATUSES = ["approved_by_regional", "approved_by_owner", "paid"];
+// Budget "used" counts committed obligations (approved-but-unpaid, incl. the
+// chief-accountant fallback) PLUS paid. Sourced from the canonical approved set
+// so it can never drift from the approval workflow / dashboard debt.
+const APPROVED_INVOICE_STATUSES = [...APPROVED_UNPAID_STATUSES, "paid"];
+const APPROVED_REFUND_STATUSES = [...APPROVED_UNPAID_STATUSES, "paid"];
 
 /**
  * Used budget for a club+category+month. Includes approved/paid invoices,

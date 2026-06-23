@@ -6,6 +6,7 @@ import {
 } from "@/lib/budgets";
 import { REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, getSalesReportFactBreakdown } from "@/lib/sales-report-rows";
 import { invoiceAnalyticsDate } from "@/lib/invoices";
+import { APPROVED_UNPAID_STATUSES } from "@/lib/approval";
 
 // Confirmed-report line keys for the plan-direction split facts.
 const SUBSCRIPTIONS_KEY = "subscriptions_ooo";
@@ -156,7 +157,10 @@ export function resolveMonthPeriod(month: string, now: Date): ResolvedPeriod {
 
 // --- raw data --------------------------------------------------------------
 
-const APPROVED_UNPAID = ["approved_by_regional", "approved_by_owner"];
+// Dashboard debt / cash-gap obligations: approved invoices/refunds not yet paid.
+// Sourced from the canonical set so the chief-accountant fallback approval is
+// never dropped from network debt.
+const APPROVED_UNPAID = APPROVED_UNPAID_STATUSES;
 
 export type AnalyticsData = {
   clubs: Array<{ id: string; name: string }>;

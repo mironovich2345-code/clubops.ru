@@ -59,7 +59,13 @@ function has(roles: readonly Role[], role: Role): boolean {
 }
 
 const APPROVAL_REJECTABLE = ["needs_review", "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
-const APPROVAL_PAYABLE = ["approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
+// Canonical "approved, awaiting payment" set — the single source of truth for
+// invoice/refund statuses that are committed obligations but not yet paid.
+// MUST include approved_by_chief_accountant (the chief-accountant fallback
+// approver when a club has no active regional director). Reused by budget
+// "used" totals and dashboard debt/cash-gap so they never undercount.
+export const APPROVED_UNPAID_STATUSES = ["approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
+const APPROVAL_PAYABLE = APPROVED_UNPAID_STATUSES;
 
 /**
  * Pure decision table. Approval routes by club: an ACTIVE regional approver
