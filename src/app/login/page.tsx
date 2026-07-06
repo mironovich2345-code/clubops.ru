@@ -10,19 +10,21 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; e?: string }>;
+  searchParams: Promise<{ next?: string; e?: string; deleted?: string; restored?: string }>;
 }) {
   // Dev/local only: make sure a demo owner exists so the beta is usable.
   await ensureDevOwner();
 
-  const { next, e } = await searchParams;
+  const { next, e, deleted, restored } = await searchParams;
   const user = await getCurrentUser();
   if (user) redirect(safeNextPath(next));
 
   const registerHref = next ? `/register?next=${encodeURIComponent(next)}` : "/register";
   const devHint = process.env.NODE_ENV !== "production" ? DEV_DEMO_CREDENTIALS : null;
   const notice =
-    e === "expired" ? "Сеанс подтверждения истёк. Войдите снова."
+    deleted === "1" ? "Аккаунт удалён. Ссылка для восстановления отправлена на email (действует 30 дней)."
+    : restored === "1" ? "Аккаунт восстановлен. Войдите с паролем и кодом из email."
+    : e === "expired" ? "Сеанс подтверждения истёк. Войдите снова."
     : e === "locked" ? "Слишком много попыток. Войдите снова."
     : e === "created" ? "Аккаунт создан. Войдите и подтвердите вход кодом из email."
     : null;

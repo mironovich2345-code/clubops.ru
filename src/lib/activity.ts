@@ -156,6 +156,23 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.email_verified": "Email подтверждён",
   "user.email_changed_by_system": "Email изменён администратором",
   "user.two_factor_reset_by_system": "Сброс 2FA администратором",
+  // Account deletion / recovery + system administrator
+  "account.deletion_started": "Начато удаление аккаунта",
+  "account.deletion_otp_sent": "Код удаления аккаунта отправлен",
+  "account.deletion_otp_failed": "Неверный код удаления аккаунта",
+  "account.deletion_confirmed": "Удаление аккаунта подтверждено",
+  "account.deleted": "Аккаунт удалён",
+  "account.deletion_blocked_sole_owner": "Удаление отклонено: единственный собственник",
+  "account.deletion_blocked_scope": "Удаление отклонено: вне области доступа",
+  "account.recovery_email_resent": "Письмо восстановления отправлено повторно",
+  "account.restore_started": "Начато восстановление аккаунта",
+  "account.restore_otp_sent": "Код восстановления отправлен",
+  "account.restore_failed": "Неверный код восстановления",
+  "account.restored": "Аккаунт восстановлен",
+  "account.recovery_expired": "Срок восстановления истёк",
+  "system_admin.assigned": "Назначен системный администратор",
+  "system_admin.revoked": "Снят системный администратор",
+  "system_admin.alternate_email_restore": "Восстановление на другой email",
 };
 
 export function auditActionLabel(action: string): string {

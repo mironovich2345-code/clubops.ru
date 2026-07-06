@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requireUser, verifyPassword } from "@/lib/auth";
 import {
   getCurrentCompanyAndClub,
   getInvitableRoles,
@@ -13,7 +13,11 @@ import {
   recordAudit,
 } from "@/lib/access";
 import { revokeAllSessionsForUser } from "@/lib/session";
-import { getAppUrlSafe } from "@/lib/app-url";
+import { getAppUrlSafe, absoluteUrlSafe } from "@/lib/app-url";
+import { recoveryConfigured } from "@/lib/account-recovery";
+import { startActionChallenge, verifyActionChallenge, clearActionCookie } from "@/lib/action-challenge";
+import { checkOwnerDeletionEligibility, finalizeDeletion } from "@/lib/account-deletion";
+import { sendRecoveryLinkEmail, sendDeletionCompletedEmail } from "@/lib/email";
 import { generateInviteToken, inviteExpiry, isClubScopedRole } from "@/lib/invites";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -310,4 +314,64 @@ export async function adminSetUserActive(_prev: AdminState | undefined, formData
     console.error("adminSetUserActive failed", error);
     return { ok: false, error: "Не удалось изменить статус пользователя. Обновите страницу и повторите попытку." };
   }
+}
+
+// --- Owner-initiated account deletion (Part 7) -----------------------------
+type OwnerDeleteState = { ok: boolean; stage?: "start" | "otp"; error?: string; targetUserId?: string };
+
+/**
+ * Step 1: an active owner confirms THEIR password + strict eligibility, then a
+ * deletion OTP is sent to the OWNER's email (owner reauthentication). Never
+ * reuses a login OTP. The target does NOT confirm.
+ */
+export async function startOwnerDeletion(_prev: OwnerDeleteState | undefined, formData: FormData): Promise<OwnerDeleteState> {
+  const actor = await requireUser();
+  const targetUserId = String(formData.get("targetUserId") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  if (!recoveryConfigured()) return { ok: false, stage: "start", error: "Удаление недоступно. Обратитесь к администратору системы.", targetUserId };
+
+  const me = await prisma.user.findUnique({ where: { id: actor.id }, select: { passwordHash: true, email: true, isActive: true } });
+  if (!me || !me.passwordHash || !me.isActive || !(await verifyPassword(password, me.passwordHash))) {
+    return { ok: false, stage: "start", error: "Неверный пароль.", targetUserId };
+  }
+  const eligible = await checkOwnerDeletionEligibility(actor.id, targetUserId);
+  if (!eligible.ok) {
+    if (eligible.code === "scope") await recordAudit({ action: "account.deletion_blocked_scope", entityType: "User", entityId: targetUserId, userId: actor.id });
+    return { ok: false, stage: "start", error: eligible.error, targetUserId };
+  }
+  await recordAudit({ action: "account.deletion_started", entityType: "User", entityId: targetUserId, userId: actor.id, metadata: { by: "owner" } });
+  const sent = await startActionChallenge({ userId: actor.id, deliverTo: me.email, purpose: "owner_delete", kind: "deletion" });
+  if (!sent.ok) return { ok: false, stage: "otp", error: "Не удалось отправить код. Повторите позже.", targetUserId };
+  return { ok: true, stage: "otp", targetUserId };
+}
+
+/** Step 2: verify the owner's OTP, re-check eligibility, then delete the target. */
+export async function confirmOwnerDeletion(_prev: OwnerDeleteState | undefined, formData: FormData): Promise<OwnerDeleteState> {
+  const actor = await requireUser();
+  const targetUserId = String(formData.get("targetUserId") ?? "").trim();
+  const code = String(formData.get("code") ?? "").trim();
+
+  const verify = await verifyActionChallenge("owner_delete", code);
+  if (!verify.ok) {
+    if (verify.locked || verify.expired) return { ok: false, stage: "start", error: "Сеанс подтверждения истёк. Начните заново.", targetUserId };
+    return { ok: false, stage: "otp", error: "Неверный или просроченный код.", targetUserId };
+  }
+  if (verify.user && verify.user.id !== actor.id) return { ok: false, stage: "start", error: "Сеанс недействителен.", targetUserId };
+
+  const eligible = await checkOwnerDeletionEligibility(actor.id, targetUserId);
+  if (!eligible.ok) return { ok: false, stage: "start", error: eligible.error, targetUserId };
+
+  const result = await finalizeDeletion({ userId: targetUserId, requestedByUserId: actor.id, requestType: "owner" });
+  await clearActionCookie("owner_delete");
+  if (!result.ok) return { ok: false, stage: "start", error: result.error, targetUserId };
+
+  // Notify the target on their ORIGINAL email + send the recovery link.
+  const requestId = targetUserId.slice(0, 8);
+  const restoreUrl = absoluteUrlSafe(`/restore-account?token=${result.recoveryToken}`);
+  if (restoreUrl) await sendRecoveryLinkEmail(result.originalEmail, restoreUrl, requestId);
+  await sendDeletionCompletedEmail(result.originalEmail, requestId, true);
+  // finalizeDeletion already writes the account.deleted audit event.
+
+  revalidatePath("/users");
+  return { ok: true };
 }

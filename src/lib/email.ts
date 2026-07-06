@@ -138,3 +138,82 @@ export async function sendOtpEmail(
     return { ok: false, errorCode: String(code) };
   }
 }
+
+// --- Account deletion / recovery emails (Part 16) --------------------------
+// Generic sender reused by every template. Contains no financial/Company data,
+// no IDs, no tokens beyond the APP_URL recovery link, and fails safely with a
+// sanitized SendResult (never surfaces SMTP internals).
+async function sendMail(to: string, subject: string, text: string, html: string, requestId: string): Promise<SendResult> {
+  if (testTransportEnabled()) {
+    lastTestEmail = { to, subject, text, html };
+    if (process.env.NODE_ENV !== "production") console.log(`[DEV MAIL] "${subject}" -> ${to}`);
+    return { ok: true };
+  }
+  const cfg = readSmtpConfig();
+  if (!cfg) {
+    logDeliveryError(requestId, to, "smtp_not_configured");
+    return { ok: false, errorCode: "smtp_not_configured" };
+  }
+  try {
+    await getTransport(cfg).sendMail({ from: cfg.from, to, subject, text, html });
+    return { ok: true };
+  } catch (err) {
+    const code = (err as { code?: string })?.code ?? "smtp_send_failed";
+    logDeliveryError(requestId, to, String(code));
+    return { ok: false, errorCode: String(code) };
+  }
+}
+
+function wrap(inner: string): string {
+  return `<div style="font-family:sans-serif;max-width:480px"><h2 style="margin:0 0 8px">CLUB-OPS</h2>${inner}</div>`;
+}
+function codeBlock(code: string): string {
+  return `<p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>`;
+}
+
+/** OTP for a sensitive account action (deletion or restoration). */
+export function sendActionOtpEmail(
+  to: string, code: string, expiresMinutes: number, requestId: string,
+  kind: "deletion" | "restore",
+): Promise<SendResult> {
+  const what = kind === "deletion" ? "удаление аккаунта" : "восстановление аккаунта";
+  const subject = kind === "deletion" ? "Код подтверждения удаления аккаунта CLUB-OPS" : "Код восстановления аккаунта CLUB-OPS";
+  const text =
+    `CLUB-OPS\n\nКод для действия «${what}»: ${code}\n` +
+    `Код действует ${expiresMinutes} минут.\n\nНикому не сообщайте этот код. Если вы не запрашивали это действие, проигнорируйте письмо.`;
+  const html = wrap(`<p>Код для действия «${what}»:</p>${codeBlock(code)}<p>Код действует ${expiresMinutes} минут.</p><p style="color:#b91c1c">Никому не сообщайте этот код.</p><p style="color:#64748b;font-size:12px">Если вы не запрашивали это действие, проигнорируйте письмо.</p>`);
+  return sendMail(to, subject, text, html, requestId);
+}
+
+/** Notice that the account was deleted and the email released. */
+export function sendDeletionCompletedEmail(to: string, requestId: string, byOwner: boolean): Promise<SendResult> {
+  const subject = "Аккаунт CLUB-OPS удалён";
+  const who = byOwner ? "Ваш аккаунт был удалён администратором организации." : "Ваш аккаунт был удалён.";
+  const body =
+    `${who} Адрес электронной почты освобождён и может быть использован для новой регистрации. ` +
+    `Финансовая история сохранена. Восстановление доступно в течение 30 дней по ссылке из отдельного письма. ` +
+    `После восстановления прежние права доступа НЕ возвращаются автоматически.`;
+  const text = `CLUB-OPS\n\n${body}\n\nЕсли это были не вы, срочно обратитесь к администратору системы.`;
+  const html = wrap(`<p>${body}</p><p style="color:#64748b;font-size:12px">Если это были не вы, срочно обратитесь к администратору системы.</p>`);
+  return sendMail(to, subject, text, html, requestId);
+}
+
+/** Recovery link (APP_URL-based) sent to the original email after deletion. */
+export function sendRecoveryLinkEmail(to: string, restoreUrl: string, requestId: string): Promise<SendResult> {
+  const subject = "Восстановление аккаунта CLUB-OPS";
+  const text =
+    `CLUB-OPS\n\nВы можете восстановить аккаунт в течение 30 дней по ссылке:\n${restoreUrl}\n\n` +
+    `Ссылка одноразовая. Права доступа к компаниям и клубам после восстановления НЕ возвращаются автоматически. ` +
+    `Никому не передавайте эту ссылку. Если вы не удаляли аккаунт, обратитесь к администратору системы.`;
+  const html = wrap(`<p>Вы можете восстановить аккаунт в течение 30 дней:</p><p><a href="${restoreUrl}">Восстановить аккаунт</a></p><p>Ссылка одноразовая. Права доступа после восстановления НЕ возвращаются автоматически.</p><p style="color:#64748b;font-size:12px">Никому не передавайте эту ссылку. Если вы не удаляли аккаунт, обратитесь к администратору системы.</p>`);
+  return sendMail(to, subject, text, html, requestId);
+}
+
+/** Confirmation that the account was restored. */
+export function sendRestorationCompletedEmail(to: string, requestId: string): Promise<SendResult> {
+  const subject = "Аккаунт CLUB-OPS восстановлен";
+  const body = "Ваш аккаунт восстановлен. Войдите с паролем и кодом подтверждения из email. Права доступа к компаниям и клубам необходимо запросить у администратора заново.";
+  const text = `CLUB-OPS\n\n${body}`;
+  return sendMail(to, subject, text, wrap(`<p>${body}</p>`), requestId);
+}
+

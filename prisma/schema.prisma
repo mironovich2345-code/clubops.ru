@@ -101,6 +101,18 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // Global platform role, SEPARATE from Company/Club access. SQLite has no
+  // enums, so this is TEXT; the only valid value is "system_admin" (see
+  // lib/system-role.ts). null = ordinary user. Never granted via tenant roles.
+  systemRole String?
+
+  // Soft-deletion / tombstone lifecycle (Part 3). The User row is NEVER
+  // physically deleted (financial createdBy relations are onDelete: Restrict).
+  deletedAt           DateTime?
+  restoreUntil        DateTime?
+  deletionRequestedAt DateTime?
+  recoveryPurgedAt    DateTime?
+
   clubAccess    UserClubAccess[]
   companyAccess CompanyUserAccess[]
   clubRoles     ClubUserAccess[]
@@ -120,6 +132,36 @@ model User {
   mandatoryPaymentsCreated     MandatoryPaymentPlan[] @relation("MandatoryPaymentCreatedBy")
   mandatoryPaymentsResponsible MandatoryPaymentPlan[] @relation("MandatoryPaymentResponsible")
   balanceSnapshotsCreated      BalanceSnapshot[]      @relation("BalanceSnapshotCreatedBy")
+  accountDeletions             AccountDeletion[]
+}
+
+// Recovery record for a soft-deleted (tombstoned) account (Part 3/10/11). Holds
+// the AES-256-GCM-encrypted original email + an HMAC hash for lookup, and the
+// HMAC of a single-use recovery token. Sensitive fields are purged after the
+// 30-day window (Part 13). Never stores plaintext email/token.
+model AccountDeletion {
+  id                     String    @id @default(cuid())
+  userId                 String
+  requestedByUserId      String?
+  requestType            String // "self" | "owner" | "system_admin"
+  originalEmailEncrypted String? // base64(iv|tag|ciphertext), AES-256-GCM; null after purge
+  originalEmailHash      String // HMAC(ACCOUNT_RECOVERY_SECRET, normalizedEmail)
+  originalEmailMasked    String
+  restoreTokenHash       String?   @unique // HMAC of the recovery token; null after use/purge
+  restoreUntil           DateTime
+  confirmedAt            DateTime?
+  deletedAt              DateTime?
+  restoredAt             DateTime?
+  recoveryPurgedAt       DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([originalEmailHash])
+  @@index([restoreUntil])
+  @@index([deletedAt])
 }
 
 model Session {

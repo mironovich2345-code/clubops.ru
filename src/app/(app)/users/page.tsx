@@ -16,6 +16,7 @@ import { INVITE_ROLE_LABELS } from "@/lib/invites";
 import { ROLE_LABELS } from "@/lib/navigation";
 import { InviteForm } from "./_components/InviteForm";
 import { UserAdminControls } from "./_components/UserAdminControls";
+import { OwnerDeleteControl } from "./_components/OwnerDeleteControl";
 import { removeAccess } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -140,11 +141,14 @@ export default async function UsersPage() {
                         seenUser.add(member.user.id);
                         if (!adminUsers.has(member.user.id)) return null;
                         return (
-                          <UserAdminControls
-                            targetUserId={member.user.id}
-                            isActive={member.user.isActive}
-                            sessionCount={sessionCounts.get(member.user.id) ?? 0}
-                          />
+                          <>
+                            <UserAdminControls
+                              targetUserId={member.user.id}
+                              isActive={member.user.isActive}
+                              sessionCount={sessionCounts.get(member.user.id) ?? 0}
+                            />
+                            {isOwner ? <OwnerDeleteControl targetUserId={member.user.id} /> : null}
+                          </>
                         );
                       })()}
                       {!canRemove(member) && !adminUsers.has(member.user.id) ? (

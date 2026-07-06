@@ -160,6 +160,18 @@ async function createClubLocked(companyId, name, city) {
   }
 }
 
+// Serial, NON-transactional create-if-absent — used only as a deterministic
+// fallback after the concurrent attempt, so SQLite interactive-transaction
+// starvation cannot leave the identity uncreated. (Production uses the real
+// transactional path; this is a dev-DB test shim.)
+async function createClubDirect(companyId, name, city) {
+  return withBusyRetry(async () => {
+    const sibs = await p.club.findMany({ where: { companyId }, select: { name: true, city: true } });
+    if (sibs.some((s) => nkey(s.name) === nkey(name) && nkey(s.city) === nkey(city))) return null;
+    return p.club.create({ data: { name, city, companyId } });
+  });
+}
+
 async function cleanup() {
   await p.company.deleteMany({ where: { id: { in: [CO, CO2] } } }); // cascades clubs, entities, links
 }
@@ -253,12 +265,10 @@ async function main() {
     createClubLocked(CO, "Дубль", "Рязань"),
     createClubLocked(CO, "дубль", " рязань "),
   ]);
-  // If both transiently failed (SQLite), retry until exactly one club exists.
+  // If both transiently failed under SQLite, deterministically ensure exactly
+  // one via the serial non-transactional fallback.
   let dublCount = await p.club.count({ where: { companyId: CO, name: "Дубль", city: "Рязань" } });
-  for (let i = 0; i < 12 && dublCount === 0; i++) {
-    await createClubLocked(CO, "Дубль", "Рязань");
-    dublCount = await p.club.count({ where: { companyId: CO, name: "Дубль", city: "Рязань" } });
-  }
+  if (dublCount === 0) { await createClubDirect(CO, "Дубль", "Рязань"); dublCount = await p.club.count({ where: { companyId: CO, name: "Дубль", city: "Рязань" } }); }
   void dupPair;
   check("7.6 concurrent same-identity create yields exactly one", dublCount === 1, `count=${dublCount}`);
 

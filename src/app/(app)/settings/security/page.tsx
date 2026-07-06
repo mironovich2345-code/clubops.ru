@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSessionId, listActiveSessionsForUser } from "@/lib/session";
 import { endOwnSession, endOtherOwnSessions, endAllOwnSessions } from "./actions";
+import { DeleteAccountFlow } from "./_components/DeleteAccountFlow";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +94,8 @@ export default async function SecurityPage() {
       <p className="mt-4 text-xs text-slate-500">
         Завершение текущей сессии выполнит выход. Завершение всех сессий потребует повторного входа на всех устройствах.
       </p>
+
+      <DeleteAccountFlow />
     </div>
   );
 }
