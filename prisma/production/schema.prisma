@@ -687,6 +687,7 @@ model Expense {
   legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   createdBy   User         @relation("ExpenseCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   paidBy      User?        @relation("ExpensePaidBy", fields: [paidByUserId], references: [id], onDelete: SetNull)
+  documents   ExpenseDocument[]
 
   @@index([companyId])
   @@index([clubId])
@@ -697,6 +698,38 @@ model Expense {
   @@index([status])
   @@index([entryVersion])
   @@index([paidByUserId])
+}
+
+// Multi-document attachments for simplified (entryVersion=2) expenses (Phase 2A).
+// Additive: the legacy single-file fields on Expense (originalFileStorageKey…)
+// remain and stay readable. companyId/clubId are stored for scope isolation;
+// removal is a SOFT tombstone (removedAt/removedBy/removalReason), never a row
+// delete in the normal flow. sha256 enables in-expense duplicate detection.
+model ExpenseDocument {
+  id               String    @id @default(cuid())
+  expenseId        String
+  companyId        String
+  clubId           String
+  storageKey       String    @unique // opaque, server-generated ("expense-docs/<hex>.<ext>")
+  originalFilename String
+  safeFilename     String
+  mimeType         String
+  sizeBytes        Int
+  sha256           String
+  // receipt | payment_confirmation | other (extensible; validated in code)
+  documentType     String    @default("receipt")
+  uploadedByUserId String?
+  createdAt        DateTime  @default(now())
+  removedAt        DateTime?
+  removedByUserId  String?
+  removalReason    String?
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@index([companyId, clubId])
+  @@index([createdAt])
+  @@index([removedAt])
 }
 
 // Managed expense categories (Part 8). Chief accountant only may create/rename/

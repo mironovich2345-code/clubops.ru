@@ -11,8 +11,15 @@ import {
   EXPENSE_TYPE_LABELS,
 } from "@/lib/expenses";
 import { safeBackLink } from "@/lib/strategic-return";
+import { getExpenseAttachments, isExpenseDocumentsEditable } from "@/lib/expense-attachments";
 import { ExpenseEditForm } from "./_components/ExpenseEditForm";
+import { ExpenseAttachments } from "./_components/ExpenseAttachments";
 import { CancelExpenseForm } from "./_components/CancelExpenseForm";
+
+const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+function sizeText(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} МБ` : `${Math.max(1, Math.round(bytes / 1024))} КБ`;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +61,26 @@ export default async function ExpenseDetailPage({
 
   const canCancel = canCreateOperational(ctx.effectiveRoles) && isExpenseCancelable(expense.status);
   const isCanceled = expense.status === "canceled" || expense.status === "import_reverted";
+
+  // Normalized attachments (legacy single file + new ExpenseDocument rows).
+  const attach = await getExpenseAttachments(expense);
+  const docsEditable = isExpenseDocumentsEditable(expense) && canCreateOperational(ctx.effectiveRoles);
+  const canDownloadDocs = canDownloadDocuments(ctx.effectiveRoles);
+  const attachmentsView = [
+    ...(attach.legacy ? [{
+      key: "legacy", kind: "legacy" as const, id: null,
+      filename: attach.legacy.filename, typeLabel: "Документ", sizeText: null, createdText: null,
+      previewHref: attach.legacy.previewHref, downloadHref: attach.legacy.downloadHref,
+      canPreview: attach.legacy.canPreview, canRemove: false,
+    }] : []),
+    ...attach.documents.map((d) => ({
+      key: d.id, kind: "document" as const, id: d.id,
+      filename: d.filename, typeLabel: d.documentTypeLabel, sizeText: sizeText(d.sizeBytes),
+      createdText: dateFmt.format(d.createdAt),
+      previewHref: d.previewHref, downloadHref: canDownloadDocs ? d.downloadHref : d.previewHref,
+      canPreview: d.canPreview, canRemove: docsEditable,
+    })),
+  ];
 
   const view = {
     id: expense.id,
@@ -106,6 +133,8 @@ export default async function ExpenseDetailPage({
       </div>
 
       <ExpenseEditForm expense={view} categories={EXPENSE_CATEGORY_OPTIONS} readOnly={!canMutateOperationalRecords(ctx.effectiveRoles)} />
+
+      <ExpenseAttachments expenseId={expense.id} attachments={attachmentsView} editable={docsEditable} />
 
       {canCancel ? (
         <div className="mt-6 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">
