@@ -123,7 +123,8 @@ model User {
   otpChallenges EmailOtpChallenge[]
   invitesSent   Invite[]
   invoices      Invoice[]
-  expenses      Expense[]
+  expenses      Expense[]           @relation("ExpenseCreatedBy")
+  expensesPaidBy Expense[]          @relation("ExpensePaidBy")
   sales         Sale[]
   refunds       Refund[]
   budgetsCreated          Budget[]                @relation("BudgetCreatedBy")
@@ -645,13 +646,47 @@ model Expense {
   fileUrl   String?
   // Set when the row was created by an Excel import batch (for undo + dedup).
   importBatchId String?
+
+  // --- Simplified cash-expense workflow (entryVersion=2). All additive/nullable;
+  // legacy rows stay entryVersion=1 and keep their existing behavior. ---
+  // 1 = legacy complex entry; 2 = simplified manager cash form.
+  entryVersion Int @default(1)
+  // One plain-text "Список покупок/оплат" field (not parsed for financial truth).
+  shoppingListText String?
+  // Auto-generated, sanitized title ("Категория: краткое содержание списка").
+  generatedTitle   String?
+  // The employee who physically paid (accountable foundation). Not the creator.
+  paidByUserId     String?
+  // AI receipt verification (advisory, read-only): not_started | pending |
+  // matched | warning | failed | manual_review_required. aiCheckSummary is JSON.
+  aiCheckStatus  String?
+  aiCheckSummary String?
+  // Workflow timestamps + actors (idempotent transitions).
+  submittedAt                 DateTime?
+  verifiedAt                  DateTime?
+  verifiedByUserId            String?
+  correctionRequestedAt       DateTime?
+  correctionRequestedByUserId String?
+  correctionReason            String?
+  cancelledAt                 DateTime?
+  cancelledByUserId           String?
+  cancellationReason          String?
+  // First-save timestamp for the regional 7-day date-edit window.
+  firstSavedAt                DateTime?
+  // Budget-overrun snapshot (integer money + basis points; never float).
+  budgetOverrunKopeks        Int?
+  budgetOverrunBasisPoints   Int?
+  // within | regional | owner | none
+  budgetApprovalLevel        String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
   legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  createdBy   User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdBy   User         @relation("ExpenseCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  paidBy      User?        @relation("ExpensePaidBy", fields: [paidByUserId], references: [id], onDelete: SetNull)
 
   @@index([companyId])
   @@index([clubId])
@@ -659,6 +694,38 @@ model Expense {
   @@index([category])
   @@index([expenseDate])
   @@index([importBatchId])
+  @@index([status])
+  @@index([entryVersion])
+  @@index([paidByUserId])
+}
+
+// Managed expense categories (Part 8). Chief accountant only may create/rename/
+// disable/reactivate. `key` is the stable identifier stored on Expense.category;
+// renames change `name` (history preserved in ExpenseCategoryNameHistory) but
+// never the key, so historical rows stay correctly labelled.
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nameHistory ExpenseCategoryNameHistory[]
+
+  @@index([isActive])
+}
+
+model ExpenseCategoryNameHistory {
+  id              String   @id @default(cuid())
+  categoryId      String
+  name            String
+  changedByUserId String?
+  changedAt       DateTime @default(now())
+
+  category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
 }
 
 model Sale {

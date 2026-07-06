@@ -4,6 +4,7 @@
 // the drilldown total equals the clicked category total.
 import { prisma } from "@/lib/prisma";
 import { invoiceAnalyticsDate } from "@/lib/invoices";
+import { EXPENSE_REALIZED_STATUSES } from "@/lib/budgets";
 
 export type DrillSource = "expense" | "invoice" | "refund";
 
@@ -58,7 +59,7 @@ export async function loadCategoryExpenseRows(opts: {
 
   const [expenses, invoices, refunds] = await Promise.all([
     prisma.expense.findMany({
-      where: { companyId, clubId: inClubs, status: "confirmed", category, expenseDate: { gte: start, lt: end } },
+      where: { companyId, clubId: inClubs, status: { in: [...EXPENSE_REALIZED_STATUSES] }, category, expenseDate: { gte: start, lt: end } },
       select: {
         id: true, clubId: true, amountKopeks: true, expenseDate: true, paymentMethod: true,
         vendorName: true, recipientName: true, comment: true, notes: true, transferComment: true,

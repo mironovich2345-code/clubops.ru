@@ -173,6 +173,25 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "system_admin.assigned": "Назначен системный администратор",
   "system_admin.revoked": "Снят системный администратор",
   "system_admin.alternate_email_restore": "Восстановление на другой email",
+  // Simplified expense workflow (expense.created/updated defined above)
+  "expense.submitted": "Расход отправлен",
+  "expense.ai_check_started": "AI-проверка начата",
+  "expense.ai_check_completed": "AI-проверка завершена",
+  "expense.ai_warning": "AI-предупреждение по расходу",
+  "expense.ai_check_failed": "Сбой AI-проверки",
+  "expense.regional_budget_approved": "Бюджет согласован РД",
+  "expense.owner_budget_approved": "Бюджет согласован собственником",
+  "expense.returned_for_correction": "Расход возвращён на исправление",
+  "expense.resubmitted": "Расход повторно отправлен",
+  "expense.accounting_verified": "Расход проверен бухгалтерией",
+  "expense.cancelled": "Расход отменён",
+  "expense.date_changed": "Изменена дата расхода",
+  "expense.document_added": "Добавлен документ расхода",
+  "expense.document_removed": "Удалён документ расхода",
+  "expense.category_created": "Создана статья расходов",
+  "expense.category_renamed": "Переименована статья расходов",
+  "expense.category_disabled": "Отключена статья расходов",
+  "expense.category_reactivated": "Восстановлена статья расходов",
 };
 
 export function auditActionLabel(action: string): string {

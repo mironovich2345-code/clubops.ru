@@ -7,6 +7,7 @@ import {
 import { REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, getSalesReportFactBreakdown } from "@/lib/sales-report-rows";
 import { invoiceAnalyticsDate } from "@/lib/invoices";
 import { APPROVED_UNPAID_STATUSES } from "@/lib/approval";
+import { EXPENSE_REALIZED_STATUSES } from "@/lib/budgets";
 
 // Confirmed-report line keys for the plan-direction split facts.
 const SUBSCRIPTIONS_KEY = "subscriptions_ooo";
@@ -200,7 +201,7 @@ export async function loadAnalyticsData(
       prisma.club.findMany({ where: { id: inClubs }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       prisma.sale.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", saleDate: { gte: lo, lt: hi } }, select: { clubId: true, amountKopeks: true, saleDate: true } }),
       prisma.salesReport.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", reportDate: { gte: lo, lt: hi } }, select: { clubId: true, reportDate: true, managerName: true, lines: { where: { key: { in: [REVENUE_LINE_KEY, CASH_OOO_KEY, ENCASHMENT_KEY, SUBSCRIPTIONS_KEY, PERSONAL_TRAINING_KEY, REVENUE_IP_KEY] } }, select: { key: true, amountKopeks: true } } } }),
-      prisma.expense.findMany({ where: { companyId, clubId: inClubs, status: "confirmed", expenseDate: { gte: lo, lt: hi } }, select: { clubId: true, category: true, amountKopeks: true, expenseDate: true, status: true } }),
+      prisma.expense.findMany({ where: { companyId, clubId: inClubs, status: { in: [...EXPENSE_REALIZED_STATUSES] }, expenseDate: { gte: lo, lt: hi } }, select: { clubId: true, category: true, amountKopeks: true, expenseDate: true, status: true } }),
       prisma.invoice.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, expenseCategory: true, amountKopeks: true, expensePeriod: true, paidAt: true, invoiceDate: true, createdAt: true, status: true } }),
       prisma.refund.findMany({ where: { companyId, clubId: inClubs, status: "paid" }, select: { clubId: true, amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true } }),
       prisma.budget.findMany({ where: { companyId, clubId: inClubs, month: { in: period.months } }, select: { clubId: true, category: true, limitAmountKopeks: true } }),

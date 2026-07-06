@@ -26,6 +26,7 @@
     "pilot:appurl": "node scripts/pilot-appurl.mjs",
     "pilot:financial": "node scripts/pilot-financial.mjs",
     "pilot:account-deletion": "node scripts/pilot-account-deletion.mjs",
+    "pilot:expenses-simplified": "node scripts/pilot-expenses-simplified.mjs",
     "pilot:full": "node scripts/pilot-full.mjs",
     "security:system-admin": "node scripts/security-system-admin.mjs",
     "docker:build": "docker build -t club-ops:latest .",

@@ -43,6 +43,7 @@ const pilots = [
   ["Club / LegalEntity", "pilot-club-legal-entity.mjs"],
   ["Financial integrity", "pilot-financial.mjs"],
   ["Account deletion / recovery", "pilot-account-deletion.mjs"],
+  ["Expenses simplified workflow", "pilot-expenses-simplified.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;

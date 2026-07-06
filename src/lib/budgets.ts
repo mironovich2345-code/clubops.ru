@@ -35,6 +35,12 @@ export function isBudgetRequestPending(status: string): boolean {
 export const SOURCE_STATUS_WAITING = "waiting_budget_approval";
 export const SOURCE_STATUS_REJECTED = "budget_rejected";
 
+// Expense statuses that count as REALIZED spend (budgets/analytics/drilldown/
+// cash). Legacy rows realize at "confirmed"; simplified (v2) rows realize at
+// "verified". Both count exactly once; legacy totals are unchanged. Single
+// source of truth so the four financial filters can never drift.
+export const EXPENSE_REALIZED_STATUSES = ["confirmed", "verified"] as const;
+
 export function currentMonthKey(reference: Date): string {
   const y = reference.getFullYear();
   const m = String(reference.getMonth() + 1).padStart(2, "0");
@@ -89,7 +95,7 @@ export async function computeUsedKopeks(
   for (const i of invoices) if (invoiceExpensePeriod(i) === month) used += i.amountKopeks;
 
   const expenses = await prisma.expense.findMany({
-    where: { clubId, category, status: "confirmed" },
+    where: { clubId, category, status: { in: [...EXPENSE_REALIZED_STATUSES] } },
     select: { amountKopeks: true, expenseDate: true },
   });
   for (const e of expenses) if (inRange(e.expenseDate)) used += e.amountKopeks;
@@ -346,7 +352,7 @@ export async function getBudgetFactReportForScope(
       select: { category: true, limitAmountKopeks: true },
     }),
     prisma.expense.findMany({
-      where: { clubId: { in: clubIds }, status: "confirmed" },
+      where: { clubId: { in: clubIds }, status: { in: [...EXPENSE_REALIZED_STATUSES] } },
       select: { category: true, amountKopeks: true, expenseDate: true, status: true },
     }),
     prisma.invoice.findMany({
