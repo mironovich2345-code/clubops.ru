@@ -148,3 +148,67 @@ export async function routeExpenseBudget(opts: {
 
   return { level, overrunKopeks, overrunBasisPoints, limitKopeks, projectedUsageKopeks, nextStatus };
 }
+
+// --- Money parsing (Part 3) ------------------------------------------------
+/** Parse a Russian ruble string ("1 234,56" / "1234.5") to integer kopeks. */
+export function parseRublesToKopeks(raw: string): { ok: true; kopeks: number } | { ok: false } {
+  const cleaned = String(raw ?? "").replace(/\s| /g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return { ok: false };
+  const kopeks = Math.round(Number(cleaned) * 100);
+  if (!Number.isFinite(kopeks) || kopeks <= 0) return { ok: false };
+  return { ok: true, kopeks };
+}
+
+// --- Centralized status-machine guards (Part 16) ---------------------------
+// One authoritative source. Every mutation action calls these; unknown statuses
+// fail closed. Guards are PURE predicates on (expense, actor) — the action
+// builds the actor from the server access context (never client input).
+import type { Role } from "@/lib/auth";
+
+export type ExpenseActor = {
+  userId: string;
+  roles: readonly Role[];
+  allowedClubIds: readonly string[];
+  companyOwner: boolean; // owner of the expense's company
+  regionalForClub: boolean; // regional director whose scope includes the club
+  accountant: boolean; // accountant OR chief_accountant in scope
+  manager: boolean; // create-capable operational role (manager/regional)
+};
+
+type ExpenseLike = { entryVersion: number; status: string; clubId: string; firstSavedAt: Date | null };
+
+const inScope = (a: ExpenseActor, e: ExpenseLike) => a.allowedClubIds.includes(e.clubId);
+const isV2 = (e: ExpenseLike) => e.entryVersion === 2;
+
+export function canEditExpense(e: ExpenseLike, a: ExpenseActor): boolean {
+  return isV2(e) && (V2_EDITABLE_STATUSES as readonly string[]).includes(e.status) && a.manager && inScope(a, e);
+}
+export function canSubmitExpense(e: ExpenseLike, a: ExpenseActor): boolean {
+  return canEditExpense(e, a); // document-count check happens in the action
+}
+export function canApproveRegionalExpense(e: ExpenseLike, a: ExpenseActor): boolean {
+  return isV2(e) && e.status === EXP.PENDING_REGIONAL && a.regionalForClub;
+}
+export function canApproveOwnerExpense(e: ExpenseLike, a: ExpenseActor): boolean {
+  return isV2(e) && e.status === EXP.PENDING_OWNER && a.companyOwner;
+}
+export function canVerifyExpense(e: ExpenseLike, a: ExpenseActor): boolean {
+  return isV2(e) && e.status === EXP.PENDING_ACCOUNTANT && a.accountant && inScope(a, e);
+}
+export function canReturnExpenseForCorrection(e: ExpenseLike, a: ExpenseActor): boolean {
+  if (!isV2(e)) return false;
+  if (e.status === EXP.PENDING_REGIONAL) return a.regionalForClub;
+  if (e.status === EXP.PENDING_OWNER) return a.companyOwner;
+  if (e.status === EXP.PENDING_ACCOUNTANT) return a.accountant && inScope(a, e);
+  return false;
+}
+export function canCancelExpense(e: ExpenseLike, a: ExpenseActor): boolean {
+  if (!isV2(e)) return false;
+  if (!(V2_CANCELABLE_STATUSES as readonly string[]).includes(e.status)) return false; // excludes verified/cancelled
+  return (a.manager && inScope(a, e)) || a.regionalForClub;
+}
+export function canChangeExpenseDate(e: ExpenseLike, a: ExpenseActor): boolean {
+  if (!isV2(e) || !a.regionalForClub) return false;
+  if (e.status === EXP.VERIFIED || e.status === EXP.CANCELLED) return false;
+  return e.firstSavedAt ? withinRegionalDateEditWindow(e.firstSavedAt) : true;
+}

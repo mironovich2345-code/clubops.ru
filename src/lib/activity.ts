@@ -174,6 +174,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "system_admin.revoked": "Снят системный администратор",
   "system_admin.alternate_email_restore": "Восстановление на другой email",
   // Simplified expense workflow (expense.created/updated defined above)
+  "expense.draft_created": "Черновик расхода создан",
+  "expense.draft_updated": "Черновик расхода изменён",
+  "expense.routed_to_regional": "Направлен на согласование РД",
+  "expense.routed_to_owner": "Направлен на согласование собственника",
+  "expense.routed_to_accounting": "Направлен на проверку бухгалтерии",
   "expense.submitted": "Расход отправлен",
   "expense.ai_check_started": "AI-проверка начата",
   "expense.ai_check_completed": "AI-проверка завершена",

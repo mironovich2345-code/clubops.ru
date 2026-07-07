@@ -1,8 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
-import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
+import { requirePageAccess, getCurrentAccessContext, userHasCompanyRole, userHasClubRole } from "@/lib/access";
 import { canCreateOperational, canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
+import { formatKopeks } from "@/lib/money";
+import {
+  V2_STATUS_LABELS, canSubmitExpense, canApproveRegionalExpense, canApproveOwnerExpense,
+  canVerifyExpense, canReturnExpenseForCorrection, canCancelExpense, canChangeExpenseDate,
+} from "@/lib/expense-simplified";
+import { WorkflowActions } from "./_components/WorkflowActions";
 import {
   getExpenseForContext,
   expenseStatusLabel,
@@ -62,8 +68,35 @@ export default async function ExpenseDetailPage({
   const canCancel = canCreateOperational(ctx.effectiveRoles) && isExpenseCancelable(expense.status);
   const isCanceled = expense.status === "canceled" || expense.status === "import_reverted";
 
+  const isV2 = expense.entryVersion === 2;
+
   // Normalized attachments (legacy single file + new ExpenseDocument rows).
   const attach = await getExpenseAttachments(expense);
+
+  // Simplified (v2) workflow: compute role-scoped action flags server-side.
+  let flags = null as null | Record<string, boolean>;
+  if (isV2) {
+    const [companyOwner, regionalForClub] = await Promise.all([
+      userHasCompanyRole(ctx.user.id, expense.companyId, ["owner"]),
+      ctx.effectiveRoles.includes("regional_director") ? userHasClubRole(ctx.user.id, expense.clubId, ["regional_director"]) : Promise.resolve(false),
+    ]);
+    const actor = {
+      userId: ctx.user.id, roles: ctx.effectiveRoles, allowedClubIds: ctx.allowedClubIds,
+      companyOwner, regionalForClub,
+      accountant: ctx.effectiveRoles.includes("accountant") || ctx.effectiveRoles.includes("chief_accountant"),
+      manager: canCreateOperational(ctx.effectiveRoles),
+    };
+    const hasDoc = attach.activeCount > 0;
+    flags = {
+      canSubmit: canSubmitExpense(expense, actor) && hasDoc,
+      canApproveRegional: canApproveRegionalExpense(expense, actor),
+      canApproveOwner: canApproveOwnerExpense(expense, actor),
+      canVerify: canVerifyExpense(expense, actor) && hasDoc,
+      canReturn: canReturnExpenseForCorrection(expense, actor),
+      canCancel: canCancelExpense(expense, actor),
+      canChangeDate: canChangeExpenseDate(expense, actor),
+    };
+  }
   const docsEditable = isExpenseDocumentsEditable(expense) && canCreateOperational(ctx.effectiveRoles);
   const canDownloadDocs = canDownloadDocuments(ctx.effectiveRoles);
   const attachmentsView = [
@@ -128,13 +161,49 @@ export default async function ExpenseDetailPage({
                 : "bg-emerald-50 text-emerald-700 ring-emerald-200"
           }`}
         >
-          {expenseStatusLabel(expense.status)}
+          {isV2 ? (V2_STATUS_LABELS[expense.status] ?? expenseStatusLabel(expense.status)) : expenseStatusLabel(expense.status)}
         </span>
       </div>
 
-      <ExpenseEditForm expense={view} categories={EXPENSE_CATEGORY_OPTIONS} readOnly={!canMutateOperationalRecords(ctx.effectiveRoles)} />
+      {isV2 && expense.status === "needs_correction" && expense.correctionReason ? (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Возвращено на исправление: {expense.correctionReason}
+        </div>
+      ) : null}
+
+      {isV2 && expense.generatedTitle ? (
+        <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm">
+          <div className="font-semibold text-slate-900">{expense.generatedTitle}</div>
+          <div className="mt-2 grid grid-cols-1 gap-1 text-slate-600 sm:grid-cols-2">
+            <div>Сумма: <span className="font-medium text-slate-900">{formatKopeks(expense.amountKopeks)}</span></div>
+            <div>Оплата: Наличные (ИП клуба)</div>
+            <div>Дата: {isoDay(expense.expenseDate)}</div>
+            <div>Статья: {EXPENSE_CATEGORY_OPTIONS.find((c) => c.key === expense.category)?.label ?? expense.category}</div>
+          </div>
+          {expense.comment ? <div className="mt-2 whitespace-pre-wrap text-slate-700">Комментарий: {expense.comment}</div> : null}
+          {expense.shoppingListText ? <div className="mt-1 whitespace-pre-wrap text-slate-700">Список: {expense.shoppingListText}</div> : null}
+          {expense.budgetApprovalLevel ? (
+            <div className="mt-2 text-xs text-slate-500">
+              Бюджет: {expense.budgetApprovalLevel === "within" ? "в рамках" : expense.budgetApprovalLevel === "regional" ? "перерасход ≤5% (согласование РД)" : "перерасход/без бюджета (согласование собственника)"}
+              {expense.budgetOverrunKopeks ? ` · перерасход ${formatKopeks(expense.budgetOverrunKopeks)} (${((expense.budgetOverrunBasisPoints ?? 0) / 100).toFixed(1)}%)` : ""}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <ExpenseEditForm expense={view} categories={EXPENSE_CATEGORY_OPTIONS} readOnly={!canMutateOperationalRecords(ctx.effectiveRoles)} />
+      )}
 
       <ExpenseAttachments expenseId={expense.id} attachments={attachmentsView} editable={docsEditable} />
+
+      {isV2 && flags ? (
+        <WorkflowActions
+          expenseId={expense.id}
+          flags={{
+            canSubmit: flags.canSubmit, canApproveRegional: flags.canApproveRegional, canApproveOwner: flags.canApproveOwner,
+            canVerify: flags.canVerify, canReturn: flags.canReturn, canCancel: flags.canCancel, canChangeDate: flags.canChangeDate,
+          }}
+        />
+      ) : null}
 
       {canCancel ? (
         <div className="mt-6 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">

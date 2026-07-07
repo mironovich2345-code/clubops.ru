@@ -24,6 +24,7 @@ import {
 } from "@/lib/expenses";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
+import { V2_STATUS_LABELS } from "@/lib/expense-simplified";
 import { ExpenseUpload } from "./_components/ExpenseUpload";
 
 export const dynamic = "force-dynamic";
@@ -139,6 +140,11 @@ export default async function ExpensesPage({
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader title="Расходы" description="Чеки, переводы и динамика по статьям" />
+        {canCreate ? (
+          <Link href="/expenses/simple" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700">
+            + Новый расход
+          </Link>
+        ) : null}
       </div>
 
       {groups && groups.scope.accessibleClubs.length > 0 ? (
@@ -434,6 +440,14 @@ function ExpenseStatusBadge({ status }: { status: string }) {
         {expenseStatusLabel(status)}
       </div>
     );
+  }
+  // Simplified (v2) workflow statuses.
+  if (V2_STATUS_LABELS[status]) {
+    const tone = status === "verified" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+      : status === "needs_correction" ? "bg-amber-50 text-amber-800 ring-amber-200"
+      : status === "cancelled" ? "bg-slate-100 text-slate-500 ring-slate-200"
+      : "bg-sky-50 text-sky-700 ring-sky-200";
+    return <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tone}`}>{V2_STATUS_LABELS[status]}</div>;
   }
   return null;
 }

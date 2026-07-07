@@ -45,6 +45,7 @@ const pilots = [
   ["Account deletion / recovery", "pilot-account-deletion.mjs"],
   ["Expenses simplified workflow", "pilot-expenses-simplified.mjs"],
   ["Expense documents", "pilot-expense-documents.mjs"],
+  ["Expense workflow", "pilot-expense-workflow.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
