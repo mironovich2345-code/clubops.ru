@@ -18,6 +18,7 @@ import {
   canApproveOwnerExpense, canVerifyExpense, canReturnExpenseForCorrection, canCancelExpense,
   canChangeExpenseDate,
 } from "@/lib/expense-simplified";
+import { ensureClubCashWallet, ensureRegionalCashWallet, recordExpenseMovement } from "@/lib/cash-wallets";
 
 const MAX_COMMENT = 2000;
 const MAX_SHOPPING = 5000;
@@ -118,13 +119,19 @@ export async function createSimplifiedExpenseDraft(_prev: CreateState | undefine
   const categoryName = String(formData.get("categoryName") ?? fields.categoryKey);
   const generatedTitle = buildExpenseTitle(categoryName, fields.shoppingListText);
   const now = new Date();
+  // Wallet is resolved server-side (manager never chooses it): a regional
+  // director spends from their own regional_cash wallet for this Club; everyone
+  // else (managers) from the Club's club_cash wallet.
+  const cashWalletId = ctx.effectiveRoles.includes("regional_director")
+    ? await ensureRegionalCashWallet(companyId, clubId, ip.legalEntityId, ctx.user.id)
+    : await ensureClubCashWallet(companyId, clubId, ip.legalEntityId);
   const expense = await prisma.expense.create({
     data: {
       companyId, clubId, createdByUserId: ctx.user.id, entryVersion: 2, type: "receipt",
       status: EXP.DRAFT, category: fields.categoryKey, amountKopeks: fields.amountKopeks,
       expenseDate: fields.expenseDate, comment: fields.comment, shoppingListText: fields.shoppingListText,
       generatedTitle, paidByUserId: fields.paidByUserId, legalEntityId: ip.legalEntityId,
-      paymentMethod: "cash", firstSavedAt: now,
+      paymentMethod: "cash", firstSavedAt: now, cashWalletId,
     },
   });
   await recordAudit({ action: "expense.draft_created", entityType: "Expense", entityId: expense.id, companyId, clubId, userId: ctx.user.id, metadata: { amountKopeks: fields.amountKopeks, category: fields.categoryKey } });
@@ -235,10 +242,18 @@ export async function approveOwnerBudget(_p: State | undefined, formData: FormDa
 export async function verifyExpense(_p: State | undefined, formData: FormData): Promise<State> {
   const expenseId = String(formData.get("expenseId") ?? "").trim();
   if ((await activeDocumentCount(expenseId)) < 1) return { ok: false, error: E.NO_DOC };
-  return transition(formData, {
+  const res = await transition(formData, {
     guard: canVerifyExpense, fromStatus: [EXP.PENDING_ACCOUNTANT], toStatus: EXP.VERIFIED, audit: "expense.accounting_verified",
     extra: (userId) => ({ verifiedAt: new Date(), verifiedByUserId: userId }),
   });
+  // Realize the cash effect exactly once: only when THIS call performed the
+  // draft→verified transition (res.ok). recordExpenseMovement is idempotent per
+  // Expense, so any duplicate can never reduce cash twice.
+  if (res.ok) {
+    const exp = await prisma.expense.findUnique({ where: { id: expenseId }, select: { id: true, companyId: true, clubId: true, legalEntityId: true, amountKopeks: true, expenseDate: true, cashWalletId: true } });
+    if (exp) await recordExpenseMovement(exp);
+  }
+  return res;
 }
 export async function returnForCorrection(_p: State | undefined, formData: FormData): Promise<State> {
   return transition(formData, {

@@ -29,15 +29,12 @@ async function cards(clubId, now = new Date()) {
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   const mStart = new Date(now.getFullYear(), now.getMonth(), 1), mEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  let balance = 0;
-  if (ipId) {
-    const inflow = (await p.salesReportLine.findMany({ where: { key: CASH_IP, report: { clubId, status: "confirmed" } }, select: { amountKopeks: true } })).reduce((s, r) => s + r.amountKopeks, 0);
-    const out = (await p.expense.aggregate({ where: { clubId, legalEntityId: ipId, status: { in: REALIZED } }, _sum: { amountKopeks: true } }))._sum.amountKopeks ?? 0;
-    balance = inflow - out;
-  }
+  // Card 2 «Приход наличных по ИП вчера» — TEMPORARY pre-OFD cash_ip adapter
+  // (Card 1 wallet balance + Card 3 other_cash_income now live in the ledger and
+  // are covered by pilot:cash-wallets).
+  void mStart; void mEnd;
   const yInflow = (await p.salesReportLine.findMany({ where: { key: CASH_IP, report: { clubId, status: "confirmed", reportDate: { gte: yStart, lt: dayStart } } }, select: { amountKopeks: true } })).reduce((s, r) => s + r.amountKopeks, 0);
-  const other = (await p.sale.aggregate({ where: { clubId, status: "confirmed", source: OTHER_SOURCE, saleDate: { gte: mStart, lt: mEnd } }, _sum: { amountKopeks: true } }))._sum.amountKopeks ?? 0;
-  return { configured, multiple, balance, yInflow, other };
+  return { configured, multiple, yInflow };
 }
 
 async function mkReport(clubId, date, status, cashIp) {
@@ -66,28 +63,9 @@ async function main() {
   // Older confirmed report adds to Card 1 inflow (all-time) but not Card 2.
   await mkReport(CLUB, new Date(now.getFullYear(), now.getMonth(), now.getDate() - 5), "confirmed", 20000);
 
-  // Card 1 outflow: realized expenses booked to the ИП (once each); non-realized excluded.
-  const mkExp = (status, amount, le = IP) => p.expense.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: U, category: "household", amountKopeks: amount, expenseDate: today, status, legalEntityId: le, entryVersion: status === "verified" ? 2 : 1 } });
-  await mkExp("verified", 15000);
-  await mkExp("confirmed", 5000);
-  await mkExp("draft", 7777);       // not realized
-  await mkExp("pending_accountant_verification", 6666); // not realized
-  await mkExp("confirmed", 4000, OOO); // booked to ООО — not ИП cash
-
-  // Card 3: confirmed «Прочее» sales this month; other sources / statuses / months excluded.
-  const mkSale = (status, source, amount, date = today) => p.sale.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: U, source, amountKopeks: amount, saleDate: date, status } });
-  await mkSale("confirmed", "Прочее", 12000);
-  await mkSale("confirmed", "Абонементы", 99999);   // other source
-  await mkSale("pending_accountant", "Прочее", 8888); // not confirmed
-  await mkSale("confirmed", "Прочее", 7000, new Date(now.getFullYear(), now.getMonth() - 1, 15)); // last month
-
   const c = await cards(CLUB, now);
-  // inflow all-time confirmed cash_ip = 30000 + 9999 + 20000 = 59999; out realized ИП = 15000+5000 = 20000
-  check("5/6 Card1 uses selected club + active ИП + centralized realized", c.configured);
-  check("7/8 Card1 = confirmed cash_ip in − realized ИП expenses out (once each)", c.balance === (30000 + 9999 + 20000) - (15000 + 5000), `bal=${c.balance}`);
-  check("Card1 excludes ООО-booked expense", true /* 4000 on OOO not subtracted, already reflected above */);
-  check("9/10 Card2 = yesterday confirmed cash_ip only (cash only)", c.yInflow === 30000, `y=${c.yInflow}`);
-  check("11/12/13 Card3 = confirmed «Прочее» this month (excl other source/status/month)", c.other === 12000, `other=${c.other}`);
+  check("Card2 uses selected club + active ИП (configured)", c.configured);
+  check("Card2 = yesterday confirmed cash_ip only (temporary pre-OFD adapter)", c.yInflow === 30000, `y=${c.yInflow}`);
 
   // Config warnings
   const cEmpty = await cards(CLUB2, now);
@@ -97,14 +75,14 @@ async function main() {
   await p.clubLegalEntity.create({ data: { clubId: CLUB2, legalEntityId: "pilot-card-ip2", isActive: true, isPrimary: false } });
   check("15 multiple active ИП → warning", (await cards(CLUB2, now)).multiple);
 
-  // 14 cross-club isolation: CLUB2 has no inflows/sales/expenses of CLUB
+  // 14 cross-club isolation: CLUB2 has no inflows of CLUB
   const c2 = await cards(CLUB2, now);
-  check("14 cross-club data does not leak", c2.yInflow === 0 && c2.other === 0);
+  check("14 cross-club data does not leak", c2.yInflow === 0);
 
-  // Zero when no movements: a fresh club with a single ИП
+  // Config resolves to a single active ИП after disabling the extra one.
   await p.clubLegalEntity.updateMany({ where: { clubId: CLUB2, legalEntityId: "pilot-card-ip2" }, data: { isActive: false } });
   const c3 = await cards(CLUB2, now);
-  check("Card1 shows 0 when no movements", c3.configured && c3.balance === 0);
+  check("single active ИП resolves (configured, no yesterday inflow)", c3.configured && c3.yInflow === 0);
 
   // 16/17 status-filter mapping (pure)
   const IN_FLIGHT = ["draft", "submitted", "pending_regional_budget_approval", "pending_owner_budget_approval", "pending_accountant_verification", "needs_correction", "waiting_budget_approval"];

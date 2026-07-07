@@ -49,6 +49,8 @@ model Company {
   mandatoryPayments MandatoryPaymentPlan[]
   balanceSnapshots BalanceSnapshot[]
   clubEmployees ClubEmployee[]
+  cashWallets   CashWallet[]
+  cashMovements CashMovement[]
 }
 
 model LegalEntity {
@@ -85,6 +87,7 @@ model LegalEntity {
   salesReportLines SalesReportLine[]
   balanceSnapshots BalanceSnapshot[]
   mandatoryPayments MandatoryPaymentPlan[]
+  cashWallets       CashWallet[]
 
   @@index([companyId])
 }
@@ -254,6 +257,8 @@ model Club {
   mandatoryPayments MandatoryPaymentPlan[]
   balanceSnapshots BalanceSnapshot[]
   clubEmployees ClubEmployee[]
+  cashWallets   CashWallet[]
+  cashMovements CashMovement[]
 
   @@index([companyId])
 }
@@ -673,6 +678,10 @@ model Expense {
   cancellationReason          String?
   // First-save timestamp for the regional 7-day date-edit window.
   firstSavedAt                DateTime?
+  // Cash wallet the expense is paid from (club_cash for managers, regional_cash
+  // for regional directors). Resolved server-side; a confirmed outgoing
+  // CashMovement is created once at verification.
+  cashWalletId                String?
   // Budget-overrun snapshot (integer money + basis points; never float).
   budgetOverrunKopeks        Int?
   budgetOverrunBasisPoints   Int?
@@ -759,6 +768,76 @@ model ExpenseCategoryNameHistory {
   category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([categoryId])
+}
+
+// Cash wallets: physical cash held for a Club's active ИП, separated by holder.
+// club_cash = money at the Club desk (holderUserId null); regional_cash = money a
+// regional director holds for that Club (holderUserId required). Regional money
+// from different Clubs is never mixed (scoped by clubId+legalEntityId+holder).
+// Additive; balances are derived ONLY from confirmed CashMovement (never stored).
+model CashWallet {
+  id            String   @id @default(cuid())
+  companyId     String
+  clubId        String
+  legalEntityId String
+  type          String // club_cash | regional_cash
+  holderUserId  String? // null for club_cash; required (in code) for regional_cash
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  movementsFrom CashMovement[] @relation("FromWallet")
+  movementsTo   CashMovement[] @relation("ToWallet")
+
+  @@index([companyId])
+  @@index([clubId, legalEntityId])
+  @@index([holderUserId])
+  // One regional_cash wallet per (Club, ИП, holder). club_cash uniqueness
+  // (one per Club+ИП, holder null) is enforced in code (NULLs aren't unique).
+  @@unique([clubId, legalEntityId, type, holderUserId])
+}
+
+// Immutable-ledger cash movements. ONLY confirmed rows affect balances. A wallet
+// balance = Σ(confirmed toWallet) − Σ(confirmed fromWallet). Integer kopeks.
+// (sourceType, sourceId) is unique → idempotent movement per source event (an
+// Expense verification, a transfer, an other-income confirmation, an opening
+// balance). Multiple NULL sources (adjustments) are allowed.
+model CashMovement {
+  id                String    @id @default(cuid())
+  companyId         String
+  clubId            String
+  legalEntityId     String
+  // opening_balance | ofd_cash_income | other_cash_income | internal_transfer |
+  // expense | cash_refund | adjustment
+  type              String
+  amountKopeks      Int
+  fromWalletId      String?
+  toWalletId        String?
+  status            String    @default("confirmed") // draft | pending_confirmation | confirmed | rejected | cancelled
+  occurredAt        DateTime
+  createdByUserId   String?
+  confirmedByUserId String?
+  confirmedAt       DateTime?
+  sourceType        String?
+  sourceId          String?
+  comment           String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  club       Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  fromWallet CashWallet? @relation("FromWallet", fields: [fromWalletId], references: [id], onDelete: SetNull)
+  toWallet   CashWallet? @relation("ToWallet", fields: [toWalletId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceType, sourceId])
+  @@index([clubId, legalEntityId, status])
+  @@index([toWalletId, status])
+  @@index([fromWalletId, status])
+  @@index([type])
+  @@index([occurredAt])
 }
 
 model Sale {

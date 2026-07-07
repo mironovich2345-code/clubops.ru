@@ -47,6 +47,7 @@ const pilots = [
   ["Expense documents", "pilot-expense-documents.mjs"],
   ["Expense workflow", "pilot-expense-workflow.mjs"],
   ["Expense page cards", "pilot-expense-cards.mjs"],
+  ["Cash wallets / movements", "pilot-cash-wallets.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;

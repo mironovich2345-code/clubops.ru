@@ -1,35 +1,35 @@
-// Three summary cards for the Expenses page (Phase 2B UI), all for ONE selected
-// Club. Derived from EXISTING realized sources — one place, no second conflicting
-// formula, no invented balances. Integer kopeks only. Server-only.
+// Three summary cards for the Expenses page, for ONE selected Club, sourced from
+// the cash-wallet ledger (lib/cash-wallets — the single source of cash truth).
+// Integer kopeks. Server-only.
 //
-// Card 1 «Остаток наличных ИП» — realized cash movements of the Club's single
-//   active ИП: confirmed sales-report cash ИП (наличные ИП, "cash_ip") IN, minus
-//   REALIZED expenses booked to that ИП (EXPENSE_REALIZED_STATUSES = confirmed +
-//   verified) OUT. Each expense reduces it exactly once. Refunds carry no
-//   legal-entity attribution in the current model, so they are not booked to a
-//   specific ИП here (documented limitation — nothing is invented).
-// Card 2 «Приход наличных по ИП вчера» — confirmed "cash_ip" for the previous
-//   business calendar day (cash only, no expenses).
-// Card 3 «Приход «Иное»» — confirmed Sales with the EXISTING source "Прочее"
-//   (the equivalent of «Иное»; Sale has no cash/non-cash split, so this is all
-//   payment methods) for the current business month.
+// Card 1 «Остаток наличных ИП …» — club_cash wallet balance (manager view) or
+//   club + authorized regional wallets (strategic/accounting view). Balances come
+//   ONLY from confirmed CashMovement.
+// Card 2 «Приход наличных по ИП вчера» — OFD cash income for the previous business
+//   day. TEMPORARY pre-OFD adapter: until OFD is integrated we project the
+//   existing confirmed sales-report "cash_ip" for that day (documented; kept
+//   SEPARATE from other_cash_income).
+// Card 3 «Приход «Иное»» — confirmed other_cash_income into the Club wallet for
+//   the current business month (NOT Sales, NOT revenue).
 import { prisma } from "@/lib/prisma";
-import { EXPENSE_REALIZED_STATUSES } from "@/lib/budgets";
+import { getClubCashBreakdown, otherIncomeForClub } from "@/lib/cash-wallets";
 
-// Sales-report line key for наличные ИП (see lib/sales-report-rows SALES_REPORT_ROWS).
+// Temporary pre-OFD source: наличные ИП line of a confirmed sales report.
 const CASH_IP_KEY = "cash_ip";
-// Existing Sale.source equivalent of «Иное» (see lib/sales SALE_SOURCES).
-const OTHER_INCOME_SOURCE = "Прочее";
 
 export type ClubCashCards = {
-  ip: { configured: boolean; multiple: boolean; balanceKopeks: number };
-  yesterdayInflowKopeks: number;
+  ip: { configured: boolean; multiple: boolean; legalEntityId: string | null };
+  clubBalanceKopeks: number;
+  regionalTotalKopeks: number;
+  combinedKopeks: number;
+  transferredToRegionalTotalKopeks: number;
+  hasOpeningBalance: boolean;
+  yesterdayOfdKopeks: number; // temporary cash_ip adapter
   yesterdayDate: Date;
   otherIncomeMonthKopeks: number;
 };
 
 export async function getClubCashCards(clubId: string, now: Date = new Date()): Promise<ClubCashCards> {
-  // The Club's single active ИП (config warning if none / more than one).
   const ipRows = await prisma.clubLegalEntity.findMany({
     where: { clubId, isActive: true, legalEntity: { isActive: true, type: { in: ["ip", "ИП"] } } },
     select: { legalEntityId: true },
@@ -38,31 +38,35 @@ export async function getClubCashCards(clubId: string, now: Date = new Date()): 
   const multiple = ipRows.length > 1;
   const ipId = configured ? ipRows[0].legalEntityId : null;
 
-  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  const yEnd = dayStart;
+  const yEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const mStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const mEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  const [inflowRows, expenseOut, yInflowRows, otherIncome] = await Promise.all([
-    // Card 1 inflow — all confirmed report cash ИП for this Club.
-    ipId ? prisma.salesReportLine.findMany({ where: { key: CASH_IP_KEY, report: { clubId, status: "confirmed" } }, select: { amountKopeks: true } }) : Promise.resolve([]),
-    // Card 1 outflow — realized expenses booked to the active ИП (once each).
-    ipId ? prisma.expense.aggregate({ where: { clubId, legalEntityId: ipId, status: { in: [...EXPENSE_REALIZED_STATUSES] } }, _sum: { amountKopeks: true } }) : Promise.resolve({ _sum: { amountKopeks: 0 } }),
-    // Card 2 — yesterday's confirmed cash ИП.
+  if (!ipId) {
+    return {
+      ip: { configured, multiple, legalEntityId: null },
+      clubBalanceKopeks: 0, regionalTotalKopeks: 0, combinedKopeks: 0, transferredToRegionalTotalKopeks: 0,
+      hasOpeningBalance: false, yesterdayOfdKopeks: 0, yesterdayDate: yStart, otherIncomeMonthKopeks: 0,
+    };
+  }
+
+  const [breakdown, otherIncomeMonthKopeks, yInflowRows] = await Promise.all([
+    getClubCashBreakdown(clubId, ipId),
+    otherIncomeForClub(clubId, ipId, mStart, mEnd),
+    // Card 2 temporary adapter — confirmed наличные ИП for the previous day.
     prisma.salesReportLine.findMany({ where: { key: CASH_IP_KEY, report: { clubId, status: "confirmed", reportDate: { gte: yStart, lt: yEnd } } }, select: { amountKopeks: true } }),
-    // Card 3 — confirmed «Прочее» sales for the current month.
-    prisma.sale.aggregate({ where: { clubId, status: "confirmed", source: OTHER_INCOME_SOURCE, saleDate: { gte: mStart, lt: mEnd } }, _sum: { amountKopeks: true } }),
   ]);
 
-  const inflow = inflowRows.reduce((s, r) => s + r.amountKopeks, 0);
-  const balanceKopeks = ipId ? inflow - (expenseOut._sum.amountKopeks ?? 0) : 0;
-  const yesterdayInflowKopeks = yInflowRows.reduce((s, r) => s + r.amountKopeks, 0);
-
   return {
-    ip: { configured, multiple, balanceKopeks },
-    yesterdayInflowKopeks,
+    ip: { configured, multiple, legalEntityId: ipId },
+    clubBalanceKopeks: breakdown.clubBalanceKopeks,
+    regionalTotalKopeks: breakdown.regionalTotalKopeks,
+    combinedKopeks: breakdown.combinedKopeks,
+    transferredToRegionalTotalKopeks: breakdown.transferredToRegionalTotalKopeks,
+    hasOpeningBalance: breakdown.hasOpeningBalance,
+    yesterdayOfdKopeks: yInflowRows.reduce((s, r) => s + r.amountKopeks, 0),
     yesterdayDate: yStart,
-    otherIncomeMonthKopeks: otherIncome._sum.amountKopeks ?? 0,
+    otherIncomeMonthKopeks,
   };
 }

@@ -106,6 +106,9 @@ export default async function ExpensesPage({
   // Club; in a multi-Club/strategic view we prompt to pick one.
   const cardClubId = scope.club?.id ?? (scope.clubIds.length === 1 ? scope.clubIds[0] : null);
   const cards = !groups && cardClubId ? await getClubCashCards(cardClubId, now) : null;
+  // Strategic/accounting roles see combined Club+regional cash; a plain manager
+  // sees only the Club wallet (never regional wallet details).
+  const allWallets = ctx ? ctx.effectiveRoles.some((r) => ["owner", "general_director", "regional_director", "accountant", "chief_accountant"].includes(r)) : false;
 
   // Retained "Расходы по статьям" sidebar — realized spend only (legacy confirmed
   // + v2 verified), so v2 expenses appear once they are verified.
@@ -137,9 +140,14 @@ export default async function ExpensesPage({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader title="Расходы" description="Наличные расходы ИП, документы и согласование" />
         {canCreate ? (
-          <Link href="/expenses/simple" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700">
-            + Новый расход
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/expenses/cash" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+              Касса
+            </Link>
+            <Link href="/expenses/simple" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700">
+              + Новый расход
+            </Link>
+          </div>
         ) : null}
       </div>
 
@@ -159,7 +167,7 @@ export default async function ExpensesPage({
         </div>
       ) : null}
 
-      <CashCards cards={cards} multiClub={!groups && !cardClubId} />
+      <CashCards cards={cards} multiClub={!groups && !cardClubId} allWallets={allWallets} />
 
       {/* Status filter */}
       <div className="mb-3 flex flex-wrap gap-2">
@@ -263,7 +271,7 @@ export default async function ExpensesPage({
 // «Иное» income this month. Responsive: 1 col (mobile) → 2 (sm) → 3 (lg), no
 // horizontal overflow; values use ₽ formatting; safe warnings never shift layout.
 const cardsDayFmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-function CashCards({ cards, multiClub }: { cards: ClubCashCards | null; multiClub: boolean }) {
+function CashCards({ cards, multiClub, allWallets }: { cards: ClubCashCards | null; multiClub: boolean; allWallets: boolean }) {
   if (multiClub) {
     return (
       <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
@@ -272,19 +280,39 @@ function CashCards({ cards, multiClub }: { cards: ClubCashCards | null; multiClu
     );
   }
   if (!cards) return null;
+
+  // Card 1 differs by role: strategic/accounting see the combined Club+regional
+  // total (with breakdown); a manager sees ONLY the Club wallet.
+  const card1Title = allWallets ? "Всего наличных ИП" : "Остаток наличных ИП в клубе";
+  const card1Sub = allWallets ? "В клубе + у регионалов" : "Фактически находится в клубе";
+  const card1Value = allWallets ? cards.combinedKopeks : cards.clubBalanceKopeks;
+
   return (
     <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <Card label="Остаток наличных ИП" sub="На текущий момент" accent={cards.ip.balanceKopeks < 0 ? "text-rose-700" : "text-slate-900"}>
+      <Card label={card1Title} sub={card1Sub} accent={card1Value < 0 ? "text-rose-700" : "text-slate-900"}>
         {cards.ip.multiple ? (
           <span className="text-sm font-medium text-amber-700">Несколько активных ИП — настройте одно</span>
         ) : !cards.ip.configured ? (
           <span className="text-sm font-medium text-amber-700">Нет активного ИП</span>
+        ) : !cards.hasOpeningBalance ? (
+          <span className="text-sm font-medium text-amber-700">Требуется задать начальный остаток</span>
         ) : (
-          formatKopeks(cards.ip.balanceKopeks)
+          <>
+            {formatKopeks(card1Value)}
+            {allWallets ? (
+              <div className="mt-1 text-xs font-normal text-slate-500">
+                В клубе: {formatKopeks(cards.clubBalanceKopeks)} · У регионалов: {formatKopeks(cards.regionalTotalKopeks)}
+              </div>
+            ) : cards.transferredToRegionalTotalKopeks > 0 ? (
+              <div className="mt-1 text-xs font-normal text-slate-500">
+                Передано региональному директору: {formatKopeks(cards.transferredToRegionalTotalKopeks)}
+              </div>
+            ) : null}
+          </>
         )}
       </Card>
       <Card label="Приход наличных по ИП вчера" sub={cardsDayFmt.format(cards.yesterdayDate)} accent="text-slate-900">
-        {formatKopeks(cards.yesterdayInflowKopeks)}
+        {formatKopeks(cards.yesterdayOfdKopeks)}
       </Card>
       <Card label="Приход «Иное»" sub="За текущий месяц" accent="text-slate-900">
         {formatKopeks(cards.otherIncomeMonthKopeks)}

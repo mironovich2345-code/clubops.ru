@@ -202,6 +202,13 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "expense.category_renamed": "Переименована статья расходов",
   "expense.category_disabled": "Отключена статья расходов",
   "expense.category_reactivated": "Восстановлена статья расходов",
+  // Cash wallets / movements
+  "cash.opening_balance_set": "Задан начальный остаток кассы",
+  "cash.expense_movement": "Списание наличных по расходу",
+  "cash.transfer_created": "Создан перевод наличных",
+  "cash.transfer_confirmed": "Подтверждён перевод наличных",
+  "cash.other_income_created": "Создан приход «Иное»",
+  "cash.other_income_confirmed": "Подтверждён приход «Иное»",
 };
 
 export function auditActionLabel(action: string): string {
