@@ -17,15 +17,12 @@ import {
   summarizeExpenses,
   expenseCategoryLabel,
   expenseStatusLabel,
-  EXPENSE_CATEGORY_OPTIONS,
   EXPENSE_TYPE_LABELS,
-  EXPENSE_ACTIVE_STATUSES,
   type ExpenseSummary,
 } from "@/lib/expenses";
 import { NoCompanyState } from "@/components/NoCompanyState";
-import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { V2_STATUS_LABELS } from "@/lib/expense-simplified";
-import { ExpenseUpload } from "./_components/ExpenseUpload";
+import { getClubCashCards, type ClubCashCards } from "@/lib/club-cash-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -40,12 +37,22 @@ const monthFormatter = new Intl.DateTimeFormat("ru-RU", {
   year: "numeric",
 });
 
+// Phase 2B-compatible filters. Legacy statuses stay visible: confirmed groups
+// with verified/completed, canceled/import_reverted with cancelled,
+// waiting_budget_approval stays readable (Активные / Все). Legacy DB statuses are
+// never rewritten.
+const IN_FLIGHT = ["draft", "submitted", "pending_regional_budget_approval", "pending_owner_budget_approval", "pending_accountant_verification", "needs_correction", "waiting_budget_approval"];
+const COMPLETED = ["verified", "confirmed"];
+const CANCELLED = ["cancelled", "canceled", "import_reverted"];
 const STATUS_FILTERS: { key: string; label: string; match: (s: string) => boolean }[] = [
-  { key: "active", label: "Активные", match: (s) => (EXPENSE_ACTIVE_STATUSES as readonly string[]).includes(s) },
-  { key: "confirmed", label: "Подтверждённые", match: (s) => s === "confirmed" },
-  { key: "waiting_budget_approval", label: "Ожидают бюджет", match: (s) => s === "waiting_budget_approval" },
-  { key: "canceled", label: "Отменённые", match: (s) => s === "canceled" },
-  { key: "import_reverted", label: "Импорт отменён", match: (s) => s === "import_reverted" },
+  { key: "active", label: "Активные", match: (s) => IN_FLIGHT.includes(s) },
+  { key: "draft", label: "Черновики", match: (s) => s === "draft" },
+  { key: "needs_correction", label: "Требуют исправления", match: (s) => s === "needs_correction" },
+  { key: "pending_regional", label: "Ожидают регионала", match: (s) => s === "pending_regional_budget_approval" },
+  { key: "pending_owner", label: "Ожидают собственника", match: (s) => s === "pending_owner_budget_approval" },
+  { key: "pending_accountant", label: "Ожидают бухгалтерию", match: (s) => s === "pending_accountant_verification" },
+  { key: "verified", label: "Проверенные", match: (s) => COMPLETED.includes(s) },
+  { key: "cancelled", label: "Отменённые", match: (s) => CANCELLED.includes(s) },
   { key: "all", label: "Все", match: () => true },
 ];
 
@@ -93,31 +100,20 @@ export default async function ExpensesPage({
   const statusFilter = STATUS_FILTERS.find((f) => f.key === statusParam) ?? STATUS_FILTERS[0];
   const visibleExpenses = expenses.filter((e) => statusFilter.match(e.status));
 
-  // Active legal entities per club for the expense form (cash -> ИП routing).
-  const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null }>> = {};
-  if (canCreate) {
-    const lists = await Promise.all(clubs.map((c) => getClubLegalEntities(c.id)));
-    clubs.forEach((c, i) => {
-      legalEntitiesByClub[c.id] = lists[i].map((e) => ({
-        id: e.id,
-        name: e.name,
-        type: normalizeEntityType(e.type) ?? e.type,
-        inn: e.inn,
-      }));
-    });
-  }
-
   const now = new Date();
-  // Analytics/totals reflect realized spend only — expenses waiting for or
-  // rejected by budget approval do not count.
+
+  // Three summary cards for the SELECTED Club (single active ИП). Cards need one
+  // Club; in a multi-Club/strategic view we prompt to pick one.
+  const cardClubId = scope.club?.id ?? (scope.clubIds.length === 1 ? scope.clubIds[0] : null);
+  const cards = !groups && cardClubId ? await getClubCashCards(cardClubId, now) : null;
+
+  // Retained "Расходы по статьям" sidebar — realized spend only (legacy confirmed
+  // + v2 verified), so v2 expenses appear once they are verified.
   const summary = summarizeExpenses(
-    expenses.filter((e) => e.status === "confirmed"),
+    expenses.filter((e) => e.status === "confirmed" || e.status === "verified"),
     now,
   );
   const currentMonthLabel = monthFormatter.format(now);
-  const previousMonthLabel = monthFormatter.format(
-    new Date(now.getFullYear(), now.getMonth() - 1, 1),
-  );
 
   // Category drilldown into the existing read-only /analytics/expenses view.
   // Enabled for analytical (financial) roles — owner / GD / regional / accountant
@@ -139,7 +135,7 @@ export default async function ExpensesPage({
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader title="Расходы" description="Чеки, переводы и динамика по статьям" />
+        <PageHeader title="Расходы" description="Наличные расходы ИП, документы и согласование" />
         {canCreate ? (
           <Link href="/expenses/simple" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700">
             + Новый расход
@@ -163,21 +159,7 @@ export default async function ExpensesPage({
         </div>
       ) : null}
 
-      <SummarySection
-        summary={summary}
-        currentMonthLabel={currentMonthLabel}
-        previousMonthLabel={previousMonthLabel}
-      />
-
-      {canCreate && clubs.length > 0 ? (
-        <ExpenseUpload
-          clubs={clubs}
-          categories={EXPENSE_CATEGORY_OPTIONS}
-          companyName={scope.company.name}
-          legalEntitiesByClub={legalEntitiesByClub}
-        />
-      ) : null}
-
+      <CashCards cards={cards} multiClub={!groups && !cardClubId} />
 
       {/* Status filter */}
       <div className="mb-3 flex flex-wrap gap-2">
@@ -277,49 +259,35 @@ export default async function ExpensesPage({
   );
 }
 
-function SummarySection({
-  summary,
-  currentMonthLabel,
-  previousMonthLabel,
-}: {
-  summary: ExpenseSummary;
-  currentMonthLabel: string;
-  previousMonthLabel: string;
-}) {
-  const changeUp = summary.changeKopeks > 0;
-  const changeDown = summary.changeKopeks < 0;
-  const changeAccent = changeUp
-    ? "text-rose-700"
-    : changeDown
-      ? "text-emerald-700"
-      : "text-slate-600";
-  const sign = changeUp ? "+" : "";
-  const percentText =
-    summary.changePercent === null
-      ? "нет данных за прошлый месяц"
-      : `${sign}${summary.changePercent.toFixed(1)}% к прошлому месяцу`;
-
+// Three cards for the selected Club: ИП cash balance, yesterday's ИП cash inflow,
+// «Иное» income this month. Responsive: 1 col (mobile) → 2 (sm) → 3 (lg), no
+// horizontal overflow; values use ₽ formatting; safe warnings never shift layout.
+const cardsDayFmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+function CashCards({ cards, multiClub }: { cards: ClubCashCards | null; multiClub: boolean }) {
+  if (multiClub) {
+    return (
+      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
+        Выберите один клуб, чтобы увидеть остаток наличных ИП и приходы.
+      </div>
+    );
+  }
+  if (!cards) return null;
   return (
-    <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <Card label="Расходы за месяц" sub={currentMonthLabel} accent="text-slate-900">
-        {formatKopeks(summary.currentMonthKopeks)}
+    <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Card label="Остаток наличных ИП" sub="На текущий момент" accent={cards.ip.balanceKopeks < 0 ? "text-rose-700" : "text-slate-900"}>
+        {cards.ip.multiple ? (
+          <span className="text-sm font-medium text-amber-700">Несколько активных ИП — настройте одно</span>
+        ) : !cards.ip.configured ? (
+          <span className="text-sm font-medium text-amber-700">Нет активного ИП</span>
+        ) : (
+          formatKopeks(cards.ip.balanceKopeks)
+        )}
       </Card>
-      <Card label="Прошлый месяц" sub={previousMonthLabel} accent="text-slate-900">
-        {formatKopeks(summary.previousMonthKopeks)}
+      <Card label="Приход наличных по ИП вчера" sub={cardsDayFmt.format(cards.yesterdayDate)} accent="text-slate-900">
+        {formatKopeks(cards.yesterdayInflowKopeks)}
       </Card>
-      <Card label="Изменение" sub={percentText} accent={changeAccent}>
-        {`${sign}${formatKopeks(summary.changeKopeks)}`}
-      </Card>
-      <Card
-        label="Крупнейшая статья"
-        sub={
-          summary.largestCategory
-            ? formatKopeks(summary.largestCategory.amountKopeks)
-            : "нет расходов в этом месяце"
-        }
-        accent="text-slate-900"
-      >
-        {summary.largestCategory ? expenseCategoryLabel(summary.largestCategory.category) : "—"}
+      <Card label="Приход «Иное»" sub="За текущий месяц" accent="text-slate-900">
+        {formatKopeks(cards.otherIncomeMonthKopeks)}
       </Card>
     </div>
   );
