@@ -10,6 +10,9 @@ const p = new PrismaClient();
 
 // --- mirrors of lib/expense-document-storage ------------------------------
 const MAX_FILE = 10 * 1024 * 1024, MAX_COUNT = 10, MAX_AGG = 40 * 1024 * 1024;
+// Simplified (entryVersion=2) supporting-file rule: 1..3.
+const MIN_SIMPLE = 1, MAX_SIMPLE = 3;
+const maxDocsFor = (e) => (e.entryVersion === 2 ? MAX_SIMPLE : MAX_COUNT);
 const ALLOWED = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
 const KEY_RE = /^expense-docs\/[a-f0-9]{64}\.(jpg|png|webp|pdf)$/;
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
@@ -34,6 +37,7 @@ const check = (n, c, x = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${x ?
 
 const CO = "pilot-doc-co", CLUB = "pilot-doc-club", MGR = "pilot-doc-mgr";
 const EDIT = "pilot-doc-edit", VERIFIED = "pilot-doc-verified", LEGACY = "pilot-doc-legacy", OTHER = "pilot-doc-other";
+const RULE = "pilot-doc-rule", CORR = "pilot-doc-corr";
 
 async function cleanup() {
   await p.expenseDocument.deleteMany({ where: { companyId: CO } });
@@ -45,6 +49,14 @@ function mkKey() { return `expense-docs/${createHash("sha256").update(String(Mat
 async function addDoc(expenseId, buf, mime, name = "r.jpg", type = "receipt") {
   return p.expenseDocument.create({ data: { expenseId, companyId: CO, clubId: CLUB, storageKey: mkKey(), originalFilename: name, safeFilename: safeFilename(name), mimeType: mime, sizeBytes: buf.length, sha256: sha256(buf), documentType: type, uploadedByUserId: MGR } });
 }
+// Mirror of document-actions upload slot: re-count then create; reject at max.
+async function addGuarded(expenseId, buf, mime, name, maxDocs) {
+  const now = await p.expenseDocument.count({ where: { expenseId, removedAt: null } });
+  if (now >= maxDocs) return null;
+  return addDoc(expenseId, buf, mime, name);
+}
+const activeCount = (expenseId) => p.expenseDocument.count({ where: { expenseId, removedAt: null } });
+const canSubmit = (n) => n >= MIN_SIMPLE; // submit/resubmit gate (min 1)
 
 async function main() {
   await cleanup();
@@ -55,6 +67,8 @@ async function main() {
   await p.expense.create({ data: { id: EDIT, ...base, status: "draft", entryVersion: 2 } });
   await p.expense.create({ data: { id: VERIFIED, ...base, status: "verified", entryVersion: 2 } });
   await p.expense.create({ data: { id: OTHER, ...base, status: "draft", entryVersion: 2 } });
+  await p.expense.create({ data: { id: RULE, ...base, status: "draft", entryVersion: 2 } });
+  await p.expense.create({ data: { id: CORR, ...base, status: "needs_correction", entryVersion: 2 } });
   await p.expense.create({ data: { id: LEGACY, ...base, status: "confirmed", entryVersion: 1, originalFileStorageKey: "expenses/" + "a".repeat(32) + ".jpg", originalFileName: "old.jpg", originalFileMime: "image/jpeg" } });
 
   // 1 schema exists
@@ -108,6 +122,40 @@ async function main() {
   check("30 verified expense not doc-editable", !editable(await p.expense.findUnique({ where: { id: VERIFIED } })));
   check("draft expense doc-editable", editable(await p.expense.findUnique({ where: { id: EDIT } })));
   check("legacy (v1) not doc-editable", !editable(legacy));
+
+  // --- simplified 1..3 supporting-file rule (entryVersion=2) --------------
+  const DIFF = Buffer.from("distinct-content-4", "latin1"); // distinct sha (avoid dedup)
+  // draft may be saved with 0 files; submit blocked at 0
+  check("R1 draft with 0 files exists", (await activeCount(RULE)) === 0 && (await p.expense.findUnique({ where: { id: RULE } })).status === "draft");
+  check("R2 submit blocked at 0 files", canSubmit(await activeCount(RULE)) === false);
+  // 1 file → submit allowed
+  await addGuarded(RULE, JPEG, "image/jpeg", "1.jpg", MAX_SIMPLE);
+  check("R3 submit allowed with 1 file", canSubmit(await activeCount(RULE)) === true);
+  // up to 3 files accepted
+  await addGuarded(RULE, PNG, "image/png", "2.png", MAX_SIMPLE);
+  await addGuarded(RULE, PDF, "application/pdf", "3.pdf", MAX_SIMPLE);
+  check("R4 three files accepted", (await activeCount(RULE)) === 3);
+  check("R5 submit allowed with 3 files", canSubmit(await activeCount(RULE)) === true);
+  // 4th upload rejected, count stays 3
+  const fourth = await addGuarded(RULE, DIFF, "image/jpeg", "4.jpg", MAX_SIMPLE);
+  check("R6 fourth upload rejected", fourth === null && (await activeCount(RULE)) === 3);
+  // concurrent uploads at max cannot exceed 3
+  const conc = await Promise.all([
+    addGuarded(RULE, DIFF, "image/jpeg", "c1.jpg", MAX_SIMPLE),
+    addGuarded(RULE, PNG, "image/png", "c2.png", MAX_SIMPLE),
+  ]);
+  check("R7 concurrent uploads cannot exceed 3", conc.every((r) => r === null) && (await activeCount(RULE)) === 3);
+  // removing 3 -> 2 works while editable (draft)
+  const toDrop = await p.expenseDocument.findFirst({ where: { expenseId: RULE, removedAt: null } });
+  await p.expenseDocument.updateMany({ where: { id: toDrop.id, removedAt: null }, data: { removedAt: new Date(), removedByUserId: MGR, removalReason: "test" } });
+  check("R8 remove 3->2 while editable", (await activeCount(RULE)) === 2 && editable(await p.expense.findUnique({ where: { id: RULE } })));
+  // submitted (needs_correction) expense cannot be left with 0 active files
+  await addGuarded(CORR, JPEG, "image/jpeg", "c.jpg", MAX_SIMPLE);
+  const corrActive = await activeCount(CORR);
+  const wouldBlockRemove = (await p.expense.findUnique({ where: { id: CORR } })).status === "needs_correction" && corrActive <= 1;
+  check("R9 submitted expense cannot drop to 0 files", corrActive === 1 && wouldBlockRemove === true);
+  // legacy/other modules keep their own limit (max not lowered to 3)
+  check("R10 legacy ceiling unchanged (v1=10, v2=3)", maxDocsFor(legacy) === 10 && maxDocsFor({ entryVersion: 2 }) === 3);
 
   // 42 financial totals unaffected by documents (verified realized count unchanged)
   const realized = await p.expense.count({ where: { clubId: CLUB, status: { in: ["confirmed", "verified"] } } });

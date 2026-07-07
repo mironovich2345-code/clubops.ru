@@ -18,6 +18,7 @@ import {
 } from "@/lib/expenses";
 import { safeBackLink } from "@/lib/strategic-return";
 import { getExpenseAttachments, isExpenseDocumentsEditable } from "@/lib/expense-attachments";
+import { MAX_SIMPLIFIED_EXPENSE_DOCUMENTS } from "@/lib/expense-document-storage";
 import { ExpenseEditForm } from "./_components/ExpenseEditForm";
 import { ExpenseAttachments } from "./_components/ExpenseAttachments";
 import { CancelExpenseForm } from "./_components/CancelExpenseForm";
@@ -193,7 +194,7 @@ export default async function ExpenseDetailPage({
         <ExpenseEditForm expense={view} categories={EXPENSE_CATEGORY_OPTIONS} readOnly={!canMutateOperationalRecords(ctx.effectiveRoles)} />
       )}
 
-      <ExpenseAttachments expenseId={expense.id} attachments={attachmentsView} editable={docsEditable} />
+      <ExpenseAttachments expenseId={expense.id} attachments={attachmentsView} editable={docsEditable} maxDocuments={isV2 ? MAX_SIMPLIFIED_EXPENSE_DOCUMENTS : undefined} />
 
       {isV2 && flags ? (
         <WorkflowActions

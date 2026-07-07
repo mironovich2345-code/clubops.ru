@@ -9,9 +9,10 @@ import { monthClosedError } from "@/lib/month-close";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import { isExpenseDocumentsEditable, DOCUMENT_TYPES } from "@/lib/expense-attachments";
 import { newRequestId } from "@/lib/upload-errors";
+import { getStorage } from "@/lib/storage";
 import { type DocErrorCode, docErrorMessage } from "@/lib/expense-document-errors";
 import {
-  MAX_DOCUMENTS_PER_EXPENSE, MAX_AGGREGATE_SIZE,
+  MAX_DOCUMENTS_PER_EXPENSE, MAX_SIMPLIFIED_EXPENSE_DOCUMENTS, MAX_AGGREGATE_SIZE,
   validateDeclaredDocument, validateSignature, storeExpenseDocument, safeFilename, sha256Hex,
 } from "@/lib/expense-document-storage";
 
@@ -59,9 +60,13 @@ export async function uploadExpenseDocuments(_prev: UploadState | undefined, for
   const files = (formData.getAll("documents") as unknown[]).filter(isUploadedFile);
   if (files.length === 0) return { ok: false, error: "Выберите файл." };
 
-  // Existing active documents (count, aggregate size, sha set for dedup).
+  // Business rule: simplified (v2) expenses allow at most 3 active documents;
+  // legacy keeps the global ceiling. ExpenseDocument is v2-only in practice.
+  const maxDocs = expense.entryVersion === 2 ? MAX_SIMPLIFIED_EXPENSE_DOCUMENTS : MAX_DOCUMENTS_PER_EXPENSE;
+  const tooManyCode: DocErrorCode = expense.entryVersion === 2 ? "TOO_MANY_SIMPLIFIED" : "TOO_MANY";
+
+  // Existing active documents (aggregate size + sha set for dedup).
   const active = await prisma.expenseDocument.findMany({ where: { expenseId, removedAt: null }, select: { sizeBytes: true, sha256: true } });
-  let count = active.length;
   let aggregate = active.reduce((s, d) => s + d.sizeBytes, 0);
   const seenSha = new Set(active.map((d) => d.sha256));
 
@@ -78,7 +83,8 @@ export async function uploadExpenseDocuments(_prev: UploadState | undefined, for
 
     const declared = validateDeclaredDocument(file);
     if (!declared.ok) { fail(declared.code as DocErrorCode, file.type, file.size); continue; }
-    if (count + 1 > MAX_DOCUMENTS_PER_EXPENSE) { errors.push(docErrorMessage("TOO_MANY")); break; }
+    // Fast pre-check against the current count (cheap reject before reading bytes).
+    if ((await prisma.expenseDocument.count({ where: { expenseId, removedAt: null } })) >= maxDocs) { errors.push(docErrorMessage(tooManyCode)); break; }
 
     let buffer: Buffer;
     try { buffer = Buffer.from(await file.arrayBuffer()); } catch { fail("FILE_INVALID", file.type, file.size); continue; }
@@ -92,15 +98,31 @@ export async function uploadExpenseDocuments(_prev: UploadState | undefined, for
     let stored;
     try { stored = await storeExpenseDocument(buffer, file.type); } catch { fail("STORAGE_FAILED", file.type, file.size); continue; }
 
-    const doc = await prisma.expenseDocument.create({
-      data: {
-        expenseId, companyId: expense.companyId, clubId: expense.clubId,
-        storageKey: stored.storageKey, originalFilename: file.name.slice(0, 255), safeFilename: safeFilename(file.name),
-        mimeType: file.type, sizeBytes: stored.sizeBytes, sha256: sha, documentType, uploadedByUserId: ctx.user.id,
-      },
-    });
+    // Concurrency-safe slot: re-count and create ATOMICALLY so two overlapping
+    // uploads can never exceed the limit (SQLite serializes writers; a race that
+    // loses is rolled back and its stored object is cleaned up — no orphan).
+    let doc: { id: string } | null = null;
+    try {
+      doc = await prisma.$transaction(async (tx) => {
+        const now = await tx.expenseDocument.count({ where: { expenseId, removedAt: null } });
+        if (now >= maxDocs) return null;
+        return tx.expenseDocument.create({
+          data: {
+            expenseId, companyId: expense.companyId, clubId: expense.clubId,
+            storageKey: stored!.storageKey, originalFilename: file.name.slice(0, 255), safeFilename: safeFilename(file.name),
+            mimeType: file.type, sizeBytes: stored!.sizeBytes, sha256: sha, documentType, uploadedByUserId: ctx.user.id,
+          },
+          select: { id: true },
+        });
+      });
+    } catch { doc = null; }
+    if (!doc) {
+      await getStorage().delete(stored.storageKey).catch(() => {}); // remove orphan
+      errors.push(docErrorMessage(tooManyCode));
+      break;
+    }
     await recordAudit({ action: "expense.document_uploaded", entityType: "ExpenseDocument", entityId: doc.id, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { expenseId, documentType, mimeCategory: file.type.split("/")[0], sizeBytes: stored.sizeBytes } });
-    seenSha.add(sha); count += 1; aggregate += buffer.length; uploaded += 1;
+    seenSha.add(sha); aggregate += buffer.length; uploaded += 1;
   }
 
   revalidatePath(`/expenses/${expenseId}`);

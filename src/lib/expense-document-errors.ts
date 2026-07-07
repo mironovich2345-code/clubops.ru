@@ -9,6 +9,7 @@ export type DocErrorCode =
   | "MIME_MISMATCH"
   | "FILE_INVALID"
   | "TOO_MANY"
+  | "TOO_MANY_SIMPLIFIED"
   | "AGGREGATE_EXCEEDED"
   | "DUPLICATE"
   | "STORAGE_FAILED"
@@ -23,12 +24,13 @@ export type DocErrorCode =
 
 export const DOC_ERROR_MESSAGES: Record<DocErrorCode, string> = {
   FILE_EMPTY: "Файл пустой.",
-  MIME_UNSUPPORTED: "Формат не поддерживается. Разрешены JPEG, PNG, PDF.",
+  MIME_UNSUPPORTED: "Формат не поддерживается. Разрешены JPEG, PNG, WEBP, PDF.",
   HEIC_UNSUPPORTED: "Формат HEIC не поддерживается. Сохраните фото как JPEG и загрузите снова.",
   FILE_TOO_LARGE: "Файл слишком большой (максимум 10 МБ).",
   MIME_MISMATCH: "Содержимое файла не соответствует его типу.",
   FILE_INVALID: "Файл повреждён или не является изображением/PDF.",
   TOO_MANY: "Слишком много документов (максимум 10 на расход).",
+  TOO_MANY_SIMPLIFIED: "Можно прикрепить не более 3 файлов.",
   AGGREGATE_EXCEEDED: "Превышен общий размер документов (максимум 40 МБ на расход).",
   DUPLICATE: "Такой документ уже прикреплён к этому расходу.",
   STORAGE_FAILED: "Не удалось сохранить файл. Повторите попытку позже.",
