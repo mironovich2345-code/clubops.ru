@@ -7,12 +7,13 @@ import { formatKopeks } from "@/lib/money";
 import { formatUserDisplayName } from "@/lib/user-display";
 import { resolveActiveIpForClub } from "@/lib/expense-simplified";
 import { getClubCashBreakdown, getClubOpeningBalance, MOVEMENT, MSTATUS } from "@/lib/cash-wallets";
-import { OpeningBalanceForm, OtherIncomeForm, TransferForm } from "./CashPanel";
-import { confirmOtherIncomeAction, confirmTransferAction } from "../cash-actions";
+import { OpeningBalanceForm, OtherIncomeForm, TransferForm, PendingTransfers } from "./CashPanel";
+import { confirmOtherIncomeAction } from "../cash-actions";
 
 export const dynamic = "force-dynamic";
 
 const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+const dateTimeFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 function todayISO(): string {
   const d = new Date();
@@ -37,9 +38,10 @@ export default async function CashPage() {
     );
   }
 
-  const [breakdown, isRegional, canOp, openingInfo, ipRows] = await Promise.all([
+  const [breakdown, isRegional, isManager, canOp, openingInfo, ipRows] = await Promise.all([
     getClubCashBreakdown(clubId, ip.legalEntityId),
     userHasClubRole(ctx.user.id, clubId, ["regional_director"]),
+    userHasClubRole(ctx.user.id, clubId, ["manager"]),
     Promise.resolve(canCreateOperational(ctx.effectiveRoles)),
     getClubOpeningBalance(clubId, ip.legalEntityId),
     // Active ИП linked to this club (ООО excluded) — options for the form.
@@ -50,6 +52,7 @@ export default async function CashPage() {
   ]);
   const allWallets = ctx.effectiveRoles.some((r) => ["owner", "general_director", "regional_director", "accountant", "chief_accountant"].includes(r));
   const ipOptions = ipRows.map((r) => ({ id: r.legalEntity.id, name: r.legalEntity.name }));
+  const canCreateTransfer = isManager || isRegional;
 
   // Author + ИП names for the "Начальный остаток задан" detail card.
   const openingAuthor = openingInfo?.createdByUserId
@@ -58,21 +61,50 @@ export default async function CashPage() {
   const openingIpName = openingInfo ? (ipOptions.find((o) => o.id === openingInfo.legalEntityId)?.name ?? null) : null;
   const club = await prisma.club.findUnique({ where: { id: clubId }, select: { name: true } });
 
-  // Pending confirmations for this Club (other income + transfers).
-  const pending = canOp
+  // «Приход Иное» pending confirmations for this Club.
+  const otherIncomePending = canOp
+    ? await prisma.cashMovement.findMany({ where: { clubId, legalEntityId: ip.legalEntityId, status: MSTATUS.PENDING, type: MOVEMENT.OTHER_INCOME }, orderBy: { createdAt: "desc" }, take: 50 })
+    : [];
+
+  // Two-way transfers (pending + recent confirmed) for this Club.
+  const transfers = canOp
     ? await prisma.cashMovement.findMany({
-        where: { clubId, legalEntityId: ip.legalEntityId, status: MSTATUS.PENDING, type: { in: [MOVEMENT.OTHER_INCOME, MOVEMENT.TRANSFER] } },
-        orderBy: { createdAt: "desc" }, take: 50,
+        where: { clubId, legalEntityId: ip.legalEntityId, type: MOVEMENT.TRANSFER, status: { in: [MSTATUS.PENDING, MSTATUS.CONFIRMED] } },
+        orderBy: [{ createdAt: "desc" }], take: 40,
+        select: { id: true, amountKopeks: true, occurredAt: true, comment: true, status: true, confirmedByUserId: true, confirmedAt: true, fromWallet: { select: { type: true, holderUserId: true } }, toWallet: { select: { type: true, holderUserId: true } } },
       })
     : [];
 
-  // Regional directors of this Club (transfer targets), by display name.
+  // Resolve display names for regionals (transfer targets) + confirmers.
   const regionalUsers = canOp
     ? await prisma.user.findMany({
         where: { isActive: true, deletedAt: null, OR: [{ clubRoles: { some: { clubId, role: "regional_director" } } }, { companyAccess: { some: { companyId, role: "regional_director" } } }] },
         select: { id: true, name: true, firstName: true, lastName: true, deletedAt: true },
       })
     : [];
+  const extraIds = Array.from(new Set(transfers.flatMap((m) => [m.confirmedByUserId, m.toWallet?.holderUserId].filter(Boolean) as string[])));
+  const extraUsers = extraIds.length ? await prisma.user.findMany({ where: { id: { in: extraIds } }, select: { id: true, name: true, firstName: true, lastName: true, deletedAt: true } }) : [];
+  const nameMap = new Map<string, string>();
+  for (const u of [...regionalUsers, ...extraUsers]) nameMap.set(u.id, formatUserDisplayName(u));
+  const nameOf = (id: string | null | undefined) => (id ? (nameMap.get(id) ?? "—") : "—");
+
+  const transferRows = transfers.map((m) => {
+    const toRegional = m.toWallet?.type === "regional_cash";
+    return {
+      id: m.id,
+      directionLabel: toRegional ? "Клуб → Директор" : "Директор → Клуб",
+      amountText: formatKopeks(m.amountKopeks),
+      dateText: dateFmt.format(m.occurredAt),
+      comment: m.comment,
+      confirmed: m.status === MSTATUS.CONFIRMED,
+      statusLabel: m.status === MSTATUS.CONFIRMED ? "Получено" : toRegional ? "Ожидает подтверждения директором" : "Ожидает подтверждения клубом",
+      counterpartyLabel: toRegional ? `Получатель: ${nameOf(m.toWallet?.holderUserId)}` : `Получатель: ${club?.name ?? "Клуб"}`,
+      confirmedByName: m.confirmedByUserId ? nameOf(m.confirmedByUserId) : null,
+      confirmedAtText: m.confirmedAt ? dateTimeFmt.format(m.confirmedAt) : null,
+      // Only the true recipient may confirm (re-checked on the server too).
+      canConfirm: m.status === MSTATUS.PENDING && (toRegional ? m.toWallet?.holderUserId === ctx.user.id && isRegional : isManager),
+    };
+  });
 
   return (
     <div className="max-w-3xl">
@@ -118,24 +150,35 @@ export default async function CashPage() {
       ) : null}
 
       {canOp ? (
-        <>
-          <Section title="Приход «Иное» (внешнее пополнение наличными — не продажа)"><OtherIncomeForm /></Section>
-          <Section title="Перевод наличных между клубом и региональным директором">
-            <TransferForm regionals={regionalUsers.map((r) => ({ userId: r.id, name: formatUserDisplayName(r) }))} canReturnFromRegional={isRegional} />
-          </Section>
-        </>
+        <Section title="Приход «Иное» (внешнее пополнение наличными — не продажа)"><OtherIncomeForm /></Section>
       ) : null}
 
-      {pending.length > 0 ? (
-        <Section title="Ожидают подтверждения получателем">
+      {canCreateTransfer ? (
+        <Section title="Передача наличных">
+          <TransferForm
+            regionals={regionalUsers.map((r) => ({ userId: r.id, name: formatUserDisplayName(r) }))}
+            canCreateToRegional={isManager || isRegional}
+            canCreateToClub={isRegional}
+          />
+        </Section>
+      ) : null}
+
+      {canOp && transferRows.length > 0 ? (
+        <Section title="Передачи наличных (ожидают подтверждения / получено)">
+          <PendingTransfers rows={transferRows} />
+        </Section>
+      ) : null}
+
+      {otherIncomePending.length > 0 ? (
+        <Section title="Приход «Иное» — ожидают подтверждения получателем">
           <ul className="divide-y divide-slate-100">
-            {pending.map((m) => (
+            {otherIncomePending.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div className="text-sm text-slate-700">
-                  {m.type === MOVEMENT.OTHER_INCOME ? "Приход «Иное»" : "Перевод"} · {formatKopeks(m.amountKopeks)} · {dateFmt.format(m.occurredAt)}
+                  Приход «Иное» · {formatKopeks(m.amountKopeks)} · {dateFmt.format(m.occurredAt)}
                   {m.comment ? <span className="ml-1 text-xs text-slate-500">· {m.comment}</span> : null}
                 </div>
-                <form action={m.type === MOVEMENT.OTHER_INCOME ? confirmOtherIncomeAction : confirmTransferAction}>
+                <form action={confirmOtherIncomeAction}>
                   <input type="hidden" name="movementId" value={m.id} />
                   <button type="submit" className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100">Подтвердить</button>
                 </form>

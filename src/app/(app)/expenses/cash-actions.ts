@@ -9,6 +9,7 @@ import { resolveActiveIpForClub } from "@/lib/expense-simplified";
 import {
   ensureClubCashWallet, ensureRegionalCashWallet, setOpeningBalance,
   createOtherCashIncome, confirmOtherCashIncome, createInternalTransfer, confirmInternalTransfer,
+  MOVEMENT, WALLET_CLUB, WALLET_REGIONAL,
 } from "@/lib/cash-wallets";
 
 type State = { ok: boolean; error?: string };
@@ -128,46 +129,87 @@ export async function confirmOtherIncomeAction(formData: FormData): Promise<void
   revalidatePath("/expenses/cash");
 }
 
-/** Create an internal transfer: club→regional (manager) or regional→club (RD). */
+/**
+ * Create a two-way transfer.
+ *   direction=to_regional  «Клуб → Директор» — creatable by a manager OR a
+ *     regional director of the club; recipient is a chosen regional director.
+ *   direction=to_club      «Директор → Клуб» — creatable ONLY by a regional
+ *     director of the club; recipient is the club (may go negative for RD).
+ * Company/Club/ИП and every wallet id come from the server context — never trust
+ * clubId/regionalDirectorId/walletId from the client.
+ */
 export async function createTransferAction(_p: State | undefined, formData: FormData): Promise<State> {
   const c = await clubContext();
   if ("error" in c) return { ok: false, error: c.error };
-  if (!canCreateOperational(c.ctx.effectiveRoles)) return { ok: false, error: "Нет прав." };
   const amount = parseAmount(String(formData.get("amount") ?? ""));
-  if (amount === null) return { ok: false, error: "Укажите сумму." };
+  if (amount === null) return { ok: false, error: "Сумма должна быть больше нуля." };
   const direction = String(formData.get("direction") ?? "");
+  const comment = String(formData.get("comment") ?? "");
   const closed = await monthClosedError(c.companyId, c.clubId, new Date());
   if (closed) return { ok: false, error: closed };
 
+  const [isManager, isRegional] = await Promise.all([
+    userHasClubRole(c.ctx.user.id, c.clubId, ["manager"]),
+    userHasClubRole(c.ctx.user.id, c.clubId, ["regional_director"]),
+  ]);
   const clubWalletId = await ensureClubCashWallet(c.companyId, c.clubId, c.legalEntityId);
-  let fromWalletId: string, toWalletId: string;
+
   if (direction === "to_regional") {
-    const holder = String(formData.get("regionalUserId") ?? "").trim();
-    if (!holder) return { ok: false, error: "Выберите регионального директора." };
-    fromWalletId = clubWalletId;
-    toWalletId = await ensureRegionalCashWallet(c.companyId, c.clubId, c.legalEntityId, holder);
+    if (!isManager && !isRegional) return { ok: false, error: "Недостаточно прав для создания перевода." };
+    const recipientId = String(formData.get("regionalUserId") ?? "").trim();
+    if (!recipientId) return { ok: false, error: "Выберите директора." };
+    // The recipient must be a regional director actually tied to THIS club.
+    if (!(await userHasClubRole(recipientId, c.clubId, ["regional_director"]))) return { ok: false, error: "Региональный директор не связан с клубом." };
+    const toWalletId = await ensureRegionalCashWallet(c.companyId, c.clubId, c.legalEntityId, recipientId);
+    const res = await createInternalTransfer({ companyId: c.companyId, clubId: c.clubId, legalEntityId: c.legalEntityId, direction, fromWalletId: clubWalletId, toWalletId, amountKopeks: amount, actorUserId: c.ctx.user.id, recipientUserId: recipientId, comment });
+    if (!res.ok) return { ok: false, error: res.error };
   } else if (direction === "to_club") {
-    // The acting regional director returns cash from their own wallet.
-    const isRegional = await userHasClubRole(c.ctx.user.id, c.clubId, ["regional_director"]);
-    if (!isRegional) return { ok: false, error: "Только региональный директор может вернуть наличные в клуб." };
-    fromWalletId = await ensureRegionalCashWallet(c.companyId, c.clubId, c.legalEntityId, c.ctx.user.id);
-    toWalletId = clubWalletId;
+    if (!isRegional) return { ok: false, error: "Создать перевод «Директор → Клуб» может только региональный директор." };
+    const fromWalletId = await ensureRegionalCashWallet(c.companyId, c.clubId, c.legalEntityId, c.ctx.user.id);
+    const res = await createInternalTransfer({ companyId: c.companyId, clubId: c.clubId, legalEntityId: c.legalEntityId, direction, fromWalletId, toWalletId: clubWalletId, amountKopeks: amount, actorUserId: c.ctx.user.id, recipientUserId: null, comment });
+    if (!res.ok) return { ok: false, error: res.error };
   } else {
     return { ok: false, error: "Неверное направление." };
   }
-  const res = await createInternalTransfer({ companyId: c.companyId, clubId: c.clubId, legalEntityId: c.legalEntityId, fromWalletId, toWalletId, amountKopeks: amount, actorUserId: c.ctx.user.id, comment: String(formData.get("comment") ?? "") });
-  if (!res.ok) return { ok: false, error: res.error };
   revalidatePath("/expenses/cash");
   return { ok: true };
 }
 
-export async function confirmTransferAction(formData: FormData): Promise<void> {
+/**
+ * Confirm receipt of a transfer. Only the actual recipient may confirm:
+ *   «Клуб → Директор» (to regional_cash) → only the target regional director;
+ *   «Директор → Клуб» (to club_cash)     → only a manager of the club.
+ * accountant / chief_accountant / owner / general_director / system_admin may
+ * never stand in for the recipient. Re-validated server-side per request.
+ */
+export async function confirmTransferAction(_p: State | undefined, formData: FormData): Promise<State> {
   const c = await clubContext();
-  if ("error" in c) return;
-  if (!canCreateOperational(c.ctx.effectiveRoles)) return;
+  if ("error" in c) return { ok: false, error: c.error };
   const id = String(formData.get("movementId") ?? "").trim();
-  const m = await prisma.cashMovement.findUnique({ where: { id }, select: { clubId: true } });
-  if (!m || m.clubId !== c.clubId) return;
-  await confirmInternalTransfer(id, c.ctx.user.id);
+  const m = await prisma.cashMovement.findUnique({
+    where: { id },
+    select: { type: true, companyId: true, clubId: true, toWallet: { select: { type: true, holderUserId: true } } },
+  });
+  if (!m || m.type !== MOVEMENT.TRANSFER) return { ok: false, error: "Перевод не найден." };
+  if (m.companyId !== c.companyId) return { ok: false, error: "Перевод относится к другой компании." };
+  if (m.clubId !== c.clubId) return { ok: false, error: "Перевод относится к другому клубу." };
+
+  if (m.toWallet?.type === WALLET_REGIONAL) {
+    // Клуб → Директор: only the addressed regional director.
+    if (m.toWallet.holderUserId !== c.ctx.user.id || !(await userHasClubRole(c.ctx.user.id, c.clubId, ["regional_director"]))) {
+      return { ok: false, error: "Подтвердить получение может только адресат перевода." };
+    }
+  } else if (m.toWallet?.type === WALLET_CLUB) {
+    // Директор → Клуб: only a manager of THIS club (a regional cannot confirm).
+    if (!(await userHasClubRole(c.ctx.user.id, c.clubId, ["manager"]))) {
+      return { ok: false, error: "Подтвердить получение клубом может только управляющий." };
+    }
+  } else {
+    return { ok: false, error: "Неверное направление." };
+  }
+
+  const res = await confirmInternalTransfer(id, c.ctx.user.id);
+  if (!res.ok) return { ok: false, error: res.error };
   revalidatePath("/expenses/cash");
+  return { ok: true };
 }

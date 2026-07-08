@@ -17,6 +17,7 @@ const CO = "pilot-cw-co", CO2 = "pilot-cw-co2", CLUB = "pilot-cw-club", CLUB2 = 
 const U = "pilot-cw-u", RD = "pilot-cw-rd", IP = "pilot-cw-ip", IP2 = "pilot-cw-ip2";
 
 async function cleanup() {
+  await p.cashNotification.deleteMany({ where: { companyId: { in: [CO, CO2] } } }).catch(() => {});
   await p.cashMovement.deleteMany({ where: { companyId: { in: [CO, CO2] } } });
   await p.cashWallet.deleteMany({ where: { companyId: { in: [CO, CO2] } } });
   await p.salesReportLine.deleteMany({ where: { report: { companyId: CO } } }).catch(() => {});
@@ -67,6 +68,71 @@ async function isClosed(companyId, clubId, date) {
   const row = await p.monthClose.findFirst({ where: { companyId, month: monthKey(date), status: "closed", OR: [{ clubId: null }, { clubId }] }, select: { id: true } });
   return row != null;
 }
+// --- Mirrors of the two-way transfer create/confirm + thresholds -----------
+const T_TH1 = -5_000_000, T_TH2 = -10_000_000;
+const T_THRESHOLDS = [{ th: T_TH1, roles: ["chief_accountant"] }, { th: T_TH2, roles: ["chief_accountant", "owner"] }];
+// Mirrors createTransferAction + createInternalTransfer.
+async function createTransfer({ actor, companyId, clubId, le, direction, amountKopeks, recipient }) {
+  if (!Number.isInteger(amountKopeks) || amountKopeks <= 0) return { error: "amount" };
+  if (await isClosed(companyId, clubId, new Date())) return { error: "closed" };
+  const isManager = await userHasClubRole(actor, clubId, ["manager"]);
+  const isRegional = await userHasClubRole(actor, clubId, ["regional_director"]);
+  const club = await ensureClub(clubId, le, companyId);
+  let fromWalletId, toWalletId;
+  if (direction === "to_regional") {
+    if (!isManager && !isRegional) return { error: "perm" };
+    if (!recipient || !(await userHasClubRole(recipient, clubId, ["regional_director"]))) return { error: "recipient_not_linked" };
+    fromWalletId = club.id;
+    toWalletId = (await ensureRegional(clubId, recipient, le)).id;
+  } else if (direction === "to_club") {
+    if (!isRegional) return { error: "perm" };
+    fromWalletId = (await ensureRegional(clubId, actor, le)).id;
+    toWalletId = club.id;
+  } else return { error: "direction" };
+  const from = await p.cashWallet.findUnique({ where: { id: fromWalletId }, select: { type: true } });
+  if (from.type === "club_cash" && (await bal(fromWalletId)) < amountKopeks) return { error: "insufficient_club" };
+  const m = await mv({ companyId, clubId, legalEntityId: le, type: "internal_transfer", amountKopeks, fromWalletId, toWalletId, status: PENDING, occurredAt: new Date(), createdByUserId: actor, sourceType: "transfer", sourceId: randomUUID() });
+  await p.auditLog.create({ data: { action: "cash.transfer_created", entityType: "CashMovement", entityId: m.id, companyId, clubId, userId: actor, metadataJson: JSON.stringify({ direction, amountKopeks, fromWalletId, toWalletId, recipientUserId: recipient ?? null, cashMovementId: m.id }) } });
+  return { ok: true, movementId: m.id, fromWalletId, toWalletId };
+}
+async function evalThresholds(m, actor) {
+  const walletId = m.fromWalletId;
+  const newBal = await bal(walletId);
+  const prevBal = newBal + m.amountKopeks;
+  for (const t of T_THRESHOLDS) {
+    if (!(prevBal >= t.th && newBal < t.th)) continue;
+    await p.auditLog.create({ data: { action: "cash.regional_negative_threshold_crossed", entityType: "CashWallet", entityId: walletId, companyId: m.companyId, clubId: m.clubId, userId: actor, metadataJson: JSON.stringify({ walletId, thresholdKopeks: t.th, balanceKopeks: newBal, recipientRoles: t.roles }) } });
+    for (const role of t.roles) {
+      const dedupeKey = `${walletId}:${t.th}:${role}:${m.id}`;
+      try { await p.cashNotification.create({ data: { companyId: m.companyId, clubId: m.clubId, walletId, recipientRole: role, type: "regional_cash_negative_threshold", thresholdKopeks: t.th, balanceKopeks: newBal, regionalDirectorId: m.fromWallet?.holderUserId ?? null, title: "t", message: "m", dedupeKey } }); }
+      catch (e) { if (e?.code !== "P2002") throw e; }
+    }
+  }
+}
+// Mirrors confirmTransferAction + confirmInternalTransfer.
+async function confirmTransfer({ actor, companyId, clubId, movementId }) {
+  const m = await p.cashMovement.findUnique({ where: { id: movementId }, include: { fromWallet: true, toWallet: true } });
+  if (!m || m.type !== "internal_transfer") return { error: "not_found" };
+  if (m.companyId !== companyId) return { error: "other_company" };
+  if (m.clubId !== clubId) return { error: "other_club" };
+  const toType = m.toWallet?.type;
+  if (toType === "regional_cash") {
+    if (m.toWallet.holderUserId !== actor || !(await userHasClubRole(actor, clubId, ["regional_director"]))) return { error: "not_recipient" };
+  } else if (toType === "club_cash") {
+    if (!(await userHasClubRole(actor, clubId, ["manager"]))) return { error: "not_manager" };
+  } else return { error: "direction" };
+  if (m.status === CONFIRMED) return { ok: true, already: true };
+  if (["cancelled", "rejected"].includes(m.status)) return { error: "cancelled" };
+  if (m.status !== PENDING) return { error: "not_pending" };
+  if (await isClosed(companyId, clubId, m.occurredAt)) return { error: "closed" };
+  if (m.fromWallet?.type === "club_cash" && (await bal(m.fromWalletId)) < m.amountKopeks) return { error: "insufficient_club" };
+  const upd = await p.cashMovement.updateMany({ where: { id: movementId, status: PENDING }, data: { status: CONFIRMED, confirmedByUserId: actor, confirmedAt: new Date() } });
+  if (upd.count !== 1) return { ok: true, already: true };
+  await p.auditLog.create({ data: { action: "cash.transfer_confirmed", entityType: "CashMovement", entityId: movementId, companyId, clubId, userId: actor, metadataJson: JSON.stringify({ direction: m.fromWallet?.type === "regional_cash" ? "to_club" : "to_regional", cashMovementId: movementId, amountKopeks: m.amountKopeks }) } });
+  if (m.fromWallet?.type === "regional_cash") await evalThresholds(m, actor);
+  return { ok: true };
+}
+
 // Mirrors setOpeningBalanceAction + setOpeningBalance end to end.
 async function tryOpening({ userId, companyId, clubId, legalEntityId, amountKopeks, occurredAt, comment }) {
   if (!(await userHasClubRole(userId, clubId, ["regional_director"]))) return { ok: false, error: "role" };
@@ -273,6 +339,145 @@ async function main() {
   const openData = () => ({ companyId: CO, clubId: OCLUBP, legalEntityId: OIP, type: "opening_balance", amountKopeks: 5000, toWalletId: pWallet.id, status: CONFIRMED, occurredAt: today, createdByUserId: ORD, confirmedByUserId: ORD, confirmedAt: new Date(), sourceType: "opening", sourceId: pWallet.id });
   const par = await Promise.all([mv(openData()), mv(openData())]);
   check("53 parallel creation yields exactly one opening row", par.filter(Boolean).length === 1 && (await p.cashMovement.count({ where: { toWalletId: pWallet.id, type: "opening_balance" } })) === 1);
+
+  // === Two-way transfers Клуб ↔ Директор (new workflow) ======================
+  const TIP = "pilot-cw-tip";
+  const TCLUB = "pilot-cw-tclub", TCLUB2 = "pilot-cw-tclub2", TCN = "pilot-cw-tcn", TCF = "pilot-cw-tcf", TCC = "pilot-cw-tcc", TCFC = "pilot-cw-tcfc", TCTH = "pilot-cw-tcth";
+  const TMGR = "pilot-cw-tmgr", TMGR2 = "pilot-cw-tmgr2", TRD = "pilot-cw-trd", TRD2 = "pilot-cw-trd2", TACC = "pilot-cw-tacc", TCHF = "pilot-cw-tchf", TOWN = "pilot-cw-town", TGD = "pilot-cw-tgd", TSA = "pilot-cw-tsa";
+  await p.legalEntity.create({ data: { id: TIP, companyId: CO, type: "ip", name: "ИП-T", isActive: true } });
+  for (const cid of [TCLUB, TCLUB2, TCN, TCF, TCC, TCFC, TCTH]) {
+    await p.club.create({ data: { id: cid, name: cid, city: "X", companyId: CO } });
+    await p.clubLegalEntity.create({ data: { clubId: cid, legalEntityId: TIP, isActive: true, isPrimary: true } });
+  }
+  await Promise.all([TMGR, TMGR2, TRD, TRD2, TACC, TCHF, TOWN, TGD, TSA].map((id) => p.user.create({ data: { id, email: `${id}@x.dev`, name: id, role: "manager", isActive: true } })));
+  // Roles: TMGR manages TCLUB/TCN/TCTH; TRD is regional of TCLUB/TCN/TCF/TCC/TCFC/TCTH.
+  for (const cid of [TCLUB, TCN, TCTH, TCFC]) await p.clubUserAccess.create({ data: { clubId: cid, userId: TMGR, role: "manager" } });
+  for (const cid of [TCLUB, TCN, TCF, TCC, TCFC, TCTH]) await p.clubUserAccess.create({ data: { clubId: cid, userId: TRD, role: "regional_director" } });
+  await p.clubUserAccess.create({ data: { clubId: TCLUB, userId: TRD2, role: "regional_director" } });
+  await p.clubUserAccess.create({ data: { clubId: TCLUB2, userId: TMGR2, role: "manager" } });
+  await p.clubUserAccess.create({ data: { clubId: TCLUB, userId: TACC, role: "accountant" } });
+  await p.clubUserAccess.create({ data: { clubId: TCLUB, userId: TCHF, role: "chief_accountant" } });
+  await p.companyUserAccess.create({ data: { companyId: CO, userId: TOWN, role: "owner" } });
+  await p.companyUserAccess.create({ data: { companyId: CO, userId: TGD, role: "general_director" } });
+  // Seed club_cash balances via opening movements.
+  const seedClub = async (cid, amt) => { const w = await ensureClub(cid, TIP, CO); await mv({ companyId: CO, clubId: cid, legalEntityId: TIP, type: "opening_balance", amountKopeks: amt, toWalletId: w.id, status: CONFIRMED, occurredAt: new Date(), sourceType: "opening", sourceId: w.id }); return w; };
+  const wTCLUB = await seedClub(TCLUB, 500000);
+  const wRD = await ensureRegional(TCLUB, TRD, TIP);
+
+  // --- Создание Клуб → Директор ---
+  const t1 = await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: 100000, recipient: TRD });
+  check("T1 manager creates Клуб→Директор", t1.ok === true);
+  check("T2 regional creates Клуб→Директор", (await createTransfer({ actor: TRD, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: 5000, recipient: TRD })).ok === true);
+  check("T3 manager cannot create for another club", (await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB2, le: TIP, direction: "to_regional", amountKopeks: 100, recipient: TRD })).error === "perm");
+  check("T4 regional cannot create for inaccessible club", (await createTransfer({ actor: TRD, companyId: CO, clubId: TCLUB2, le: TIP, direction: "to_regional", amountKopeks: 100, recipient: TRD })).error === "perm");
+  check("T5 before confirm both balances unchanged", (await bal(wTCLUB.id)) === 500000 && (await bal(wRD.id)) === 0);
+  check("T6 amount stored in kopeks", (await p.cashMovement.findUnique({ where: { id: t1.movementId } })).amountKopeks === 100000);
+  check("T7 zero amount rejected", (await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: 0, recipient: TRD })).error === "amount");
+  check("T8 negative amount rejected", (await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: -5, recipient: TRD })).error === "amount");
+
+  // --- Подтверждение Клуб → Директор ---
+  check("T9 recipient regional confirms", (await confirmTransfer({ actor: TRD, companyId: CO, clubId: TCLUB, movementId: t1.movementId })).ok === true);
+  check("T10 club_cash decreases after confirm", (await bal(wTCLUB.id)) === 500000 - 100000);
+  check("T11 regional_cash increases after confirm", (await bal(wRD.id)) === 100000);
+  const t12 = await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: 1000, recipient: TRD });
+  check("T12 manager cannot confirm own outgoing", (await confirmTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, movementId: t12.movementId })).error === "not_recipient");
+  check("T13 other regional cannot confirm", (await confirmTransfer({ actor: TRD2, companyId: CO, clubId: TCLUB, movementId: t12.movementId })).error === "not_recipient");
+  check("T14 accountant cannot confirm", (await confirmTransfer({ actor: TACC, companyId: CO, clubId: TCLUB, movementId: t12.movementId })).error === "not_recipient");
+  check("T15 chief_accountant cannot confirm", (await confirmTransfer({ actor: TCHF, companyId: CO, clubId: TCLUB, movementId: t12.movementId })).error === "not_recipient");
+  check("T16 owner cannot confirm", (await confirmTransfer({ actor: TOWN, companyId: CO, clubId: TCLUB, movementId: t12.movementId })).error === "not_recipient");
+  check("T17 general_director cannot confirm", (await confirmTransfer({ actor: TGD, companyId: CO, clubId: TCLUB, movementId: t12.movementId })).error === "not_recipient");
+  check("T18 system_admin cannot confirm", (await confirmTransfer({ actor: TSA, companyId: CO, clubId: TCLUB, movementId: t12.movementId })).error === "not_recipient");
+  // repeat confirm no double
+  await confirmTransfer({ actor: TRD, companyId: CO, clubId: TCLUB, movementId: t12.movementId });
+  const rdAfterT12 = await bal(wRD.id);
+  const again12 = await confirmTransfer({ actor: TRD, companyId: CO, clubId: TCLUB, movementId: t12.movementId });
+  check("T19 repeat confirm does not change balance twice", again12.already === true && (await bal(wRD.id)) === rdAfterT12);
+  // parallel confirm one effect
+  const t20 = await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: 2000, recipient: TRD });
+  const rdBefore20 = await bal(wRD.id);
+  await Promise.all([confirmTransfer({ actor: TRD, companyId: CO, clubId: TCLUB, movementId: t20.movementId }), confirmTransfer({ actor: TRD, companyId: CO, clubId: TCLUB, movementId: t20.movementId })]);
+  check("T20 parallel confirm applies exactly once", (await bal(wRD.id)) === rdBefore20 + 2000 && (await p.cashMovement.count({ where: { id: t20.movementId, status: CONFIRMED } })) === 1);
+  // insufficient club funds blocks confirm (create both while funded, drain, then confirm 2nd)
+  const wTCF = await seedClub(TCF, 100000);
+  const a = await createTransfer({ actor: TRD, companyId: CO, clubId: TCF, le: TIP, direction: "to_regional", amountKopeks: 80000, recipient: TRD });
+  const b = await createTransfer({ actor: TRD, companyId: CO, clubId: TCF, le: TIP, direction: "to_regional", amountKopeks: 80000, recipient: TRD });
+  await confirmTransfer({ actor: TRD, companyId: CO, clubId: TCF, movementId: a.movementId });
+  check("T21 insufficient club_cash blocks confirmation", (await confirmTransfer({ actor: TRD, companyId: CO, clubId: TCF, movementId: b.movementId })).error === "insufficient_club");
+
+  // --- Создание Директор → Клуб ---
+  const wTCN = await seedClub(TCN, 0);
+  const wRDN = await ensureRegional(TCN, TRD, TIP);
+  const d22 = await createTransfer({ actor: TRD, companyId: CO, clubId: TCN, le: TIP, direction: "to_club", amountKopeks: 100000 });
+  check("T22 regional creates Директор→Клуб", d22.ok === true);
+  check("T23 manager cannot create Директор→Клуб", (await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_club", amountKopeks: 100 })).error === "perm");
+  check("T24 before confirm balances unchanged", (await bal(wTCN.id)) === 0 && (await bal(wRDN.id)) === 0);
+  check("T25 regional may create above own balance", (await createTransfer({ actor: TRD, companyId: CO, clubId: TCN, le: TIP, direction: "to_club", amountKopeks: 2500000 })).ok === true);
+
+  // --- Подтверждение Директор → Клуб ---
+  check("T26 club manager confirms receipt", (await confirmTransfer({ actor: TMGR, companyId: CO, clubId: TCN, movementId: d22.movementId })).ok === true);
+  const d27 = await createTransfer({ actor: TRD, companyId: CO, clubId: TCN, le: TIP, direction: "to_club", amountKopeks: 5000 });
+  check("T27 manager of another club rejected", (await confirmTransfer({ actor: TMGR2, companyId: CO, clubId: TCN, movementId: d27.movementId })).error === "not_manager");
+  check("T28 regional cannot confirm for the club", (await confirmTransfer({ actor: TRD, companyId: CO, clubId: TCN, movementId: d27.movementId })).error === "not_manager");
+  check("T29 club_cash increases after confirm", (await bal(wTCN.id)) === 100000);
+  check("T30 regional_cash decreases after confirm", (await bal(wRDN.id)) === -100000);
+  check("T31 regional_cash may be negative", (await bal(wRDN.id)) < 0);
+  check("T32 negative regional balance computes correctly", Number.isInteger(await bal(wRDN.id)) && (await bal(wRDN.id)) === -100000);
+  check("T33 club_cash cannot go negative on Клуб→Директор", (await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: 999999999, recipient: TRD })).error === "insufficient_club");
+
+  // --- Уведомления об отрицательном балансе (пороги) ---
+  await seedClub(TCTH, 40000000); // fund the club so recovery transfers are possible
+  const wRDTH = await ensureRegional(TCTH, TRD, TIP);
+  const dc = async (amt) => { const m = await createTransfer({ actor: TRD, companyId: CO, clubId: TCTH, le: TIP, direction: "to_club", amountKopeks: amt }); await confirmTransfer({ actor: TMGR, companyId: CO, clubId: TCTH, movementId: m.movementId }); return m; };
+  const cd = async (amt) => { const m = await createTransfer({ actor: TMGR, companyId: CO, clubId: TCTH, le: TIP, direction: "to_regional", amountKopeks: amt, recipient: TRD }); await confirmTransfer({ actor: TRD, companyId: CO, clubId: TCTH, movementId: m.movementId }); return m; };
+  const chiefN = () => p.cashNotification.count({ where: { walletId: wRDTH.id, recipientRole: "chief_accountant" } });
+  const ownerN = () => p.cashNotification.count({ where: { walletId: wRDTH.id, recipientRole: "owner" } });
+  await dc(5000000); // → −50 000,00 exactly
+  check("T34 exactly −50 000,00 does NOT notify", (await bal(wRDTH.id)) === -5000000 && (await chiefN()) === 0);
+  await dc(1); // → −50 000,01
+  check("T35 −50 000,01 notifies chief_accountant", (await chiefN()) === 1 && (await ownerN()) === 0);
+  check("T38 first crossing creates exactly one", (await chiefN()) === 1);
+  await dc(100000); // further drop, same threshold
+  check("T39 further drop in same band → no duplicate", (await chiefN()) === 1);
+  await dc(4899999); // → −100 000,00 exactly
+  check("T36 exactly −100 000,00 does NOT trigger second threshold", (await bal(wRDTH.id)) === -10000000 && (await ownerN()) === 0);
+  await dc(1); // → −100 000,01
+  check("T37 −100 000,01 notifies chief_accountant and owner", (await ownerN()) === 1 && (await chiefN()) === 2);
+  // recover above then drop again → new crossing allowed
+  await cd(11000000); // regional back to +999 999
+  await dc(6000000); // → −5 000 001 again (new movement)
+  check("T40 recovery then re-drop notifies again", (await chiefN()) === 3);
+  const chiefBeforePending = await chiefN();
+  await createTransfer({ actor: TRD, companyId: CO, clubId: TCTH, le: TIP, direction: "to_club", amountKopeks: 50000000 }); // pending only
+  check("T41 pending transfer creates no notification", (await chiefN()) === chiefBeforePending);
+  check("T42 unconfirmed transfer does not move the balance", (await bal(wRDTH.id)) === -5000001);
+
+  // --- Безопасность / совместимость ---
+  const sec = await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: 1000, recipient: TRD });
+  check("T43 transfer of another company is rejected", (await confirmTransfer({ actor: TRD, companyId: CO2, clubId: TCLUB, movementId: sec.movementId })).error === "other_company");
+  check("T44 spoofed clubId is rejected", (await confirmTransfer({ actor: TRD, companyId: CO, clubId: TCLUB2, movementId: sec.movementId })).error === "other_club");
+  check("T45 spoofed regionalDirectorId (non-regional recipient) rejected", (await createTransfer({ actor: TMGR, companyId: CO, clubId: TCLUB, le: TIP, direction: "to_regional", amountKopeks: 100, recipient: TMGR2 })).error === "recipient_not_linked");
+  const secMove = await p.cashMovement.findUnique({ where: { id: sec.movementId }, include: { fromWallet: true, toWallet: true } });
+  check("T46 wallets are server-derived (not client-supplied)", secMove.fromWallet.type === "club_cash" && secMove.toWallet.type === "regional_cash" && secMove.toWallet.holderUserId === TRD);
+  // closed month blocks creation
+  await p.monthClose.create({ data: { companyId: CO, clubId: TCC, month: monthKey(new Date()), status: "closed", closedByUserId: TRD } });
+  check("T47 closed month blocks creation", (await createTransfer({ actor: TRD, companyId: CO, clubId: TCC, le: TIP, direction: "to_club", amountKopeks: 100 })).error === "closed");
+  // closed month blocks confirmation (create while open, then close)
+  await seedClub(TCFC, 0);
+  const cfc = await createTransfer({ actor: TRD, companyId: CO, clubId: TCFC, le: TIP, direction: "to_club", amountKopeks: 100 });
+  await p.monthClose.create({ data: { companyId: CO, clubId: TCFC, month: monthKey(new Date()), status: "closed", closedByUserId: TRD } });
+  check("T48 closed month blocks confirmation", (await confirmTransfer({ actor: TMGR, companyId: CO, clubId: TCFC, movementId: cfc.movementId })).error === "closed");
+  check("T49 creation writes AuditLog", (await p.auditLog.count({ where: { action: "cash.transfer_created", entityId: t1.movementId } })) === 1);
+  check("T50 confirmation writes AuditLog", (await p.auditLog.count({ where: { action: "cash.transfer_confirmed", entityId: t1.movementId } })) === 1);
+  check("T51 threshold crossing writes AuditLog", (await p.auditLog.count({ where: { action: "cash.regional_negative_threshold_crossed", clubId: TCTH } })) >= 1);
+  // compatibility spot-checks
+  check("T52 opening balance still participates", (await bal(wTCLUB.id)) >= 0 && (await p.cashMovement.count({ where: { toWalletId: wTCLUB.id, type: "opening_balance" } })) === 1);
+  const wInc = await ensureClub(TCLUB2, TIP, CO);
+  await mv({ companyId: CO, clubId: TCLUB2, legalEntityId: TIP, type: "other_cash_income", amountKopeks: 7000, toWalletId: wInc.id, status: CONFIRMED, occurredAt: new Date(), sourceType: "other_income", sourceId: randomUUID() });
+  check("T53 «Приход Иное» still increases club", (await bal(wInc.id)) === 7000);
+  await mv({ companyId: CO, clubId: TCLUB2, legalEntityId: TIP, type: "expense", amountKopeks: 3000, fromWalletId: wInc.id, status: CONFIRMED, occurredAt: new Date(), sourceType: "expense", sourceId: randomUUID() });
+  check("T54 expenses still deduct from the wallet", (await bal(wInc.id)) === 4000);
+  const legacyT = await mv({ companyId: CO, clubId: TCLUB2, legalEntityId: TIP, type: "internal_transfer", amountKopeks: 1000, fromWalletId: wInc.id, toWalletId: (await ensureRegional(TCLUB2, TRD, TIP)).id, status: CONFIRMED, occurredAt: new Date(), sourceType: "transfer", sourceId: randomUUID() });
+  check("T55 legacy confirmed transfer participates in balance", legacyT !== null && (await bal(wInc.id)) === 3000);
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

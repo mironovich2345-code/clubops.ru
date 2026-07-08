@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/lib/access";
+import { monthClosedError } from "@/lib/month-close";
 
 export const WALLET_CLUB = "club_cash";
 export const WALLET_REGIONAL = "regional_cash";
@@ -211,28 +212,42 @@ export async function getClubOpeningBalance(clubId: string, legalEntityId: strin
 
 export type MovementResult = { ok: true; movementId: string } | { ok: false; error: string };
 
+// Regional_cash negative-balance alert thresholds (integer kopeks; strictly
+// "more negative than" — exactly on the threshold does NOT fire).
+export const REGIONAL_NEG_THRESHOLD_1 = -5_000_000; // −50 000,00 ₽ → chief_accountant
+export const REGIONAL_NEG_THRESHOLD_2 = -10_000_000; // −100 000,00 ₽ → chief_accountant + owner
+const THRESHOLDS: Array<{ th: number; roles: string[]; message: string }> = [
+  { th: REGIONAL_NEG_THRESHOLD_1, roles: ["chief_accountant"], message: "Баланс регионального директора по клубу стал отрицательным и превысил 50 000 ₽. Проверьте передачу личных денежных средств." },
+  { th: REGIONAL_NEG_THRESHOLD_2, roles: ["chief_accountant", "owner"], message: "Баланс регионального директора по клубу стал отрицательным и превысил 100 000 ₽. Требуется проверка собственником и главным бухгалтером." },
+];
+
 /**
  * Create a PENDING internal transfer between two wallets of the SAME Club + ИП.
- * Requires sufficient confirmed source balance. The receiving holder confirms it
- * later (confirmTransfer), which atomically debits source + credits target in one
- * confirmed row — the combined Club total never changes.
+ * Overdraft is refused ONLY when the source is club_cash (a club may never go
+ * negative). regional_cash MAY go negative (a regional director may front
+ * personal cash) — no funds check for that source. The receiving party confirms
+ * it later; confirmation flips ONE row to confirmed, atomically moving money on
+ * both wallets. The combined Club total is unchanged by the transfer.
  */
 export async function createInternalTransfer(opts: {
-  companyId: string; clubId: string; legalEntityId: string;
-  fromWalletId: string; toWalletId: string; amountKopeks: number; actorUserId: string; comment?: string | null;
+  companyId: string; clubId: string; legalEntityId: string; direction?: string;
+  fromWalletId: string; toWalletId: string; amountKopeks: number; actorUserId: string; recipientUserId?: string | null; comment?: string | null;
 }): Promise<MovementResult> {
   if (!Number.isInteger(opts.amountKopeks) || opts.amountKopeks <= 0) return { ok: false, error: "Сумма должна быть больше нуля." };
   if (opts.fromWalletId === opts.toWalletId) return { ok: false, error: "Кошельки совпадают." };
   const [from, to] = await Promise.all([
-    prisma.cashWallet.findUnique({ where: { id: opts.fromWalletId }, select: { clubId: true, legalEntityId: true, isActive: true } }),
-    prisma.cashWallet.findUnique({ where: { id: opts.toWalletId }, select: { clubId: true, legalEntityId: true, isActive: true } }),
+    prisma.cashWallet.findUnique({ where: { id: opts.fromWalletId }, select: { clubId: true, legalEntityId: true, isActive: true, type: true } }),
+    prisma.cashWallet.findUnique({ where: { id: opts.toWalletId }, select: { clubId: true, legalEntityId: true, isActive: true, type: true } }),
   ]);
   // Both wallets must belong to the SAME Club + ИП (regional money never mixes).
   if (!from || !to || !from.isActive || !to.isActive) return { ok: false, error: "Кошелёк не найден." };
   if (from.clubId !== opts.clubId || to.clubId !== opts.clubId || from.legalEntityId !== opts.legalEntityId || to.legalEntityId !== opts.legalEntityId) {
     return { ok: false, error: "Кошельки принадлежат разным клубам или ИП." };
   }
-  if ((await walletBalanceKopeks(opts.fromWalletId)) < opts.amountKopeks) return { ok: false, error: "Недостаточно средств в кошельке-источнике." };
+  // Only club_cash must stay non-negative; regional_cash may go negative.
+  if (from.type === WALLET_CLUB && (await walletBalanceKopeks(opts.fromWalletId)) < opts.amountKopeks) {
+    return { ok: false, error: "Недостаточно денег в кассе клуба." };
+  }
 
   const m = await prisma.cashMovement.create({
     data: {
@@ -242,23 +257,106 @@ export async function createInternalTransfer(opts: {
       sourceType: "transfer", sourceId: randomUUID(),
     },
   });
-  await recordAudit({ action: "cash.transfer_created", entityType: "CashMovement", entityId: m.id, companyId: opts.companyId, clubId: opts.clubId, userId: opts.actorUserId, metadata: { amountKopeks: opts.amountKopeks, fromWalletId: opts.fromWalletId, toWalletId: opts.toWalletId } });
+  await recordAudit({ action: "cash.transfer_created", entityType: "CashMovement", entityId: m.id, companyId: opts.companyId, clubId: opts.clubId, userId: opts.actorUserId, metadata: { direction: opts.direction ?? null, amountKopeks: opts.amountKopeks, fromWalletId: opts.fromWalletId, toWalletId: opts.toWalletId, recipientUserId: opts.recipientUserId ?? null, cashMovementId: m.id } });
   return { ok: true, movementId: m.id };
 }
 
-/** Confirm a pending transfer (receiver). Re-checks source balance. Idempotent. */
-export async function confirmInternalTransfer(movementId: string, actorUserId: string): Promise<{ ok: boolean; error?: string }> {
-  const m = await prisma.cashMovement.findUnique({ where: { id: movementId } });
+export type ConfirmTransferResult =
+  | { ok: true; already?: boolean; fromKopeks?: number; toKopeks?: number }
+  | { ok: false; error: string };
+
+/**
+ * Confirm a pending transfer in ONE transaction: re-check status + (for a
+ * club_cash source only) sufficient funds, then flip the single row
+ * PENDING→CONFIRMED via a conditional update — so a repeat or two parallel
+ * confirms yield exactly ONE effect (idempotent, concurrency-safe). Closed-month
+ * (by financial date) is blocked. After a confirmed Директор→Клуб (regional
+ * source) it evaluates negative-balance thresholds. Authorization of WHO may
+ * confirm is enforced by the caller (action layer).
+ */
+export async function confirmInternalTransfer(movementId: string, actorUserId: string): Promise<ConfirmTransferResult> {
+  const m = await prisma.cashMovement.findUnique({
+    where: { id: movementId },
+    include: { fromWallet: { select: { type: true, holderUserId: true } }, toWallet: { select: { type: true, holderUserId: true } } },
+  });
   if (!m || m.type !== MOVEMENT.TRANSFER) return { ok: false, error: "Перевод не найден." };
-  if (m.status === MSTATUS.CONFIRMED) return { ok: true }; // idempotent
+  if (m.status === MSTATUS.CONFIRMED) return { ok: true, already: true }; // idempotent
+  if (m.status === MSTATUS.CANCELLED || m.status === MSTATUS.REJECTED) return { ok: false, error: "Перевод отменён." };
   if (m.status !== MSTATUS.PENDING) return { ok: false, error: "Перевод недоступен для подтверждения." };
-  if (!m.fromWalletId) return { ok: false, error: "Некорректный перевод." };
-  if ((await walletBalanceKopeks(m.fromWalletId)) < m.amountKopeks) return { ok: false, error: "Недостаточно средств в кошельке-источнике." };
-  const res = await prisma.cashMovement.updateMany({ where: { id: movementId, status: MSTATUS.PENDING }, data: { status: MSTATUS.CONFIRMED, confirmedByUserId: actorUserId, confirmedAt: new Date() } });
-  if (res.count === 1) {
-    await recordAudit({ action: "cash.transfer_confirmed", entityType: "CashMovement", entityId: movementId, companyId: m.companyId, clubId: m.clubId, userId: actorUserId, metadata: { amountKopeks: m.amountKopeks } });
+  if (!m.fromWalletId || !m.toWalletId) return { ok: false, error: "Некорректный перевод." };
+  const closed = await monthClosedError(m.companyId, m.clubId, m.occurredAt);
+  if (closed) return { ok: false, error: closed };
+
+  const fromWalletId = m.fromWalletId, amount = m.amountKopeks, clubSource = m.fromWallet?.type === WALLET_CLUB;
+
+  const outcome = await prisma.$transaction(async (tx) => {
+    const cur = await tx.cashMovement.findUnique({ where: { id: movementId }, select: { status: true } });
+    if (!cur) return "not_found" as const;
+    if (cur.status === MSTATUS.CONFIRMED) return "already" as const;
+    if (cur.status !== MSTATUS.PENDING) return "not_pending" as const;
+    // A club_cash source must not be overdrawn (regional_cash may go negative).
+    if (clubSource && (await walletBalanceKopeks(fromWalletId, tx)) < amount) return "insufficient" as const;
+    const upd = await tx.cashMovement.updateMany({ where: { id: movementId, status: MSTATUS.PENDING }, data: { status: MSTATUS.CONFIRMED, confirmedByUserId: actorUserId, confirmedAt: new Date() } });
+    return upd.count === 1 ? ("applied" as const) : ("already" as const);
+  });
+
+  if (outcome === "not_found") return { ok: false, error: "Перевод не найден." };
+  if (outcome === "insufficient") return { ok: false, error: "Недостаточно денег в кассе клуба." };
+  if (outcome === "already") return { ok: true, already: true }; // concurrent confirm → single effect
+  if (outcome === "not_pending") return { ok: false, error: "Перевод недоступен для подтверждения." };
+
+  await recordAudit({ action: "cash.transfer_confirmed", entityType: "CashMovement", entityId: movementId, companyId: m.companyId, clubId: m.clubId, userId: actorUserId, metadata: { direction: m.fromWallet?.type === WALLET_REGIONAL ? "to_club" : "to_regional", cashMovementId: movementId, amountKopeks: amount, confirmedByUserId: actorUserId, confirmedAt: new Date().toISOString() } });
+
+  // Thresholds only apply to Директор→Клуб (the regional wallet is the source).
+  if (m.fromWallet?.type === WALLET_REGIONAL) {
+    await evaluateRegionalNegativeThresholds({
+      companyId: m.companyId, clubId: m.clubId, walletId: fromWalletId,
+      regionalDirectorId: m.fromWallet.holderUserId ?? null, amountApplied: amount, actorUserId, movementId,
+    });
   }
-  return { ok: true }; // concurrent confirm → idempotent
+
+  const [fromKopeks, toKopeks] = await Promise.all([walletBalanceKopeks(fromWalletId), walletBalanceKopeks(m.toWalletId)]);
+  return { ok: true, fromKopeks, toKopeks };
+}
+
+/**
+ * After a confirmed regional-source transfer, create a persistent notification +
+ * audit for each threshold crossed DOWNWARD by this confirmation. Crossing is
+ * detected from prev→new balance (prev = new + amountApplied), so a further drop
+ * within the same threshold does NOT re-notify, while a recovery-then-drop (a new
+ * movement) can. dedupeKey makes it idempotent per (wallet, threshold, role,
+ * movement) against repeats/parallel confirms.
+ */
+async function evaluateRegionalNegativeThresholds(opts: {
+  companyId: string; clubId: string; walletId: string; regionalDirectorId: string | null;
+  amountApplied: number; actorUserId: string; movementId: string;
+}): Promise<void> {
+  const newBalance = await walletBalanceKopeks(opts.walletId);
+  const prevBalance = newBalance + opts.amountApplied; // this confirm removed `amountApplied`
+  for (const t of THRESHOLDS) {
+    const crossedDown = prevBalance >= t.th && newBalance < t.th;
+    if (!crossedDown) continue;
+    await recordAudit({
+      action: "cash.regional_negative_threshold_crossed", entityType: "CashWallet", entityId: opts.walletId,
+      companyId: opts.companyId, clubId: opts.clubId, userId: opts.actorUserId,
+      metadata: { clubId: opts.clubId, regionalDirectorId: opts.regionalDirectorId, walletId: opts.walletId, balanceKopeks: newBalance, thresholdKopeks: t.th, recipientRoles: t.roles },
+    });
+    for (const role of t.roles) {
+      const dedupeKey = `${opts.walletId}:${t.th}:${role}:${opts.movementId}`;
+      try {
+        await prisma.cashNotification.create({
+          data: {
+            companyId: opts.companyId, clubId: opts.clubId, walletId: opts.walletId, recipientRole: role,
+            type: "regional_cash_negative_threshold", thresholdKopeks: t.th, balanceKopeks: newBalance,
+            regionalDirectorId: opts.regionalDirectorId, title: "Отрицательный баланс регионального директора",
+            message: t.message, linkPath: "/expenses/cash", dedupeKey,
+          },
+        });
+      } catch (e) {
+        if (!(e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "P2002")) throw e; // dedupe
+      }
+    }
+  }
 }
 
 /**

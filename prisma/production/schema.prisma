@@ -51,6 +51,7 @@ model Company {
   clubEmployees ClubEmployee[]
   cashWallets   CashWallet[]
   cashMovements CashMovement[]
+  cashNotifications CashNotification[]
 }
 
 model LegalEntity {
@@ -838,6 +839,36 @@ model CashMovement {
   @@index([fromWalletId, status])
   @@index([type])
   @@index([occurredAt])
+}
+
+// Minimal internal persistent notification (no external email/telegram/sms).
+// Currently used for regional_cash negative-balance threshold crossings. Targeted
+// by role (chief_accountant / owner) for a Company+Club. dedupeKey makes creation
+// idempotent per (wallet, threshold, role, triggering movement) so a repeated /
+// parallel confirm never duplicates, while a NEW downward crossing (new movement)
+// is allowed. Additive — no existing model changed.
+model CashNotification {
+  id                 String    @id @default(cuid())
+  companyId          String
+  clubId             String
+  walletId           String
+  recipientRole      String // chief_accountant | owner
+  type               String // regional_cash_negative_threshold
+  thresholdKopeks    Int
+  balanceKopeks      Int
+  regionalDirectorId String?
+  title              String
+  message            String
+  linkPath           String?
+  dedupeKey          String    @unique
+  readAt             DateTime?
+  createdAt          DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, recipientRole, readAt])
+  @@index([clubId])
+  @@index([walletId])
 }
 
 model Sale {

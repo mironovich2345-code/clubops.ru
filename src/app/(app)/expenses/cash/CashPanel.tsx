@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { setOpeningBalanceAction, createOtherIncomeAction, createTransferAction } from "../cash-actions";
+import { setOpeningBalanceAction, createOtherIncomeAction, createTransferAction, confirmTransferAction } from "../cash-actions";
 
 type State = { ok: boolean; error?: string };
 const initial: State = { ok: false };
@@ -80,27 +81,93 @@ export function OtherIncomeForm() {
   );
 }
 
-export function TransferForm({ regionals, canReturnFromRegional }: { regionals: Regional[]; canReturnFromRegional: boolean }) {
+export function TransferForm({ regionals, canCreateToRegional, canCreateToClub }: { regionals: Regional[]; canCreateToRegional: boolean; canCreateToClub: boolean }) {
   const [state, action] = useFormState(createTransferAction, initial);
+  const [direction, setDirection] = useState<string>(canCreateToRegional ? "to_regional" : "to_club");
+  const showRecipient = direction === "to_regional";
   return (
-    <form action={action} className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Направление</span>
-          <select name="direction" defaultValue="to_regional" className="input">
-            <option value="to_regional">Клуб → региональному директору</option>
-            {canReturnFromRegional ? <option value="to_club">Мой кошелёк → клуб</option> : null}
-          </select></label>
-        <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Региональный директор</span>
-          <select name="regionalUserId" defaultValue="" className="input">
-            <option value="">—</option>
-            {regionals.map((r) => <option key={r.userId} value={r.userId}>{r.name}</option>)}
-          </select></label>
-        <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Сумма, ₽</span>
-          <input name="amount" required inputMode="decimal" className="input" placeholder="0,00" /></label>
-        <Submit label="Создать перевод" />
+    <form action={action} className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">Направление</span>
+          <select name="direction" value={direction} onChange={(e) => setDirection(e.target.value)} className="input">
+            {canCreateToRegional ? <option value="to_regional">Клуб → Директор</option> : null}
+            {canCreateToClub ? <option value="to_club">Директор → Клуб</option> : null}
+          </select>
+        </label>
+        {showRecipient ? (
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-slate-600">Директор (получатель)</span>
+            <select name="regionalUserId" required defaultValue="" className="input">
+              <option value="" disabled>Выберите директора</option>
+              {regionals.map((r) => <option key={r.userId} value={r.userId}>{r.name}</option>)}
+            </select>
+          </label>
+        ) : (
+          <div className="text-xs text-slate-500">Получатель: клуб</div>
+        )}
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">Сумма, ₽</span>
+          <input name="amount" required inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" className="input" placeholder="0,00" />
+        </label>
       </div>
-      {state.ok ? <span className="text-xs text-emerald-700">Перевод создан. Ожидает подтверждения получателем.</span> : null}
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-slate-600">Комментарий</span>
+        <input name="comment" className="input w-full" placeholder="Например: закупка расходников" />
+      </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit label="Создать перевод" />
+        {state.ok ? <span className="text-xs text-emerald-700">Перевод создан. Ожидает подтверждения получателем.</span> : null}
+        {state.error ? <span className="text-xs text-rose-600">{state.error}</span> : null}
+      </div>
+    </form>
+  );
+}
+
+type TransferRow = {
+  id: string; directionLabel: string; amountText: string; dateText: string; comment: string | null;
+  confirmed: boolean; statusLabel: string; counterpartyLabel: string;
+  confirmedByName: string | null; confirmedAtText: string | null; canConfirm: boolean;
+};
+
+function ConfirmReceiptButton({ id }: { id: string }) {
+  const [state, action] = useFormState(confirmTransferAction, initial);
+  return (
+    <form action={action} className="inline-flex items-center gap-2">
+      <input type="hidden" name="movementId" value={id} />
+      <Confirm />
       {state.error ? <span className="text-xs text-rose-600">{state.error}</span> : null}
     </form>
+  );
+}
+
+function Confirm() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
+      {pending ? "…" : "Подтвердить получение"}
+    </button>
+  );
+}
+
+/** Compact two-way transfer list; the confirm button shows only to the recipient. */
+export function PendingTransfers({ rows }: { rows: TransferRow[] }) {
+  return (
+    <ul className="divide-y divide-slate-100">
+      {rows.map((r) => (
+        <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+          <div className="min-w-0 text-sm text-slate-700">
+            <span className="font-medium">{r.directionLabel}</span> · {r.amountText} · {r.dateText}
+            {r.comment ? <span className="ml-1 text-xs text-slate-500">· {r.comment}</span> : null}
+            <div className="text-xs text-slate-500">
+              {r.counterpartyLabel} ·{" "}
+              <span className={r.confirmed ? "text-emerald-700" : "text-amber-700"}>{r.statusLabel}</span>
+              {r.confirmed && r.confirmedByName ? <> · подтвердил: {r.confirmedByName}{r.confirmedAtText ? ` (${r.confirmedAtText})` : ""}</> : null}
+            </div>
+          </div>
+          {r.canConfirm ? <ConfirmReceiptButton id={r.id} /> : null}
+        </li>
+      ))}
+    </ul>
   );
 }
