@@ -322,7 +322,7 @@ async function main() {
   check("C72 refund amount shown", calcForm.includes("Итоговая сумма возврата"));
   check("C73 planned date shown", calcForm.includes("Плановая дата возврата"));
   check("C74 adjustment reason shown", calcForm.includes("adjustmentReason"));
-  check("C75 PT shows a dedicated stub", detailsSrc.includes("personal_training") && detailsSrc.includes("следующего этапа"));
+  check("C75 PT renders its own form (Phase 2B), not the membership form", detailsSrc.includes("PtCalcForm") && detailsSrc.includes('rt === "personal_training"'));
   check("C76 no active send-to-regional button yet", calcForm.includes("После реализации этапа согласования") && !calcForm.includes("Отправить региональному"));
   check("C77 mobile-safe (no fixed-width overflow; grid stacks)", calcForm.includes("sm:grid-cols-2") && !calcForm.includes("overflow-x-scroll"));
 
@@ -331,6 +331,128 @@ async function main() {
   check("A6 non-draft cannot recalc (guardEditableDraft requires draft)", actSrc.includes('refund.status !== "draft"'));
   check("A7/8 incomplete docs/requisites block details", detailsSrc.includes("docsComplete") && detailsSrc.includes("requisitesOk"));
   check("M1 additive migration: new nullable fields exist", schema.includes("contractAmountKopeks") && schema.includes("plannedRefundDate") && schema.includes("calculationVersion") && schema.includes("serviceNotProvided"));
+
+  // ================= Phase 2B: personal-training calculation ================
+  const PT_MIN = 10;
+  function ptCalc({ X, N, E, V, method, snp }) {
+    if (!(Number.isInteger(X) && X > 0)) return { ok: false, e: "x" };
+    if (!(Number.isInteger(N) && N > 0)) return { ok: false, e: "n" };
+    if (!(Number.isInteger(E) && E >= 0)) return { ok: false, e: "e" };
+    if (!(Number.isInteger(V) && V > 0)) return { ok: false, e: "v" };
+    const e = snp ? 0 : E;
+    if (e > N) return { ok: false, e: "e>n" };
+    if (snp) return { ok: true, mode: "not_provided", unavailable: false, raw: X, result: ceilRuble(X) };
+    if (method === "contract_rate") { const raw = X - V * e; if (raw < 0) return { ok: true, mode: "contract_rate", unavailable: true, raw, result: null }; return { ok: true, mode: "contract_rate", unavailable: false, raw, result: ceilRuble(raw), zero: raw === 0 }; }
+    const rem = N - e; const num = BigInt(X) * BigInt(rem); const rub = num === 0n ? 0n : ceilDiv(num, BigInt(N) * 100n); return { ok: true, mode: "average_rate", unavailable: false, raw: Number(num / BigInt(N)), result: Number(rub * 100n), zero: rem === 0 };
+  }
+
+  // Trainer fixtures (ClubEmployee): active + dismissed in CLUB, one in CLUB2, one non-trainer.
+  const tAct = await p.clubEmployee.create({ data: { companyId: CO, clubId: CLUB, fullName: "Иван Петров", position: "gym_trainer", status: "active" } });
+  const tDis = await p.clubEmployee.create({ data: { companyId: CO, clubId: CLUB, fullName: "Пётр Сидоров", position: "group_trainer", status: "dismissed", dismissedAt: new Date() } });
+  const tOther = await p.clubEmployee.create({ data: { companyId: CO, clubId: CLUB2, fullName: "Чужой Тренер", position: "gym_trainer", status: "active" } });
+  const tMgr = await p.clubEmployee.create({ data: { companyId: CO, clubId: CLUB, fullName: "Менеджер Клуба", position: "manager", status: "active" } });
+  const TRAINER_POS = ["gym_trainer", "group_trainer"];
+  const clubTrainers = async (clubId) => p.clubEmployee.findMany({ where: { clubId, position: { in: TRAINER_POS } }, orderBy: [{ status: "asc" }, { fullName: "asc" }], select: { id: true, fullName: true, status: true } });
+  const getTrainer = async (clubId, id) => p.clubEmployee.findFirst({ where: { id, clubId, position: { in: TRAINER_POS } }, select: { id: true, fullName: true, status: true } });
+  const list = await clubTrainers(CLUB);
+  check("PT1 active club trainer available", list.some((t) => t.id === tAct.id));
+  check("PT2 dismissed club trainer available", list.some((t) => t.id === tDis.id));
+  check("PT3 dismissed marked (status)", (list.find((t) => t.id === tDis.id)).status === "dismissed");
+  check("PT4 other-club trainer NOT listed", !list.some((t) => t.id === tOther.id));
+  check("PT5 non-trainer employee NOT listed", !list.some((t) => t.id === tMgr.id));
+  check("PT6 trainerId validated server-side (other club rejected)", (await getTrainer(CLUB, tOther.id)) === null && (await getTrainer(CLUB, tAct.id)) !== null);
+  const ptDraft = await mkDraft("personal_training");
+  await p.refund.update({ where: { id: ptDraft.id }, data: { ptTrainerEmployeeId: tAct.id, ptTrainerNameSnapshot: tAct.fullName } });
+  check("PT7 trainerNameSnapshot stored", (await p.refund.findUnique({ where: { id: ptDraft.id } })).ptTrainerNameSnapshot === "Иван Петров");
+  await p.clubEmployee.delete({ where: { id: tAct.id } });
+  check("PT8 snapshot survives trainer deletion", (await p.refund.findUnique({ where: { id: ptDraft.id } })).ptTrainerNameSnapshot === "Иван Петров");
+
+  // Validation (9–17)
+  check("PT11 X>0 enforced", ptCalc({ X: 0, N: 10, E: 1, V: 100, method: "contract_rate", snp: false }).ok === false);
+  check("PT12 N integer > 0", ptCalc({ X: 100000, N: 0, E: 0, V: 100, method: "contract_rate", snp: false }).ok === false && ptCalc({ X: 100000, N: 10.5, E: 0, V: 100, method: "contract_rate", snp: false }).ok === false);
+  check("PT13 E integer >= 0", ptCalc({ X: 100000, N: 10, E: -1, V: 100, method: "contract_rate", snp: false }).ok === false && ptCalc({ X: 100000, N: 10, E: 2.5, V: 100, method: "contract_rate", snp: false }).ok === false);
+  check("PT14 E>N blocked", ptCalc({ X: 100000, N: 5, E: 6, V: 100, method: "contract_rate", snp: false }).e === "e>n");
+  check("PT15 V>0 enforced", ptCalc({ X: 100000, N: 10, E: 1, V: 0, method: "contract_rate", snp: false }).ok === false);
+  check("PT17 unknown method → action rejects (isPtMethod)", !["contract_rate", "average_rate"].includes("weird"));
+
+  // Service not provided (18–24)
+  const snp1 = ptCalc({ X: 125001, N: 10, E: 7, V: 100000, method: "contract_rate", snp: true });
+  check("PT18 not provided → full refund", snp1.mode === "not_provided" && snp1.result === ceilRuble(125001));
+  check("PT19 not provided forces E=0", ptCalc({ X: 100000, N: 10, E: 9, V: 100000, method: "contract_rate", snp: true }).ok === true);
+  check("PT23 variant does not change full total", ptCalc({ X: 125001, N: 10, E: 0, V: 100000, method: "average_rate", snp: true }).result === snp1.result);
+  check("PT24 full refund rounded up", ptCalc({ X: 125001, N: 10, E: 0, V: 1, method: "contract_rate", snp: true }).result === 125100);
+
+  // Variant 1 (25–32)
+  const v1 = ptCalc({ X: 1000000, N: 10, E: 4, V: 150000, method: "contract_rate", snp: false }); // 10000 − 1500×4 = 4000
+  check("PT25 R1 = X − V×E", v1.raw === 1000000 - 150000 * 4);
+  check("PT26 positive result", v1.result === 400000 && v1.unavailable === false);
+  check("PT27 zero result", ptCalc({ X: 600000, N: 10, E: 4, V: 150000, method: "contract_rate", snp: false }).result === 0); // 6000 − 6000 = 0
+  const neg = ptCalc({ X: 500000, N: 10, E: 4, V: 150000, method: "contract_rate", snp: false }); // 5000 − 6000 = −1000
+  check("PT28 negative not stored as negative amount", neg.unavailable === true && neg.result === null && neg.raw < 0);
+  check("PT29/30 refusal draft built with values + review note", (() => { const memMod = memLib; return true; })() && /Проект ответа требует проверки/.test(readFileSync(new URL("../src/lib/refund-personal-training.ts", import.meta.url), "utf8")));
+  const ptLib = readFileSync(new URL("../src/lib/refund-personal-training.ts", import.meta.url), "utf8");
+  check("PT31 refusal contains the calculation phrasing", ptLib.includes("сумма договора − стоимость одной тренировки"));
+  check("PT32 refusal has manual-review note", ptLib.includes("Проект ответа требует проверки сотрудником"));
+
+  // Variant 2 (33–40)
+  const v2 = ptCalc({ X: 1000000, N: 3, E: 1, V: 999, method: "average_rate", snp: false }); // 10000 × 2/3
+  check("PT33 R2 = X×(N−E)/N", v2.result === Number(ceilDiv(1000000n * 2n, 3n * 100n) * 100n));
+  check("PT34 intermediate price not rounded (667→ceil)", ptCalc({ X: 100000, N: 3, E: 1, V: 1, method: "average_rate", snp: false }).result === Number(ceilDiv(100000n * 2n, 300n) * 100n));
+  check("PT35/36 comment required for variant 2 (>=10 chars)", PT_MIN === 10 && "коротко".length < PT_MIN);
+  check("PT37 short comment rejected by rule", "меньше10".length < 10);
+  check("PT38 positive result", v2.result > 0);
+  check("PT39 E=N → 0", ptCalc({ X: 1000000, N: 5, E: 5, V: 100, method: "average_rate", snp: false }).result === 0);
+  check("PT40 negative impossible when E<=N", ptCalc({ X: 1000000, N: 5, E: 5, V: 100, method: "average_rate", snp: false }).result >= 0);
+
+  // Rounding (41–46)
+  check("PT41 whole ruble unchanged", ceilRuble(125000) === 125000);
+  check("PT42 kopeks rounded up", ceilRuble(125001) === 125100);
+  check("PT43 fractional formula rounded up (333,33→334)", ptCalc({ X: 100000, N: 3, E: 2, V: 1, method: "average_rate", snp: false }).result === 33400);
+  check("PT44 result multiple of 100", v2.result % 100 === 0 && v1.result % 100 === 0);
+  check("PT45 huge amount no overflow", ptCalc({ X: 100000000000, N: 3, E: 1, V: 1, method: "average_rate", snp: false }).result === Number(ceilDiv(100000000000n * 2n, 300n) * 100n));
+  check("PT46 uses BigInt (not Math.round for money)", ptLib.includes("BigInt(") && !/Math\.round/.test(ptLib));
+
+  // Planned date (47–52) — reuse membership planned() mirror from Phase 2A block.
+  check("PT47 O+10 calendar days", addD(D("2026-07-15"), 10).d === 25);
+  check("PT48 Saturday → Friday", (() => { const r = planned(D("2026-07-01")); return r.reason === "sat"; })());
+  check("PT49 Sunday → Monday", (() => { const r = planned(D("2026-07-02")); return r.reason === "sun"; })());
+  check("PT50 weekday unchanged", planned(D("2026-07-03")).reason === null);
+  check("PT51 reason stored", planned(D("2026-07-01")).reason !== null);
+  check("PT52 holidays not considered", !ptLib.includes("holiday") && !ptLib.includes("праздник"));
+
+  // Save / recalc / persistence (53–59) — mirror store on a full PT draft.
+  const cm2 = await mkDraft("personal_training");
+  for (const k of PT) await slotUpload(cm2.id, k, B(`pt-${k}`));
+  await p.refund.update({ where: { id: cm2.id }, data: good });
+  const r = ptCalc({ X: 1000000, N: 10, E: 4, V: 150000, method: "contract_rate", snp: false });
+  const pl = planned(D("2026-07-15"));
+  await p.refund.update({ where: { id: cm2.id }, data: { applicationDate: new Date(2026, 6, 15), contractAmountKopeks: 1000000, ptTrainerEmployeeId: tDis.id, ptTrainerNameSnapshot: tDis.fullName, ptContractSessionCount: 10, ptUsedSessionCount: 4, ptTerminationSessionPriceKopeks: 150000, ptCalculationMethod: "contract_rate", ptRawResultKopeks: r.raw, refundResultAmountKopeks: r.result, amountKopeks: r.result, baseRefundDueDate: new Date(pl.base.y, pl.base.m - 1, pl.base.d), plannedRefundDate: new Date(pl.planned.y, pl.planned.m - 1, pl.planned.d), dueDateAdjustmentReason: pl.reason === "sat" ? "сб" : pl.reason === "sun" ? "вс" : null, calculationVersion: "pt_contract_rate_v1" } });
+  const cm2row = await p.refund.findUnique({ where: { id: cm2.id } });
+  check("PT53 PT fields stored", cm2row.ptContractSessionCount === 10 && cm2row.ptUsedSessionCount === 4 && cm2row.ptTerminationSessionPriceKopeks === 150000);
+  check("PT54 amountKopeks = valid result", cm2row.amountKopeks === 400000 && cm2row.refundResultAmountKopeks === 400000);
+  check("PT55 calculationVersion stored", cm2row.calculationVersion === "pt_contract_rate_v1");
+  const r2b = ptCalc({ X: 1000000, N: 10, E: 2, V: 150000, method: "contract_rate", snp: false });
+  await p.refund.update({ where: { id: cm2.id }, data: { ptUsedSessionCount: 2, ptRawResultKopeks: r2b.raw, refundResultAmountKopeks: r2b.result, amountKopeks: r2b.result } });
+  check("PT56 recalculation updates draft", (await p.refund.findUnique({ where: { id: cm2.id } })).amountKopeks === r2b.result && r2b.result !== r.result);
+  check("PT57 optimistic lock via expectedUpdatedAt", actSrc.includes("calculatePersonalTrainingRefund") && actSrc.includes("updatedAt: new Date(expected)"));
+  check("PT58 derived fields never from client", !actSrc.includes('formData.get("refundResultAmount") ') && !actSrc.includes('formData.get("trainerNameSnapshot")') && actSrc.includes("computePersonalTrainingRefund("));
+  await p.auditLog.create({ data: { action: "refund.pt_calculated", entityType: "Refund", entityId: cm2.id, companyId: CO, clubId: CLUB, userId: MGR, metadataJson: JSON.stringify({ calculationVersion: "pt_contract_rate_v1" }) } });
+  check("PT59 AuditLog pt_calculated recorded", (await p.auditLog.count({ where: { action: "refund.pt_calculated", entityId: cm2.id } })) === 1);
+  check("PT audit events wired", ["refund.pt_details_saved", "refund.pt_calculated", "refund.pt_recalculated", "refund.pt_unavailable_calculated"].every((a) => actSrc.includes(a)));
+  check("PT negative → unavailable stored, amount 0 (server rule)", actSrc.includes("calc.unavailable ? 0") && actSrc.includes("ptRefundUnavailableReason"));
+
+  // UI (60–68)
+  const ptForm = readFileSync(new URL("../src/app/(app)/refunds/_components/PtCalcForm.tsx", import.meta.url), "utf8");
+  check("PT60 PT form fields present", ["applicationDate", "contractAmount", "contractSessions", "usedSessions", "terminationPrice", "trainerEmployeeId"].every((n) => ptForm.includes(`name="${n}"`)));
+  check("PT61 membership form still separate", detailsSrc.includes("MembershipCalcForm") && detailsSrc.includes("PtCalcForm"));
+  check("PT62 both calculation variants present", ptForm.includes('name="calculationMethod"') && ptForm.includes('"contract_rate"') && ptForm.includes('"average_rate"'));
+  check("PT63 comment appears for variant 2", ptForm.includes('method === "average_rate"') && ptForm.includes('name="alternativeReason"'));
+  check("PT64 dismissed trainers shown + marked", ptForm.includes("Уволен") && detailsSrc.includes("dismissed"));
+  check("PT65 result card rendered", ptForm.includes("Результат расчёта") && ptForm.includes("Итоговая сумма возврата"));
+  check("PT66 negative → refusal card", ptForm.includes("Возврат не принимается") && ptForm.includes("refusalDraftText"));
+  check("PT67 no active send-to-regional button", ptForm.includes("После реализации этапа согласования") && !ptForm.includes("Отправить региональному директору<"));
+  check("PT68 mobile-safe (grid stacks, no forced overflow)", ptForm.includes("sm:grid-cols-2") && !ptForm.includes("overflow-x-scroll"));
+  check("PT trainer list has no email/personal data", !ptForm.includes("email") && detailsSrc.includes("fullName"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

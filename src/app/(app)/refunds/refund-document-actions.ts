@@ -6,7 +6,7 @@ import { canCreateOperational } from "@/lib/auth";
 import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
 import { getStorage } from "@/lib/storage";
 import { isUploadedFile } from "@/lib/uploaded-file";
-import { getRefundForContext, getActiveRefundDocuments } from "@/lib/refunds";
+import { getRefundForContext, getActiveRefundDocuments, getClubTrainer } from "@/lib/refunds";
 import {
   isRefundReturnType, isValidRefundDocumentType, refundSlots, isRefundDocumentSetComplete,
   validateRefundRequisites, normalizeRequisitesPartial, maskDigits,
@@ -16,8 +16,9 @@ import {
   storeRefundDocument, safeFilename, sha256Hex, refundDocError,
 } from "@/lib/refund-document-storage";
 import {
-  parseDateOnly, toLocalMidnight, parseContractAmountKopeks, computeMembershipRefund, REFUND_CALC_VERSION,
+  parseDateOnly, toLocalMidnight, parseContractAmountKopeks, computeMembershipRefund, REFUND_CALC_VERSION, diffDays, fromDate,
 } from "@/lib/refund-membership";
+import { computePersonalTrainingRefund, isPtMethod, PT_MIN_REASON_LEN, type PtMethod } from "@/lib/refund-personal-training";
 
 type State = { ok: boolean; error?: string; refundId?: string };
 
@@ -324,6 +325,136 @@ export async function calculateMembershipRefund(_prev: State | undefined, formDa
       resultAmountKopeks: calc.resultAmountKopeks,
       plannedRefundDate: `${calc.planned.y}-${String(calc.planned.m).padStart(2, "0")}-${String(calc.planned.d).padStart(2, "0")}`,
       calculationVersion: REFUND_CALC_VERSION,
+    },
+  });
+  revalidatePath(`/refunds/new/${refundId}/details`);
+  return { ok: true, refundId };
+}
+
+// --- Phase 2B: personal-training refund calculation -------------------------
+
+const parseIntStrict = (v: string): number | null => (/^\d+$/.test(v.trim()) ? Number(v.trim()) : null);
+const isoOf = (v: { y: number; m: number; d: number }) => `${v.y}-${String(v.m).padStart(2, "0")}-${String(v.d).padStart(2, "0")}`;
+
+/** Save the raw PT inputs (partial allowed) — «Сохранить черновик». */
+export async function savePersonalTrainingInputs(_prev: State | undefined, formData: FormData): Promise<State> {
+  const refundId = String(formData.get("refundId") ?? "").trim();
+  const g = await guardEditableDraft(refundId);
+  if (!g.ok) return { ok: false, error: refundDocError(g.code) };
+  const { ctx, refund } = g;
+  if (refund.returnType !== "personal_training") return { ok: false, error: "Неверный тип возврата." };
+
+  const application = parseDateOnly(String(formData.get("applicationDate") ?? ""));
+  const amountRaw = String(formData.get("contractAmount") ?? "").trim();
+  const X = amountRaw ? parseContractAmountKopeks(amountRaw) : null;
+  if (amountRaw && X === null) return { ok: false, error: "Неверный формат суммы договора." };
+  const priceRaw = String(formData.get("terminationPrice") ?? "").trim();
+  const V = priceRaw ? parseContractAmountKopeks(priceRaw) : null;
+  if (priceRaw && V === null) return { ok: false, error: "Неверный формат стоимости тренировки." };
+  const nRaw = String(formData.get("contractSessions") ?? "").trim();
+  const N = nRaw ? parseIntStrict(nRaw) : null;
+  if (nRaw && N === null) return { ok: false, error: "Количество тренировок должно быть целым числом." };
+  const eRaw = String(formData.get("usedSessions") ?? "").trim();
+  const E = eRaw ? parseIntStrict(eRaw) : null;
+  if (eRaw && E === null) return { ok: false, error: "Количество проведённых тренировок должно быть целым числом." };
+  const serviceNotProvided = ["on", "true"].includes(String(formData.get("serviceNotProvided") ?? ""));
+  const methodRaw = String(formData.get("calculationMethod") ?? "").trim();
+  const method = isPtMethod(methodRaw) ? methodRaw : null;
+  const reason = String(formData.get("alternativeReason") ?? "").trim().slice(0, 2000) || null;
+
+  // Trainer (validate against the club if provided).
+  const trainerId = String(formData.get("trainerEmployeeId") ?? "").trim();
+  let ptTrainerEmployeeId: string | null = null, ptTrainerNameSnapshot: string | null = null;
+  if (trainerId) {
+    const t = await getClubTrainer(refund.clubId, trainerId);
+    if (!t) return { ok: false, error: "Выбранный тренер недоступен для этого клуба." };
+    ptTrainerEmployeeId = t.id; ptTrainerNameSnapshot = t.fullName;
+  }
+
+  const res = await prisma.refund.updateMany({
+    where: { id: refundId, status: "draft" },
+    data: {
+      applicationDate: application ? toLocalMidnight(application) : null,
+      contractAmountKopeks: X, ptTerminationSessionPriceKopeks: V,
+      ptContractSessionCount: N, ptUsedSessionCount: serviceNotProvided ? 0 : E,
+      serviceNotProvided, ptCalculationMethod: method, ptAlternativeCalculationReason: reason,
+      ...(ptTrainerEmployeeId ? { ptTrainerEmployeeId, ptTrainerNameSnapshot } : {}),
+    },
+  });
+  if (res.count === 0) return { ok: false, error: refundDocError("NOT_EDITABLE") };
+  await recordAudit({ action: "refund.pt_details_saved", entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id, metadata: { serviceNotProvided, method } });
+  revalidatePath(`/refunds/new/${refundId}/details`);
+  return { ok: true, refundId };
+}
+
+/** Server-authoritative PT refund calculation. Client-supplied derived values
+ * (result, avg price, planned date, version, refusal text, snapshot) are ignored. */
+export async function calculatePersonalTrainingRefund(_prev: State | undefined, formData: FormData): Promise<State> {
+  const refundId = String(formData.get("refundId") ?? "").trim();
+  const g = await guardEditableDraft(refundId);
+  if (!g.ok) return { ok: false, error: refundDocError(g.code) };
+  const { ctx, refund } = g;
+  if (refund.returnType !== "personal_training") return { ok: false, error: "Неверный тип возврата." };
+
+  const active = await getActiveRefundDocuments(refundId);
+  if (!isRefundDocumentSetComplete("personal_training", active.map((d) => d.documentType))) return { ok: false, error: "Загрузите все обязательные документы." };
+  if (!validateRefundRequisites(refund).ok) return { ok: false, error: "Заполните банковские реквизиты." };
+
+  // Trainer (required in all cases).
+  const trainerId = String(formData.get("trainerEmployeeId") ?? "").trim();
+  if (!trainerId) return { ok: false, error: "Выберите тренера." };
+  const trainer = await getClubTrainer(refund.clubId, trainerId);
+  if (!trainer) return { ok: false, error: "Выбранный тренер недоступен для этого клуба." };
+
+  const application = parseDateOnly(String(formData.get("applicationDate") ?? ""));
+  if (!application) return { ok: false, error: "Укажите дату написания заявления." };
+  if (diffDays(application, fromDate(new Date())) > 0) return { ok: false, error: "Дата заявления не может быть в будущем." };
+  const X = parseContractAmountKopeks(String(formData.get("contractAmount") ?? ""));
+  if (X === null) return { ok: false, error: "Неверный формат суммы договора." };
+  const V = parseContractAmountKopeks(String(formData.get("terminationPrice") ?? ""));
+  if (V === null) return { ok: false, error: "Неверный формат стоимости тренировки." };
+  const N = parseIntStrict(String(formData.get("contractSessions") ?? ""));
+  if (N === null) return { ok: false, error: "Укажите количество тренировок по договору (целое число)." };
+  const E = parseIntStrict(String(formData.get("usedSessions") ?? ""));
+  if (E === null) return { ok: false, error: "Укажите количество проведённых тренировок (целое число)." };
+  const serviceNotProvided = ["on", "true"].includes(String(formData.get("serviceNotProvided") ?? ""));
+  const methodRaw = String(formData.get("calculationMethod") ?? "").trim();
+  const method = (isPtMethod(methodRaw) ? methodRaw : "contract_rate") as PtMethod;
+  const reason = String(formData.get("alternativeReason") ?? "").trim();
+  if (!serviceNotProvided && method === "average_rate" && reason.length < PT_MIN_REASON_LEN) {
+    return { ok: false, error: `Укажите причину выбора способа расчёта (не менее ${PT_MIN_REASON_LEN} символов).` };
+  }
+
+  const calc = computePersonalTrainingRefund({ contractAmountKopeks: X, contractSessions: N, usedSessions: E, terminationPriceKopeks: V, method, serviceNotProvided, application });
+  if (!calc.ok) return { ok: false, error: calc.error };
+
+  const wasPt = (refund.calculationVersion ?? "").startsWith("pt_");
+  const expected = String(formData.get("expectedUpdatedAt") ?? "").trim();
+  const res = await prisma.refund.updateMany({
+    where: { id: refundId, status: "draft", ...(expected ? { updatedAt: new Date(expected) } : {}) },
+    data: {
+      applicationDate: toLocalMidnight(application), contractAmountKopeks: X, serviceNotProvided,
+      ptTrainerEmployeeId: trainer.id, ptTrainerNameSnapshot: trainer.fullName,
+      ptContractSessionCount: N, ptUsedSessionCount: serviceNotProvided ? 0 : E, ptTerminationSessionPriceKopeks: V,
+      ptCalculationMethod: calc.mode, ptAlternativeCalculationReason: calc.mode === "average_rate" ? reason.slice(0, 2000) : null,
+      ptRawResultKopeks: calc.rawResultKopeks, ptRefundUnavailableReason: calc.unavailableReason, ptRefusalDraftText: calc.refusalDraftText,
+      refundResultAmountKopeks: calc.resultAmountKopeks,
+      // A negative (unavailable) result never becomes a stored negative amount.
+      amountKopeks: calc.unavailable ? 0 : (calc.resultAmountKopeks ?? 0),
+      baseRefundDueDate: toLocalMidnight(calc.base), plannedRefundDate: toLocalMidnight(calc.planned),
+      dueDateAdjustmentReason: calc.adjustmentReason, calculationVersion: calc.calculationVersion,
+    },
+  });
+  if (res.count === 0) return { ok: false, error: "Данные возврата изменились. Обновите страницу и повторите расчёт." };
+
+  await recordAudit({
+    action: calc.unavailable ? "refund.pt_unavailable_calculated" : wasPt ? "refund.pt_recalculated" : "refund.pt_calculated",
+    entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id,
+    metadata: {
+      trainerUserId: trainer.id, trainerNameSnapshot: trainer.fullName, applicationDate: isoOf(application),
+      contractAmountKopeks: X, contractSessionCount: N, usedSessionCount: serviceNotProvided ? 0 : E, terminationSessionPriceKopeks: V,
+      calculationMethod: calc.mode, resultAmountKopeks: calc.resultAmountKopeks, rawResultKopeks: calc.rawResultKopeks,
+      calculationVersion: calc.calculationVersion, plannedRefundDate: isoOf(calc.planned),
     },
   });
   revalidatePath(`/refunds/new/${refundId}/details`);

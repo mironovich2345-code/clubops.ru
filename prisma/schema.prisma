@@ -397,6 +397,22 @@ model Refund {
   dueDateAdjustmentReason     String?
   calculationVersion          String?
 
+  // --- v2 personal-training refund calculation (Phase 2B; all nullable). Trainer
+  // is a historical snapshot (id + name) so the record survives dismissal/rename.
+  // ptRawResultKopeks is the SIGNED pre-round result (may be negative for the
+  // contract-rate variant); refundResultAmountKopeks/amountKopeks never go
+  // negative — a negative raw result is a refusal, not a stored negative amount.
+  ptTrainerEmployeeId             String?
+  ptTrainerNameSnapshot           String?
+  ptContractSessionCount          Int?
+  ptUsedSessionCount              Int?
+  ptTerminationSessionPriceKopeks Int?
+  ptCalculationMethod             String?
+  ptAlternativeCalculationReason  String?
+  ptRawResultKopeks               Int?
+  ptRefundUnavailableReason       String?
+  ptRefusalDraftText              String?
+
   // Uploaded documents: JSON array of { storageKey, fileName, mime, size, type }
   // (legacy v1). v2 refunds use the RefundDocument table instead.
   documentsJson    String?

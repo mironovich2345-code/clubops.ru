@@ -96,3 +96,27 @@ export async function getActiveRefundDocuments(refundId: string): Promise<Active
     select: { id: true, documentType: true, originalFilename: true, safeFilename: true, mimeType: true, sizeBytes: true, storageKey: true },
   });
 }
+
+// --- PT trainers (ClubEmployee, this club only; active + dismissed) ----------
+
+export const REFUND_TRAINER_POSITIONS = ["gym_trainer", "group_trainer"] as const;
+export type RefundTrainer = { id: string; fullName: string; position: string; status: string };
+
+/** Trainers tied to THIS club (active first, then dismissed). No other club's
+ * employees and no personal data beyond the display name. */
+export async function getClubTrainers(clubId: string): Promise<RefundTrainer[]> {
+  return prisma.clubEmployee.findMany({
+    where: { clubId, position: { in: REFUND_TRAINER_POSITIONS as unknown as string[] } },
+    orderBy: [{ status: "asc" }, { fullName: "asc" }],
+    select: { id: true, fullName: true, position: true, status: true },
+  });
+}
+
+/** Validate a chosen trainer belongs to the club (any status) + is a trainer. */
+export async function getClubTrainer(clubId: string, employeeId: string): Promise<RefundTrainer | null> {
+  const e = await prisma.clubEmployee.findFirst({
+    where: { id: employeeId, clubId, position: { in: REFUND_TRAINER_POSITIONS as unknown as string[] } },
+    select: { id: true, fullName: true, position: true, status: true },
+  });
+  return e ?? null;
+}
