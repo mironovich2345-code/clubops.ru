@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canCreateOperational } from "@/lib/auth";
-import { getCurrentAccessContext, canAccessClub, recordAudit } from "@/lib/access";
+import { getCurrentAccessContext, canAccessClub, recordAudit, userHasClubRole } from "@/lib/access";
 import { getStorage } from "@/lib/storage";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import { getRefundForContext, getActiveRefundDocuments, getClubTrainer } from "@/lib/refunds";
@@ -19,6 +19,7 @@ import {
   parseDateOnly, toLocalMidnight, parseContractAmountKopeks, computeMembershipRefund, REFUND_CALC_VERSION, diffDays, fromDate,
 } from "@/lib/refund-membership";
 import { computePersonalTrainingRefund, isPtMethod, PT_MIN_REASON_LEN, type PtMethod } from "@/lib/refund-personal-training";
+import { REFUND_V2_STATUS, refundSubmissionReadiness, validateCorrectionComment } from "@/lib/refund-workflow";
 
 type State = { ok: boolean; error?: string; refundId?: string };
 
@@ -38,7 +39,9 @@ async function guardEditableDraft(refundId: string): Promise<{ ok: true; ctx: Ct
   const refund = await getRefundForContext(ctx, refundId); // company + allowed-clubs check
   if (!refund) return { ok: false, code: "ACCESS_DENIED" };
   if (refund.entryVersion !== 2) return { ok: false, code: "NOT_EDITABLE" };
-  if (refund.status !== "draft") return { ok: false, code: "NOT_EDITABLE" };
+  // Editable only while a draft OR returned for correction — never once sent
+  // to regional review or handed to accounting.
+  if (refund.status !== "draft" && refund.status !== "needs_correction") return { ok: false, code: "NOT_EDITABLE" };
   if (!canCreateOperational(ctx.effectiveRoles)) return { ok: false, code: "ACCESS_DENIED" };
   const isCreator = refund.createdByUserId === ctx.user.id;
   const isRegional = ctx.effectiveRoles.includes("regional_director");
@@ -49,7 +52,8 @@ async function guardEditableDraft(refundId: string): Promise<{ ok: true; ctx: Ct
 /** Create a v2 refund draft with a required, validated return type. */
 export async function createRefundDraft(_prev: State | undefined, formData: FormData): Promise<State> {
   const ctx = await getCurrentAccessContext();
-  if (!ctx || !canCreateOperational(ctx.effectiveRoles)) return { ok: false, error: "Нет прав на создание возврата." };
+  // v2 refunds are created (and later submitted) by a manager only.
+  if (!ctx || !ctx.effectiveRoles.includes("manager")) return { ok: false, error: "Создать возврат может только управляющий." };
   const clubId = String(formData.get("clubId") ?? "").trim();
   if (!clubId || !ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) return { ok: false, error: "Нет доступа к выбранному клубу." };
   const companyId = await clubCompanyId(clubId);
@@ -207,7 +211,7 @@ export async function cancelRefundDraft(_prev: State | undefined, formData: Form
   const g = await guardEditableDraft(refundId);
   if (!g.ok) return { ok: false, error: refundDocError(g.code) };
   const { ctx, refund } = g;
-  const res = await prisma.refund.updateMany({ where: { id: refundId, status: "draft" }, data: { status: "canceled" } });
+  const res = await prisma.refund.updateMany({ where: { id: refundId, status: { in: ["draft", "needs_correction"] } }, data: { status: "canceled" } });
   if (res.count === 0) return { ok: false, error: refundDocError("NOT_EDITABLE") };
   await recordAudit({ action: "refund.draft_cancelled", entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id, metadata: { returnType: refund.returnType } });
   revalidatePath("/refunds");
@@ -251,7 +255,7 @@ export async function saveMembershipInputs(_prev: State | undefined, formData: F
   const serviceNotProvided = String(formData.get("serviceNotProvided") ?? "") === "on" || String(formData.get("serviceNotProvided") ?? "") === "true";
 
   const res = await prisma.refund.updateMany({
-    where: { id: refundId, status: "draft" },
+    where: { id: refundId, status: { in: ["draft", "needs_correction"] } },
     data: {
       serviceStartDate: start ? toLocalMidnight(start) : null,
       serviceEndDate: end ? toLocalMidnight(end) : null,
@@ -300,7 +304,7 @@ export async function calculateMembershipRefund(_prev: State | undefined, formDa
   const wasCalculated = refund.calculationVersion != null;
   const expected = String(formData.get("expectedUpdatedAt") ?? "").trim();
   const res = await prisma.refund.updateMany({
-    where: { id: refundId, status: "draft", ...(expected ? { updatedAt: new Date(expected) } : {}) },
+    where: { id: refundId, status: { in: ["draft", "needs_correction"] }, ...(expected ? { updatedAt: new Date(expected) } : {}) },
     data: {
       serviceStartDate: toLocalMidnight(start), serviceEndDate: toLocalMidnight(end), applicationDate: toLocalMidnight(application),
       contractAmountKopeks: amount, serviceNotProvided,
@@ -372,7 +376,7 @@ export async function savePersonalTrainingInputs(_prev: State | undefined, formD
   }
 
   const res = await prisma.refund.updateMany({
-    where: { id: refundId, status: "draft" },
+    where: { id: refundId, status: { in: ["draft", "needs_correction"] } },
     data: {
       applicationDate: application ? toLocalMidnight(application) : null,
       contractAmountKopeks: X, ptTerminationSessionPriceKopeks: V,
@@ -431,7 +435,7 @@ export async function calculatePersonalTrainingRefund(_prev: State | undefined, 
   const wasPt = (refund.calculationVersion ?? "").startsWith("pt_");
   const expected = String(formData.get("expectedUpdatedAt") ?? "").trim();
   const res = await prisma.refund.updateMany({
-    where: { id: refundId, status: "draft", ...(expected ? { updatedAt: new Date(expected) } : {}) },
+    where: { id: refundId, status: { in: ["draft", "needs_correction"] }, ...(expected ? { updatedAt: new Date(expected) } : {}) },
     data: {
       applicationDate: toLocalMidnight(application), contractAmountKopeks: X, serviceNotProvided,
       ptTrainerEmployeeId: trainer.id, ptTrainerNameSnapshot: trainer.fullName,
@@ -457,6 +461,110 @@ export async function calculatePersonalTrainingRefund(_prev: State | undefined, 
       calculationVersion: calc.calculationVersion, plannedRefundDate: isoOf(calc.planned),
     },
   });
+  revalidatePath(`/refunds/new/${refundId}/details`);
+  return { ok: true, refundId };
+}
+
+// --- Phase 3A: manual review workflow (submit → regional → accounting) -------
+
+/** Manager (author) submits a ready v2 refund for regional review. Idempotent +
+ * concurrency-safe: a conditional status update means only one transition wins. */
+export async function submitRefundToRegional(_prev: State | undefined, formData: FormData): Promise<State> {
+  const refundId = String(formData.get("refundId") ?? "").trim();
+  const ctx = await getCurrentAccessContext();
+  if (!ctx) return { ok: false, error: "Нет доступа." };
+  const refund = await getRefundForContext(ctx, refundId); // company + club scope
+  if (!refund) return { ok: false, error: "Возврат не найден или нет доступа." };
+  if (refund.entryVersion !== 2) return { ok: false, error: "Возврат недоступен для отправки." };
+  if (!ctx.effectiveRoles.includes("manager")) return { ok: false, error: "Отправить возврат может только управляющий." };
+  if (refund.createdByUserId !== ctx.user.id) return { ok: false, error: "Отправить возврат может только его автор." };
+  if (refund.status !== REFUND_V2_STATUS.DRAFT && refund.status !== REFUND_V2_STATUS.NEEDS_CORRECTION) {
+    return { ok: false, error: refund.status === REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW ? "Возврат уже отправлен." : "Статус возврата уже изменён. Обновите страницу." };
+  }
+
+  const active = await getActiveRefundDocuments(refundId);
+  const ready = refundSubmissionReadiness(refund, active.map((d) => d.documentType));
+  if (!ready.ok) return { ok: false, error: ready.error };
+
+  const wasCorrection = refund.status === REFUND_V2_STATUS.NEEDS_CORRECTION;
+  const now = new Date();
+  const res = await prisma.refund.updateMany({
+    where: { id: refundId, status: { in: [REFUND_V2_STATUS.DRAFT, REFUND_V2_STATUS.NEEDS_CORRECTION] } },
+    data: { status: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW, regionalReviewRequestedAt: now, submittedByManagerId: ctx.user.id },
+  });
+  if (res.count === 0) return { ok: false, error: "Статус возврата уже изменён. Обновите страницу." };
+
+  await recordAudit({
+    action: wasCorrection ? "refund.resubmitted_to_regional" : "refund.submitted_to_regional",
+    entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id,
+    metadata: { previousStatus: refund.status, newStatus: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW, amountKopeks: refund.amountKopeks, returnType: refund.returnType, calculationVersion: refund.calculationVersion, regionalReviewRequestedAt: now.toISOString() },
+  });
+  revalidatePath("/refunds");
+  revalidatePath(`/refunds/${refundId}`);
+  revalidatePath(`/refunds/new/${refundId}/details`);
+  return { ok: true, refundId };
+}
+
+// Guard for a regional review action: scope + active regional access to the club.
+async function guardRegionalReview(refundId: string): Promise<{ ok: true; ctx: Ctx; refund: RefundCtx } | { ok: false; error: string }> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx) return { ok: false, error: "Нет доступа." };
+  const refund = await getRefundForContext(ctx, refundId);
+  if (!refund) return { ok: false, error: "Возврат не найден или нет доступа." };
+  if (refund.entryVersion !== 2) return { ok: false, error: "Возврат недоступен." };
+  if (!(await userHasClubRole(ctx.user.id, refund.clubId, ["regional_director"]))) {
+    return { ok: false, error: "Согласовать возврат может только региональный директор этого клуба." };
+  }
+  return { ok: true, ctx, refund };
+}
+
+/** Regional director approves → hand to accounting. Conditional (one winner). */
+export async function approveRefundByRegional(_prev: State | undefined, formData: FormData): Promise<State> {
+  const refundId = String(formData.get("refundId") ?? "").trim();
+  const g = await guardRegionalReview(refundId);
+  if (!g.ok) return { ok: false, error: g.error };
+  const { ctx, refund } = g;
+  if (refund.status === REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS) return { ok: false, error: "Возврат уже согласован и находится в бухгалтерии." };
+  if (refund.status !== REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW) return { ok: false, error: "Статус возврата уже изменён. Обновите страницу." };
+
+  const now = new Date();
+  const res = await prisma.refund.updateMany({
+    where: { id: refundId, status: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW },
+    data: { status: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, regionalReviewedAt: now, regionalReviewedByUserId: ctx.user.id, accountingStartedAt: now },
+  });
+  if (res.count === 0) return { ok: false, error: "Статус возврата уже изменён. Обновите страницу." };
+
+  const base = { entityType: "Refund" as const, entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id };
+  await recordAudit({ action: "refund.approved_by_regional", ...base, metadata: { previousStatus: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW, newStatus: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, amountKopeks: refund.amountKopeks, returnType: refund.returnType, regionalReviewedAt: now.toISOString() } });
+  await recordAudit({ action: "refund.sent_to_accounting", ...base, metadata: { newStatus: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, accountingStartedAt: now.toISOString(), calculationVersion: refund.calculationVersion } });
+  revalidatePath("/refunds");
+  revalidatePath(`/refunds/${refundId}`);
+  return { ok: true, refundId };
+}
+
+/** Regional director returns for correction (comment required). Conditional. */
+export async function returnRefundForCorrection(_prev: State | undefined, formData: FormData): Promise<State> {
+  const refundId = String(formData.get("refundId") ?? "").trim();
+  const g = await guardRegionalReview(refundId);
+  if (!g.ok) return { ok: false, error: g.error };
+  const { ctx, refund } = g;
+  if (refund.status !== REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW) return { ok: false, error: "Статус возврата уже изменён. Обновите страницу." };
+  const comment = validateCorrectionComment(String(formData.get("comment") ?? ""));
+  if (!comment.ok) return { ok: false, error: comment.error };
+
+  const now = new Date();
+  const res = await prisma.refund.updateMany({
+    where: { id: refundId, status: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW },
+    data: { status: REFUND_V2_STATUS.NEEDS_CORRECTION, regionalReviewedAt: now, regionalReviewedByUserId: ctx.user.id, regionalCorrectionComment: comment.value },
+  });
+  if (res.count === 0) return { ok: false, error: "Статус возврата уже изменён. Обновите страницу." };
+
+  await recordAudit({
+    action: "refund.returned_for_correction", entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id,
+    metadata: { previousStatus: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW, newStatus: REFUND_V2_STATUS.NEEDS_CORRECTION, commentLength: comment.value.length, returnType: refund.returnType },
+  });
+  revalidatePath("/refunds");
+  revalidatePath(`/refunds/${refundId}`);
   revalidatePath(`/refunds/new/${refundId}/details`);
   return { ok: true, refundId };
 }

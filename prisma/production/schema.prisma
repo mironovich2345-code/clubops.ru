@@ -416,6 +416,16 @@ model Refund {
   ptRefundUnavailableReason       String?
   ptRefusalDraftText              String?
 
+  // --- v2 review workflow (Phase 3A). New statuses (pending_regional_review /
+  // needs_correction / accounting_in_progress) live in `status`; these are the
+  // participant/time fields. History is kept in AuditLog. All nullable → legacy-safe.
+  regionalReviewRequestedAt   DateTime?
+  submittedByManagerId        String?
+  regionalReviewedAt          DateTime?
+  regionalReviewedByUserId    String?
+  regionalCorrectionComment   String?
+  accountingStartedAt         DateTime?
+
   // Uploaded documents: JSON array of { storageKey, fileName, mime, size, type }
   // (legacy v1). v2 refunds use the RefundDocument table instead.
   documentsJson    String?

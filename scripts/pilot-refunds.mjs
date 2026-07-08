@@ -454,6 +454,146 @@ async function main() {
   check("PT68 mobile-safe (grid stacks, no forced overflow)", ptForm.includes("sm:grid-cols-2") && !ptForm.includes("overflow-x-scroll"));
   check("PT trainer list has no email/personal data", !ptForm.includes("email") && detailsSrc.includes("fullName"));
 
+  // ================= Phase 3A: review workflow ==============================
+  // Fixtures: 2nd regional of CLUB, a regional of CLUB2, accountant/chief/owner/gd.
+  const RD2 = "pilot-rf-rd2", RDX = "pilot-rf-rdx", ACC = "pilot-rf-acc", CHF = "pilot-rf-chf", OWN = "pilot-rf-own", GD = "pilot-rf-gd";
+  await Promise.all([RD2, RDX, ACC, CHF, OWN, GD].map((id) => p.user.create({ data: { id, email: `${id}@x.dev`, name: id, role: "manager", isActive: true } })));
+  await p.clubUserAccess.create({ data: { clubId: CLUB, userId: RD2, role: "regional_director" } });
+  await p.clubUserAccess.create({ data: { clubId: CLUB2, userId: RDX, role: "regional_director" } });
+  await p.clubUserAccess.create({ data: { clubId: CLUB, userId: ACC, role: "accountant" } });
+  await p.companyUserAccess.create({ data: { companyId: CO, userId: CHF, role: "chief_accountant" } });
+  await p.companyUserAccess.create({ data: { companyId: CO, userId: OWN, role: "owner" } });
+  await p.companyUserAccess.create({ data: { companyId: CO, userId: GD, role: "general_director" } });
+
+  async function hasClubRole(userId, clubId, rolesSet) {
+    const cr = await p.clubUserAccess.findMany({ where: { userId, clubId }, select: { role: true } });
+    if (cr.some((r) => rolesSet.includes(r.role))) return true;
+    const club = await p.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
+    if (!club) return false;
+    const co = await p.companyUserAccess.findMany({ where: { userId, companyId: club.companyId }, select: { role: true } });
+    return co.some((r) => rolesSet.includes(r.role));
+  }
+  function ready(r, types) {
+    if (r.entryVersion !== 2) return false;
+    if (!["membership", "personal_training"].includes(r.returnType)) return false;
+    const need = r.returnType === "membership" ? MEMBERSHIP : PT;
+    if (!need.every((k) => types.includes(k))) return false;
+    if (!validateStrict(r).ok) return false;
+    if (!r.calculationVersion) return false;
+    if (r.ptRefundUnavailableReason) return false;
+    if (r.refundResultAmountKopeks == null || r.refundResultAmountKopeks <= 0 || r.amountKopeks <= 0) return false;
+    return true;
+  }
+  const editable = (s) => s === "draft" || s === "needs_correction";
+  const canSubmit = (roles, isAuthor) => roles.includes("manager") && isAuthor;
+  const submitTx = (id) => p.refund.updateMany({ where: { id, status: { in: ["draft", "needs_correction"] } }, data: { status: "pending_regional_review", regionalReviewRequestedAt: new Date(), submittedByManagerId: MGR } });
+  const approveTx = (id, uid) => p.refund.updateMany({ where: { id, status: "pending_regional_review" }, data: { status: "accounting_in_progress", regionalReviewedAt: new Date(), regionalReviewedByUserId: uid, accountingStartedAt: new Date() } });
+  const returnTx = (id, uid, c) => p.refund.updateMany({ where: { id, status: "pending_regional_review" }, data: { status: "needs_correction", regionalReviewedAt: new Date(), regionalReviewedByUserId: uid, regionalCorrectionComment: c } });
+  const validComment = (s) => String(s ?? "").trim().length >= 5;
+  async function makeReady(type) {
+    const r = await mkDraft(type);
+    for (const k of (type === "membership" ? MEMBERSHIP : PT)) await slotUpload(r.id, k, B(`w-${k}-${r.id}`), { user: MGR });
+    await p.refund.update({ where: { id: r.id }, data: { ...good, contractAmountKopeks: 1000000, refundResultAmountKopeks: 400000, amountKopeks: 400000, calculationVersion: type === "membership" ? "membership_v1" : "pt_contract_rate_v1" } });
+    return r.id;
+  }
+  const row = (id) => p.refund.findUnique({ where: { id } });
+  const activeTypes = async (id) => (await activeDocs(id)).map((d) => d.documentType);
+
+  // Submission readiness (16–21)
+  const readyM = await makeReady("membership");
+  check("W-ready complete membership is submittable", ready(await row(readyM), await activeTypes(readyM)));
+  check("W16 incomplete documents block submit", !ready({ ...(await row(readyM)) }, ["contract_page_1"]));
+  check("W17 incomplete requisites block submit", !ready({ ...(await row(readyM)), bankBik: "" }, await activeTypes(readyM)));
+  check("W18 missing calculation blocks submit", !ready({ ...(await row(readyM)), calculationVersion: null }, await activeTypes(readyM)));
+  check("W19 amount 0 blocks submit", !ready({ ...(await row(readyM)), refundResultAmountKopeks: 0, amountKopeks: 0 }, await activeTypes(readyM)));
+  check("W20 negative PT (unavailable) blocks submit", !ready({ ...(await row(readyM)), ptRefundUnavailableReason: "x" }, await activeTypes(readyM)));
+  check("W21 missing calculationVersion blocks submit", !ready({ ...(await row(readyM)), calculationVersion: null }, await activeTypes(readyM)));
+
+  // Submit role gating (9–15)
+  check("W1 manager-author can submit", canSubmit(["manager"], true));
+  check("W9 non-author manager cannot submit", !canSubmit(["manager"], false));
+  check("W11 regional cannot submit", !canSubmit(["regional_director"], true));
+  check("W12 accountant cannot submit", !canSubmit(["accountant"], true));
+  check("W13 chief cannot submit", !canSubmit(["chief_accountant"], true));
+  check("W14 owner cannot submit", !canSubmit(["owner"], true));
+  check("W15 system_admin cannot submit", !canSubmit(["system_admin"], true));
+
+  // Submit transition (1–8)
+  check("W2 submit membership → pending", (await submitTx(readyM)).count === 1 && (await row(readyM)).status === "pending_regional_review");
+  check("W4 submit time stored", (await row(readyM)).regionalReviewRequestedAt !== null && (await row(readyM)).submittedByManagerId === MGR);
+  check("W6 editing blocked after submit (status not editable)", editable((await row(readyM)).status) === false);
+  check("W7 edit updateMany would not match pending", (await p.refund.updateMany({ where: { id: readyM, status: { in: ["draft", "needs_correction"] } }, data: { contractAmountKopeks: 1 } })).count === 0);
+  check("W22 second submit does not transition again", (await submitTx(readyM)).count === 0);
+  const readyPT = await makeReady("personal_training");
+  check("W3 submit PT → pending", (await submitTx(readyPT)).count === 1 && (await row(readyPT)).status === "pending_regional_review");
+
+  // Parallel submit (23) — new ready refund, two concurrent submits → one wins.
+  const par1 = await makeReady("membership");
+  const [pa, pb] = await Promise.all([submitTx(par1), submitTx(par1)]);
+  check("W23 parallel submit applies once", pa.count + pb.count === 1);
+
+  // Regional approval gating (24–33)
+  check("W24 regional of club may act", await hasClubRole(RD, CLUB, ["regional_director"]));
+  check("W25 second regional of club may act", await hasClubRole(RD2, CLUB, ["regional_director"]));
+  check("W26 regional of another club cannot", !(await hasClubRole(RDX, CLUB, ["regional_director"])));
+  check("W28 manager cannot approve", !(await hasClubRole(MGR, CLUB, ["regional_director"])));
+  check("W29 accountant cannot approve", !(await hasClubRole(ACC, CLUB, ["regional_director"])));
+  check("W30 chief cannot approve", !(await hasClubRole(CHF, CLUB, ["regional_director"])));
+  check("W31 owner cannot approve", !(await hasClubRole(OWN, CLUB, ["regional_director"])));
+  check("W32 general director cannot approve", !(await hasClubRole(GD, CLUB, ["regional_director"])));
+
+  // Approve transition (34–41)
+  const beforeAmount = (await row(readyM)).amountKopeks;
+  check("W34 approve → accounting_in_progress", (await approveTx(readyM, RD)).count === 1 && (await row(readyM)).status === "accounting_in_progress");
+  const ap = await row(readyM);
+  check("W35/36 reviewer + time stored", ap.regionalReviewedAt !== null && ap.regionalReviewedByUserId === RD);
+  check("W37 accountingStartedAt stored", ap.accountingStartedAt !== null);
+  check("W40 paidAt not set", ap.paidAt === null);
+  check("W41 amount unchanged", ap.amountKopeks === beforeAmount);
+  check("W39 no Expense/CashMovement created by workflow", (await p.expense.count({ where: { clubId: CLUB } }).catch(() => 0)) === 0 && (await p.cashMovement.count({ where: { clubId: CLUB } }).catch(() => 0)) === 0);
+  check("W56 repeat approve no second effect", (await approveTx(readyM, RD2)).count === 0);
+
+  // Return for correction (42–53)
+  const retId = await makeReady("membership");
+  await submitTx(retId);
+  check("W43 empty comment rejected", !validComment(""));
+  check("W44 whitespace comment rejected", !validComment("   "));
+  check("W42 return with comment", validComment("исправьте даты договора") && (await returnTx(retId, RD, "исправьте даты договора")).count === 1);
+  const rr = await row(retId);
+  check("W45 status needs_correction", rr.status === "needs_correction");
+  check("W46 manager sees the comment", rr.regionalCorrectionComment === "исправьте даты договора");
+  check("W47 manager can edit again (editable)", editable(rr.status) && (await p.refund.updateMany({ where: { id: retId, status: { in: ["draft", "needs_correction"] } }, data: { contractAmountKopeks: 1200000 } })).count === 1);
+  await p.refund.update({ where: { id: retId }, data: { contractAmountKopeks: 1000000 } });
+  check("W51 resubmit needs_correction → pending", (await submitTx(retId)).count === 1 && (await row(retId)).status === "pending_regional_review");
+
+  // Races: approve vs return simultaneously (55)
+  const raceId = await makeReady("membership");
+  await submitTx(raceId);
+  const [ra, rb] = await Promise.all([approveTx(raceId, RD), returnTx(raceId, RD2, "верните")]);
+  check("W55 approve+return simultaneously → one transition", ra.count + rb.count === 1);
+  check("W57 stale status yields no change", (await approveTx(raceId, RD)).count === (["accounting_in_progress"].includes((await row(raceId)).status) ? 0 : 0));
+
+  // Accounting visibility (59–66) — mirror role/status filter.
+  const accSees = (roles, status) => roles.some((r) => ["accountant", "chief_accountant"].includes(r)) && status === "accounting_in_progress";
+  check("W59 accountant sees accounting_in_progress", accSees(["accountant"], "accounting_in_progress"));
+  check("W60 chief sees accounting_in_progress", accSees(["chief_accountant"], "accounting_in_progress"));
+  check("W62 manager does not get accounting action (read-only status)", !accSees(["manager"], "accounting_in_progress"));
+
+  // Static UI + safety (67–74, + no-financial-side-effects)
+  const listSrc = readFileSync(new URL("../src/app/(app)/refunds/page.tsx", import.meta.url), "utf8");
+  const detSrc = readFileSync(new URL("../src/app/(app)/refunds/[id]/page.tsx", import.meta.url), "utf8");
+  const wfSrc = readFileSync(new URL("../src/app/(app)/refunds/_components/RefundWorkflow.tsx", import.meta.url), "utf8");
+  check("W67 old upload form removed from /refunds", !listSrc.includes("RefundUpload"));
+  check("W68 «+ Новый возврат» present", listSrc.includes("+ Новый возврат"));
+  check("W71 regional queue block present", listSrc.includes("Ожидают моей проверки"));
+  check("W72/73 accounting queue block present", listSrc.includes("В работе у бухгалтерии"));
+  check("W-detail v2 review + regional action + legacy kept", detSrc.includes("RegionalReview") && detSrc.includes("accounting_in_progress") && detSrc.includes("RefundEditForm"));
+  check("W-actions wired", actSrc.includes("submitRefundToRegional") && actSrc.includes("approveRefundByRegional") && actSrc.includes("returnRefundForCorrection"));
+  check("W-audit events wired", ["refund.submitted_to_regional", "refund.resubmitted_to_regional", "refund.returned_for_correction", "refund.approved_by_regional", "refund.sent_to_accounting"].every((a) => actSrc.includes(a)));
+  check("W-no Expense/CashMovement/paidAt in workflow actions", !/\bprisma\.expense\.create|\bprisma\.cashMovement\.create|paidAt:/.test(actSrc.slice(actSrc.indexOf("submitRefundToRegional"))));
+  check("W-regional guard re-checks club access on server", actSrc.includes('userHasClubRole(ctx.user.id, refund.clubId, ["regional_director"])'));
+  check("W-conditional updates guard status (races)", actSrc.includes('status: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW') && actSrc.includes("res.count === 0"));
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();
