@@ -60,6 +60,15 @@ export const EXPENSE_CATEGORY_OPTIONS: ReadonlyArray<{ key: string; label: strin
   { key: "other", label: "Прочее" },
 ];
 
+// Categories that are never paid in cash — hidden from the new cash-expense
+// (entryVersion=2) form AND rejected server-side. Identified by STABLE key, not
+// the display name. They remain fully available in the catalog, invoices,
+// analytics and legacy expenses (this list only gates the new cash form).
+export const CASH_FORBIDDEN_CATEGORY_KEYS: ReadonlyArray<string> = ["taxes", "rent", "builders"];
+export function isCashForbiddenCategory(key: string): boolean {
+  return CASH_FORBIDDEN_CATEGORY_KEYS.includes(key);
+}
+
 export const EXPENSE_CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
   EXPENSE_CATEGORY_OPTIONS.map((o) => [o.key, o.label]),
 );

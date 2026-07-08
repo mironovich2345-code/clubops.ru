@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
 import { canCreateOperational } from "@/lib/auth";
 import { ensureExpenseCategoriesSeeded, getActiveExpenseCategories } from "@/lib/expense-categories";
+import { isCashForbiddenCategory } from "@/lib/expenses";
 import { formatUserDisplayName } from "@/lib/user-display";
 import { SimpleExpenseForm } from "./SimpleExpenseForm";
 
@@ -18,36 +19,23 @@ export default async function SimpleExpensePage() {
   if (!companyId || !clubId) redirect("/expenses");
 
   await ensureExpenseCategoriesSeeded();
-  const [categories, employees] = await Promise.all([
+  const [categories, payer] = await Promise.all([
     getActiveExpenseCategories(),
-    // Active, non-deleted users with access to this Club (company- or club-level).
-    prisma.user.findMany({
-      where: {
-        isActive: true, deletedAt: null,
-        OR: [
-          { clubRoles: { some: { clubId } } },
-          { companyAccess: { some: { companyId } } },
-        ],
-      },
-      select: { id: true, name: true, firstName: true, lastName: true, deletedAt: true },
-      orderBy: { name: "asc" },
-    }),
+    // Payer is always the authenticated user — fetch only their display name.
+    prisma.user.findUnique({ where: { id: ctx.user.id }, select: { name: true, firstName: true, lastName: true, deletedAt: true } }),
   ]);
 
-  // Default "Кто оплатил" to the authenticated user — but only when they are a
-  // valid, selectable employee for this Club (managers always are; a regional
-  // director / other role defaults to empty otherwise). Comes from server
-  // context, never from query params or client storage.
-  const defaultPaidById = employees.some((e) => e.id === ctx.user.id) ? ctx.user.id : "";
+  // Cash form hides the never-cash categories (taxes/rent/builders) — they stay
+  // in the catalog/invoices/analytics; the server rejects them too.
+  const cashCategories = categories.filter((c) => !isCashForbiddenCategory(c.key));
 
   return (
     <div>
       <PageHeader title="Новый расход" description="Упрощённый расход клуба (оплата наличными из ИП клуба)" />
       <div className="mt-4">
         <SimpleExpenseForm
-          categories={categories.map((c) => ({ key: c.key, name: c.name }))}
-          employees={employees.map((e) => ({ id: e.id, name: formatUserDisplayName(e) }))}
-          defaultPaidById={defaultPaidById}
+          categories={cashCategories.map((c) => ({ key: c.key, name: c.name }))}
+          payerName={payer ? formatUserDisplayName(payer) : "Текущий пользователь"}
         />
       </div>
     </div>

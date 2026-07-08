@@ -162,33 +162,54 @@ async function main() {
   const legacy = await p.expense.findFirst({ where: { clubId: CLUB, status: "confirmed" } });
   check("52 legacy entryVersion=1 remains readable", legacy && legacy.entryVersion === 1);
 
-  // --- "Кто оплатил" default + selectability (creation-form task) ---
-  const emps = await selectableEmployees(CLUB, CO);
-  const empIds = emps.map((e) => e.id);
-  check("D1 club employees include the manager", empIds.includes(MGR));
-  check("D2 foreign-club user NOT selectable for this club", !empIds.includes(FOREIGN));
-  check("D3 deleted/inactive user NOT selectable", !empIds.includes(GONE));
-  check("D4 manager defaults paidBy to self", defaultPaidBy(emps, MGR) === MGR);
-  check("D5 non-selectable current user defaults to empty", defaultPaidBy(emps, FOREIGN) === "");
-  // Server still validates paidBy: foreign-club id must fail canAccessClub-style check.
-  const foreignAccess = await p.clubUserAccess.findFirst({ where: { userId: FOREIGN, clubId: CLUB }, select: { id: true } });
-  check("D6 foreign-club paidBy rejected server-side (no club access)", foreignAccess === null);
-
-  // --- Creation-form UI contract (static assertions on the client source) ---
+  // === Simplify cash form: comment / payer / cash-forbidden categories ========
+  const CASH_FORBIDDEN = ["taxes", "rent", "builders"];
+  const isCashForbidden = (k) => CASH_FORBIDDEN.includes(k);
   const form = readFileSync(new URL("../src/app/(app)/expenses/simple/SimpleExpenseForm.tsx", import.meta.url), "utf8");
   const page = readFileSync(new URL("../src/app/(app)/expenses/simple/page.tsx", import.meta.url), "utf8");
-  check("U1 upload block label rendered on the form", form.includes("Подтверждающие документы"));
-  check("U1 helper text present", form.includes("Прикрепите от 1 до 3 файлов: чек, подтверждение перевода, фото или PDF."));
-  check("U1 counter 'Файлы: N из 3' present", form.includes("Файлы: {files.length} из {MAX_FILES}"));
-  check("U2 old 'documents after draft' message removed", !form.includes("Документы прикрепляются после создания черновика"));
-  check("U3 accepts JPG/PNG/WEBP/PDF", form.includes('accept="image/jpeg,image/png,image/webp,application/pdf"'));
-  check("U4 fourth file rejected with exact message", form.includes("Можно прикрепить не более 3 файлов."));
-  check("U5 max 3 + 10MB client mirror", form.includes("MAX_FILES = 3") && form.includes("MAX_FILE_BYTES = 10 * 1024 * 1024"));
-  check("U6 min 1 file gates the primary action", form.includes("files.length < 1"));
-  check("U7 draft created once (no duplicate on repeated click)", form.includes("draftIdRef") && form.includes('button type="submit" disabled={busy}'));
-  check("U8 partial-upload failure keeps draft + successes", form.includes("anyFailed") && form.includes("Черновик сохранён"));
-  check("U9 primary button label 'Создать расход'", form.includes("Создать расход"));
-  check("U10 default paidBy wired from server context", page.includes("defaultPaidById") && form.includes("defaultValue={defaultPaidById}"));
+  const actions = readFileSync(new URL("../src/app/(app)/expenses/simplified-actions.ts", import.meta.url), "utf8");
+  const expensesLib = readFileSync(new URL("../src/lib/expenses.ts", import.meta.url), "utf8");
+
+  // --- Comment / shopping list ---
+  check("C1 shopping-list field removed from the form", !form.includes('name="shoppingList"'));
+  check("C2 comment field kept + placeholder", form.includes('name="comment"') && form.includes("Например: ручки, мыло и т. д."));
+  check("C2 server requires comment", actions.includes("if (!comment) return { error: E.COMMENT }"));
+  check("C3 server no longer requires shopping list", !actions.includes("E.SHOPPING") && !actions.includes('formData.get("shoppingList")'));
+  // legacy expense with a filled shopping list still opens/displays
+  const legShop = await p.expense.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: MGR, category: "household", amountKopeks: 1234, expenseDate: today, status: "confirmed", entryVersion: 1, shoppingListText: "бумага, мыло" } });
+  check("C3 legacy expense with shopping list still readable", (await p.expense.findUnique({ where: { id: legShop.id } })).shoppingListText === "бумага, мыло");
+  check("C5 legacy shoppingListText column NOT dropped (still queryable)", (await p.expense.count({ where: { shoppingListText: { not: null } } })) >= 1);
+
+  // --- Кто оплатил (payer = server-side current user) ---
+  check("P1 no employee <select name=paidByUserId> in the form", !form.includes('name="paidByUserId"'));
+  check("P1 read-only 'Кто оплатил' info shown", form.includes("Кто оплатил") && form.includes("payerName"));
+  check("P1 page passes payerName from server user", page.includes("payerName") && page.includes("ctx.user.id"));
+  check("P2 server sets paidBy = ctx.user.id", actions.includes("const paidByUserId = ctx.user.id"));
+  check("P2 parseFields does not read client paidByUserId", !actions.includes('formData.get("paidByUserId")'));
+  check("P3 update does not change paidBy or shoppingListText", !actions.includes("paidByUserId: fields.paidByUserId") && !actions.includes("shoppingListText: fields.shoppingListText"));
+  check("P4 audit records actual payer", actions.includes("metadata: { amountKopeks: fields.amountKopeks, category: fields.categoryKey, paidByUserId }"));
+
+  // --- Cash-forbidden categories (taxes/rent/builders) ---
+  check("K1 forbidden set uses stable keys", isCashForbidden("taxes") && isCashForbidden("rent") && isCashForbidden("builders"));
+  check("K1 allowed category not forbidden", !isCashForbidden("household") && !isCashForbidden("other"));
+  check("K2 cash form filters out forbidden keys", page.includes("isCashForbiddenCategory") && page.includes("cashCategories"));
+  check("K2 server rejects forbidden on create (parseFields)", actions.includes("if (isCashForbiddenCategory(categoryKey)) return { error: E.CATEGORY_NOT_CASH }"));
+  check("K2 server rejects forbidden on submit (v2)", actions.includes('expense.entryVersion === 2 && isCashForbiddenCategory(expense.category)'));
+  check("K3 forbidden categories still in the shared catalog", ["taxes", "rent", "builders"].every((k) => expensesLib.includes(`key: "${k}"`)));
+  check("K3 catalog list is not globally disabled by this rule", expensesLib.includes("CASH_FORBIDDEN_CATEGORY_KEYS") && expensesLib.includes('"taxes", "rent", "builders"'));
+  // old expenses with a forbidden category still display + count in analytics
+  const oldTax = await p.expense.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: MGR, category: "taxes", amountKopeks: 9000, expenseDate: today, status: "confirmed", entryVersion: 1 } });
+  check("K4 old expense with 'taxes' still stored/displayable", (await p.expense.findUnique({ where: { id: oldTax.id } })).category === "taxes");
+  check("K4 forbidden-category expenses still counted in realized usage", (await realizedUsage(CLUB, "taxes", mo)) === 9000);
+  check("K5 chief accountant still manages the catalog", (function canManage(roles) { return roles.includes("chief_accountant"); })(["chief_accountant"]) && !(function canManage(roles) { return roles.includes("chief_accountant"); })(["manager"]));
+
+  // --- Documents / preview + two-column layout (static) ---
+  check("D1 two-column desktop layout (lg:grid-cols-2)", form.includes("lg:grid-cols-2"));
+  check("D2 image preview via object URL", form.includes("URL.createObjectURL") && form.includes("<img src={f.url}"));
+  check("D3 object URLs revoked (no leak)", form.includes("URL.revokeObjectURL"));
+  check("D4 PDF shown as a compact card", form.includes(">PDF<"));
+  check("D5 client mirrors max 3 + 10MB + formats", form.includes("MAX_FILES = 3") && form.includes("MAX_FILE_BYTES = 10 * 1024 * 1024") && form.includes('accept="image/jpeg,image/png,image/webp,application/pdf"'));
+  check("D6 min 1 doc gate + no-duplicate-draft guard kept", form.includes("files.length < 1") && form.includes("draftIdRef"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser, canCreateOperational } from "@/lib/auth";
 import {
-  getCurrentAccessContext, recordAudit, canAccessClub,
+  getCurrentAccessContext, recordAudit,
   userHasCompanyRole, userHasClubRole,
 } from "@/lib/access";
 import { monthClosedError } from "@/lib/month-close";
-import { getExpenseForContext } from "@/lib/expenses";
+import { getExpenseForContext, isCashForbiddenCategory } from "@/lib/expenses";
 import { buildExpenseTitle } from "@/lib/expense-title";
 import { isActiveExpenseCategoryKey } from "@/lib/expense-categories";
 import { activeDocumentCount } from "@/lib/expense-attachments";
@@ -21,7 +21,6 @@ import {
 import { ensureClubCashWallet, ensureRegionalCashWallet, recordExpenseMovement } from "@/lib/cash-wallets";
 
 const MAX_COMMENT = 2000;
-const MAX_SHOPPING = 5000;
 
 type CreateState = { ok: boolean; error?: string; expenseId?: string };
 type State = { ok: boolean; error?: string };
@@ -33,6 +32,7 @@ const E = {
   MONTH_CLOSED: "Месяц закрыт.",
   DATE_FUTURE: "Дата не может быть в будущем.",
   CATEGORY_DISABLED: "Статья расходов отключена или не найдена.",
+  CATEGORY_NOT_CASH: "Эта статья не оплачивается наличными.",
   NO_CATEGORY: "Нет активных статей расходов. Обратитесь к главному бухгалтеру.",
   EMPLOYEE: "Выбранный сотрудник недоступен.",
   AMOUNT: "Укажите корректную сумму больше нуля.",
@@ -71,16 +71,19 @@ async function loadForAction(expenseId: string) {
   return { ctx, expense, actor };
 }
 
-// Validate the shared simplified fields from FormData. Returns parsed values or an error.
-async function parseFields(formData: FormData, clubId: string) {
+// Validate the shared simplified fields from FormData. Returns parsed values or
+// an error. The payer is NOT read here — it is the authenticated user (set by
+// the create action). No "shopping list" field anymore (legacy column kept, not
+// required for new cash expenses).
+async function parseFields(formData: FormData) {
   const categoryKey = String(formData.get("category") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "");
   const dateRaw = String(formData.get("expenseDate") ?? "").trim();
   const comment = String(formData.get("comment") ?? "").trim();
-  const shoppingListText = String(formData.get("shoppingList") ?? "").trim();
-  const paidByUserId = String(formData.get("paidByUserId") ?? "").trim();
 
   if (!categoryKey || !(await isActiveExpenseCategoryKey(categoryKey))) return { error: E.CATEGORY_DISABLED };
+  // Stable-key gate: taxes/rent/builders are never paid in cash (v2 form only).
+  if (isCashForbiddenCategory(categoryKey)) return { error: E.CATEGORY_NOT_CASH };
   const amt = parseRublesToKopeks(amountRaw);
   if (!amt.ok) return { error: E.AMOUNT };
   const m = dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -90,14 +93,8 @@ async function parseFields(formData: FormData, clubId: string) {
   if (!dateCheck.ok) return { error: dateCheck.error };
   if (!comment) return { error: E.COMMENT };
   if (comment.length > MAX_COMMENT) return { error: "Комментарий слишком длинный." };
-  if (!shoppingListText) return { error: E.SHOPPING };
-  if (shoppingListText.length > MAX_SHOPPING) return { error: "Список слишком длинный." };
-  if (!paidByUserId) return { error: E.EMPLOYEE };
-  // paidBy must be an active, non-deleted user with access to the Club.
-  const paidBy = await prisma.user.findUnique({ where: { id: paidByUserId }, select: { isActive: true, deletedAt: true } });
-  if (!paidBy || !paidBy.isActive || paidBy.deletedAt || !(await canAccessClub(paidByUserId, clubId))) return { error: E.EMPLOYEE };
 
-  return { categoryKey, amountKopeks: amt.kopeks, expenseDate, comment, shoppingListText, paidByUserId };
+  return { categoryKey, amountKopeks: amt.kopeks, expenseDate, comment };
 }
 
 /** Create a simplified (entryVersion=2) draft. Company/Club/ИП/cash are server-resolved. */
@@ -108,7 +105,7 @@ export async function createSimplifiedExpenseDraft(_prev: CreateState | undefine
   const clubId = ctx.selectedClubId ?? (ctx.allowedClubIds.length === 1 ? ctx.allowedClubIds[0] : null);
   if (!companyId || !clubId || !ctx.allowedClubIds.includes(clubId)) return { ok: false, error: "Выберите клуб." };
 
-  const fields = await parseFields(formData, clubId);
+  const fields = await parseFields(formData);
   if ("error" in fields) return { ok: false, error: fields.error };
 
   const closed = await monthClosedError(companyId, clubId, fields.expenseDate);
@@ -117,8 +114,12 @@ export async function createSimplifiedExpenseDraft(_prev: CreateState | undefine
   if (!ip.ok) return { ok: false, error: ip.error };
 
   const categoryName = String(formData.get("categoryName") ?? fields.categoryKey);
-  const generatedTitle = buildExpenseTitle(categoryName, fields.shoppingListText);
+  // Title is derived from the comment now (the shopping-list field is gone).
+  const generatedTitle = buildExpenseTitle(categoryName, fields.comment);
   const now = new Date();
+  // Payer is ALWAYS the authenticated user — the client cannot choose or spoof
+  // it (no paidByUserId is read from the form).
+  const paidByUserId = ctx.user.id;
   // Wallet is resolved server-side (manager never chooses it): a regional
   // director spends from their own regional_cash wallet for this Club; everyone
   // else (managers) from the Club's club_cash wallet.
@@ -129,12 +130,12 @@ export async function createSimplifiedExpenseDraft(_prev: CreateState | undefine
     data: {
       companyId, clubId, createdByUserId: ctx.user.id, entryVersion: 2, type: "receipt",
       status: EXP.DRAFT, category: fields.categoryKey, amountKopeks: fields.amountKopeks,
-      expenseDate: fields.expenseDate, comment: fields.comment, shoppingListText: fields.shoppingListText,
-      generatedTitle, paidByUserId: fields.paidByUserId, legalEntityId: ip.legalEntityId,
+      expenseDate: fields.expenseDate, comment: fields.comment,
+      generatedTitle, paidByUserId, legalEntityId: ip.legalEntityId,
       paymentMethod: "cash", firstSavedAt: now, cashWalletId,
     },
   });
-  await recordAudit({ action: "expense.draft_created", entityType: "Expense", entityId: expense.id, companyId, clubId, userId: ctx.user.id, metadata: { amountKopeks: fields.amountKopeks, category: fields.categoryKey } });
+  await recordAudit({ action: "expense.draft_created", entityType: "Expense", entityId: expense.id, companyId, clubId, userId: ctx.user.id, metadata: { amountKopeks: fields.amountKopeks, category: fields.categoryKey, paidByUserId } });
   revalidatePath("/expenses");
   return { ok: true, expenseId: expense.id };
 }
@@ -150,17 +151,19 @@ export async function updateSimplifiedExpense(_prev: State | undefined, formData
   const closed = await monthClosedError(expense.companyId, expense.clubId, expense.expenseDate);
   if (closed) return { ok: false, error: E.MONTH_CLOSED };
 
-  const fields = await parseFields(formData, expense.clubId);
+  const fields = await parseFields(formData);
   if ("error" in fields) return { ok: false, error: fields.error };
   const closedNew = await monthClosedError(expense.companyId, expense.clubId, fields.expenseDate);
   if (closedNew) return { ok: false, error: E.MONTH_CLOSED };
 
   const categoryName = String(formData.get("categoryName") ?? fields.categoryKey);
-  const generatedTitle = buildExpenseTitle(categoryName, fields.shoppingListText);
+  const generatedTitle = buildExpenseTitle(categoryName, fields.comment);
   // Optimistic concurrency: only update if the row hasn't changed since load.
+  // paidByUserId and the legacy shoppingListText are intentionally NOT touched —
+  // the payer is never changed via the client and old drafts keep their data.
   const res = await prisma.expense.updateMany({
     where: { id: expenseId, status: { in: ["draft", "needs_correction"] }, ...(expected ? { updatedAt: new Date(expected) } : {}) },
-    data: { category: fields.categoryKey, amountKopeks: fields.amountKopeks, expenseDate: fields.expenseDate, comment: fields.comment, shoppingListText: fields.shoppingListText, generatedTitle, paidByUserId: fields.paidByUserId },
+    data: { category: fields.categoryKey, amountKopeks: fields.amountKopeks, expenseDate: fields.expenseDate, comment: fields.comment, generatedTitle },
   });
   if (res.count === 0) return { ok: false, error: E.STALE };
   await recordAudit({ action: "expense.draft_updated", entityType: "Expense", entityId: expenseId, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { amountKopeks: fields.amountKopeks, category: fields.categoryKey } });
@@ -178,6 +181,8 @@ export async function submitExpense(_prev: State | undefined, formData: FormData
   const closed = await monthClosedError(expense.companyId, expense.clubId, expense.expenseDate);
   if (closed) return { ok: false, error: E.MONTH_CLOSED };
   if (!(await isActiveExpenseCategoryKey(expense.category))) return { ok: false, error: E.CATEGORY_DISABLED };
+  // v2 cash defense: never submit a cash expense in a non-cash category.
+  if (expense.entryVersion === 2 && isCashForbiddenCategory(expense.category)) return { ok: false, error: E.CATEGORY_NOT_CASH };
   if ((await activeDocumentCount(expenseId)) < 1) return { ok: false, error: E.NO_DOC };
   const ip = await resolveActiveIpForClub(expense.clubId);
   if (!ip.ok) return { ok: false, error: ip.error };
