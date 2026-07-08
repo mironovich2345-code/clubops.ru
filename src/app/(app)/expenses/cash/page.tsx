@@ -1,18 +1,23 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
-import { requirePageAccess, getCurrentAccessContext, userHasClubRole, userHasCompanyRole } from "@/lib/access";
+import { requirePageAccess, getCurrentAccessContext, userHasClubRole } from "@/lib/access";
 import { canCreateOperational } from "@/lib/auth";
 import { formatKopeks } from "@/lib/money";
 import { formatUserDisplayName } from "@/lib/user-display";
 import { resolveActiveIpForClub } from "@/lib/expense-simplified";
-import { getClubCashBreakdown, MOVEMENT, MSTATUS } from "@/lib/cash-wallets";
+import { getClubCashBreakdown, getClubOpeningBalance, MOVEMENT, MSTATUS } from "@/lib/cash-wallets";
 import { OpeningBalanceForm, OtherIncomeForm, TransferForm } from "./CashPanel";
 import { confirmOtherIncomeAction, confirmTransferAction } from "../cash-actions";
 
 export const dynamic = "force-dynamic";
 
 const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export default async function CashPage() {
   await requirePageAccess("expenses");
@@ -32,14 +37,26 @@ export default async function CashPage() {
     );
   }
 
-  const [breakdown, isChief, isOwner, isRegional, canOp] = await Promise.all([
+  const [breakdown, isRegional, canOp, openingInfo, ipRows] = await Promise.all([
     getClubCashBreakdown(clubId, ip.legalEntityId),
-    userHasClubRole(ctx.user.id, clubId, ["chief_accountant"]),
-    userHasCompanyRole(ctx.user.id, companyId, ["owner"]),
     userHasClubRole(ctx.user.id, clubId, ["regional_director"]),
     Promise.resolve(canCreateOperational(ctx.effectiveRoles)),
+    getClubOpeningBalance(clubId, ip.legalEntityId),
+    // Active ИП linked to this club (ООО excluded) — options for the form.
+    prisma.clubLegalEntity.findMany({
+      where: { clubId, isActive: true, legalEntity: { isActive: true, type: { in: ["ip", "ИП"] } } },
+      select: { legalEntity: { select: { id: true, name: true } } },
+    }),
   ]);
   const allWallets = ctx.effectiveRoles.some((r) => ["owner", "general_director", "regional_director", "accountant", "chief_accountant"].includes(r));
+  const ipOptions = ipRows.map((r) => ({ id: r.legalEntity.id, name: r.legalEntity.name }));
+
+  // Author + ИП names for the "Начальный остаток задан" detail card.
+  const openingAuthor = openingInfo?.createdByUserId
+    ? await prisma.user.findUnique({ where: { id: openingInfo.createdByUserId }, select: { name: true, firstName: true, lastName: true, deletedAt: true } })
+    : null;
+  const openingIpName = openingInfo ? (ipOptions.find((o) => o.id === openingInfo.legalEntityId)?.name ?? null) : null;
+  const club = await prisma.club.findUnique({ where: { id: clubId }, select: { name: true } });
 
   // Pending confirmations for this Club (other income + transfers).
   const pending = canOp
@@ -80,8 +97,24 @@ export default async function CashPage() {
         ) : null}
       </div>
 
-      {(isChief || isOwner) && !breakdown.hasOpeningBalance ? (
-        <Section title="Начальный остаток"><OpeningBalanceForm /></Section>
+      {breakdown.hasOpeningBalance && openingInfo ? (
+        <Section title="Начальный остаток">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Начальный остаток задан</span>
+            <span className="text-lg font-semibold text-slate-900">{formatKopeks(openingInfo.amountKopeks)}</span>
+          </div>
+          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
+            <div><dt className="inline text-slate-500">Дата остатка: </dt><dd className="inline">{dateFmt.format(openingInfo.occurredAt)}</dd></div>
+            <div><dt className="inline text-slate-500">ИП: </dt><dd className="inline">{openingIpName ?? "—"}</dd></div>
+            <div><dt className="inline text-slate-500">Касса: </dt><dd className="inline">Касса клуба</dd></div>
+            <div><dt className="inline text-slate-500">Задал: </dt><dd className="inline">{openingAuthor ? formatUserDisplayName(openingAuthor) : "—"}</dd></div>
+            {openingInfo.comment ? <div className="sm:col-span-2"><dt className="inline text-slate-500">Комментарий: </dt><dd className="inline">{openingInfo.comment}</dd></div> : null}
+          </dl>
+        </Section>
+      ) : isRegional ? (
+        <Section title="Начальный остаток">
+          <OpeningBalanceForm ipOptions={ipOptions} defaultDate={todayISO()} clubName={club?.name ?? null} />
+        </Section>
       ) : null}
 
       {canOp ? (

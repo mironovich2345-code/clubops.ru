@@ -204,6 +204,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "expense.category_reactivated": "Восстановлена статья расходов",
   // Cash wallets / movements
   "cash.opening_balance_set": "Задан начальный остаток кассы",
+  "cash.opening_balance_created": "Задан начальный остаток кассы (регионал)",
   "cash.expense_movement": "Списание наличных по расходу",
   "cash.transfer_created": "Создан перевод наличных",
   "cash.transfer_confirmed": "Подтверждён перевод наличных",

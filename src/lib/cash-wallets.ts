@@ -145,23 +145,68 @@ export async function recordExpenseMovement(expense: {
   }
 }
 
-/** Set a one-time confirmed opening balance for a Club wallet. Idempotent. */
+/**
+ * Set the ONE-TIME confirmed opening balance for a Club's club_cash wallet
+ * (never a regional wallet). Zero is allowed (explicitly "no cash"); negative is
+ * rejected. Concurrency- and repeat-safe: the @@unique(sourceType, sourceId) on
+ * ("opening", walletId) guarantees exactly one opening balance per club wallet —
+ * a losing parallel request gets a clean "уже задан" error, not a raw Prisma
+ * error. Balance stays derived from movements (no manual `balance` field).
+ */
 export async function setOpeningBalance(opts: {
-  companyId: string; clubId: string; legalEntityId: string; amountKopeks: number; actorUserId: string;
-}): Promise<{ ok: boolean; error?: string }> {
-  if (!Number.isInteger(opts.amountKopeks) || opts.amountKopeks < 0) return { ok: false, error: "Начальный остаток должен быть неотрицательным." };
+  companyId: string; clubId: string; legalEntityId: string; amountKopeks: number;
+  occurredAt: Date; comment: string; actorUserId: string;
+}): Promise<{ ok: boolean; error?: string; walletId?: string; movementId?: string; balanceKopeks?: number }> {
+  if (!Number.isInteger(opts.amountKopeks) || opts.amountKopeks < 0) return { ok: false, error: "Начальный остаток должен быть неотрицательным целым числом копеек." };
+  const comment = opts.comment.trim();
+  if (!comment) return { ok: false, error: "Укажите комментарий." };
   const walletId = await ensureClubCashWallet(opts.companyId, opts.clubId, opts.legalEntityId);
-  const created = await createIdempotent(prisma, {
-    companyId: opts.companyId, clubId: opts.clubId, legalEntityId: opts.legalEntityId,
-    type: MOVEMENT.OPENING, amountKopeks: opts.amountKopeks, toWalletId: walletId, fromWalletId: null,
-    status: MSTATUS.CONFIRMED, occurredAt: new Date(), createdByUserId: opts.actorUserId, confirmedByUserId: opts.actorUserId, confirmedAt: new Date(),
-    sourceType: "opening", sourceId: walletId,
-  });
-  if (created) {
-    await recordAudit({ action: "cash.opening_balance_set", entityType: "CashWallet", entityId: walletId, companyId: opts.companyId, clubId: opts.clubId, userId: opts.actorUserId, metadata: { amountKopeks: opts.amountKopeks } });
-    return { ok: true };
+
+  let movementId: string;
+  try {
+    const created = await prisma.cashMovement.create({
+      data: {
+        companyId: opts.companyId, clubId: opts.clubId, legalEntityId: opts.legalEntityId,
+        type: MOVEMENT.OPENING, amountKopeks: opts.amountKopeks, toWalletId: walletId, fromWalletId: null,
+        status: MSTATUS.CONFIRMED, occurredAt: opts.occurredAt, createdByUserId: opts.actorUserId,
+        confirmedByUserId: opts.actorUserId, confirmedAt: new Date(), comment: comment.slice(0, 300),
+        sourceType: "opening", sourceId: walletId,
+      },
+      select: { id: true },
+    });
+    movementId = created.id;
+  } catch (e) {
+    if (e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "P2002") {
+      return { ok: false, error: "Начальный остаток уже задан." }; // repeat / parallel conflict
+    }
+    throw e;
   }
-  return { ok: false, error: "Начальный остаток уже задан." };
+
+  await recordAudit({
+    action: "cash.opening_balance_created", entityType: "CashMovement", entityId: movementId,
+    companyId: opts.companyId, clubId: opts.clubId, userId: opts.actorUserId,
+    metadata: { legalEntityId: opts.legalEntityId, walletId, cashMovementId: movementId, amountKopeks: opts.amountKopeks, effectiveDate: opts.occurredAt.toISOString() },
+  });
+  const balanceKopeks = await walletBalanceKopeks(walletId);
+  return { ok: true, walletId, movementId, balanceKopeks };
+}
+
+export type OpeningBalanceInfo = {
+  movementId: string; walletId: string; legalEntityId: string;
+  amountKopeks: number; occurredAt: Date; comment: string | null; createdByUserId: string | null;
+};
+
+/** The confirmed opening balance for a Club's club_cash wallet, or null. */
+export async function getClubOpeningBalance(clubId: string, legalEntityId: string): Promise<OpeningBalanceInfo | null> {
+  const club = await getClubWallet(clubId, legalEntityId);
+  if (!club) return null;
+  const m = await prisma.cashMovement.findFirst({
+    where: { toWalletId: club.id, type: MOVEMENT.OPENING, status: MSTATUS.CONFIRMED },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, amountKopeks: true, occurredAt: true, comment: true, createdByUserId: true, legalEntityId: true },
+  });
+  if (!m) return null;
+  return { movementId: m.id, walletId: club.id, legalEntityId: m.legalEntityId, amountKopeks: m.amountKopeks, occurredAt: m.occurredAt, comment: m.comment, createdByUserId: m.createdByUserId };
 }
 
 export type MovementResult = { ok: true; movementId: string } | { ok: false; error: string };

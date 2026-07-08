@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getCurrentAccessContext, userHasCompanyRole, userHasClubRole } from "@/lib/access";
+import { getCurrentAccessContext, userHasClubRole } from "@/lib/access";
 import { canCreateOperational } from "@/lib/auth";
 import { monthClosedError } from "@/lib/month-close";
 import { resolveActiveIpForClub } from "@/lib/expense-simplified";
@@ -31,16 +31,70 @@ function parseAmount(v: string): number | null {
   return Math.round(n * 100);
 }
 
-/** Set the one-time opening balance (chief accountant or owner only). */
+// Opening balance may be exactly 0 (explicit "no cash"). Rejects negatives and
+// malformed input; converts rubles → integer kopeks (no float storage).
+function parseAmountAllowZero(v: string): number | null {
+  const s = v.trim().replace(/\s/g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null; // digits only → no negatives, ≤2 decimals
+  return Math.round(Number(s) * 100);
+}
+
+// Server-side re-validation of a chosen ИП (never trust the client id): it must
+// be an ACTIVE legal entity of type ИП that is actively linked to THIS club.
+async function validateClubIp(clubId: string, legalEntityId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const le = await prisma.legalEntity.findUnique({ where: { id: legalEntityId }, select: { type: true, isActive: true } });
+  if (!le) return { ok: false, error: "ИП не найдено." };
+  if (!(le.type === "ip" || le.type === "ИП")) return { ok: false, error: "В этом поле можно выбрать только ИП (ООО недопустимо)." };
+  if (!le.isActive) return { ok: false, error: "ИП неактивно." };
+  const link = await prisma.clubLegalEntity.findFirst({ where: { clubId, legalEntityId, isActive: true }, select: { id: true } });
+  if (!link) return { ok: false, error: "ИП не связано с этим клубом." };
+  return { ok: true };
+}
+
+/**
+ * Set the one-time opening cash balance for a club_cash wallet. ONLY a regional
+ * director WITH access to the selected club may do this — never manager /
+ * accountant / chief_accountant / owner / general_director / system_admin.
+ * Company/Club come from server scope; the ИП is re-validated server-side.
+ */
 export async function setOpeningBalanceAction(_p: State | undefined, formData: FormData): Promise<State> {
-  const c = await clubContext();
-  if ("error" in c) return { ok: false, error: c.error };
-  const isChief = await userHasClubRole(c.ctx.user.id, c.clubId, ["chief_accountant"]);
-  const isOwner = await userHasCompanyRole(c.ctx.user.id, c.companyId, ["owner"]);
-  if (!isChief && !isOwner) return { ok: false, error: "Задать начальный остаток может главный бухгалтер или собственник." };
-  const amount = parseAmount(String(formData.get("amount") ?? ""));
-  if (amount === null) return { ok: false, error: "Укажите сумму." };
-  const res = await setOpeningBalance({ companyId: c.companyId, clubId: c.clubId, legalEntityId: c.legalEntityId, amountKopeks: amount, actorUserId: c.ctx.user.id });
+  const ctx = await getCurrentAccessContext();
+  if (!ctx) return { ok: false, error: "Нет доступа." };
+  const companyId = ctx.selectedCompanyId;
+  const clubId = ctx.selectedClubId ?? (ctx.allowedClubIds.length === 1 ? ctx.allowedClubIds[0] : null);
+  if (!companyId || !clubId || !ctx.allowedClubIds.includes(clubId)) return { ok: false, error: "Выберите клуб." };
+
+  // Strict role gate: regional director of THIS club (club- or company-level).
+  const isRegional = await userHasClubRole(ctx.user.id, clubId, ["regional_director"]);
+  if (!isRegional) return { ok: false, error: "Задать начальный остаток может только региональный директор с доступом к клубу." };
+
+  // ИП: use the submitted id (re-validated) or auto-resolve the single active ИП.
+  let legalEntityId = String(formData.get("legalEntityId") ?? "").trim();
+  if (!legalEntityId) {
+    const ip = await resolveActiveIpForClub(clubId);
+    if (!ip.ok) return { ok: false, error: ip.error };
+    legalEntityId = ip.legalEntityId;
+  }
+  const ipCheck = await validateClubIp(clubId, legalEntityId);
+  if (!ipCheck.ok) return { ok: false, error: ipCheck.error };
+
+  const amount = parseAmountAllowZero(String(formData.get("amount") ?? ""));
+  if (amount === null) return { ok: false, error: "Укажите корректную сумму (0 или больше, без минуса)." };
+
+  const dateRaw = String(formData.get("occurredAt") ?? "").trim();
+  const m = dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return { ok: false, error: "Укажите дату." };
+  const occurredAt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  // No 7-day backdating limit here — this is NOT an expense. Future is forbidden.
+  if (occurredAt.getTime() > todayStart.getTime()) return { ok: false, error: "Дата не может быть в будущем." };
+  const closed = await monthClosedError(companyId, clubId, occurredAt);
+  if (closed) return { ok: false, error: closed };
+
+  const comment = String(formData.get("comment") ?? "").trim();
+  if (!comment) return { ok: false, error: "Укажите комментарий." };
+
+  const res = await setOpeningBalance({ companyId, clubId, legalEntityId, amountKopeks: amount, occurredAt, comment, actorUserId: ctx.user.id });
   if (!res.ok) return { ok: false, error: res.error };
   revalidatePath("/expenses/cash");
   return { ok: true };
