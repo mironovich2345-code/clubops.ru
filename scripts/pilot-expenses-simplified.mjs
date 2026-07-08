@@ -4,6 +4,7 @@
 // dev SQLite DB, mirroring the service logic. SAFE: fixed "pilot-exp-*" ids,
 // cleaned up. npm run pilot:expenses-simplified
 import { PrismaClient } from "@prisma/client";
+import { readFileSync } from "node:fs";
 
 const p = new PrismaClient();
 
@@ -32,7 +33,7 @@ const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
 let pass = 0, fail = 0;
 const check = (n, c, x = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${x ? "  :: " + x : ""}`); c ? pass++ : fail++; };
 
-const CO = "pilot-exp-co", CLUB = "pilot-exp-club", MGR = "pilot-exp-mgr", GONE = "pilot-exp-gone";
+const CO = "pilot-exp-co", CLUB = "pilot-exp-club", CLUB2 = "pilot-exp-club2", MGR = "pilot-exp-mgr", GONE = "pilot-exp-gone", FOREIGN = "pilot-exp-foreign";
 const OOO = "pilot-exp-ooo", IP1 = "pilot-exp-ip1", IP2 = "pilot-exp-ip2";
 
 async function cleanup() {
@@ -40,9 +41,22 @@ async function cleanup() {
   await p.budget.deleteMany({ where: { clubId: CLUB } });
   await p.monthClose.deleteMany({ where: { clubId: CLUB } }).catch(() => {});
   await p.expenseCategory.deleteMany({ where: { key: { startsWith: "pilot-exp-cat" } } });
+  await p.clubUserAccess.deleteMany({ where: { userId: { in: [MGR, GONE, FOREIGN] } } });
   await p.company.deleteMany({ where: { id: CO } });
-  await p.user.deleteMany({ where: { id: { in: [MGR, GONE] } } });
+  await p.user.deleteMany({ where: { id: { in: [MGR, GONE, FOREIGN] } } });
 }
+
+// Employees selectable as "Кто оплатил" for a Club — mirrors simple/page.tsx.
+async function selectableEmployees(clubId, companyId) {
+  return p.user.findMany({
+    where: {
+      isActive: true, deletedAt: null,
+      OR: [{ clubRoles: { some: { clubId } } }, { companyAccess: { some: { companyId } } }],
+    },
+    select: { id: true }, orderBy: { name: "asc" },
+  });
+}
+const defaultPaidBy = (list, currentUserId) => (list.some((e) => e.id === currentUserId) ? currentUserId : "");
 
 async function realizedUsage(clubId, category, month) {
   const rows = await p.expense.findMany({ where: { clubId, category, status: { in: REALIZED } }, select: { amountKopeks: true, expenseDate: true } });
@@ -72,8 +86,13 @@ async function main() {
   const today = new Date();
   await p.user.create({ data: { id: MGR, email: "pilot-exp-mgr@x.dev", name: "Менеджер", role: "manager", isActive: true } });
   await p.user.create({ data: { id: GONE, email: "pilot-exp-gone@x.dev", name: "Удалён", role: "manager", isActive: false, deletedAt: new Date() } });
+  await p.user.create({ data: { id: FOREIGN, email: "pilot-exp-foreign@x.dev", name: "Чужой клуб", role: "manager", isActive: true } });
   await p.company.create({ data: { id: CO, name: "Exp Co" } });
   await p.club.create({ data: { id: CLUB, name: "Exp Club", city: "X", companyId: CO } });
+  await p.club.create({ data: { id: CLUB2, name: "Exp Club 2", city: "Y", companyId: CO } });
+  // MGR has club-level access to CLUB; FOREIGN only to CLUB2 (via a club role).
+  await p.clubUserAccess.create({ data: { clubId: CLUB, userId: MGR, role: "manager" } });
+  await p.clubUserAccess.create({ data: { clubId: CLUB2, userId: FOREIGN, role: "manager" } });
   await p.legalEntity.create({ data: { id: OOO, companyId: CO, type: "ooo", name: "ООО", isActive: true } });
   await p.legalEntity.create({ data: { id: IP1, companyId: CO, type: "ip", name: "ИП1", isActive: true } });
   await p.legalEntity.create({ data: { id: IP2, companyId: CO, type: "ip", name: "ИП2", isActive: true } });
@@ -142,6 +161,34 @@ async function main() {
   // --- Legacy readability (Part 17) ---
   const legacy = await p.expense.findFirst({ where: { clubId: CLUB, status: "confirmed" } });
   check("52 legacy entryVersion=1 remains readable", legacy && legacy.entryVersion === 1);
+
+  // --- "Кто оплатил" default + selectability (creation-form task) ---
+  const emps = await selectableEmployees(CLUB, CO);
+  const empIds = emps.map((e) => e.id);
+  check("D1 club employees include the manager", empIds.includes(MGR));
+  check("D2 foreign-club user NOT selectable for this club", !empIds.includes(FOREIGN));
+  check("D3 deleted/inactive user NOT selectable", !empIds.includes(GONE));
+  check("D4 manager defaults paidBy to self", defaultPaidBy(emps, MGR) === MGR);
+  check("D5 non-selectable current user defaults to empty", defaultPaidBy(emps, FOREIGN) === "");
+  // Server still validates paidBy: foreign-club id must fail canAccessClub-style check.
+  const foreignAccess = await p.clubUserAccess.findFirst({ where: { userId: FOREIGN, clubId: CLUB }, select: { id: true } });
+  check("D6 foreign-club paidBy rejected server-side (no club access)", foreignAccess === null);
+
+  // --- Creation-form UI contract (static assertions on the client source) ---
+  const form = readFileSync(new URL("../src/app/(app)/expenses/simple/SimpleExpenseForm.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../src/app/(app)/expenses/simple/page.tsx", import.meta.url), "utf8");
+  check("U1 upload block label rendered on the form", form.includes("Подтверждающие документы"));
+  check("U1 helper text present", form.includes("Прикрепите от 1 до 3 файлов: чек, подтверждение перевода, фото или PDF."));
+  check("U1 counter 'Файлы: N из 3' present", form.includes("Файлы: {files.length} из {MAX_FILES}"));
+  check("U2 old 'documents after draft' message removed", !form.includes("Документы прикрепляются после создания черновика"));
+  check("U3 accepts JPG/PNG/WEBP/PDF", form.includes('accept="image/jpeg,image/png,image/webp,application/pdf"'));
+  check("U4 fourth file rejected with exact message", form.includes("Можно прикрепить не более 3 файлов."));
+  check("U5 max 3 + 10MB client mirror", form.includes("MAX_FILES = 3") && form.includes("MAX_FILE_BYTES = 10 * 1024 * 1024"));
+  check("U6 min 1 file gates the primary action", form.includes("files.length < 1"));
+  check("U7 draft created once (no duplicate on repeated click)", form.includes("draftIdRef") && form.includes('button type="submit" disabled={busy}'));
+  check("U8 partial-upload failure keeps draft + successes", form.includes("anyFailed") && form.includes("Черновик сохранён"));
+  check("U9 primary button label 'Создать расход'", form.includes("Создать расход"));
+  check("U10 default paidBy wired from server context", page.includes("defaultPaidById") && form.includes("defaultValue={defaultPaidById}"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

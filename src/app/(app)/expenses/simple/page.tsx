@@ -34,6 +34,12 @@ export default async function SimpleExpensePage() {
     }),
   ]);
 
+  // Default "Кто оплатил" to the authenticated user — but only when they are a
+  // valid, selectable employee for this Club (managers always are; a regional
+  // director / other role defaults to empty otherwise). Comes from server
+  // context, never from query params or client storage.
+  const defaultPaidById = employees.some((e) => e.id === ctx.user.id) ? ctx.user.id : "";
+
   return (
     <div>
       <PageHeader title="Новый расход" description="Упрощённый расход клуба (оплата наличными из ИП клуба)" />
@@ -41,6 +47,7 @@ export default async function SimpleExpensePage() {
         <SimpleExpenseForm
           categories={categories.map((c) => ({ key: c.key, name: c.name }))}
           employees={employees.map((e) => ({ id: e.id, name: formatUserDisplayName(e) }))}
+          defaultPaidById={defaultPaidById}
         />
       </div>
     </div>
