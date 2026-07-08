@@ -1,237 +1,331 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
+import { prisma } from "@/lib/prisma";
 import { formatKopeks } from "@/lib/money";
-import {
-  requirePageAccess,
-  getCurrentCompanyAndClub,
-  getClubsInScope,
-  getCurrentAccessContext,
-} from "@/lib/access";
-import { canCreateOperational, isStrategicRole } from "@/lib/auth";
-import { resolveStrategicGroups } from "@/lib/strategic-pages";
-import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
-import { openStrategicInvoice } from "../dashboard/strategic-actions";
-import { buildReturnTo } from "@/lib/strategic-return";
-import {
-  getInvoicesForScope,
-  canAddPaidInvoice,
-  INVOICE_STATUS_LABELS,
-  INVOICE_CONFIDENCE_LABELS,
-} from "@/lib/invoices";
+import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
+import { getInvoicesView, type InvoicesView } from "@/lib/invoice-view";
+import { INVOICE_STATUS_LABELS, formatExpensePeriod } from "@/lib/invoices";
 import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 import { HistoricalInvoiceForm } from "./_components/HistoricalInvoiceForm";
-import { InvoiceAnalytics } from "./_components/InvoiceAnalytics";
+import { InvoiceFilters } from "./_components/InvoiceFilters";
 
 export const dynamic = "force-dynamic";
 
-const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
-
-const CONFIDENCE_BADGE: Record<string, string> = {
-  high: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  medium: "bg-amber-50 text-amber-800 ring-amber-200",
-  low: "bg-slate-100 text-slate-600 ring-slate-200",
-};
-
-type InvoiceRow = Awaited<ReturnType<typeof getInvoicesForScope>>[number] & { companyName?: string };
+const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+const CARD = "rounded-lg border border-slate-200 bg-white shadow-sm";
 
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ scopeMode?: string; companyId?: string; city?: string; clubId?: string }>;
+  searchParams?: Promise<{ year?: string; month?: string; city?: string; clubId?: string }>;
 }) {
-  const user = await requirePageAccess("invoices");
-
-  const scope = await getCurrentCompanyAndClub(user);
-  if (!scope.company) {
+  await requirePageAccess("invoices");
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !ctx.selectedCompanyId) {
     return <NoCompanyState title="Счета" description="Загрузка и распознавание счетов" />;
   }
 
   const sp = searchParams ? await searchParams : {};
-  const ctx = await getCurrentAccessContext();
-  // Strategic owner/GD: read-only invoice analytics across ALL filtered Companies.
-  const strategic = ctx ? isStrategicRole(ctx.effectiveRoles) : false;
-  const groups = strategic && ctx ? await resolveStrategicGroups(ctx, sp) : null;
+  // The ONE data source for this page — cards, list, debts, categories, filters
+  // and permissions all come from here. No second full invoice query.
+  const view = await getInvoicesView(ctx, sp);
+  const isManager = view.roleView === "manager";
+  const monthLabel = formatExpensePeriod(`${view.effectivePeriod.year}-${String(view.effectivePeriod.month).padStart(2, "0")}`);
 
-  let clubs: Awaited<ReturnType<typeof getClubsInScope>>;
-  let invoices: InvoiceRow[];
-  if (groups) {
-    const perCompany = await Promise.all(
-      groups.byCompany.map((g) =>
-        getInvoicesForScope({ company: { id: g.companyId, name: g.companyName }, club: null, clubIds: g.clubIds }).then(
-          (rows) => rows.map((r) => ({ ...r, companyName: g.companyName })),
-        ),
-      ),
-    );
-    invoices = perCompany.flat();
-    clubs = [];
-  } else {
-    [clubs, invoices] = await Promise.all([getClubsInScope(scope), getInvoicesForScope(scope)]);
-  }
-  const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
-  // «Добавить оплаченный счёт» — accountant / chief accountant only (server also
-  // enforces this in saveHistoricalInvoice).
-  const canAddPaid = ctx ? canAddPaidInvoice(ctx.effectiveRoles) : false;
-  const multiCompany = groups?.multiCompany ?? false;
-  const returnQuery = groups ? buildReturnTo("invoices", sp as Record<string, string | undefined>) : "";
-
-  const legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null }>> = {};
-  if (canCreate) {
-    const lists = await Promise.all(clubs.map((c) => getClubLegalEntities(c.id)));
-    clubs.forEach((c, i) => {
+  // Either the upload form (manager/regional) or the add-paid form (accountant/
+  // chief) needs the accessible clubs + their legal entities. These are DISJOINT
+  // role sets, so fetch this club/legal-entity metadata (NOT an invoice query)
+  // whenever EITHER form may be shown.
+  const needClubs = view.permissions.canUploadInvoice || view.permissions.canAddPaidInvoice;
+  let formClubs: Array<{ id: string; name: string; city: string }> = [];
+  let legalEntitiesByClub: Record<string, Array<{ id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null }>> = {};
+  let companyName = "";
+  if (needClubs && view.availableClubs.length > 0) {
+    formClubs = view.availableClubs;
+    const [lists, company] = await Promise.all([
+      Promise.all(formClubs.map((c) => getClubLegalEntities(c.id))),
+      prisma.company.findUnique({ where: { id: ctx.selectedCompanyId }, select: { name: true } }),
+    ]);
+    companyName = company?.name ?? "";
+    formClubs.forEach((c, i) => {
       legalEntitiesByClub[c.id] = lists[i].map((e) => ({
-        id: e.id,
-        name: e.name,
-        type: normalizeEntityType(e.type) ?? e.type,
-        inn: e.inn,
-        kpp: e.kpp,
-        bankName: e.bankName,
-        accountNumber: e.accountNumber,
+        id: e.id, name: e.name, type: normalizeEntityType(e.type) ?? e.type,
+        inn: e.inn, kpp: e.kpp, bankName: e.bankName, accountNumber: e.accountNumber,
       }));
     });
   }
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
-      </div>
+      {/* 1–2. Title + subtitle */}
+      <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
 
-      {groups && groups.scope.accessibleClubs.length > 0 ? (
-        <div className="mt-3">
-          <StrategicScopeFilter
-            companies={groups.scope.accessibleCompanies}
-            clubs={groups.scope.accessibleClubs}
-            mode={groups.scope.mode}
-            companyId={groups.scope.selectedCompanyId}
-            city={groups.scope.selectedCity}
-            clubId={groups.scope.selectedClubId}
-            month=""
-            basePath="/invoices"
-          />
+      {/* 3. Regular invoice upload — moved to the TOP, above the cards. */}
+      {view.permissions.canUploadInvoice && formClubs.length > 0 ? (
+        <div className="mt-4">
+          <InvoiceUpload clubs={formClubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={companyName} legalEntitiesByClub={legalEntitiesByClub} />
         </div>
       ) : null}
 
-      {/* Read-only invoice analytics (totals / category / club / company / upcoming). */}
-      {invoices.length > 0 ? (
-        <InvoiceAnalytics
-          todayISO={new Date().toISOString()}
-          showCompany={multiCompany}
-          rows={invoices.map((i) => ({
-            status: i.status,
-            amountKopeks: i.amountKopeks,
-            expenseCategory: i.expenseCategory,
-            companyName: i.companyName ?? scope.company!.name,
-            clubName: i.club.name,
-            dueDate: i.dueDate ? i.dueDate.toISOString() : null,
-            paidAt: i.paidAt ? i.paidAt.toISOString() : null,
-            invoiceNumber: i.invoiceNumber,
-            counterpartyName: i.counterpartyName,
-          }))}
-        />
-      ) : null}
+      {/* 4. Period + filters — only when the role may use them. */}
+      {isManager ? (
+        <div className="mt-4 text-sm font-medium text-slate-600">{monthLabel}</div>
+      ) : (
+        <div className="mt-4">
+          <InvoiceFilters
+            year={view.effectivePeriod.year}
+            month={view.effectivePeriod.month}
+            monthLabel={monthLabel}
+            canNavigateMonths={view.canNavigateMonths}
+            canFilterByCity={view.canFilterByCity}
+            canFilterByClub={view.canFilterByClub}
+            availableCities={view.availableCities}
+            availableClubs={view.availableClubs}
+            selectedCity={view.selectedCity}
+            selectedClub={view.selectedClub}
+          />
+        </div>
+      )}
 
-      {canCreate ? (
-        clubs.length > 0 ? (
-          <>
-            <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} legalEntitiesByClub={legalEntitiesByClub} />
-            {/* Historical paid-invoice quick entry — accountant / chief only. */}
-            {canAddPaid ? (
-              <HistoricalInvoiceForm
-                clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
-                categories={EXPENSE_CATEGORY_OPTIONS}
-                legalEntitiesByClub={legalEntitiesByClub}
-                defaultClubId={scope.club?.id ?? clubs[0].id}
-              />
-            ) : null}
-          </>
-        ) : (
-          <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
-            Нет доступных клубов для создания счёта.
-          </div>
-        )
-      ) : null}
+      {/* 5. Summary cards */}
+      <div className="mt-4">{isManager ? <ManagerCards view={view} /> : <ElevatedCards view={view} />}</div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      {/* 6. Analytics — categories (+ by-club for elevated) */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <CategoryBlock view={view} />
+        {!isManager && !view.selectedClub ? <ByClubBlock view={view} /> : null}
+        <UpcomingBlock view={view} />
+      </div>
+
+      {/* 7. Carried overdue debts */}
+      <CarriedOverdue view={view} />
+
+      {/* 8. Main invoice list */}
+      <MainList view={view} />
+
+      {/* 9. Add a historical PAID invoice — accountant / chief only. */}
+      {view.permissions.canAddPaidInvoice && formClubs.length > 0 ? (
+        <div className="mt-6">
+          <HistoricalInvoiceForm
+            clubs={formClubs.map((c) => ({ id: c.id, name: c.name }))}
+            categories={EXPENSE_CATEGORY_OPTIONS}
+            legalEntitiesByClub={legalEntitiesByClub}
+            defaultClubId={view.selectedClub ?? formClubs[0].id}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// --- Summary cards ----------------------------------------------------------
+
+function Stat({ label, value, accent, sub }: { label: string; value: string; accent?: string; sub?: string }) {
+  return (
+    <div className={`p-4 ${CARD}`}>
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className={`mt-1 truncate text-lg font-semibold ${accent ?? "text-slate-900"}`}>{value}</div>
+      {sub ? <div className="text-[11px] text-slate-400">{sub}</div> : null}
+    </div>
+  );
+}
+
+/** Manager sees EXACTLY three cards — nothing else is even computed for them. */
+function ManagerCards({ view }: { view: InvoicesView }) {
+  const s = view.summary;
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <Stat label="Ожидает оплаты" value={formatKopeks(s.pendingPaymentAmountKopeks)} accent="text-amber-700" />
+      <Stat label="Просрочено" value={formatKopeks(s.overdueAmountKopeks)} accent={s.overdueAmountKopeks > 0 ? "text-rose-700" : undefined} sub="включая старые долги" />
+      <Stat label="Всего счетов отправлено" value={String(s.sentCount)} sub="за текущий месяц" />
+    </div>
+  );
+}
+
+function ElevatedCards({ view }: { view: InvoicesView }) {
+  const s = view.summary;
+  const total = "totalInvoiceAmountKopeks" in s ? s.totalInvoiceAmountKopeks : 0;
+  const paid = "paidAmountKopeks" in s ? s.paidAmountKopeks : 0;
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <Stat label="Сумма счетов" value={formatKopeks(total)} />
+      <Stat label="Оплачено" value={formatKopeks(paid)} accent="text-emerald-700" />
+      <Stat label="Ожидает оплаты" value={formatKopeks(s.pendingPaymentAmountKopeks)} accent="text-amber-700" />
+      <Stat label="Просрочено" value={formatKopeks(s.overdueAmountKopeks)} accent={s.overdueAmountKopeks > 0 ? "text-rose-700" : undefined} />
+      <Stat label="Счетов" value={String(view.currentPeriodInvoices.length)} />
+    </div>
+  );
+}
+
+// --- Analytics blocks -------------------------------------------------------
+
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className={`overflow-hidden ${CARD}`}>
+      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function CategoryBlock({ view }: { view: InvoicesView }) {
+  const total = view.categoryDistribution.reduce((s, c) => s + c.amountKopeks, 0);
+  return (
+    <Panel title="По статьям">
+      {view.categoryDistribution.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-slate-500">Нет счетов по статьям за текущий месяц</div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {view.categoryDistribution.map((c) => {
+            const pct = total > 0 ? (c.amountKopeks / total) * 100 : 0;
+            return (
+              <li key={c.category} className="px-4 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate text-sm text-slate-700">{c.category === "—" ? "Без статьи" : expenseCategoryLabel(c.category)}</span>
+                  <span className="text-sm font-medium text-slate-900">{formatKopeks(c.amountKopeks)}</span>
+                </div>
+                <div className="mt-1 text-right text-[11px] text-slate-400">{pct.toFixed(1)}%</div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+/** «По клубам» — elevated only, from the same scoped current-period rows. */
+function ByClubBlock({ view }: { view: InvoicesView }) {
+  const byClub = new Map<string, { name: string; amountKopeks: number }>();
+  for (const r of view.currentPeriodInvoices) {
+    const cur = byClub.get(r.clubId) ?? { name: r.clubName, amountKopeks: 0 };
+    cur.amountKopeks += r.amountKopeks;
+    byClub.set(r.clubId, cur);
+  }
+  const rows = [...byClub.values()].sort((a, b) => b.amountKopeks - a.amountKopeks);
+  const total = rows.reduce((s, r) => s + r.amountKopeks, 0);
+  return (
+    <Panel title="По клубам">
+      {rows.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-slate-500">Нет данных за выбранный период</div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {rows.map((r) => {
+            const pct = total > 0 ? (r.amountKopeks / total) * 100 : 0;
+            return (
+              <li key={r.name} className="px-4 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate text-sm text-slate-700">{r.name}</span>
+                  <span className="text-sm font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</span>
+                </div>
+                <div className="mt-1 text-right text-[11px] text-slate-400">{pct.toFixed(1)}%</div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+/** Upcoming payments — derived from the SAME scoped current-period rows (unpaid,
+ * not overdue, with a due date). Manager therefore only sees their own. */
+function UpcomingBlock({ view }: { view: InvoicesView }) {
+  const upcoming = view.currentPeriodInvoices
+    .filter((r) => r.status !== "paid" && !r.overdue && r.dueDate)
+    .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime())
+    .slice(0, 6);
+  return (
+    <Panel title="Ближайшие платежи">
+      {upcoming.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-slate-500">Нет ближайших платежей</div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {upcoming.map((r) => (
+            <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+              <div className="min-w-0">
+                <div className="truncate text-sm text-slate-800">{r.counterpartyName ?? r.invoiceNumber ?? "Счёт"}</div>
+                <div className="text-xs text-slate-500">{r.clubName}{r.dueDate ? ` · до ${dateFmt.format(new Date(r.dueDate))}` : ""}</div>
+              </div>
+              <span className="whitespace-nowrap text-sm font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+// --- Carried overdue --------------------------------------------------------
+
+function daysOverdue(dueISO: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(dueISO).getTime()) / 86400000));
+}
+
+function CarriedOverdue({ view }: { view: InvoicesView }) {
+  if (view.carriedOverdueInvoices.length === 0) return null;
+  return (
+    <div className={`mt-6 overflow-hidden ${CARD}`}>
+      <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
+        Просроченные долги прошлых периодов
+      </div>
+      <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
-            <tr>
-              <Th>Контрагент</Th>
-              <Th className="text-right">Сумма</Th>
-              <Th>Статья</Th>
-              <Th>Статус</Th>
-              <Th>Распознавание</Th>
-              <Th>Клуб</Th>
-              <Th>Создан</Th>
-              <Th>Действия</Th>
-            </tr>
+            <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Срок оплаты</Th><Th>Просрочка</Th><Th>Статус</Th><Th>Действия</Th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {view.carriedOverdueInvoices.map((r) => (
+              <tr key={r.id} className="hover:bg-slate-50">
+                <Td>
+                  <div className="font-medium text-slate-900">{r.counterpartyName ?? "— без контрагента —"}</div>
+                  <div className="mt-0.5 inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">Долг прошлого периода</div>
+                </Td>
+                <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
+                <Td className="whitespace-nowrap text-slate-600">{r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—"}</Td>
+                <Td className="whitespace-nowrap text-rose-700">{r.dueDate ? `просрочено с ${dateFmt.format(new Date(r.dueDate))} (${daysOverdue(r.dueDate)} дн.)` : "—"}</Td>
+                <Td className="whitespace-nowrap">{INVOICE_STATUS_LABELS[r.status] ?? r.status}</Td>
+                <Td><OpenLink id={r.id} /></Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// --- Main list --------------------------------------------------------------
+
+function MainList({ view }: { view: InvoicesView }) {
+  const rows = view.currentPeriodInvoices;
+  return (
+    <div className={`mt-6 overflow-hidden ${CARD}`}>
+      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Счета за период</div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Статья</Th><Th>Статус</Th><Th>Клуб</Th><Th>Срок / Оплачен</Th><Th>Действия</Th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {invoices.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
-                  Пока нет счетов. Загрузите документ, чтобы создать первый.
-                </td>
-              </tr>
+            {rows.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">Нет счетов в выбранном месяце.</td></tr>
             ) : (
-              invoices.map((invoice) => (
-                <tr key={invoice.id} className="hover:bg-slate-50">
+              rows.map((r) => (
+                <tr key={r.id} className="hover:bg-slate-50">
                   <Td>
-                    <div className="font-medium text-slate-900">
-                      {invoice.counterpartyName ?? "— без контрагента —"}
-                    </div>
-                    {invoice.invoiceNumber ? (
-                      <div className="text-xs text-slate-500">№ {invoice.invoiceNumber}</div>
-                    ) : null}
+                    <div className="font-medium text-slate-900">{r.counterpartyName ?? "— без контрагента —"}</div>
+                    {r.invoiceNumber ? <div className="text-xs text-slate-500">№ {r.invoiceNumber}</div> : null}
                   </Td>
-                  <Td className="whitespace-nowrap text-right font-medium text-slate-900">
-                    {formatKopeks(invoice.amountKopeks)}
-                  </Td>
-                  <Td>{expenseCategoryLabel(invoice.expenseCategory)}</Td>
-                  <Td className="whitespace-nowrap">
-                    {INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}
-                  </Td>
-                  <Td>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                        CONFIDENCE_BADGE[invoice.confidence] ?? CONFIDENCE_BADGE.low
-                      }`}
-                    >
-                      {INVOICE_CONFIDENCE_LABELS[invoice.confidence] ?? invoice.confidence}
-                    </span>
-                  </Td>
-                  <Td className="whitespace-nowrap text-slate-600">
-                    {multiCompany && invoice.companyName ? <span className="text-xs text-slate-400">{invoice.companyName} · </span> : null}
-                    {invoice.club.name}
-                  </Td>
-                  <Td className="whitespace-nowrap text-slate-500">
-                    {dateFormatter.format(invoice.createdAt)}
-                  </Td>
-                  <Td>
-                    {groups ? (
-                      <form action={openStrategicInvoice}>
-                        <input type="hidden" name="companyId" value={invoice.companyId} />
-                        <input type="hidden" name="objectId" value={invoice.id} />
-                        <input type="hidden" name="returnTo" value={returnQuery} />
-                        <button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                          Открыть
-                        </button>
-                      </form>
-                    ) : (
-                      <Link
-                        href={`/invoices/${invoice.id}`}
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        Открыть
-                      </Link>
-                    )}
-                  </Td>
+                  <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
+                  <Td>{expenseCategoryLabel(r.expenseCategory)}</Td>
+                  <Td className="whitespace-nowrap">{INVOICE_STATUS_LABELS[r.status] ?? r.status}{r.overdue ? <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">просрочен</span> : null}</Td>
+                  <Td className="whitespace-nowrap text-slate-600">{r.clubName}</Td>
+                  <Td className="whitespace-nowrap text-slate-500">{r.status === "paid" ? (r.paidAt ? `оплачен ${dateFmt.format(new Date(r.paidAt))}` : "оплачен") : r.dueDate ? `до ${dateFmt.format(new Date(r.dueDate))}` : "—"}</Td>
+                  <Td><OpenLink id={r.id} /></Td>
                 </tr>
               ))
             )}
@@ -242,17 +336,17 @@ export default async function InvoicesPage({
   );
 }
 
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+function OpenLink({ id }: { id: string }) {
   return (
-    <th
-      scope="col"
-      className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 ${className ?? ""}`}
-    >
-      {children}
-    </th>
+    <Link href={`/invoices/${id}`} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+      Открыть
+    </Link>
   );
 }
 
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <th scope="col" className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 ${className ?? ""}`}>{children}</th>;
+}
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-3 align-top text-sm text-slate-700 ${className ?? ""}`}>{children}</td>;
 }

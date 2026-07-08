@@ -229,8 +229,42 @@ async function main() {
   check("S7 add-paid action gated by canAddPaidInvoice", actions.includes("if (!canAddPaidInvoice(ctx.effectiveRoles))"));
   check("S8 add-paid blocks closed paidAt month", actions.includes("monthClosedError(companyId, clubId, paidAt)"));
   check("S9 add-paid audit carries role + amount", actions.includes("role: ctx.effectiveRoles.includes(\"chief_accountant\") ? \"chief_accountant\" : \"accountant\""));
-  check("S10 page shows add-paid form only to accountant/chief", pageSrc.includes("canAddPaid") && pageSrc.includes("canAddPaid ? ("));
+  check("S10 add-paid form gated by permissions.canAddPaidInvoice", pageSrc.includes("view.permissions.canAddPaidInvoice"));
   check("S11 existing workflow actions untouched (send/approve/pay present)", actions.includes("applyInvoiceAction") && actions.includes("transitionInvoice"));
+
+  // --- UI wiring: page uses ONLY getInvoicesView (1–5, 46–66) ---
+  const filtersSrc = readFileSync(new URL("../src/app/(app)/invoices/_components/InvoiceFilters.tsx", import.meta.url), "utf8");
+  check("U1 page uses getInvoicesView", pageSrc.includes("getInvoicesView(ctx, sp)"));
+  check("U2 page no longer imports old getInvoicesForScope", !pageSrc.includes("getInvoicesForScope"));
+  check("U3 no old InvoiceAnalytics aggregate on the page", !pageSrc.includes("InvoiceAnalytics"));
+  check("U4 no second full invoice query on the page", !pageSrc.includes("prisma.invoice.findMany"));
+  check("U5 summary comes from the contract (view.summary)", pageSrc.includes("view.summary"));
+  // upload block is ABOVE the summary cards
+  const idxUpload = pageSrc.indexOf("<InvoiceUpload");
+  const idxCards = Math.min(...["<ManagerCards", "<ElevatedCards"].map((s) => (pageSrc.indexOf(s) === -1 ? Infinity : pageSrc.indexOf(s))));
+  check("U6 upload block is above the summary cards", idxUpload > 0 && idxUpload < idxCards);
+  check("U7 no bottom duplicate of the upload form", pageSrc.split("<InvoiceUpload").length === 2);
+  // manager cards: exactly the 3 allowed, none of the forbidden
+  const mgrCards = pageSrc.slice(pageSrc.indexOf("function ManagerCards"), pageSrc.indexOf("function ElevatedCards"));
+  check("U8 manager has the 3 allowed cards", mgrCards.includes("Ожидает оплаты") && mgrCards.includes("Просрочено") && mgrCards.includes("Всего счетов отправлено"));
+  check("U9 manager cards omit «Сумма счетов»/«Оплачено»", !mgrCards.includes("Сумма счетов") && !mgrCards.includes("Оплачено"));
+  check("U10 «По клубам» only for elevated + no single-club", pageSrc.includes("!isManager && !view.selectedClub ? <ByClubBlock"));
+  check("U11 filters rendered only in the elevated branch", pageSrc.includes("<InvoiceFilters") && pageSrc.includes("isManager ? (") && pageSrc.includes("{monthLabel}</div>"));
+  check("U12 carried overdue block wired with a clear marker", pageSrc.includes("view.carriedOverdueInvoices") && pageSrc.includes("Долг прошлого периода"));
+  check("U13 month arrows have aria-labels", filtersSrc.includes('aria-label="Предыдущий месяц"') && filtersSrc.includes('aria-label="Следующий месяц"'));
+  check("U14 city + club selects have labels", filtersSrc.includes("Город") && filtersSrc.includes("Клуб") && filtersSrc.includes("Все города") && filtersSrc.includes("Все клубы"));
+  check("U15 filters update the URL search params", filtersSrc.includes("router.push(`/invoices?") && filtersSrc.includes("useSearchParams"));
+  check("U16 changing city resets an incompatible club", filtersSrc.includes("clubId: null"));
+  check("U17 empty states present", pageSrc.includes("Нет счетов по статьям за текущий месяц") && pageSrc.includes("Нет ближайших платежей") && pageSrc.includes("Нет счетов в выбранном месяце"));
+  check("U18 mobile-safe tables use overflow-x-auto", pageSrc.includes("overflow-x-auto"));
+  check("U19 manager desktop grid = 3 cards", mgrCards.includes("sm:grid-cols-3"));
+
+  // --- Manager RSC-payload leak: serialized manager view carries NO hidden data ---
+  const serialized = JSON.stringify(vM);
+  check("L1 manager view has no totalInvoiceAmount key", !serialized.includes("totalInvoiceAmountKopeks"));
+  check("L2 manager view has no paidAmount key", !serialized.includes("paidAmountKopeks"));
+  check("L3 manager view leaks no foreign invoice ids", !serialized.includes('"other"') && !serialized.includes('"rdi"'));
+  check("L4 manager view rows are all own", [...vM.currentPeriodInvoices, ...vM.carriedOverdueInvoices].every((r) => r.createdByUserId === "mgr"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
