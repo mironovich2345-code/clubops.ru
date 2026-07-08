@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { getRefundForContext, parseRefundDocuments } from "@/lib/refunds";
 import { readRefundFile } from "@/lib/refund-storage";
+import { readRefundDocument } from "@/lib/refund-document-storage";
 import { wantsAttachment, dispositionHeader, isInitialDocumentRequest } from "@/lib/document-access";
 
 export const dynamic = "force-dynamic";
@@ -24,10 +26,25 @@ export async function GET(
   const refund = await getRefundForContext(ctx, id);
   if (!refund) return new NextResponse("Not found", { status: 404 });
 
-  const doc = parseRefundDocuments(refund.documentsJson).find((d) => d.storageKey === key);
-  if (!doc) return new NextResponse("Not found", { status: 404 });
-
-  const buffer = await readRefundFile(doc.storageKey);
+  // Legacy v1 doc (documentsJson) first, then a v2 active RefundDocument.
+  const legacy = parseRefundDocuments(refund.documentsJson).find((d) => d.storageKey === key);
+  let buffer: Buffer | null = null;
+  let mime = "application/octet-stream";
+  let fileName = "document";
+  let docType = "refund";
+  if (legacy) {
+    buffer = await readRefundFile(legacy.storageKey);
+    mime = legacy.mime ?? mime; fileName = legacy.fileName ?? fileName; docType = legacy.type ?? docType;
+  } else {
+    const v2 = await prisma.refundDocument.findFirst({
+      where: { refundId: refund.id, storageKey: key, removedAt: null },
+      select: { storageKey: true, mimeType: true, originalFilename: true, documentType: true },
+    });
+    if (v2) {
+      buffer = await readRefundDocument(v2.storageKey);
+      mime = v2.mimeType; fileName = v2.originalFilename; docType = v2.documentType;
+    }
+  }
   if (!buffer) return new NextResponse("Not found", { status: 404 });
 
   const attachment = wantsAttachment(req, ctx.effectiveRoles);
@@ -40,14 +57,14 @@ export async function GET(
       companyId: refund.companyId,
       clubId: refund.clubId,
       userId: ctx.user.id,
-      metadata: { documentType: doc.type ?? "refund" },
+      metadata: { documentType: docType },
     });
   }
 
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
-      "Content-Type": doc.mime ?? "application/octet-stream",
-      "Content-Disposition": dispositionHeader(attachment, doc.fileName ?? "document"),
+      "Content-Type": mime,
+      "Content-Disposition": dispositionHeader(attachment, fileName),
       "Cache-Control": "private, no-store",
     },
   });

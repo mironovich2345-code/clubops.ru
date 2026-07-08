@@ -365,13 +365,22 @@ model Refund {
   bankName          String?
   bankBik           String?
   bankAccount       String?
+  // Correspondent account (additive; v2 requisites). Never store card/CVC/etc.
+  bankCorrAccount   String?
 
   // draft | needs_review | approved_by_regional | approved_by_owner | paid | rejected
   status     String @default("draft")
   confidence String @default("low")
   paidAt     DateTime?
 
+  // v2 refund type: membership | personal_training (nullable — legacy rows have
+  // none and are never back-filled). Form version: 1 = legacy (documentsJson),
+  // 2 = new slot-based form (RefundDocument).
+  returnType   String?
+  entryVersion Int     @default(1)
+
   // Uploaded documents: JSON array of { storageKey, fileName, mime, size, type }
+  // (legacy v1). v2 refunds use the RefundDocument table instead.
   documentsJson    String?
   rawExtractedJson String?
   notes            String?
@@ -382,11 +391,44 @@ model Refund {
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   club      Club    @relation(fields: [clubId], references: [id], onDelete: Cascade)
   createdBy User    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  documents RefundDocument[]
 
   @@index([companyId])
   @@index([clubId])
   @@index([createdByUserId])
   @@index([status])
+}
+
+// v2 refund document slot (additive; mirrors ExpenseDocument). Exactly one
+// ACTIVE document per (refund, slot) is enforced by the unique activeSlotKey
+// ("<refundId>:<documentType>", null when removed) — this also makes concurrent
+// uploads to the same slot safe (the loser hits a unique violation). Files are
+// soft-removed (removedAt), never hard-deleted. Keys are opaque + server-made.
+model RefundDocument {
+  id               String    @id @default(cuid())
+  refundId         String
+  companyId        String
+  clubId           String
+  // Slot key, validated against returnType in code (contract_page_1 | ...).
+  documentType     String
+  storageKey       String    @unique
+  originalFilename String
+  safeFilename     String
+  mimeType         String
+  sizeBytes        Int
+  sha256           String
+  uploadedByUserId String?
+  activeSlotKey    String?   @unique
+  createdAt        DateTime  @default(now())
+  removedAt        DateTime?
+  removedByUserId  String?
+  removalReason    String?
+
+  refund Refund @relation(fields: [refundId], references: [id], onDelete: Cascade)
+
+  @@index([refundId])
+  @@index([companyId, clubId])
+  @@index([removedAt])
 }
 
 // Monthly spending limit per club + category (month = "YYYY-MM").

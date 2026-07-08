@@ -75,3 +75,24 @@ export function parseRefundDocuments(json: string | null): RefundDocument[] {
     return [];
   }
 }
+
+// --- v2 slot documents (RefundDocument table) -------------------------------
+
+export type ActiveRefundDoc = {
+  id: string;
+  documentType: string;
+  originalFilename: string;
+  safeFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  storageKey: string;
+};
+
+/** Active (non-removed) v2 slot documents for a refund. */
+export async function getActiveRefundDocuments(refundId: string): Promise<ActiveRefundDoc[]> {
+  return prisma.refundDocument.findMany({
+    where: { refundId, removedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, documentType: true, originalFilename: true, safeFilename: true, mimeType: true, sizeBytes: true, storageKey: true },
+  });
+}
