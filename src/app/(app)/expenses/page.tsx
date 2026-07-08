@@ -23,6 +23,7 @@ import {
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { V2_STATUS_LABELS } from "@/lib/expense-simplified";
 import { getClubCashCards, type ClubCashCards } from "@/lib/club-cash-cards";
+import { UnsentDrafts } from "./_components/UnsentDrafts";
 
 export const dynamic = "force-dynamic";
 
@@ -37,24 +38,22 @@ const monthFormatter = new Intl.DateTimeFormat("ru-RU", {
   year: "numeric",
 });
 
-// Phase 2B-compatible filters. Legacy statuses stay visible: confirmed groups
-// with verified/completed, canceled/import_reverted with cancelled,
-// waiting_budget_approval stays readable (Активные / Все). Legacy DB statuses are
-// never rewritten.
-const IN_FLIGHT = ["draft", "submitted", "pending_regional_budget_approval", "pending_owner_budget_approval", "pending_accountant_verification", "needs_correction", "waiting_budget_approval"];
-const COMPLETED = ["verified", "confirmed"];
+// Four review-stage filters. Drafts are intentionally EXCLUDED from every filter
+// (they live only in the author's "Не отправленные черновики" block). Legacy
+// statuses stay visible in their bucket and are never rewritten in the DB:
+// waiting_budget_approval → На проверке; confirmed → Проверенные;
+// canceled/import_reverted → Отменённые.
+const ON_REVIEW = ["pending_regional_budget_approval", "pending_owner_budget_approval", "pending_accountant_verification", "waiting_budget_approval"];
+const VERIFIED = ["verified", "confirmed"];
 const CANCELLED = ["cancelled", "canceled", "import_reverted"];
 const STATUS_FILTERS: { key: string; label: string; match: (s: string) => boolean }[] = [
-  { key: "active", label: "Активные", match: (s) => IN_FLIGHT.includes(s) },
-  { key: "draft", label: "Черновики", match: (s) => s === "draft" },
   { key: "needs_correction", label: "Требуют исправления", match: (s) => s === "needs_correction" },
-  { key: "pending_regional", label: "Ожидают регионала", match: (s) => s === "pending_regional_budget_approval" },
-  { key: "pending_owner", label: "Ожидают собственника", match: (s) => s === "pending_owner_budget_approval" },
-  { key: "pending_accountant", label: "Ожидают бухгалтерию", match: (s) => s === "pending_accountant_verification" },
-  { key: "verified", label: "Проверенные", match: (s) => COMPLETED.includes(s) },
+  { key: "review", label: "На проверке", match: (s) => ON_REVIEW.includes(s) },
+  { key: "verified", label: "Проверенные", match: (s) => VERIFIED.includes(s) },
   { key: "cancelled", label: "Отменённые", match: (s) => CANCELLED.includes(s) },
-  { key: "all", label: "Все", match: () => true },
 ];
+// Default view when no ?status= is provided.
+const DEFAULT_FILTER_KEY = "review";
 
 type ExpenseRow = Awaited<ReturnType<typeof getExpensesForScope>>[number] & { companyName?: string };
 
@@ -97,8 +96,25 @@ export default async function ExpensesPage({
   const returnQuery = groups ? buildReturnTo("expenses", sp as Record<string, string | undefined>) : "";
 
   const statusParam = sp.status;
-  const statusFilter = STATUS_FILTERS.find((f) => f.key === statusParam) ?? STATUS_FILTERS[0];
-  const visibleExpenses = expenses.filter((e) => statusFilter.match(e.status));
+  const statusFilter = STATUS_FILTERS.find((f) => f.key === statusParam)
+    ?? STATUS_FILTERS.find((f) => f.key === DEFAULT_FILTER_KEY)!;
+  // Drafts never appear in the review filters — only in the author's own block.
+  const visibleExpenses = expenses.filter((e) => e.status !== "draft" && statusFilter.match(e.status));
+
+  // Author-only compact block: the current user's own unsent drafts. Other users'
+  // drafts are never shown to anyone else.
+  const myUserId = ctx?.user.id ?? null;
+  const myDrafts = myUserId
+    ? expenses
+        .filter((e) => e.status === "draft" && e.createdBy.id === myUserId)
+        .map((e) => ({
+          id: e.id,
+          title: e.generatedTitle || expenseCategoryLabel(e.category),
+          dateText: dateFormatter.format(e.expenseDate),
+          amountText: formatKopeks(e.amountKopeks),
+          clubName: e.club.name,
+        }))
+    : [];
 
   const now = new Date();
 
@@ -174,7 +190,7 @@ export default async function ExpensesPage({
         {STATUS_FILTERS.map((f) => (
           <Link
             key={f.key}
-            href={f.key === "active" ? "/expenses" : `/expenses?status=${f.key}`}
+            href={f.key === DEFAULT_FILTER_KEY ? "/expenses" : `/expenses?status=${f.key}`}
             className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
               statusFilter.key === f.key
                 ? "border-brand-300 bg-brand-600 text-white"
@@ -185,6 +201,8 @@ export default async function ExpensesPage({
           </Link>
         ))}
       </div>
+
+      <UnsentDrafts drafts={myDrafts} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

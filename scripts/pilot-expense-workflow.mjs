@@ -5,6 +5,7 @@
 // conditional-update idempotency pattern the server actions use.
 // SAFE: fixed "pilot-wf-*" ids, cleaned up. npm run pilot:expense-workflow
 import { PrismaClient } from "@prisma/client";
+import { readFileSync } from "node:fs";
 
 const p = new PrismaClient();
 
@@ -151,6 +152,42 @@ async function main() {
   await p.expense.update({ where: { id: d6.id }, data: { comment: "changed" } });
   const stale = await p.expense.updateMany({ where: { id: d6.id, updatedAt: fresh.updatedAt }, data: { comment: "x" } });
   check("64 stale update rejected (updatedAt lock)", stale.count === 0);
+
+  // --- /expenses filters: 4 buttons, draft excluded, default На проверке ------
+  // Mirror of page.tsx STATUS_FILTERS (server filtering must match the UI).
+  const ON_REVIEW = ["pending_regional_budget_approval", "pending_owner_budget_approval", "pending_accountant_verification", "waiting_budget_approval"];
+  const VERIFIED_F = ["verified", "confirmed"];
+  const CANCELLED_F = ["cancelled", "canceled", "import_reverted"];
+  const bucket = (s) =>
+    s === "needs_correction" ? "needs_correction"
+    : ON_REVIEW.includes(s) ? "review"
+    : VERIFIED_F.includes(s) ? "verified"
+    : CANCELLED_F.includes(s) ? "cancelled"
+    : s === "draft" ? "draft"
+    : "other";
+  check("F1 needs_correction -> Требуют исправления", bucket("needs_correction") === "needs_correction");
+  check("F2 pending_regional -> На проверке", bucket("pending_regional_budget_approval") === "review");
+  check("F2 pending_owner -> На проверке", bucket("pending_owner_budget_approval") === "review");
+  check("F2 pending_accountant -> На проверке", bucket("pending_accountant_verification") === "review");
+  check("F2 legacy waiting_budget_approval -> На проверке", bucket("waiting_budget_approval") === "review");
+  check("F3 verified -> Проверенные", bucket("verified") === "verified");
+  check("F3 legacy confirmed -> Проверенные", bucket("confirmed") === "verified");
+  check("F4 cancelled -> Отменённые", bucket("cancelled") === "cancelled");
+  check("F4 legacy canceled -> Отменённые", bucket("canceled") === "cancelled");
+  check("F4 import_reverted -> Отменённые", bucket("import_reverted") === "cancelled");
+  check("F5 draft in NONE of the 4 review buckets", ["needs_correction", "review", "verified", "cancelled"].every((b) => bucket("draft") !== b));
+
+  // Static assertions on page.tsx (buttons removed, defaults, drafts block).
+  const pageSrc = readFileSync(new URL("../src/app/(app)/expenses/page.tsx", import.meta.url), "utf8");
+  check("F6 exactly the 4 required labels present", ["Требуют исправления", "На проверке", "Проверенные", "Отменённые"].every((l) => pageSrc.includes(`label: "${l}"`)));
+  const removed = ["Активные", "Черновики", "Ожидают регионала", "Ожидают собственника", "Ожидают бухгалтерию"];
+  check("F7 removed buttons gone", removed.every((l) => !pageSrc.includes(`label: "${l}"`)) && !pageSrc.includes('label: "Все"'));
+  check("F8 default filter = На проверке (review)", pageSrc.includes('DEFAULT_FILTER_KEY = "review"'));
+  check("F9 drafts excluded from list server-side", pageSrc.includes('e.status !== "draft" && statusFilter.match'));
+  check("F10 author-only drafts block wired", pageSrc.includes("Не отправленные черновики") || readFileSync(new URL("../src/app/(app)/expenses/_components/UnsentDrafts.tsx", import.meta.url), "utf8").includes("Не отправленные черновики"));
+  check("F11 drafts filtered to current author", pageSrc.includes("e.createdBy.id === myUserId"));
+  const draftsSrc = readFileSync(new URL("../src/app/(app)/expenses/_components/UnsentDrafts.tsx", import.meta.url), "utf8");
+  check("F12 draft actions: continue + cancel", draftsSrc.includes("Продолжить заполнение") && draftsSrc.includes("cancelSimplifiedExpense"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
