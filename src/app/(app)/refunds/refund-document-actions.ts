@@ -15,6 +15,9 @@ import {
   MAX_REFUND_DOC_AGGREGATE, validateDeclaredRefundDoc, validateRefundSignature,
   storeRefundDocument, safeFilename, sha256Hex, refundDocError,
 } from "@/lib/refund-document-storage";
+import {
+  parseDateOnly, toLocalMidnight, parseContractAmountKopeks, computeMembershipRefund, REFUND_CALC_VERSION,
+} from "@/lib/refund-membership";
 
 type State = { ok: boolean; error?: string; refundId?: string };
 
@@ -225,5 +228,104 @@ export async function proceedRefundDraft(_prev: State | undefined, formData: For
   }
   const req = validateRefundRequisites(refund);
   if (!req.ok) return { ok: false, error: req.error };
+  return { ok: true, refundId };
+}
+
+// --- Phase 2A: membership refund calculation --------------------------------
+
+/** Save the raw membership inputs (partial allowed) — «Сохранить черновик». */
+export async function saveMembershipInputs(_prev: State | undefined, formData: FormData): Promise<State> {
+  const refundId = String(formData.get("refundId") ?? "").trim();
+  const g = await guardEditableDraft(refundId);
+  if (!g.ok) return { ok: false, error: refundDocError(g.code) };
+  const { ctx, refund } = g;
+  if (refund.returnType !== "membership") return { ok: false, error: "Неверный тип возврата." };
+
+  const start = parseDateOnly(String(formData.get("serviceStartDate") ?? ""));
+  const end = parseDateOnly(String(formData.get("serviceEndDate") ?? ""));
+  const application = parseDateOnly(String(formData.get("applicationDate") ?? ""));
+  const amountRaw = String(formData.get("contractAmount") ?? "").trim();
+  const amount = amountRaw ? parseContractAmountKopeks(amountRaw) : null;
+  if (amountRaw && amount === null) return { ok: false, error: "Неверный формат суммы договора." };
+  const serviceNotProvided = String(formData.get("serviceNotProvided") ?? "") === "on" || String(formData.get("serviceNotProvided") ?? "") === "true";
+
+  const res = await prisma.refund.updateMany({
+    where: { id: refundId, status: "draft" },
+    data: {
+      serviceStartDate: start ? toLocalMidnight(start) : null,
+      serviceEndDate: end ? toLocalMidnight(end) : null,
+      applicationDate: application ? toLocalMidnight(application) : null,
+      contractAmountKopeks: amount,
+      serviceNotProvided,
+    },
+  });
+  if (res.count === 0) return { ok: false, error: refundDocError("NOT_EDITABLE") };
+  await recordAudit({ action: "refund.membership_details_saved", entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id, metadata: { serviceNotProvided } });
+  revalidatePath(`/refunds/new/${refundId}/details`);
+  return { ok: true, refundId };
+}
+
+/**
+ * Compute the membership refund server-side (the ONLY source of truth) and store
+ * inputs + derived values. Any client-provided derived value is ignored. Requires
+ * a complete document set + valid requisites; recalc replaces prior results.
+ */
+export async function calculateMembershipRefund(_prev: State | undefined, formData: FormData): Promise<State> {
+  const refundId = String(formData.get("refundId") ?? "").trim();
+  const g = await guardEditableDraft(refundId);
+  if (!g.ok) return { ok: false, error: refundDocError(g.code) };
+  const { ctx, refund } = g;
+  if (refund.returnType !== "membership") return { ok: false, error: "Неверный тип возврата." };
+
+  // Full document set + valid requisites are prerequisites for the calculation.
+  const active = await getActiveRefundDocuments(refundId);
+  if (!isRefundDocumentSetComplete("membership", active.map((d) => d.documentType))) return { ok: false, error: "Загрузите все обязательные документы." };
+  if (!validateRefundRequisites(refund).ok) return { ok: false, error: "Заполните банковские реквизиты." };
+
+  const start = parseDateOnly(String(formData.get("serviceStartDate") ?? ""));
+  if (!start) return { ok: false, error: "Укажите дату начала оказания услуги." };
+  const end = parseDateOnly(String(formData.get("serviceEndDate") ?? ""));
+  if (!end) return { ok: false, error: "Укажите дату окончания оказания услуги." };
+  const application = parseDateOnly(String(formData.get("applicationDate") ?? ""));
+  if (!application) return { ok: false, error: "Укажите дату написания заявления." };
+  const amount = parseContractAmountKopeks(String(formData.get("contractAmount") ?? ""));
+  if (amount === null) return { ok: false, error: "Неверный формат суммы договора." };
+  if (amount <= 0) return { ok: false, error: "Сумма договора должна быть больше нуля." };
+  const serviceNotProvided = String(formData.get("serviceNotProvided") ?? "") === "on" || String(formData.get("serviceNotProvided") ?? "") === "true";
+
+  const calc = computeMembershipRefund({ start, end, application, contractAmountKopeks: amount, serviceNotProvided });
+  if (!calc.ok) return { ok: false, error: calc.error };
+
+  const wasCalculated = refund.calculationVersion != null;
+  const expected = String(formData.get("expectedUpdatedAt") ?? "").trim();
+  const res = await prisma.refund.updateMany({
+    where: { id: refundId, status: "draft", ...(expected ? { updatedAt: new Date(expected) } : {}) },
+    data: {
+      serviceStartDate: toLocalMidnight(start), serviceEndDate: toLocalMidnight(end), applicationDate: toLocalMidnight(application),
+      contractAmountKopeks: amount, serviceNotProvided,
+      serviceDurationDays: calc.durationDays, refundableDays: calc.refundableDays,
+      refundResultAmountKopeks: calc.resultAmountKopeks,
+      // v2: the legacy amountKopeks explicitly holds the final refund result.
+      amountKopeks: calc.resultAmountKopeks,
+      baseRefundDueDate: toLocalMidnight(calc.base), plannedRefundDate: toLocalMidnight(calc.planned),
+      dueDateAdjustmentReason: calc.adjustmentReason, calculationVersion: REFUND_CALC_VERSION,
+    },
+  });
+  if (res.count === 0) return { ok: false, error: "Данные изменились в другой вкладке. Обновите страницу." };
+
+  await recordAudit({
+    action: wasCalculated ? "refund.membership_recalculated" : "refund.membership_calculated",
+    entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id,
+    metadata: {
+      serviceStartDate: `${start.y}-${String(start.m).padStart(2, "0")}-${String(start.d).padStart(2, "0")}`,
+      serviceEndDate: `${end.y}-${String(end.m).padStart(2, "0")}-${String(end.d).padStart(2, "0")}`,
+      applicationDate: `${application.y}-${String(application.m).padStart(2, "0")}-${String(application.d).padStart(2, "0")}`,
+      contractAmountKopeks: amount, serviceNotProvided, serviceDurationDays: calc.durationDays, refundableDays: calc.refundableDays,
+      resultAmountKopeks: calc.resultAmountKopeks,
+      plannedRefundDate: `${calc.planned.y}-${String(calc.planned.m).padStart(2, "0")}-${String(calc.planned.d).padStart(2, "0")}`,
+      calculationVersion: REFUND_CALC_VERSION,
+    },
+  });
+  revalidatePath(`/refunds/new/${refundId}/details`);
   return { ok: true, refundId };
 }

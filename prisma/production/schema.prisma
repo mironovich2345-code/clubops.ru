@@ -382,6 +382,24 @@ model Refund {
   returnType   String?
   entryVersion Int     @default(1)
 
+  // --- v2 membership refund calculation (Phase 2A; all nullable → legacy-safe).
+  // Dates are stored at LOCAL midnight (date-only semantics). contractAmountKopeks
+  // is the contract sum (kept SEPARATE from amountKopeks, which for v2 holds the
+  // final refund result). Derived fields are recomputable from the operands +
+  // calculationVersion so a historical calculation can be reproduced.
+  serviceStartDate            DateTime?
+  serviceEndDate              DateTime?
+  applicationDate             DateTime?
+  contractAmountKopeks        Int?
+  serviceNotProvided          Boolean   @default(false)
+  serviceDurationDays         Int?
+  refundableDays              Int?
+  refundResultAmountKopeks    Int?
+  baseRefundDueDate           DateTime?
+  plannedRefundDate           DateTime?
+  dueDateAdjustmentReason     String?
+  calculationVersion          String?
+
   // Uploaded documents: JSON array of { storageKey, fileName, mime, size, type }
   // (legacy v1). v2 refunds use the RefundDocument table instead.
   documentsJson    String?

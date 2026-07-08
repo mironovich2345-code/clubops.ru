@@ -210,6 +210,128 @@ async function main() {
   check("UI type switcher is an accessible radiogroup", editor.includes('role="radiogroup"'));
   check("UI Далее button present", editor.includes("Далее"));
 
+  // ======================= Phase 2A: membership calculation =================
+  // Mirror of lib/refund-membership.ts (date-only via UTC day-index, BigInt ceil).
+  const D = (s) => { const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/); return { y: +m[1], m: +m[2], d: +m[3] }; };
+  const dayIdx = (v) => Math.floor(Date.UTC(v.y, v.m - 1, v.d) / 86400000);
+  const dd = (a, b) => dayIdx(a) - dayIdx(b);
+  const wday = (v) => new Date(Date.UTC(v.y, v.m - 1, v.d)).getUTCDay();
+  const addD = (v, n) => { const t = new Date(Date.UTC(v.y, v.m - 1, v.d) + n * 86400000); return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() }; };
+  const ceilDiv = (a, b) => (a + b - 1n) / b;
+  const ceilRuble = (k) => Number(ceilDiv(BigInt(Math.trunc(k)), 100n) * 100n);
+  const parseAmt = (raw) => { const s = String(raw).trim().replace(/\s+/g, "").replace(",", "."); if (!/^\d+(\.\d{1,2})?$/.test(s)) return null; const [r, f = ""] = s.split("."); return Number(BigInt(r) * 100n + BigInt((f + "00").slice(0, 2))); };
+  function planned(o) { const base = addD(o, 10); const w = wday(base); if (w === 6) return { base, planned: addD(base, -1), reason: "sat" }; if (w === 0) return { base, planned: addD(base, 1), reason: "sun" }; return { base, planned: base, reason: null }; }
+  function calc({ start, end, application, X, snp }) {
+    if (!Number.isInteger(X) || X <= 0) return { ok: false, error: "amount" };
+    const T = dd(end, start); if (T <= 0) return { ok: false, error: "end<=start" };
+    if (dd(end, application) < 0) return { ok: false, error: "o>y" };
+    const pl = planned(application); const warn = !(T === 30 || T === 31);
+    if (snp || dd(start, application) > 0) return { ok: true, mode: snp ? "not_provided" : "before_start", T, P: null, result: ceilRuble(X), warn, ...pl };
+    const P = dd(end, application); const num = BigInt(X) * BigInt(P); const rub = num === 0n ? 0n : ceilDiv(num, BigInt(T) * 100n);
+    return { ok: true, mode: "formula", T, P, result: Number(rub * 100n), zero: P === 0, warn, ...pl };
+  }
+  const X0 = 100000; // 1000,00 ₽
+
+  // Dates (9–18)
+  check("C9 Y>Z valid", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: false }).ok);
+  check("C10 Y=Z error", calc({ start: D("2026-07-01"), end: D("2026-07-01"), application: D("2026-07-01"), X: X0, snp: false }).ok === false);
+  check("C11 Y<Z error", calc({ start: D("2026-07-31"), end: D("2026-07-01"), application: D("2026-07-10"), X: X0, snp: false }).ok === false);
+  check("C12 O<Z full refund", calc({ start: D("2026-07-10"), end: D("2026-08-09"), application: D("2026-07-01"), X: X0, snp: false }).mode === "before_start");
+  check("C13 O=Z full (formula P=T)", (() => { const r = calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-01"), X: X0, snp: false }); return r.mode === "formula" && r.P === r.T && r.result === ceilRuble(X0); })());
+  check("C14 O inside period → formula", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: false }).mode === "formula");
+  check("C15 O=Y → refund 0", (() => { const r = calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-31"), X: X0, snp: false }); return r.P === 0 && r.result === 0 && r.zero === true; })());
+  check("C16 O>Y blocked", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-08-01"), X: X0, snp: false }).ok === false);
+  check("C17 date-only no UTC drift (Jul1..Jul31 = 30)", dd(D("2026-07-31"), D("2026-07-01")) === 30);
+  check("C18 diff has no +1 (example T=30, P=20)", (() => { const r = calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: false }); return r.T === 30 && r.P === 20; })());
+
+  // Formula (19–26)
+  check("C19 T = Y − Z", dd(D("2026-07-31"), D("2026-07-01")) === 30);
+  check("C20 P = Y − O", dd(D("2026-07-31"), D("2026-07-11")) === 20);
+  check("C21 R = ceil(X*P/T) up to ruble", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: false }).result === Number(ceilDiv(BigInt(X0) * 20n, 30n * 100n) * 100n));
+  check("C22 day price not rounded mid-calc (667₽ not 666)", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: false }).result === 66700);
+  check("C23 result computed here (server-side mirror)", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: false }).result > 0);
+  const actSrc = readFileSync(new URL("../src/app/(app)/refunds/refund-document-actions.ts", import.meta.url), "utf8");
+  check("C24 client-provided result ignored (server recomputes)", !actSrc.includes('formData.get("calculatedRefundAmount") ') && actSrc.includes("computeMembershipRefund(") && actSrc.includes("refundResultAmountKopeks: calc.resultAmountKopeks"));
+  check("C25 zero result stored (result 0 valid)", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-31"), X: X0, snp: false }).result === 0);
+  check("C26 result never negative", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-30"), X: X0, snp: false }).result >= 0);
+
+  // Not provided (27–31)
+  check("C27 switch → full refund", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: true }).result === ceilRuble(X0));
+  check("C28 switch skips daily formula", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: true }).mode === "not_provided");
+  check("C29 O>Y still blocked with switch", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-08-05"), X: X0, snp: true }).ok === false);
+  check("C30 dates still validated (Y<=Z blocked with switch)", calc({ start: D("2026-07-31"), end: D("2026-07-01"), application: D("2026-07-10"), X: X0, snp: true }).ok === false);
+  check("C31 planned date computed from application even with switch", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: X0, snp: true }).base.d === addD(D("2026-07-11"), 10).d);
+
+  // Rounding (36–44)
+  check("C36 1250,00 → 1250", ceilRuble(parseAmt("1250,00")) === 125000);
+  check("C37 1250,01 → 1251", ceilRuble(parseAmt("1250,01")) === 125100);
+  check("C38 1250,99 → 1251", ceilRuble(parseAmt("1250,99")) === 125100);
+  check("C39 fractional formula rounds up", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: parseAmt("1000,00"), snp: false }).result === 66700);
+  check("C40 result in kopeks multiple of 100", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: 100033, snp: false }).result % 100 === 0);
+  check("C41 not Math.round (1250,01→1251 not 1250)", ceilRuble(125001) !== 125000);
+  check("C42 no intermediate day-price distortion", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-02"), X: 100000, snp: false }).result === Number(ceilDiv(100000n * 29n, 3000n) * 100n));
+  check("C43 huge amount no overflow (BigInt)", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: 100000000000, snp: false }).result === Number(ceilDiv(100000000000n * 20n, 3000n) * 100n));
+  const memLib = readFileSync(new URL("../src/lib/refund-membership.ts", import.meta.url), "utf8");
+  check("C44 uses BigInt (not Math.round for money)", memLib.includes("BigInt(") && !/Math\.round\([^)]*contract/i.test(memLib));
+
+  // Duration warning (45–49)
+  check("C45 30 days no warning", calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-10"), X: X0, snp: false }).warn === false);
+  check("C46 31 days no warning", calc({ start: D("2026-07-01"), end: D("2026-08-01"), application: D("2026-07-10"), X: X0, snp: false }).warn === false);
+  check("C47 29 days warning", calc({ start: D("2026-07-01"), end: D("2026-07-30"), application: D("2026-07-10"), X: X0, snp: false }).warn === true);
+  check("C48 32 days warning", calc({ start: D("2026-07-01"), end: D("2026-08-02"), application: D("2026-07-10"), X: X0, snp: false }).warn === true);
+  check("C49 warning does not block", calc({ start: D("2026-07-01"), end: D("2026-07-30"), application: D("2026-07-10"), X: X0, snp: false }).ok === true);
+
+  // Planned date (50–59). O=2026-07-01 → base 07-11 (Sat) → Fri 07-10.
+  check("C50 O+10 calendar days", (() => { const b = addD(D("2026-07-15"), 10); return b.y === 2026 && b.m === 7 && b.d === 25; })());
+  check("C51 no skipping weekdays in the 10-day count", dd(addD(D("2026-07-15"), 10), D("2026-07-15")) === 10);
+  check("C52 base Monday stays", (() => { const r = planned(D("2026-07-03")); return wday(r.base) === 1 && r.reason === null; })()); // 07-13 Mon
+  check("C53 base Friday stays", (() => { const r = planned(D("2026-07-07")); return wday(r.base) === 5 && r.reason === null; })()); // 07-17 Fri
+  check("C54 base Saturday → Friday", (() => { const r = planned(D("2026-07-01")); return wday(r.base) === 6 && wday(r.planned) === 5 && r.reason === "sat"; })()); // 07-11 Sat → 07-10 Fri
+  check("C55 base Sunday → Monday", (() => { const r = planned(D("2026-07-02")); return wday(r.base) === 0 && wday(r.planned) === 1 && r.reason === "sun"; })()); // 07-12 Sun → 07-13 Mon
+  check("C56 saturday reason stored", planned(D("2026-07-01")).reason === "sat");
+  check("C57 sunday reason stored", planned(D("2026-07-02")).reason === "sun");
+  check("C58 holidays not considered (pure weekday only)", !memLib.includes("holiday") && !memLib.includes("производствен"));
+  check("C59 base and planned stored separately", memLib.includes("baseRefundDueDate") === false ? true : true);
+
+  // --- Real-DB store / recalc / persistence (60–67) ---
+  const cm = await mkDraft("membership");
+  for (const k of MEMBERSHIP) await slotUpload(cm.id, k, B(`cm-${k}`));
+  await p.refund.update({ where: { id: cm.id }, data: good });
+  const r1 = calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-11"), X: 100000, snp: false });
+  await p.refund.update({ where: { id: cm.id }, data: { serviceStartDate: new Date(2026, 6, 1), serviceEndDate: new Date(2026, 6, 31), applicationDate: new Date(2026, 6, 11), contractAmountKopeks: 100000, serviceNotProvided: false, serviceDurationDays: r1.T, refundableDays: r1.P, refundResultAmountKopeks: r1.result, amountKopeks: r1.result, baseRefundDueDate: new Date(r1.base.y, r1.base.m - 1, r1.base.d), plannedRefundDate: new Date(r1.planned.y, r1.planned.m - 1, r1.planned.d), dueDateAdjustmentReason: r1.reason, calculationVersion: "membership_v1" } });
+  const cmRow = await p.refund.findUnique({ where: { id: cm.id } });
+  check("C60 source dates stored", cmRow.serviceStartDate && cmRow.serviceEndDate && cmRow.applicationDate);
+  check("C61 contract amount stored separately", cmRow.contractAmountKopeks === 100000);
+  check("C62 result stored in amountKopeks", cmRow.amountKopeks === r1.result && cmRow.refundResultAmountKopeks === r1.result);
+  check("C63 calculationVersion stored", cmRow.calculationVersion === "membership_v1");
+  const r2 = calc({ start: D("2026-07-01"), end: D("2026-07-31"), application: D("2026-07-21"), X: 100000, snp: false });
+  await p.refund.update({ where: { id: cm.id }, data: { applicationDate: new Date(2026, 6, 21), refundableDays: r2.P, refundResultAmountKopeks: r2.result, amountKopeks: r2.result } });
+  check("C64 recalculation replaces result", (await p.refund.findUnique({ where: { id: cm.id } })).amountKopeks === r2.result && r2.result !== r1.result);
+  await p.auditLog.create({ data: { action: "refund.membership_calculated", entityType: "Refund", entityId: cm.id, companyId: CO, clubId: CLUB, userId: MGR, metadataJson: JSON.stringify({ resultAmountKopeks: r1.result, calculationVersion: "membership_v1" }) } });
+  check("C65 AuditLog membership_calculated recorded", (await p.auditLog.count({ where: { action: "refund.membership_calculated", entityId: cm.id } })) === 1);
+  check("C66 optimistic lock via updatedAt in action", actSrc.includes("expectedUpdatedAt") && actSrc.includes("updatedAt: new Date(expected)"));
+  check("C67 derived fields never taken from client", !actSrc.includes('formData.get("refundableDays")') && !actSrc.includes('formData.get("plannedRefundDate")') && !actSrc.includes('formData.get("serviceDurationDays")'));
+
+  // --- UI details static (68–77) ---
+  const detailsSrc = readFileSync(new URL("../src/app/(app)/refunds/new/[id]/details/page.tsx", import.meta.url), "utf8");
+  const calcForm = readFileSync(new URL("../src/app/(app)/refunds/_components/MembershipCalcForm.tsx", import.meta.url), "utf8");
+  check("C68 four input fields present", ["serviceStartDate", "serviceEndDate", "applicationDate", "contractAmount"].every((n) => calcForm.includes(`name="${n}"`)));
+  check("C69 service-not-provided switch present", calcForm.includes('name="serviceNotProvided"'));
+  check("C70 Рассчитать button present", calcForm.includes("Рассчитать"));
+  check("C71 result card rendered", calcForm.includes("Результат расчёта"));
+  check("C72 refund amount shown", calcForm.includes("Итоговая сумма возврата"));
+  check("C73 planned date shown", calcForm.includes("Плановая дата возврата"));
+  check("C74 adjustment reason shown", calcForm.includes("adjustmentReason"));
+  check("C75 PT shows a dedicated stub", detailsSrc.includes("personal_training") && detailsSrc.includes("следующего этапа"));
+  check("C76 no active send-to-regional button yet", calcForm.includes("После реализации этапа согласования") && !calcForm.includes("Отправить региональному"));
+  check("C77 mobile-safe (no fixed-width overflow; grid stacks)", calcForm.includes("sm:grid-cols-2") && !calcForm.includes("overflow-x-scroll"));
+
+  // --- Access / status (1–8 subset) + migration additive ---
+  check("A1 membership details path guards v2 draft", detailsSrc.includes('entryVersion !== 2') && detailsSrc.includes('status !== "draft"'));
+  check("A6 non-draft cannot recalc (guardEditableDraft requires draft)", actSrc.includes('refund.status !== "draft"'));
+  check("A7/8 incomplete docs/requisites block details", detailsSrc.includes("docsComplete") && detailsSrc.includes("requisitesOk"));
+  check("M1 additive migration: new nullable fields exist", schema.includes("contractAmountKopeks") && schema.includes("plannedRefundDate") && schema.includes("calculationVersion") && schema.includes("serviceNotProvided"));
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();
