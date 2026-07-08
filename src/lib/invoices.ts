@@ -269,6 +269,54 @@ export function isOverdue(invoice: { status: string; dueDate: Date | null }): bo
   return invoice.dueDate.getTime() < Date.now();
 }
 
+// --- Phase 1 «Счета»: single-source status + reporting-month helpers ----------
+// Pure (no server imports) so they are shared by the loader AND mirrored by
+// tests. Status values come from the real enum above — nothing invented.
+
+/** Statuses that mean "sent and awaiting payment" (not draft, not paid/dead). */
+export const INVOICE_AWAITING_PAYMENT_STATUSES = [
+  "needs_review", "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner",
+] as const;
+
+export function isInvoicePaid(status: string): boolean { return status === "paid"; }
+export function isInvoiceCancelled(status: string): boolean { return status === "canceled"; }
+export function isInvoiceRejected(status: string): boolean { return status === "rejected"; }
+/** In a live status that awaits actual payment (drives «Ожидает оплаты»). */
+export function isInvoiceAwaitingPayment(status: string): boolean {
+  return (INVOICE_AWAITING_PAYMENT_STATUSES as readonly string[]).includes(status);
+}
+
+type InvoiceDates = { status: string; dueDate: Date | null; paidAt: Date | null; invoiceDate: Date | null; createdAt: Date };
+
+/**
+ * The date an invoice reports to: paid → paidAt (when money left); otherwise →
+ * dueDate (the obligation month). Falls back to invoiceDate/createdAt only when
+ * the primary date is missing (never lets createdAt override dueDate/paidAt).
+ */
+export function getInvoiceReportingDate(inv: InvoiceDates): Date {
+  if (isInvoicePaid(inv.status)) return inv.paidAt ?? inv.dueDate ?? inv.invoiceDate ?? inv.createdAt;
+  return inv.dueDate ?? inv.invoiceDate ?? inv.createdAt;
+}
+export function getInvoiceReportingMonth(inv: InvoiceDates): string {
+  return monthKeyOf(getInvoiceReportingDate(inv));
+}
+
+/**
+ * Overdue = a SENT, unpaid obligation whose dueDate has passed (server `now`).
+ * Never overdue: paid, canceled, rejected, an unsent draft, or a not-yet-due
+ * invoice.
+ */
+export function isInvoiceOverdue(inv: { status: string; dueDate: Date | null }, now: Date = new Date()): boolean {
+  if (!isInvoiceAwaitingPayment(inv.status)) return false;
+  if (!inv.dueDate) return false;
+  return inv.dueDate.getTime() < now.getTime();
+}
+
+/** «Добавить оплаченный счёт» — accountant / chief accountant only. */
+export function canAddPaidInvoice(roles: readonly Role[]): boolean {
+  return roles.includes("accountant") || roles.includes("chief_accountant");
+}
+
 export type StatusSummary = {
   unpaid: { count: number; amountKopeks: number };
   overdue: { count: number; amountKopeks: number };

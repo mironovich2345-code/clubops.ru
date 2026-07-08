@@ -15,6 +15,7 @@ import { openStrategicInvoice } from "../dashboard/strategic-actions";
 import { buildReturnTo } from "@/lib/strategic-return";
 import {
   getInvoicesForScope,
+  canAddPaidInvoice,
   INVOICE_STATUS_LABELS,
   INVOICE_CONFIDENCE_LABELS,
 } from "@/lib/invoices";
@@ -74,6 +75,9 @@ export default async function InvoicesPage({
     [clubs, invoices] = await Promise.all([getClubsInScope(scope), getInvoicesForScope(scope)]);
   }
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
+  // «Добавить оплаченный счёт» — accountant / chief accountant only (server also
+  // enforces this in saveHistoricalInvoice).
+  const canAddPaid = ctx ? canAddPaidInvoice(ctx.effectiveRoles) : false;
   const multiCompany = groups?.multiCompany ?? false;
   const returnQuery = groups ? buildReturnTo("invoices", sp as Record<string, string | undefined>) : "";
 
@@ -137,13 +141,15 @@ export default async function InvoicesPage({
         clubs.length > 0 ? (
           <>
             <InvoiceUpload clubs={clubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={scope.company.name} legalEntitiesByClub={legalEntitiesByClub} />
-            {/* Historical paid-invoice quick entry (past months) */}
-            <HistoricalInvoiceForm
-              clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
-              categories={EXPENSE_CATEGORY_OPTIONS}
-              legalEntitiesByClub={legalEntitiesByClub}
-              defaultClubId={scope.club?.id ?? clubs[0].id}
-            />
+            {/* Historical paid-invoice quick entry — accountant / chief only. */}
+            {canAddPaid ? (
+              <HistoricalInvoiceForm
+                clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
+                categories={EXPENSE_CATEGORY_OPTIONS}
+                legalEntitiesByClub={legalEntitiesByClub}
+                defaultClubId={scope.club?.id ?? clubs[0].id}
+              />
+            ) : null}
           </>
         ) : (
           <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">

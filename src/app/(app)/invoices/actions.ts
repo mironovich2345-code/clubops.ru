@@ -14,6 +14,7 @@ import {
   getInvoiceForContext,
   applyInvoiceAction,
   canEditInvoice,
+  canAddPaidInvoice,
   INVOICE_ACTION_AUDIT,
   type InvoiceAction,
 } from "@/lib/invoices";
@@ -333,8 +334,11 @@ export async function saveHistoricalInvoice(
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
     return { ok: false, error: "Нет доступа" };
   }
-  if (!canCreateOperational(ctx.effectiveRoles)) {
-    return { ok: false, error: "Добавлять счета могут управляющие и региональные директора" };
+  // «Добавить оплаченный счёт» — ONLY accountant / chief accountant. Manager /
+  // regional / owner / general_director / system_admin are refused server-side
+  // (UI hiding is not enough).
+  if (!canAddPaidInvoice(ctx.effectiveRoles)) {
+    return { ok: false, error: "Добавить оплаченный счёт может только бухгалтер или главный бухгалтер" };
   }
 
   const clubId = String(formData.get("clubId") ?? "").trim();
@@ -356,8 +360,12 @@ export async function saveHistoricalInvoice(
   const paidAt = parseDate(str(formData, "paidDate"));
   if (!paidAt) return { ok: false, error: "Укажите дату оплаты" };
 
+  // The reporting month of a paid invoice is its paidAt month — block both the
+  // invoice-date month and the paidAt month if either is closed.
   const closedHist = await monthClosedError(companyId, clubId, invoiceDate);
   if (closedHist) return { ok: false, error: closedHist };
+  const closedPaid = await monthClosedError(companyId, clubId, paidAt);
+  if (closedPaid) return { ok: false, error: closedPaid };
 
   let legalEntityId: string | null = null;
   const requestedEntityId = str(formData, "legalEntityId");
@@ -404,7 +412,10 @@ export async function saveHistoricalInvoice(
     companyId,
     clubId,
     userId: ctx.user.id,
-    metadata: { historical: true, paidAt: paidAt.toISOString() },
+    metadata: {
+      historical: true, paidAt: paidAt.toISOString(), amountKopeks: invoice.amountKopeks,
+      role: ctx.effectiveRoles.includes("chief_accountant") ? "chief_accountant" : "accountant",
+    },
   });
 
   revalidatePath("/invoices");
