@@ -87,6 +87,22 @@ export function createS3StorageProvider(): StorageProvider {
       }
     },
 
+    async exists(key) {
+      if (!isSafeStorageKey(key)) return false;
+      const { client, bucket } = await getClient();
+      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+      try {
+        await (client as { send: (c: unknown) => Promise<unknown> }).send(
+          new HeadObjectCommand({ Bucket: bucket, Key: key }),
+        );
+        return true;
+      } catch (error) {
+        const name = (error as { name?: string })?.name;
+        if (name === "NoSuchKey" || name === "NotFound") return false;
+        throw error; // AccessDenied / config errors must NOT look like "missing".
+      }
+    },
+
     async getSignedUrl(key, opts) {
       if (!isSafeStorageKey(key)) return null;
       const { client, bucket } = await getClient();

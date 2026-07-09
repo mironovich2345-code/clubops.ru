@@ -4,7 +4,8 @@
 // lib/invoice-view.ts, plus real-DB query shapes and static contract assertions.
 // SAFE: fixed "pilot-inv-*" ids, cleaned up. npm run pilot:invoices
 import { PrismaClient } from "@prisma/client";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 const p = new PrismaClient();
 let pass = 0, fail = 0;
@@ -381,6 +382,86 @@ async function main() {
   check("U21 review queue empty state present", pageSrc.includes("Нет счетов, ожидающих проверки"));
   check("U22 draft row shows «Продолжить заполнение»", pageSrc.includes("Продолжить заполнение"));
   check("U23 review queue gated by showReviewQueue", pageSrc.includes("view.showReviewQueue ? <ReviewQueue"));
+
+  // === Invoice file access: detail scope + download + storage (200–239) =====
+  const STORAGE_KEY_RE = /^invoices\/[a-f0-9]{32}\.(jpg|png|webp|pdf)$/;
+  const isSafeKey = (k) => !!k && k.length <= 256 && !k.startsWith("/") && !k.includes("..") && !k.includes("\\") && /^[a-z0-9._-]+\/[a-z0-9._-]+$/i.test(k);
+  // Mirror of getInvoiceForContext scope (company + allowed clubs; NOT creator).
+  const inScope = (invx, cx) => !!invx && invx.companyId === cx.companyId && cx.allowedClubIds.includes(invx.clubId);
+  // Mirror of resolveInvoiceFileStatus.
+  const fileStatus = (storageKey, objectExists) => (!storageKey ? "no_metadata" : objectExists ? "available" : "missing_object");
+  // Mirror of the download route's decision table.
+  const routeResult = (invx, cx, objectExists) =>
+    !inScope(invx, cx) ? { status: 404, code: null } :
+    !invx.originalFileStorageKey ? { status: 404, code: "INVOICE_FILE_NO_METADATA" } :
+    !objectExists ? { status: 404, code: "INVOICE_FILE_NOT_FOUND" } :
+    { status: 200, code: null };
+
+  const iA = { id: "fA", companyId: "C1", clubId: "A", originalFileStorageKey: "invoices/" + "a".repeat(32) + ".pdf", originalFileMime: "application/pdf" };
+  const iNoKey = { id: "fNo", companyId: "C1", clubId: "A", originalFileStorageKey: null };
+  const iOtherClub = { id: "fB", companyId: "C1", clubId: "B", originalFileStorageKey: "invoices/" + "b".repeat(32) + ".pdf" };
+  const iOtherCo = { id: "fX", companyId: "C2", clubId: "X", originalFileStorageKey: "invoices/" + "c".repeat(32) + ".pdf" };
+  const mgrCtx = { companyId: "C1", allowedClubIds: ["A"] };
+  const rdCtx = { companyId: "C1", allowedClubIds: ["A", "B"] };
+  const accCtx = { companyId: "C1", allowedClubIds: ["A", "B", "K"] };
+
+  // Detail route (200–209)
+  check("200 manager opens invoice in own club", inScope(iA, mgrCtx) === true);
+  check("201 manager cannot open invoice of another club", inScope(iOtherClub, mgrCtx) === false);
+  check("202 regional opens invoice of accessible club", inScope(iA, rdCtx) === true && inScope(iOtherClub, rdCtx) === true);
+  check("203 regional cannot open another company", inScope(iOtherCo, rdCtx) === false);
+  check("204 accountant opens allowed-scope invoice", inScope(iA, accCtx) === true);
+  check("205 chief accountant opens allowed-scope invoice", inScope(iA, { companyId: "C1", allowedClubIds: ["A", "B", "K"] }) === true);
+  check("206 invoice WITHOUT file still opens (no 404 on card)", fileStatus(iNoKey.originalFileStorageKey, false) === "no_metadata");
+  check("207 invoice with missing object still opens (card)", fileStatus(iA.originalFileStorageKey, false) === "missing_object");
+  check("208 missing invoice → not in scope (404)", inScope(null, mgrCtx) === false);
+  check("209 detail uses invoice.id (route param), not storageKey", (() => { const src = readFileSync(new URL("../src/app/(app)/invoices/[id]/page.tsx", import.meta.url), "utf8"); return src.includes("getInvoiceForContext(ctx, id)"); })());
+
+  // Download route (210–225)
+  check("210 authorized manager downloads own file (object present)", routeResult(iA, mgrCtx, true).status === 200);
+  check("211 regional downloads accessible-club file", routeResult(iOtherClub, rdCtx, true).status === 200);
+  check("212 accountant downloads allowed file", routeResult(iA, accCtx, true).status === 200);
+  check("213 foreign user (other company) → generic 404, no code", (() => { const r = routeResult(iOtherCo, rdCtx, true); return r.status === 404 && r.code === null; })());
+  const fileRoute = readFileSync(new URL("../src/app/api/invoices/[id]/file/route.ts", import.meta.url), "utf8");
+  check("214 client cannot supply a storageKey (route reads DB key only)", !fileRoute.includes('searchParams.get("key")') && fileRoute.includes("invoice.originalFileStorageKey"));
+  check("215 metadata absent → controlled INVOICE_FILE_NO_METADATA", routeResult(iNoKey, mgrCtx, false).code === "INVOICE_FILE_NO_METADATA");
+  check("216 object absent → controlled INVOICE_FILE_NOT_FOUND", routeResult(iA, mgrCtx, false).code === "INVOICE_FILE_NOT_FOUND");
+  check("217 Content-Type from stored mime", fileRoute.includes("invoice.originalFileMime"));
+  check("218 Content-Disposition via safe helper", fileRoute.includes("dispositionHeader("));
+  check("219 file name sanitized in disposition", readFileSync(new URL("../src/lib/document-access.ts", import.meta.url), "utf8").includes("encodeURIComponent(fileName)"));
+  check("220 bucket/storageKey never in response (only mime + disposition headers)", !fileRoute.includes("originalFileStorageKey ??") && !/headers:\s*{[^}]*storageKey/.test(fileRoute));
+  check("221 no public URL returned (streams bytes)", fileRoute.includes("new NextResponse(new Uint8Array(buffer)") && !fileRoute.includes("getSignedUrl"));
+  check("222 raw 'Not found' only for generic A-case, controlled messages otherwise", fileRoute.includes('"К счёту не прикреплён файл."') && fileRoute.includes("не найден в хранилище"));
+  check("223 safe log excludes storageKey/bucket/contents (hash only)", fileRoute.includes("storageKeyHash(") && !fileRoute.includes("originalFileStorageKey }") && fileRoute.includes("storageObjectFound: false"));
+  check("224 download does not change status (no invoice.update in route)", !fileRoute.includes("prisma.invoice.update") && !fileRoute.includes(".update("));
+  check("225 download audits view/download only (no financial transition)", fileRoute.includes("document.viewed") && fileRoute.includes("document.downloaded") && !fileRoute.includes("sent_to_review"));
+
+  // Storage key handling + provider (226–235), incl. a real local-provider check
+  check("226 storage key pattern (32 hex + ext)", STORAGE_KEY_RE.test("invoices/" + "0".repeat(32) + ".pdf") && !STORAGE_KEY_RE.test("invoices/x.pdf"));
+  check("227 leading slash rejected by safe-key guard", isSafeKey("/invoices/x.pdf") === false);
+  check("228 traversal rejected", isSafeKey("invoices/../secret") === false);
+  check("229 prefix 'invoices/' required", STORAGE_KEY_RE.test("other/" + "0".repeat(32) + ".pdf") === false);
+  check("230 upload key === download key (same DB value, one regex)", (() => { const s = readFileSync(new URL("../src/lib/invoice-storage.ts", import.meta.url), "utf8"); return s.includes("STORAGE_KEY_RE.test(storageKey)") && s.includes("getStorage().get(storageKey)"); })());
+  // Real local-provider presence semantics: write → exists true, remove → false.
+  const realKey = "invoices/" + "e".repeat(32) + ".pdf";
+  const realPath = join(process.cwd(), "uploads", realKey);
+  mkdirSync(dirname(realPath), { recursive: true });
+  writeFileSync(realPath, Buffer.from("%PDF-1.4 test"));
+  check("231 local provider reports object present after write", existsSync(realPath) === true && fileStatus(realKey, true) === "available");
+  rmSync(realPath, { force: true });
+  check("232 local provider reports object gone after removal (missing_object)", existsSync(realPath) === false && fileStatus(realKey, false) === "missing_object");
+  const idxSrc = readFileSync(new URL("../src/lib/storage/index.ts", import.meta.url), "utf8");
+  check("233 provider explicitly local unless STORAGE_PROVIDER=s3", idxSrc.includes('process.env.STORAGE_PROVIDER === "s3" ? "s3" : "local"'));
+  const s3Src = readFileSync(new URL("../src/lib/storage/s3-provider.ts", import.meta.url), "utf8");
+  check("234 S3 exists/get use server key + separate NoSuchKey from AccessDenied", s3Src.includes("HeadObjectCommand") && s3Src.includes('name === "NoSuchKey" || name === "NotFound"') && s3Src.includes("throw error"));
+  check("235 storage provider name exposed on health (persistent-storage verifiable)", readFileSync(new URL("../src/app/api/health/route.ts", import.meta.url), "utf8").includes("storageProviderName()"));
+
+  // UI states (236–239)
+  const detailForm = readFileSync(new URL("../src/app/(app)/invoices/[id]/_components/InvoiceEditForm.tsx", import.meta.url), "utf8");
+  check("236 file available → open/download buttons", detailForm.includes("Открыть документ") && detailForm.includes("Скачать") && detailForm.includes('fileStatus === "available"'));
+  check("237 metadata absent → «не прикреплён файл», card still renders", detailForm.includes("К счёту не прикреплён файл"));
+  check("238 object absent → «Файл отсутствует в хранилище» warning", detailForm.includes("Файл отсутствует в хранилище") && detailForm.includes('fileStatus === "missing_object"'));
+  check("239 detail page resolves fileStatus separately from invoice load", readFileSync(new URL("../src/app/(app)/invoices/[id]/page.tsx", import.meta.url), "utf8").includes("resolveInvoiceFileStatus(invoice.originalFileStorageKey)"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

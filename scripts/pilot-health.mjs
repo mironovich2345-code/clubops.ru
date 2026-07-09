@@ -22,9 +22,14 @@ function deploymentVersion(env) {
   };
 }
 
+// Storage provider name resolver — mirror of src/lib/storage/index.ts.
+function storageProviderName(env) {
+  return env.STORAGE_PROVIDER === "s3" ? "s3" : "local";
+}
+
 // The full health payload shape, as the route builds it.
 function healthPayload(env) {
-  return { status: "ok", service: "club-ops", time: "<iso>", ...deploymentVersion(env) };
+  return { status: "ok", service: "club-ops", time: "<iso>", ...deploymentVersion(env), storage: storageProviderName(env) };
 }
 
 // 1. commit returned from RAILWAY_GIT_COMMIT_SHA when present
@@ -73,7 +78,13 @@ function healthPayload(env) {
   check("4 no secret/forbidden identifier in response", leaked.length === 0, leaked.join(","));
   // Only the whitelisted keys are present on the payload.
   const keys = Object.keys(healthPayload(dirtyEnv)).sort().join(",");
-  check("4b response keys are exactly the whitelist", keys === "commit,deploymentId,environment,service,status,time", keys);
+  check("4b response keys are exactly the whitelist", keys === "commit,deploymentId,environment,service,status,storage,time", keys);
+  // Storage exposes only the provider NAME, never bucket/endpoint/keys/region.
+  const withS3 = healthPayload({ ...dirtyEnv, STORAGE_PROVIDER: "s3", S3_BUCKET: "secret-bucket", S3_ENDPOINT: "https://secret.endpoint", S3_ACCESS_KEY_ID: "AKIA_SECRET", S3_SECRET_ACCESS_KEY: "s3-secret" });
+  check("4c storage is the provider name only", withS3.storage === "s3");
+  const sjson = JSON.stringify(withS3);
+  check("4d no S3 secret/bucket/endpoint leaked", !sjson.includes("secret-bucket") && !sjson.includes("secret.endpoint") && !sjson.includes("AKIA_SECRET") && !sjson.includes("s3-secret"));
+  check("4e storage defaults to local when unset", storageProviderName({}) === "local");
 }
 
 // 5. existing health-check semantics preserved (status ok / service name)

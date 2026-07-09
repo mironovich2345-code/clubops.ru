@@ -1,7 +1,7 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import type { UploadErrorCode } from "@/lib/upload-errors";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
-import { getStorage } from "@/lib/storage";
+import { getStorage, storageProviderName } from "@/lib/storage";
 
 // Invoice documents are addressed by a relative storageKey ("invoices/<hex>.ext")
 // and persisted through the storage abstraction: local disk in dev (default) or
@@ -73,3 +73,27 @@ export async function readInvoiceFile(storageKey: string): Promise<Buffer | null
   if (!STORAGE_KEY_RE.test(storageKey)) return null;
   return getStorage().get(storageKey);
 }
+
+/** Cheap presence check for a stored invoice file (no bytes read). */
+export async function invoiceFileExists(storageKey: string | null | undefined): Promise<boolean> {
+  if (!storageKey || !STORAGE_KEY_RE.test(storageKey)) return false;
+  return getStorage().exists(storageKey);
+}
+
+// Document availability from the record + storage. Drives the detail card UI and
+// the download route's controlled error, so a missing object never becomes a
+// bare "Not found" and the invoice data stays viewable.
+export type InvoiceFileStatus = "available" | "no_metadata" | "missing_object";
+
+/** Resolve whether an invoice's file is available, metadata-only, or object-gone. */
+export async function resolveInvoiceFileStatus(storageKey: string | null | undefined): Promise<InvoiceFileStatus> {
+  if (!storageKey) return "no_metadata";
+  return (await invoiceFileExists(storageKey)) ? "available" : "missing_object";
+}
+
+/** Non-reversible short hash of a storageKey — safe to log (never the key itself). */
+export function storageKeyHash(storageKey: string): string {
+  return createHash("sha256").update(storageKey).digest("hex").slice(0, 12);
+}
+
+export { storageProviderName };

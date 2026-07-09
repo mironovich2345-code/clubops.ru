@@ -13,6 +13,7 @@ import {
   INVOICE_STATUS_LABELS,
   INVOICE_CONFIDENCE_LABELS,
 } from "@/lib/invoices";
+import { resolveInvoiceFileStatus } from "@/lib/invoice-storage";
 import { EXPENSE_CATEGORY_OPTIONS } from "@/lib/expenses";
 import { safeBackLink } from "@/lib/strategic-return";
 import { InvoiceEditForm } from "./_components/InvoiceEditForm";
@@ -53,6 +54,10 @@ export default async function InvoiceDetailPage({
   const invoice = await getInvoiceForContext(ctx, id);
   if (!invoice) notFound();
 
+  // Document availability is resolved separately from the invoice — a missing or
+  // never-attached file must NEVER 404 the card; it only changes the file block.
+  const fileStatus = await resolveInvoiceFileStatus(invoice.originalFileStorageKey);
+
   const isManagerOnly = ctx.effectiveRoles.includes("manager") && !ctx.effectiveRoles.some((r) => ["regional_director", "general_director", "owner", "accountant"].includes(r));
   const canCancel =
     canMutateOperationalRecords(ctx.effectiveRoles) &&
@@ -92,7 +97,7 @@ export default async function InvoiceDetailPage({
     status: invoice.status,
     confidence: invoice.confidence,
     clubName: invoice.club.name,
-    hasFile: Boolean(invoice.originalFileStorageKey),
+    fileStatus,
     originalFileName: invoice.originalFileName ?? "",
     // Accounting contour only: explicit download (attachment). Others view inline.
     canDownload: canDownloadDocuments(ctx.effectiveRoles),

@@ -14,6 +14,13 @@ export interface StorageProvider {
   get(key: string): Promise<Buffer | null>;
 
   /**
+   * Cheap existence check — does NOT read the object bytes (local: fs stat;
+   * s3: HeadObject). Returns false for a malformed key or a missing object.
+   * Used to distinguish "metadata present but object gone" from "file present".
+   */
+  exists(key: string): Promise<boolean>;
+
+  /**
    * A time-limited direct URL for the object, or null when the provider has no
    * notion of one (local disk). Most callers stream through the app's download
    * routes instead, so access control and audit stay server-side.

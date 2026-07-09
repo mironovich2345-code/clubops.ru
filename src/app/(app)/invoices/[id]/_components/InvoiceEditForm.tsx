@@ -25,7 +25,7 @@ type InvoiceView = {
   status: string;
   confidence: string;
   clubName: string;
-  hasFile: boolean;
+  fileStatus: "available" | "no_metadata" | "missing_object";
   originalFileName: string;
   canDownload: boolean;
 };
@@ -106,27 +106,7 @@ export function InvoiceEditForm({
               <span>Дата оплаты: <span className="font-medium text-slate-700">{invoice.paidAtLabel}</span></span>
             </div>
           </div>
-          {invoice.hasFile ? (
-            <div className="flex flex-wrap items-center gap-4">
-              <a
-                href={`/api/invoices/${invoice.id}/file`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm font-medium text-brand-600 hover:text-brand-700"
-              >
-                Открыть исходный файл{invoice.originalFileName ? ` (${invoice.originalFileName})` : ""}
-              </a>
-              {/* Accounting contour only: explicit download (attachment). */}
-              {invoice.canDownload ? (
-                <a
-                  href={`/api/invoices/${invoice.id}/file?download=1`}
-                  className="text-sm font-medium text-slate-600 underline hover:text-slate-800"
-                >
-                  Скачать
-                </a>
-              ) : null}
-            </div>
-          ) : null}
+          <DocumentBlock invoice={invoice} />
         </div>
 
         {availableActions.length > 0 ? (
@@ -241,6 +221,50 @@ export function InvoiceEditForm({
         </div>
       )}
     </div>
+  );
+}
+
+// Document block — always renders (the card never 404s for a file). Shows one of
+// four states; working links appear only when the object is really present.
+function DocumentBlock({ invoice }: { invoice: InvoiceView }) {
+  if (invoice.fileStatus === "available") {
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Файл доступен</span>
+        <div className="flex flex-wrap items-center gap-4">
+          <a
+            href={`/api/invoices/${invoice.id}/file`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-medium text-brand-600 hover:text-brand-700"
+          >
+            Открыть документ{invoice.originalFileName ? ` (${invoice.originalFileName})` : ""}
+          </a>
+          {invoice.canDownload ? (
+            <a
+              href={`/api/invoices/${invoice.id}/file?download=1`}
+              className="text-sm font-medium text-slate-600 underline hover:text-slate-800"
+            >
+              Скачать
+            </a>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+  if (invoice.fileStatus === "missing_object") {
+    return (
+      <div className="max-w-sm rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="font-medium">Файл отсутствует в хранилище</div>
+        <div className="mt-0.5">Данные счёта сохранены, но исходный документ недоступен.</div>
+      </div>
+    );
+  }
+  // no_metadata
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+      К счёту не прикреплён файл
+    </span>
   );
 }
 

@@ -1,10 +1,20 @@
 import { NextResponse } from "next/server";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { getInvoiceForContext } from "@/lib/invoices";
-import { readInvoiceFile } from "@/lib/invoice-storage";
+import { readInvoiceFile, storageKeyHash, storageProviderName } from "@/lib/invoice-storage";
 import { wantsAttachment, dispositionHeader, isInitialDocumentRequest } from "@/lib/document-access";
 
 export const dynamic = "force-dynamic";
+
+// Controlled 404 for the download endpoint — a plain-text reason + machine code
+// header, never a bare "Not found". Distinguishes the three cases so the UI (and
+// a direct URL open) shows a meaningful message.
+function fileError(code: "INVOICE_FILE_NO_METADATA" | "INVOICE_FILE_NOT_FOUND", message: string) {
+  return new NextResponse(message, {
+    status: 404,
+    headers: { "X-Error-Code": code, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "private, no-store" },
+  });
+}
 
 // Streams the original invoice document, access-checked against the current
 // scope. Never exposes the on-disk path; the storageKey stays server-side.
@@ -19,13 +29,28 @@ export async function GET(
   const ctx = await getCurrentAccessContext();
   if (!ctx) return new NextResponse("Unauthorized", { status: 401 });
 
+  // A. Invoice missing or out of scope → generic 404 (never reveal existence).
   const invoice = await getInvoiceForContext(ctx, id);
-  if (!invoice || !invoice.originalFileStorageKey) {
-    return new NextResponse("Not found", { status: 404 });
+  if (!invoice) return new NextResponse("Not found", { status: 404 });
+
+  // B. Invoice exists but no file was ever attached (metadata absent).
+  if (!invoice.originalFileStorageKey) {
+    return fileError("INVOICE_FILE_NO_METADATA", "К счёту не прикреплён файл.");
   }
 
+  // C. Metadata present but the object is gone from storage (e.g. lost on an
+  // ephemeral filesystem after a redeploy). Controlled error + safe log — never
+  // the storageKey, bucket, credentials or file contents.
   const buffer = await readInvoiceFile(invoice.originalFileStorageKey);
-  if (!buffer) return new NextResponse("Not found", { status: 404 });
+  if (!buffer) {
+    console.warn("invoice.file.missing", JSON.stringify({
+      route: "GET /api/invoices/[id]/file",
+      invoiceId: invoice.id, userId: ctx.user.id, companyId: invoice.companyId, clubId: invoice.clubId,
+      provider: storageProviderName(), metadataFound: true, storageObjectFound: false,
+      keyHash: storageKeyHash(invoice.originalFileStorageKey), errorCode: "INVOICE_FILE_NOT_FOUND",
+    }));
+    return fileError("INVOICE_FILE_NOT_FOUND", "Файл счёта не найден в хранилище. Данные счёта сохранены, но исходный документ недоступен.");
+  }
 
   const attachment = wantsAttachment(req, ctx.effectiveRoles);
 

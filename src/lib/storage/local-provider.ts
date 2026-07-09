@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
+import { mkdir, writeFile, readFile, unlink, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { type StorageProvider, isSafeStorageKey } from "./types";
 
@@ -33,6 +33,20 @@ export function createLocalStorageProvider(): StorageProvider {
         return await readFile(path);
       } catch {
         return null;
+      }
+    },
+
+    async exists(key) {
+      let path: string;
+      try {
+        path = resolve(key);
+      } catch {
+        return false;
+      }
+      try {
+        return (await stat(path)).isFile();
+      } catch {
+        return false;
       }
     },
 
