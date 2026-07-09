@@ -34,6 +34,13 @@ const CONFIDENCE_LABELS: Record<string, string> = {
   high: "высокая",
 };
 
+const SOURCE_MODE_LABELS: Record<string, string> = {
+  image: "Изображение",
+  pdf_text: "Текст PDF",
+  pdf_vision: "Страницы PDF",
+  unavailable: "Не подготовлено",
+};
+
 const analyzeInitial: AnalyzeState = { ok: false };
 const saveInitial: SaveState = { ok: false };
 
@@ -149,17 +156,26 @@ export function InvoiceUpload({
             >
               {extraction.mode === "ai" ? "Распознано с помощью ИИ" : "Режим ручного заполнения"}
             </span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                extraction.confidence === "high"
-                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                  : extraction.confidence === "medium"
-                    ? "bg-amber-50 text-amber-800 ring-amber-200"
-                    : "bg-slate-100 text-slate-600 ring-slate-200"
-              }`}
-            >
-              Уверенность: {CONFIDENCE_LABELS[extraction.confidence] ?? extraction.confidence}
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+              Обработка: {SOURCE_MODE_LABELS[extraction.sourceMode] ?? extraction.sourceMode}
             </span>
+            {extraction.errorCode ? (
+              <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-inset ring-rose-200">
+                Техническая проблема — не низкая уверенность ИИ
+              </span>
+            ) : extraction.mode === "ai" ? (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                  extraction.confidence === "high"
+                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                    : extraction.confidence === "medium"
+                      ? "bg-amber-50 text-amber-800 ring-amber-200"
+                      : "bg-slate-100 text-slate-600 ring-slate-200"
+                }`}
+              >
+                Уверенность: {CONFIDENCE_LABELS[extraction.confidence] ?? extraction.confidence}
+              </span>
+            ) : null}
           </div>
 
           {extraction.warnings.length > 0 ? (

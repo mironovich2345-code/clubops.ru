@@ -50,6 +50,7 @@ const pilots = [
   ["Cash wallets / movements", "pilot-cash-wallets.mjs"],
   ["Invoices phase 1", "pilot-invoices.mjs"],
   ["Refunds phase 1", "pilot-refunds.mjs"],
+  ["Invoice AI pipeline", "pilot-invoice-ai.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;

@@ -227,7 +227,13 @@ export async function uploadAndAnalyzeInvoice(
         companyId: ctx.selectedCompanyId,
         clubId,
         userId: ctx.user.id,
-        metadata: { confidence: extraction.confidence, mode: extraction.mode },
+        // Safe diagnostics only — never document content / text / base64.
+        metadata: {
+          confidence: extraction.confidence, mode: extraction.mode, sourceMode: extraction.sourceMode,
+          errorCode: extraction.errorCode, technicalQuality: extraction.technicalQuality,
+          modelUsed: extraction.modelUsed, fallbackUsed: extraction.fallbackUsed,
+          pageCount: extraction.diagnostics?.pageCount ?? null, textLength: extraction.diagnostics?.textLength ?? null,
+        },
       });
     } catch (auditError) {
       console.error("invoice audit failed", auditError instanceof Error ? auditError.message : auditError);
