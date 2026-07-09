@@ -5,6 +5,7 @@
 //   npm run pilot:account-deletion
 import { PrismaClient } from "@prisma/client";
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const p = new PrismaClient();
 const SECRET = process.env.ACCOUNT_RECOVERY_SECRET && process.env.ACCOUNT_RECOVERY_SECRET.length >= 32
@@ -61,18 +62,23 @@ async function soleOwnerBlocking(userId) {
   return null;
 }
 
-// Mirror of finalizeDeletion (atomic tombstone).
-async function deleteAccount(userId, requestType, requestedByUserId = null) {
+const DELETED_LABEL = "Удалённый пользователь";
+const confirmed = (t) => (t ?? "").trim() === "УДАЛИТЬ"; // mirror isDeletionConfirmed
+const displayName = (u) => (!u ? "Неизвестный пользователь" : u.deletedAt ? DELETED_LABEL : (u.name?.trim() || [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || "Пользователь")); // mirror formatUserDisplayName
+
+// Mirror of finalizeDeletion (atomic tombstone). `withRecovery` gates the
+// optional AccountDeletion recovery record — deletion itself never depends on it.
+async function deleteAccount(userId, requestType, requestedByUserId = null, withRecovery = true) {
   const token = randomBytes(32).toString("hex");
   const tokenHash = hmac("recovery", token);
   const now = new Date();
-  const restoreUntil = new Date(now.getTime() + 30 * 864e5);
+  const restoreUntil = withRecovery ? new Date(now.getTime() + 30 * 864e5) : null;
   const out = await p.$transaction(async (tx) => {
     const u = await tx.user.findUnique({ where: { id: userId }, select: { email: true, deletedAt: true } });
     if (!u || u.deletedAt) return null;
     if (await soleOwnerBlocking(userId)) return "sole_owner";
     const original = u.email, norm = normalize(original);
-    const flipped = await tx.user.updateMany({ where: { id: userId, deletedAt: null }, data: { email: tombstone(userId), passwordHash: null, phone: null, emailVerifiedAt: null, lastLoginAt: null, isActive: false, deletedAt: now, restoreUntil, deletionRequestedAt: now } });
+    const flipped = await tx.user.updateMany({ where: { id: userId, deletedAt: null }, data: { email: tombstone(userId), name: DELETED_LABEL, firstName: null, lastName: null, passwordHash: null, phone: null, emailVerifiedAt: null, lastLoginAt: null, isActive: false, deletedAt: now, restoreUntil, deletionRequestedAt: now } });
     if (flipped.count === 0) return null;
     await tx.companyUserAccess.deleteMany({ where: { userId } });
     await tx.clubUserAccess.deleteMany({ where: { userId } });
@@ -80,8 +86,12 @@ async function deleteAccount(userId, requestType, requestedByUserId = null) {
     await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now, revokedReason: "account_deleted" } });
     await tx.emailOtpChallenge.updateMany({ where: { userId, consumedAt: null, revokedAt: null }, data: { revokedAt: now, revokedReason: "account_deleted" } });
     await tx.invite.deleteMany({ where: { email: norm, acceptedAt: null } });
-    const del = await tx.accountDeletion.create({ data: { userId, requestedByUserId, requestType, originalEmailEncrypted: encryptEmail(norm), originalEmailHash: hmac("email", norm), originalEmailMasked: mask(original), restoreTokenHash: tokenHash, restoreUntil, confirmedAt: now, deletedAt: now } });
-    return { original, token, tokenHash, deletionId: del.id };
+    let deletionId = null;
+    if (withRecovery) {
+      const del = await tx.accountDeletion.create({ data: { userId, requestedByUserId, requestType, originalEmailEncrypted: encryptEmail(norm), originalEmailHash: hmac("email", norm), originalEmailMasked: mask(original), restoreTokenHash: tokenHash, restoreUntil, confirmedAt: now, deletedAt: now } });
+      deletionId = del.id;
+    }
+    return { original, token: withRecovery ? token : null, tokenHash, deletionId };
   });
   return out;
 }
@@ -126,7 +136,8 @@ async function main() {
   const deleted = await p.user.findUnique({ where: { id: OWNER } });
   check("13 email replaced by tombstone", deleted.email === tombstone(OWNER));
   check("deleted flags set", deleted.deletedAt && deleted.isActive === false && deleted.passwordHash === null && deleted.phone === null && deleted.emailVerifiedAt === null);
-  check("firstName/lastName-style name preserved", deleted.name === "Иван Иванов");
+  check("6 identity anonymized (name/first/last cleared)", deleted.name === DELETED_LABEL && deleted.firstName === null && deleted.lastName === null);
+  check("6b tombstone email is not the original email", !deleted.email.includes("owner@pilot.del"));
 
   // 18/20/22 sessions + challenges revoked, access removed, invites removed.
   check("18 sessions revoked", (await p.session.count({ where: { userId: OWNER, revokedAt: null } })) === 0);
@@ -182,6 +193,49 @@ async function main() {
   // 12 system_admin only via systemRole field (no CompanyUserAccess row).
   check("12 system_admin is a User.systemRole, not a Company role", (await p.companyUserAccess.count({ where: { userId: SYS, role: "system_admin" } })) === 0 && sysRow.systemRole === "system_admin");
 
+  // === Confirmation word (44/45) ===========================================
+  check("44 exact «УДАЛИТЬ» confirms", confirmed("УДАЛИТЬ") === true && confirmed(" УДАЛИТЬ ") === true);
+  check("45 wrong confirmation rejected", confirmed("удалить") === false && confirmed("DELETE") === false && confirmed("") === false && confirmed(null) === false);
+
+  // === Display helper (35/36) ==============================================
+  check("35 deleted user shows «Удалённый пользователь»", displayName({ name: "Иван Иванов", deletedAt: new Date() }) === DELETED_LABEL);
+  check("35b tombstone email/name never surfaces for deleted user", displayName({ name: tombstone("x"), deletedAt: new Date() }) === DELETED_LABEL);
+  check("36 active user still shows their name", displayName({ name: "Активный", deletedAt: null }) === "Активный");
+  check("36b null/unknown user is safe", displayName(null) === "Неизвестный пользователь");
+
+  // === Deletion WITHOUT recovery secret still fully deletes (config-free) ====
+  await p.user.create({ data: { id: "pilot-del-nr", email: "nr@pilot.del", name: "Без Восстановления", firstName: "Без", lastName: "Восст", role: "manager", passwordHash: "x", phone: "+7", isActive: true } });
+  await p.session.create({ data: { userId: "pilot-del-nr", tokenHash: "pilot-del-nr-sess", expiresAt: new Date(Date.now() + 864e5) } });
+  const delNr = await deleteAccount("pilot-del-nr", "self", null, /* withRecovery */ false);
+  const nr = await p.user.findUnique({ where: { id: "pilot-del-nr" } });
+  check("no-recovery: user tombstoned + anonymized", nr.deletedAt && nr.isActive === false && nr.name === DELETED_LABEL && nr.passwordHash === null);
+  check("no-recovery: email released (tombstone)", nr.email === tombstone("pilot-del-nr"));
+  check("no-recovery: sessions revoked", (await p.session.count({ where: { userId: "pilot-del-nr", revokedAt: null } })) === 0);
+  check("no-recovery: NO AccountDeletion record created", delNr.deletionId === null && (await p.accountDeletion.count({ where: { userId: "pilot-del-nr" } })) === 0);
+  const nrActiveReuse = await p.user.findFirst({ where: { email: "nr@pilot.del", isActive: true } });
+  check("no-recovery: released email has no active holder (reusable)", nrActiveReuse === null);
+
+  // === Idempotency: second delete is a no-op (46/47) ========================
+  const delAgain = await deleteAccount("pilot-del-nr", "self", null, false);
+  check("46/47 repeated delete on tombstoned user is a no-op", delAgain === null);
+
+  // === Static assertions on the real source ================================
+  const daSrc = readFileSync(new URL("../src/lib/account-deletion.ts", import.meta.url), "utf8");
+  const actSrc = readFileSync(new URL("../src/app/(app)/settings/security/delete-actions.ts", import.meta.url), "utf8");
+  const dispSrc = readFileSync(new URL("../src/lib/user-display.ts", import.meta.url), "utf8");
+  const sessSrc = readFileSync(new URL("../src/lib/session.ts", import.meta.url), "utf8");
+  check("S1 action re-auth: password + typed confirmation, current user only", actSrc.includes("verifyPassword(") && actSrc.includes("isDeletionConfirmed(") && actSrc.includes("requireUser()"));
+  check("S2 action never accepts userId/email as target", !/formData\.get\(["'](userId|targetEmail|email|companyId)["']\)/.test(actSrc));
+  check("S3 action has no OTP dependency", !actSrc.includes("startActionChallenge") && !actSrc.includes("verifyActionChallenge") && !actSrc.includes("recoveryConfigured"));
+  check("S4 tombstone clears name/first/last (anonymization)", daSrc.includes("name: DELETED_ACCOUNT_LABEL") && daSrc.includes("firstName: null") && daSrc.includes("lastName: null"));
+  check("S5 recovery record gated on recoveryConfigured()", daSrc.includes("const withRecovery = recoveryConfigured()") && daSrc.includes("if (withRecovery)"));
+  check("S6 audit metadata uses masked email (no raw email/token)", daSrc.includes("maskedEmail: maskEmail(result.originalEmail)") && daSrc.includes("// Safe metadata only"));
+  check("S7 display helper returns «Удалённый пользователь» for deletedAt", dispSrc.includes('if (user.deletedAt) return DELETED_ACCOUNT_LABEL'));
+  check("S8 auth guard rejects inactive user (session invalid)", sessSrc.includes("!session.user.isActive"));
+  check("S9 finalize idempotent (conditional updateMany on deletedAt null)", daSrc.includes("where: { id: userId, deletedAt: null }"));
+  check("S10 action redirects to /login after success", actSrc.includes('redirect("/login?deleted=1")') && actSrc.includes('revokeCurrentSession("account_deleted")'));
+
+  await p.user.deleteMany({ where: { id: "pilot-del-nr" } }).catch(() => {});
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();

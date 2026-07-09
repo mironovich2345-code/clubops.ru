@@ -365,10 +365,13 @@ export async function confirmOwnerDeletion(_prev: OwnerDeleteState | undefined, 
   await clearActionCookie("owner_delete");
   if (!result.ok) return { ok: false, stage: "start", error: result.error, targetUserId };
 
-  // Notify the target on their ORIGINAL email + send the recovery link.
+  // Notify the target on their ORIGINAL email + send the recovery link (only
+  // when a recovery record was created — i.e. the recovery secret is configured).
   const requestId = targetUserId.slice(0, 8);
-  const restoreUrl = absoluteUrlSafe(`/restore-account?token=${result.recoveryToken}`);
-  if (restoreUrl) await sendRecoveryLinkEmail(result.originalEmail, restoreUrl, requestId);
+  if (result.recoveryToken) {
+    const restoreUrl = absoluteUrlSafe(`/restore-account?token=${result.recoveryToken}`);
+    if (restoreUrl) await sendRecoveryLinkEmail(result.originalEmail, restoreUrl, requestId);
+  }
   await sendDeletionCompletedEmail(result.originalEmail, requestId, true);
   // finalizeDeletion already writes the account.deleted audit event.
 
