@@ -51,6 +51,7 @@ const pilots = [
   ["Invoices phase 1", "pilot-invoices.mjs"],
   ["Refunds phase 1", "pilot-refunds.mjs"],
   ["Invoice AI pipeline", "pilot-invoice-ai.mjs"],
+  ["Health / deployment version", "pilot-health.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
