@@ -24,6 +24,25 @@ export function getLastTestEmail(): CapturedEmail | null {
   return lastTestEmail;
 }
 
+/**
+ * Whether email delivery is available (test transport in dev/test, or a fully
+ * configured SMTP transport). Actions that REQUIRE an OTP (password / email
+ * change) gate on this and show a clear message when false — never a crash and
+ * never a console.log fallback. Exposes no secret values.
+ */
+export function emailConfigured(): boolean {
+  return testTransportEnabled() || readSmtpConfig() !== null;
+}
+
+/** Safe, value-free email configuration diagnostics (for /api/health). */
+export function emailConfigStatus(): { provider: "configured" | "absent"; sender: "configured" | "absent" } {
+  const cfg = readSmtpConfig();
+  return {
+    provider: cfg || testTransportEnabled() ? "configured" : "absent",
+    sender: cfg?.from || testTransportEnabled() ? "configured" : "absent",
+  };
+}
+
 // --- Real SMTP transport ---------------------------------------------------
 let cachedTransport: Transporter | null = null;
 
@@ -171,13 +190,22 @@ function codeBlock(code: string): string {
   return `<p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>`;
 }
 
-/** OTP for a sensitive account action (deletion or restoration). */
+export type ActionEmailKind = "deletion" | "restore" | "change_password" | "change_email_current" | "change_email_new";
+
+const ACTION_EMAIL_LABEL: Record<ActionEmailKind, { what: string; subject: string }> = {
+  deletion: { what: "удаление аккаунта", subject: "Код подтверждения удаления аккаунта CLUB-OPS" },
+  restore: { what: "восстановление аккаунта", subject: "Код восстановления аккаунта CLUB-OPS" },
+  change_password: { what: "изменение пароля", subject: "Код подтверждения изменения пароля CLUB-OPS" },
+  change_email_current: { what: "изменение email — подтверждение текущей почты", subject: "Код подтверждения изменения email CLUB-OPS" },
+  change_email_new: { what: "изменение email — подтверждение новой почты", subject: "Код подтверждения новой почты CLUB-OPS" },
+};
+
+/** OTP for a sensitive account action (deletion / restore / password / email). */
 export function sendActionOtpEmail(
   to: string, code: string, expiresMinutes: number, requestId: string,
-  kind: "deletion" | "restore",
+  kind: ActionEmailKind,
 ): Promise<SendResult> {
-  const what = kind === "deletion" ? "удаление аккаунта" : "восстановление аккаунта";
-  const subject = kind === "deletion" ? "Код подтверждения удаления аккаунта CLUB-OPS" : "Код восстановления аккаунта CLUB-OPS";
+  const { what, subject } = ACTION_EMAIL_LABEL[kind];
   const text =
     `CLUB-OPS\n\nКод для действия «${what}»: ${code}\n` +
     `Код действует ${expiresMinutes} минут.\n\nНикому не сообщайте этот код. Если вы не запрашивали это действие, проигнорируйте письмо.`;

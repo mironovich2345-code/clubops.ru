@@ -52,6 +52,8 @@ const pilots = [
   ["Refunds phase 1", "pilot-refunds.mjs"],
   ["Invoice AI pipeline", "pilot-invoice-ai.mjs"],
   ["Health / deployment version", "pilot-health.mjs"],
+  ["Account settings", "pilot-account-settings.mjs"],
+  ["Employee role management", "pilot-employee-role-management.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;

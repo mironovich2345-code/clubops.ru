@@ -1,8 +1,12 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requireUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { maskEmail } from "@/lib/otp";
+import { emailConfigured } from "@/lib/email";
 import { getCurrentSessionId, listActiveSessionsForUser } from "@/lib/session";
 import { endOwnSession, endOtherOwnSessions, endAllOwnSessions } from "./actions";
 import { DeleteAccountFlow } from "./_components/DeleteAccountFlow";
+import { PersonalDataForm, PasswordChangeFlow, EmailChangeFlow } from "./_components/AccountForms";
 
 export const dynamic = "force-dynamic";
 
@@ -12,15 +16,30 @@ const dateFmt = new Intl.DateTimeFormat("ru-RU", {
 
 export default async function SecurityPage() {
   const user = await requireUser();
-  const [sessions, currentId] = await Promise.all([
+  const [sessions, currentId, profile] = await Promise.all([
     listActiveSessionsForUser(user.id),
     getCurrentSessionId(),
+    prisma.user.findUnique({ where: { id: user.id }, select: { firstName: true, lastName: true, email: true, updatedAt: true } }),
   ]);
   const others = sessions.filter((s) => s.id !== currentId).length;
+  const emailEnabled = emailConfigured();
+  const maskedEmail = profile ? maskEmail(profile.email) : "";
 
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Безопасность" description="Активные сессии вашей учётной записи" />
+      <PageHeader title="Безопасность" description="Личные данные, пароль, email и активные сессии" />
+
+      {profile ? (
+        <PersonalDataForm
+          firstName={profile.firstName ?? ""}
+          lastName={profile.lastName ?? ""}
+          updatedAt={profile.updatedAt.toISOString()}
+        />
+      ) : null}
+      <PasswordChangeFlow emailEnabled={emailEnabled} maskedEmail={maskedEmail} />
+      <EmailChangeFlow emailEnabled={emailEnabled} maskedEmail={maskedEmail} />
+
+      <div className="mt-8 mb-2 text-sm font-semibold text-slate-700">Активные сессии</div>
 
       <div className="mb-4 flex flex-wrap gap-2">
         <form action={endOtherOwnSessions}>

@@ -10,7 +10,7 @@ import type { EmailOtpChallenge, Prisma, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/tokens";
 import { recordAudit } from "@/lib/access";
-import { sendActionOtpEmail } from "@/lib/email";
+import { sendActionOtpEmail, type ActionEmailKind } from "@/lib/email";
 import {
   generateOtp, otpDigest, verifyOtp, maskEmail,
   OTP_TTL_MS, OTP_RESEND_COOLDOWN_MS, OTP_MAX_SENDS_PER_HOUR,
@@ -18,8 +18,10 @@ import {
 
 type Db = typeof prisma | Prisma.TransactionClient;
 
-export type ActionPurpose = "account_deletion" | "owner_delete" | "account_restore" | "account_restore_admin";
-type Kind = "deletion" | "restore";
+export type ActionPurpose =
+  | "account_deletion" | "owner_delete" | "account_restore" | "account_restore_admin"
+  | "change_password" | "change_email_current" | "change_email_new";
+type Kind = ActionEmailKind;
 
 const EXPIRES_MINUTES = Math.round(OTP_TTL_MS / 60000);
 const newRequestId = () => randomBytes(8).toString("hex");
@@ -29,6 +31,9 @@ function cookieFor(purpose: ActionPurpose): { name: string; path: string } {
   if (purpose === "account_deletion") return { name: "club_ops_delete_challenge", path: "/settings/security" };
   if (purpose === "owner_delete") return { name: "club_ops_owner_delete_challenge", path: "/users" };
   if (purpose === "account_restore_admin") return { name: "club_ops_admin_restore_challenge", path: "/system-admin" };
+  if (purpose === "change_password") return { name: "club_ops_pwd_challenge", path: "/settings/security" };
+  if (purpose === "change_email_current") return { name: "club_ops_email1_challenge", path: "/settings/security" };
+  if (purpose === "change_email_new") return { name: "club_ops_email2_challenge", path: "/settings/security" };
   return { name: "club_ops_restore_challenge", path: "/restore-account" };
 }
 
@@ -77,7 +82,9 @@ export async function startActionChallenge(opts: {
   });
   await setCookie(purpose, token, expiresAt);
   const requestId = newRequestId();
-  const auditSent = isDeletionPurpose(purpose) ? "account.deletion_otp_sent" : "account.restore_otp_sent";
+  const auditSent = isDeletionPurpose(purpose)
+    ? "account.deletion_otp_sent"
+    : purpose.startsWith("change_") ? "account.security_otp_sent" : "account.restore_otp_sent";
 
   const sent = await sendActionOtpEmail(deliverTo, otp, EXPIRES_MINUTES, requestId, kind);
   if (!sent.ok) {
@@ -115,7 +122,9 @@ export async function verifyActionChallenge(purpose: ActionPurpose, code: string
   const current = await getActionChallenge(purpose);
   if (!current) { await clearActionCookie(purpose); return { ok: false, expired: true }; }
   const { challenge, user } = current;
-  const failAudit = isDeletionPurpose(purpose) ? "account.deletion_otp_failed" : "account.restore_failed";
+  const failAudit = isDeletionPurpose(purpose)
+    ? "account.deletion_otp_failed"
+    : purpose.startsWith("change_") ? "account.security_otp_failed" : "account.restore_failed";
 
   if (challenge.attemptCount >= challenge.maxAttempts) {
     await prisma.emailOtpChallenge.updateMany({ where: { id: challenge.id, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: "max_attempts" } });

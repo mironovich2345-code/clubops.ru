@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deploymentVersion } from "@/lib/deployment-version";
 import { storageProviderName } from "@/lib/storage";
+import { emailConfigured } from "@/lib/email";
 
 // Liveness probe for Docker / orchestrators / load balancers. Intentionally
 // dependency-free (no DB call) so it reports the app process being up and does
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export function GET() {
   return NextResponse.json(
-    { status: "ok", service: "club-ops", time: new Date().toISOString(), ...deploymentVersion(), storage: storageProviderName() },
+    { status: "ok", service: "club-ops", time: new Date().toISOString(), ...deploymentVersion(), storage: storageProviderName(), email: emailConfigured() ? "configured" : "absent" },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

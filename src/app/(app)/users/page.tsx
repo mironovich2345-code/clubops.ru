@@ -14,9 +14,12 @@ import {
 import { countActiveSessionsForUser } from "@/lib/session";
 import { INVITE_ROLE_LABELS } from "@/lib/invites";
 import { ROLE_LABELS } from "@/lib/navigation";
+import { prisma } from "@/lib/prisma";
+import { classifyRoleShape } from "@/lib/employee-roles";
 import { InviteForm } from "./_components/InviteForm";
 import { UserAdminControls } from "./_components/UserAdminControls";
 import { OwnerDeleteControl } from "./_components/OwnerDeleteControl";
+import { RoleControls } from "./_components/RoleControls";
 import { removeAccess } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +65,17 @@ export default async function UsersPage() {
   );
   // Show the per-user admin block once (on the first row of each user).
   const seenUser = new Set<string>();
+
+  // GD-only manager↔regional conversions: per-user role shape + active clubs.
+  const activeClubs = isGeneralDirector
+    ? await prisma.club.findMany({ where: { companyId, isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+    : [];
+  const rolesByUser = new Map<string, string[]>();
+  for (const m of members) rolesByUser.set(m.user.id, [...(rolesByUser.get(m.user.id) ?? []), m.role]);
+  function roleShapeOf(uid: string): "manager" | "regional" | null {
+    const shape = classifyRoleShape(rolesByUser.get(uid) ?? [], false);
+    return shape === "manager" || shape === "regional" ? shape : null;
+  }
 
   function canRemove(member: CompanyMember): boolean {
     if (member.user.id === user.id) return false; // no self-lockout
@@ -147,6 +161,14 @@ export default async function UsersPage() {
                               isActive={member.user.isActive}
                               sessionCount={sessionCounts.get(member.user.id) ?? 0}
                             />
+                            {isGeneralDirector && member.user.isActive && roleShapeOf(member.user.id) ? (
+                              <RoleControls
+                                userId={member.user.id}
+                                userName={member.user.name}
+                                shape={roleShapeOf(member.user.id)!}
+                                clubs={activeClubs}
+                              />
+                            ) : null}
                             {isOwner ? <OwnerDeleteControl targetUserId={member.user.id} /> : null}
                           </>
                         );

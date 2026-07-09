@@ -27,9 +27,15 @@ function storageProviderName(env) {
   return env.STORAGE_PROVIDER === "s3" ? "s3" : "local";
 }
 
+// Mirror of email presence: test transport (dev) or full SMTP config.
+function emailConfigured(env) {
+  if (env.OTP_TEST_TRANSPORT === "1" || env.NODE_ENV === "test") return true;
+  return Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD && (env.SMTP_FROM || env.SMTP_USER));
+}
+
 // The full health payload shape, as the route builds it.
 function healthPayload(env) {
-  return { status: "ok", service: "club-ops", time: "<iso>", ...deploymentVersion(env), storage: storageProviderName(env) };
+  return { status: "ok", service: "club-ops", time: "<iso>", ...deploymentVersion(env), storage: storageProviderName(env), email: emailConfigured(env) ? "configured" : "absent" };
 }
 
 // 1. commit returned from RAILWAY_GIT_COMMIT_SHA when present
@@ -78,7 +84,8 @@ function healthPayload(env) {
   check("4 no secret/forbidden identifier in response", leaked.length === 0, leaked.join(","));
   // Only the whitelisted keys are present on the payload.
   const keys = Object.keys(healthPayload(dirtyEnv)).sort().join(",");
-  check("4b response keys are exactly the whitelist", keys === "commit,deploymentId,environment,service,status,storage,time", keys);
+  check("4b response keys are exactly the whitelist", keys === "commit,deploymentId,email,environment,service,status,storage,time", keys);
+  check("4f email diagnostic is a bare status (no address/credentials)", ["configured", "absent"].includes(healthPayload(dirtyEnv).email) && !JSON.stringify(healthPayload({ ...dirtyEnv, SMTP_HOST: "smtp.secret.host", SMTP_USER: "user@secret", SMTP_PASSWORD: "pw" })).includes("secret"));
   // Storage exposes only the provider NAME, never bucket/endpoint/keys/region.
   const withS3 = healthPayload({ ...dirtyEnv, STORAGE_PROVIDER: "s3", S3_BUCKET: "secret-bucket", S3_ENDPOINT: "https://secret.endpoint", S3_ACCESS_KEY_ID: "AKIA_SECRET", S3_SECRET_ACCESS_KEY: "s3-secret" });
   check("4c storage is the provider name only", withS3.storage === "s3");
