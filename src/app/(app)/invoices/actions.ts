@@ -15,6 +15,7 @@ import {
   applyInvoiceAction,
   canEditInvoice,
   canAddPaidInvoice,
+  invoiceSubmitBlockedReason,
   INVOICE_ACTION_AUDIT,
   type InvoiceAction,
 } from "@/lib/invoices";
@@ -569,6 +570,17 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
   const closedTx = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
   if (closedTx) throw new Error(closedTx);
 
+  // Sending a draft for review requires the minimum data (counterparty, amount,
+  // file). AI confidence is NOT a gate — a hand-filled invoice may always be sent.
+  if (action === "send_to_review") {
+    const blocked = invoiceSubmitBlockedReason({
+      counterpartyName: existing.counterpartyName,
+      amountKopeks: existing.amountKopeks,
+      hasFile: Boolean(existing.originalFileStorageKey),
+    });
+    if (blocked) throw new Error(blocked);
+  }
+
   // Resolve approver routing from live access (regional vs chief fallback) + the
   // self-approval rule, then apply the pure decision table.
   const hasActiveRegional = await hasActiveRegionalApproverForClub(existing.companyId, existing.clubId);
@@ -589,10 +601,16 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
     throw new Error(result.error);
   }
 
-  await prisma.invoice.update({
-    where: { id: invoiceId },
+  // Conditional (compare-and-set) update on the exact current status: only one
+  // concurrent request can flip the status. A stale/duplicate submit updates 0
+  // rows and gets a clear "already changed" message — never a raw Prisma error.
+  const updated = await prisma.invoice.updateMany({
+    where: { id: invoiceId, status: existing.status },
     data: { status: result.to, paidAt: result.to === "paid" ? new Date() : null },
   });
+  if (updated.count === 0) {
+    throw new Error("Статус счёта уже изменён. Обновите страницу.");
+  }
 
   const approverRole = hasActiveRegional ? "regional_director" : "chief_accountant";
   const auditAction =

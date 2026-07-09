@@ -8,10 +8,11 @@ import type { Role } from "@/lib/auth";
 import { canCreateOperational } from "@/lib/auth";
 import {
   INVOICE_AWAITING_PAYMENT_STATUSES,
-  getInvoiceReportingMonth,
+  getInvoiceOperationalMonth,
   isInvoiceOverdue,
   canAddPaidInvoice,
 } from "@/lib/invoices";
+import { formatUserDisplayName } from "@/lib/user-display";
 
 // Roles that get the broader (elevated) invoice view. system_admin is absent on
 // purpose — it never gets financial access automatically.
@@ -32,6 +33,23 @@ export type InvoiceReportingRow = {
   reportingMonth: string;
   overdue: boolean;
   createdByUserId: string;
+};
+
+// A row in the month-independent «Ожидают проверки» regional queue.
+export type InvoiceReviewRow = {
+  id: string;
+  clubId: string;
+  clubName: string;
+  city: string;
+  counterpartyName: string | null;
+  invoiceNumber: string | null;
+  amountKopeks: number;
+  status: string;
+  createdByUserId: string;
+  createdByName: string;
+  dueDate: string | null;
+  submittedAt: string | null;
+  createdAt: string;
 };
 
 export type CategoryDistributionItem = { category: string; amountKopeks: number; count: number };
@@ -59,6 +77,10 @@ export type InvoicesView = {
   summary: ManagerSummary | ElevatedSummary;
   currentPeriodInvoices: InvoiceReportingRow[];
   carriedOverdueInvoices: InvoiceReportingRow[];
+  // «Ожидают проверки» — all needs_review in scope, INDEPENDENT of the selected
+  // month (only populated for roles that review: elevated). Empty for managers.
+  regionalReviewQueue: InvoiceReviewRow[];
+  showReviewQueue: boolean;
   categoryDistribution: CategoryDistributionItem[];
   permissions: { canAddPaidInvoice: boolean; canUploadInvoice: boolean; canViewPastMonths: boolean };
 };
@@ -100,7 +122,9 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
     summary: roleView === "manager"
       ? { pendingPaymentAmountKopeks: 0, overdueAmountKopeks: 0, sentCount: 0 }
       : { pendingPaymentAmountKopeks: 0, overdueAmountKopeks: 0, sentCount: 0, totalInvoiceAmountKopeks: 0, paidAmountKopeks: 0 },
-    currentPeriodInvoices: [], carriedOverdueInvoices: [], categoryDistribution: [], permissions,
+    currentPeriodInvoices: [], carriedOverdueInvoices: [],
+    regionalReviewQueue: [], showReviewQueue: roleView === "elevated",
+    categoryDistribution: [], permissions,
   });
 
   if (!companyId || roleView === "none") return base();
@@ -142,17 +166,39 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
   // Managers only ever see invoices they created (their own).
   const creatorFilter = roleView === "manager" ? { createdByUserId: ctx.user.id } : {};
   const LIVE = INVOICE_AWAITING_PAYMENT_STATUSES as unknown as string[];
+  // Managers also see their own operational work-in-progress (drafts + rejected)
+  // so a saved draft never disappears. Elevated roles don't get drafts in the
+  // period list — they act on the dedicated review queue instead.
+  // Managers additionally see their own drafts/rejected (empty for elevated).
+  const managerExtraStatuses = roleView === "manager" ? ["draft", "rejected"] : [];
+  const incl = { club: { select: { id: true, name: true, city: true } } } as const;
+  // Review queue clubs: ALL accessible clubs of the company (never narrowed by the
+  // city/club filter); empty for non-elevated so the query returns nothing.
+  const reviewClubIds = isElevated ? availableClubs.map((c) => c.id) : [];
 
-  // Two bounded queries: paid-in-month + all open (live-unpaid) obligations in
-  // scope. We never load the whole company history into memory.
-  const [paidInMonth, liveUnpaid] = await Promise.all([
+  // Bounded queries: paid-in-month, open obligations, manager drafts/rejected,
+  // and (elevated only) the month-independent needs_review review queue. Each uses
+  // an empty `in` filter when not applicable, so we never over-fetch.
+  const [paidInMonth, liveUnpaid, managerExtra, reviewQueueRaw] = await Promise.all([
     prisma.invoice.findMany({
       where: { companyId, clubId: { in: clubIds }, ...creatorFilter, status: "paid", paidAt: { gte: start, lt: end } },
-      include: { club: { select: { id: true, name: true, city: true } } },
+      include: incl,
     }),
     prisma.invoice.findMany({
       where: { companyId, clubId: { in: clubIds }, ...creatorFilter, status: { in: LIVE } },
-      include: { club: { select: { id: true, name: true, city: true } } },
+      include: incl,
+    }),
+    prisma.invoice.findMany({
+      where: { companyId, clubId: { in: clubIds }, ...creatorFilter, status: { in: managerExtraStatuses } },
+      include: incl,
+    }),
+    // Review queue: needs_review across accessible clubs — deliberately NOT bound
+    // by the selected month or the city/club filter, so a pending invoice can
+    // never be missed.
+    prisma.invoice.findMany({
+      where: { companyId, clubId: { in: reviewClubIds }, status: "needs_review" },
+      include: { ...incl, createdBy: { select: { name: true, firstName: true, lastName: true, deletedAt: true } } },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
 
@@ -162,14 +208,18 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
     amountKopeks: inv.amountKopeks, expenseCategory: inv.expenseCategory, status: inv.status,
     dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
     paidAt: inv.paidAt ? inv.paidAt.toISOString() : null,
-    reportingMonth: getInvoiceReportingMonth(inv), overdue: isInvoiceOverdue(inv, now),
+    // Operational month for list membership (draft/needs_review never hidden by a
+    // missing dueDate). Financial analytics elsewhere keep their own date rules.
+    reportingMonth: getInvoiceOperationalMonth(inv), overdue: isInvoiceOverdue(inv, now),
     createdByUserId: inv.createdByUserId,
   });
 
   const paidRows = paidInMonth.map(rowOf); // reporting month = paidAt month = selKey
   const unpaidRows = liveUnpaid.map(rowOf);
+  const extraRows = managerExtra.map(rowOf);
   const currentUnpaid = unpaidRows.filter((r) => r.reportingMonth === selKey);
-  const currentPeriodInvoices = [...paidRows, ...currentUnpaid];
+  const currentExtra = extraRows.filter((r) => r.reportingMonth === selKey);
+  const currentPeriodInvoices = [...paidRows, ...currentUnpaid, ...currentExtra];
   // Carried debt: overdue, unpaid, dueDate strictly before the selected month —
   // so it can never also be in the current-period set (no duplicate).
   const carriedOverdueInvoices = unpaidRows.filter(
@@ -193,16 +243,50 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
   });
   const sentCount = sentAudits.filter((a) => a.entityId).length;
 
+  // Financial rows for totals / distribution exclude operational-only rows
+  // (draft / rejected) — those are visible but are not committed spending.
+  const financialRows = currentPeriodInvoices.filter((r) => r.status !== "draft" && r.status !== "rejected");
+
   view.currentPeriodInvoices = currentPeriodInvoices;
   view.carriedOverdueInvoices = carriedOverdueInvoices;
   view.summary = roleView === "manager"
     ? { pendingPaymentAmountKopeks, overdueAmountKopeks, sentCount }
-    : { pendingPaymentAmountKopeks, overdueAmountKopeks, sentCount, totalInvoiceAmountKopeks: sum(currentPeriodInvoices), paidAmountKopeks: sum(paidRows) };
+    : { pendingPaymentAmountKopeks, overdueAmountKopeks, sentCount, totalInvoiceAmountKopeks: sum(financialRows), paidAmountKopeks: sum(paidRows) };
 
-  // Category distribution over the current-period set only (carried debt stays
-  // in its own overdue block, never mixed into this month's distribution).
+  // Submission times for the review queue (latest invoice.sent_to_review per
+  // invoice) — month-independent, display only.
+  const submittedAtById = new Map<string, string>();
+  if (reviewQueueRaw.length > 0) {
+    const sub = await prisma.auditLog.findMany({
+      where: { action: "invoice.sent_to_review", entityId: { in: reviewQueueRaw.map((i) => i.id) } },
+      select: { entityId: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+    for (const a of sub) if (a.entityId && !submittedAtById.has(a.entityId)) submittedAtById.set(a.entityId, a.createdAt.toISOString());
+  }
+
+  // Month-independent review queue rows (elevated only). Ordered oldest-first so
+  // the longest-waiting invoice is at the top.
+  view.regionalReviewQueue = reviewQueueRaw.map((inv) => {
+    const withCreator = inv as (typeof reviewQueueRaw)[number] & {
+      createdBy?: { name: string | null; firstName: string | null; lastName: string | null; deletedAt: Date | null } | null;
+    };
+    return {
+      id: inv.id, clubId: inv.clubId, clubName: inv.club.name, city: inv.club.city,
+      counterpartyName: inv.counterpartyName, invoiceNumber: inv.invoiceNumber,
+      amountKopeks: inv.amountKopeks, status: inv.status, createdByUserId: inv.createdByUserId,
+      createdByName: formatUserDisplayName(withCreator.createdBy ?? null),
+      dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
+      submittedAt: submittedAtById.get(inv.id) ?? null,
+      createdAt: inv.createdAt.toISOString(),
+    };
+  });
+  view.showReviewQueue = roleView === "elevated";
+
+  // Category distribution over the current-period FINANCIAL set only (carried
+  // debt stays in its own overdue block; drafts/rejected are excluded).
   const byCat = new Map<string, { amountKopeks: number; count: number }>();
-  for (const r of currentPeriodInvoices) {
+  for (const r of financialRows) {
     const key = r.expenseCategory ?? "—";
     const cur = byCat.get(key) ?? { amountKopeks: 0, count: 0 };
     cur.amountKopeks += r.amountKopeks; cur.count += 1;

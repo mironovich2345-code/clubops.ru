@@ -176,6 +176,9 @@ export function applyInvoiceAction(
     case "send_to_review":
       if (status !== "draft") return { ok: false, error: "Отправить на согласование можно только черновик" };
       if (!(isManager || isRegional)) return { ok: false, error: "Недостаточно прав" };
+      // Only the author submits their own draft — a regional/other manager does
+      // not send on someone else's behalf (they review it once it arrives).
+      if (!opts.isCreator) return { ok: false, error: "Отправить на проверку может только автор счёта" };
       return { ok: true, to: "needs_review" };
 
     case "approve": {
@@ -299,6 +302,62 @@ export function getInvoiceReportingDate(inv: InvoiceDates): Date {
 }
 export function getInvoiceReportingMonth(inv: InvoiceDates): string {
   return monthKeyOf(getInvoiceReportingDate(inv));
+}
+
+// --- Operational visibility (list membership) — separate from financial period -
+// A draft / awaiting invoice must never vanish from the operational list just
+// because a financial date (dueDate/invoiceDate) is missing. The OPERATIONAL
+// month decides which month the invoices page shows a row in; it is NOT a
+// financial reporting date (dashboard / budgets / analytics keep using
+// getInvoiceReportingMonth / invoiceExpensePeriod, which are untouched).
+
+/** Confirmed-but-unpaid statuses (approved by someone, awaiting payment). */
+const INVOICE_CONFIRMED_UNPAID_STATUSES = [
+  "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner",
+];
+
+/**
+ * Operational month for the invoices list:
+ *  - paid          → paidAt (when money left)
+ *  - approved_*     → dueDate (the confirmed obligation month) — financial rule kept
+ *  - draft / needs_review / rejected → invoiceDate, else createdAt (never hidden
+ *    by a missing dueDate). Every branch falls back to createdAt so a row can
+ *    never disappear for lack of a date.
+ */
+export function getInvoiceOperationalDate(inv: InvoiceDates): Date {
+  if (isInvoicePaid(inv.status)) return inv.paidAt ?? inv.dueDate ?? inv.invoiceDate ?? inv.createdAt;
+  if (INVOICE_CONFIRMED_UNPAID_STATUSES.includes(inv.status)) return inv.dueDate ?? inv.invoiceDate ?? inv.createdAt;
+  return inv.invoiceDate ?? inv.createdAt;
+}
+export function getInvoiceOperationalMonth(inv: InvoiceDates): string {
+  return monthKeyOf(getInvoiceOperationalDate(inv));
+}
+
+/** Statuses a manager always sees in their own operational list (own club).
+ * canceled is excluded (soft-deleted); everything else is work they can track. */
+export const INVOICE_MANAGER_VISIBLE_STATUSES = [
+  "draft", "needs_review", "approved_by_regional", "approved_by_chief_accountant",
+  "approved_by_owner", "rejected", "paid",
+] as const;
+
+/** The active regional-review queue predicate (status only). Month-independent. */
+export function isAwaitingRegionalReview(status: string): boolean {
+  return status === "needs_review";
+}
+
+/**
+ * Whether a draft has the minimum data to be sent for review: a counterparty,
+ * a positive amount and an attached file. AI confidence is NOT a gate — a
+ * manager who filled the fields by hand may always submit. Pure; returns a
+ * reason string when not ready, else null.
+ */
+export function invoiceSubmitBlockedReason(inv: {
+  counterpartyName: string | null; amountKopeks: number; hasFile: boolean;
+}): string | null {
+  if (!inv.counterpartyName || !inv.counterpartyName.trim()) return "Укажите контрагента перед отправкой на проверку";
+  if (!(inv.amountKopeks > 0)) return "Укажите сумму больше нуля перед отправкой на проверку";
+  if (!inv.hasFile) return "К счёту должен быть прикреплён файл перед отправкой на проверку";
+  return null;
 }
 
 /**

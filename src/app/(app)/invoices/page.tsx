@@ -93,6 +93,9 @@ export default async function InvoicesPage({
       {/* 5. Summary cards */}
       <div className="mt-4">{isManager ? <ManagerCards view={view} /> : <ElevatedCards view={view} />}</div>
 
+      {/* 5b. Active review queue — above analytics/history, month-independent. */}
+      {view.showReviewQueue ? <ReviewQueue view={view} /> : null}
+
       {/* 6. Analytics — categories (+ by-club for elevated) */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <CategoryBlock view={view} />
@@ -298,6 +301,47 @@ function CarriedOverdue({ view }: { view: InvoicesView }) {
   );
 }
 
+// --- Active regional review queue (month-independent) -----------------------
+
+function ReviewQueue({ view }: { view: InvoicesView }) {
+  const rows = view.regionalReviewQueue;
+  return (
+    <div className={`mt-4 overflow-hidden ${CARD}`}>
+      <div className="flex items-center justify-between border-b border-amber-200 bg-amber-50 px-4 py-3">
+        <span className="text-sm font-semibold text-amber-900">Ожидают проверки</span>
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">{rows.length}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-slate-500">Нет счетов, ожидающих проверки</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Управляющий</Th><Th>Клуб</Th><Th>Отправлен</Th><Th>Срок оплаты</Th><Th>Действия</Th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {rows.map((r) => (
+                <tr key={r.id} className="hover:bg-slate-50">
+                  <Td>
+                    <div className="font-medium text-slate-900">{r.counterpartyName ?? "— без контрагента —"}</div>
+                    {r.invoiceNumber ? <div className="text-xs text-slate-500">№ {r.invoiceNumber}</div> : null}
+                  </Td>
+                  <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
+                  <Td className="whitespace-nowrap text-slate-600">{r.createdByName}</Td>
+                  <Td className="whitespace-nowrap text-slate-600">{r.clubName}</Td>
+                  <Td className="whitespace-nowrap text-slate-500">{dateFmt.format(new Date(r.submittedAt ?? r.createdAt))}</Td>
+                  <Td className="whitespace-nowrap text-slate-500">{r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—"}</Td>
+                  <Td><OpenLink id={r.id} /></Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Main list --------------------------------------------------------------
 
 function MainList({ view }: { view: InvoicesView }) {
@@ -325,7 +369,7 @@ function MainList({ view }: { view: InvoicesView }) {
                   <Td className="whitespace-nowrap">{INVOICE_STATUS_LABELS[r.status] ?? r.status}{r.overdue ? <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">просрочен</span> : null}</Td>
                   <Td className="whitespace-nowrap text-slate-600">{r.clubName}</Td>
                   <Td className="whitespace-nowrap text-slate-500">{r.status === "paid" ? (r.paidAt ? `оплачен ${dateFmt.format(new Date(r.paidAt))}` : "оплачен") : r.dueDate ? `до ${dateFmt.format(new Date(r.dueDate))}` : "—"}</Td>
-                  <Td><OpenLink id={r.id} /></Td>
+                  <Td><OpenLink id={r.id} label={r.status === "draft" ? "Продолжить заполнение" : "Открыть"} /></Td>
                 </tr>
               ))
             )}
@@ -336,10 +380,10 @@ function MainList({ view }: { view: InvoicesView }) {
   );
 }
 
-function OpenLink({ id }: { id: string }) {
+function OpenLink({ id, label = "Открыть" }: { id: string; label?: string }) {
   return (
     <Link href={`/invoices/${id}`} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
-      Открыть
+      {label}
     </Link>
   );
 }

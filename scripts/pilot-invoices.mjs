@@ -12,16 +12,24 @@ const check = (n, c, x = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${x ?
 
 // --- Mirrors of lib/invoices.ts -------------------------------------------
 const AWAITING = ["needs_review", "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
+const CONFIRMED_UNPAID = ["approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
+const MANAGER_EXTRA = ["draft", "rejected"]; // operational-only visible statuses
 const ELEVATED = ["regional_director", "accountant", "chief_accountant", "owner", "general_director"];
 const OPERATIONAL = ["regional_director", "manager", "accountant", "chief_accountant"];
 const isPaid = (s) => s === "paid";
 const isAwaiting = (s) => AWAITING.includes(s);
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+// Financial reporting date (unchanged; dashboard/budgets use their own rule).
 const reportingDate = (i) => (isPaid(i.status) ? (i.paidAt ?? i.dueDate ?? i.invoiceDate ?? i.createdAt) : (i.dueDate ?? i.invoiceDate ?? i.createdAt));
 const reportingMonth = (i) => monthKey(reportingDate(i));
+// Operational month for the invoices-page list: paid→paidAt, confirmed-unpaid→
+// dueDate, draft/needs_review/rejected→invoiceDate??createdAt (never hidden).
+const operationalDate = (i) => (isPaid(i.status) ? (i.paidAt ?? i.dueDate ?? i.invoiceDate ?? i.createdAt) : CONFIRMED_UNPAID.includes(i.status) ? (i.dueDate ?? i.invoiceDate ?? i.createdAt) : (i.invoiceDate ?? i.createdAt));
+const operationalMonth = (i) => monthKey(operationalDate(i));
 const isOverdue = (i, now) => isAwaiting(i.status) && !!i.dueDate && i.dueDate.getTime() < now.getTime();
 const canAddPaid = (roles) => roles.includes("accountant") || roles.includes("chief_accountant");
 const canCreateOp = (roles) => OPERATIONAL.some((r) => roles.includes(r));
+const submitBlocked = (i) => (!i.counterpartyName || !String(i.counterpartyName).trim() ? "counterparty" : !(i.amountKopeks > 0) ? "amount" : !i.hasFile ? "file" : null);
 
 // --- Mirror of lib/invoice-view.ts getInvoicesView ------------------------
 function buildView(ctx, raw, invoices, sentEvents, now) {
@@ -46,20 +54,30 @@ function buildView(ctx, raw, invoices, sentEvents, now) {
     if (selectedClub) clubIds = [selectedClub]; else if (selectedCity) clubIds = availableClubs.filter((c) => c.city === selectedCity).map((c) => c.id);
   }
   const view = baseView(); view.availableClubs = availableClubs; view.availableCities = availableCities; view.selectedCity = selectedCity; view.selectedClub = selectedClub;
+  view.regionalReviewQueue = []; view.showReviewQueue = roleView === "elevated";
   if (!clubIds.length) return view;
   const inScope = invoices.filter((i) => i.companyId === ctx.companyId && clubIds.includes(i.clubId) && (roleView === "manager" ? i.createdByUserId === ctx.userId : true));
-  const paid = inScope.filter((i) => i.status === "paid" && i.paidAt && i.paidAt >= start && i.paidAt < end).map((i) => ({ ...i, reportingMonth: reportingMonth(i), overdue: isOverdue(i, now) }));
-  const live = inScope.filter((i) => AWAITING.includes(i.status)).map((i) => ({ ...i, reportingMonth: reportingMonth(i), overdue: isOverdue(i, now) }));
+  const row = (i) => ({ ...i, reportingMonth: operationalMonth(i), overdue: isOverdue(i, now) });
+  const paid = inScope.filter((i) => i.status === "paid" && i.paidAt && i.paidAt >= start && i.paidAt < end).map(row);
+  const live = inScope.filter((i) => AWAITING.includes(i.status)).map(row);
+  // Manager also sees own drafts/rejected by operational month.
+  const extra = roleView === "manager" ? inScope.filter((i) => MANAGER_EXTRA.includes(i.status)).map(row) : [];
   const currentUnpaid = live.filter((r) => r.reportingMonth === selKey);
-  const currentPeriodInvoices = [...paid, ...currentUnpaid];
+  const currentExtra = extra.filter((r) => r.reportingMonth === selKey);
+  const currentPeriodInvoices = [...paid, ...currentUnpaid, ...currentExtra];
   const carriedOverdueInvoices = live.filter((r) => r.overdue && r.dueDate && r.dueDate.getTime() < start.getTime() && r.reportingMonth !== selKey);
+  const financialRows = currentPeriodInvoices.filter((r) => r.status !== "draft" && r.status !== "rejected");
   const sum = (rows) => rows.reduce((s, r) => s + r.amountKopeks, 0);
   const pending = sum(currentUnpaid.filter((r) => !r.overdue));
   const overdue = sum(currentUnpaid.filter((r) => r.overdue)) + sum(carriedOverdueInvoices);
   const sentCount = new Set(sentEvents.filter((e) => e.companyId === ctx.companyId && clubIds.includes(e.clubId) && e.createdAt >= start && e.createdAt < end && (roleView === "manager" ? e.userId === ctx.userId : true)).map((e) => e.invoiceId)).size;
   view.currentPeriodInvoices = currentPeriodInvoices; view.carriedOverdueInvoices = carriedOverdueInvoices;
-  view.summary = roleView === "manager" ? { pendingPaymentAmountKopeks: pending, overdueAmountKopeks: overdue, sentCount } : { pendingPaymentAmountKopeks: pending, overdueAmountKopeks: overdue, sentCount, totalInvoiceAmountKopeks: sum(currentPeriodInvoices), paidAmountKopeks: sum(paid) };
-  const byCat = new Map(); for (const r of currentPeriodInvoices) { const k = r.expenseCategory ?? "—"; const c = byCat.get(k) ?? { amountKopeks: 0, count: 0 }; c.amountKopeks += r.amountKopeks; c.count++; byCat.set(k, c); }
+  // Month-independent review queue over ALL accessible clubs (not the filtered subset).
+  view.regionalReviewQueue = isElevated
+    ? invoices.filter((i) => i.companyId === ctx.companyId && availableClubs.some((c) => c.id === i.clubId) && i.status === "needs_review").sort((a, b) => a.createdAt - b.createdAt)
+    : [];
+  view.summary = roleView === "manager" ? { pendingPaymentAmountKopeks: pending, overdueAmountKopeks: overdue, sentCount } : { pendingPaymentAmountKopeks: pending, overdueAmountKopeks: overdue, sentCount, totalInvoiceAmountKopeks: sum(financialRows), paidAmountKopeks: sum(paid) };
+  const byCat = new Map(); for (const r of financialRows) { const k = r.expenseCategory ?? "—"; const c = byCat.get(k) ?? { amountKopeks: 0, count: 0 }; c.amountKopeks += r.amountKopeks; c.count++; byCat.set(k, c); }
   view.categoryDistribution = [...byCat.entries()].map(([category, v]) => ({ category, ...v })).sort((a, b) => b.amountKopeks - a.amountKopeks);
   return view;
 }
@@ -116,7 +134,9 @@ async function main() {
 
   // --- Carried overdue (10–16) ---
   // Manager mgr owns: a June overdue unpaid, a July paid, a July pending unpaid.
-  const carried = inv({ id: "carried", status: "needs_review", dueDate: d(2026, 6, 28), createdByUserId: "mgr", clubId: "A" });
+  // Confirmed-unpaid debt (approved) → reports to dueDate month, so it carries as
+  // an overdue debt from June into July. (needs_review is operational, not a debt.)
+  const carried = inv({ id: "carried", status: "approved_by_regional", dueDate: d(2026, 6, 28), createdByUserId: "mgr", clubId: "A" });
   const julPaid = inv({ id: "julpaid", status: "paid", dueDate: d(2026, 6, 20), paidAt: d(2026, 7, 3), amountKopeks: 5000, createdByUserId: "mgr", clubId: "A" });
   const julPending = inv({ id: "julpend", status: "approved_by_regional", dueDate: d(2026, 7, 25), amountKopeks: 2000, createdByUserId: "mgr", clubId: "A" });
   const mgrInvoices = [carried, julPaid, julPending];
@@ -265,6 +285,102 @@ async function main() {
   check("L2 manager view has no paidAmount key", !serialized.includes("paidAmountKopeks"));
   check("L3 manager view leaks no foreign invoice ids", !serialized.includes('"other"') && !serialized.includes('"rdi"'));
   check("L4 manager view rows are all own", [...vM.currentPeriodInvoices, ...vM.carriedOverdueInvoices].every((r) => r.createdByUserId === "mgr"));
+
+  // === Draft visibility for manager (100–109) ===============================
+  const draftBase = { companyId: "C1", clubId: "A", createdByUserId: "mgr", status: "draft", amountKopeks: 1000, expenseCategory: "household", invoiceDate: null, dueDate: null, paidAt: null, createdAt: d(2026, 7, 10) };
+  const draftSet = [
+    { ...draftBase, id: "dNoDate" },
+    { ...draftBase, id: "dInvDate", invoiceDate: d(2026, 7, 5) },
+    { ...draftBase, id: "dAiErr" },   // AI error → row is still a draft
+    { ...draftBase, id: "dLowConf", confidence: "low" },
+    { ...draftBase, id: "dFutureDue", dueDate: d(2026, 8, 20) }, // future dueDate must NOT hide a draft
+    { ...draftBase, id: "dOtherMgr", createdByUserId: "mgr2" },
+    { ...draftBase, id: "dOtherClub", clubId: "B" },
+    { ...draftBase, id: "dOtherCo", companyId: "C2", clubId: "X" },
+  ];
+  const vDraft = buildView(mgr, {}, draftSet, [], now);
+  const dIds = new Set(vDraft.currentPeriodInvoices.map((r) => r.id));
+  check("100 draft with future dueDate still visible to manager", dIds.has("dFutureDue"));
+  check("101 draft without dueDate visible", dIds.has("dNoDate"));
+  check("102 draft with invoiceDate visible", dIds.has("dInvDate"));
+  check("103 draft with AI error visible", dIds.has("dAiErr"));
+  check("104 draft with low confidence visible", dIds.has("dLowConf"));
+  check("105 other manager's draft NOT visible", !dIds.has("dOtherMgr"));
+  check("106 other club draft NOT visible", !dIds.has("dOtherClub"));
+  check("107 other company draft NOT visible", !dIds.has("dOtherCo"));
+  check("108 draft NOT counted in sentCount", vDraft.summary.sentCount === 0);
+  check("109 draft excluded from category distribution (financial)", vDraft.categoryDistribution.length === 0);
+
+  // === Regional review queue — month-independent (120–132) ==================
+  const nrA = inv({ id: "nrA", status: "needs_review", clubId: "A", createdByUserId: "mgr", createdAt: d(2026, 7, 1), dueDate: d(2026, 8, 10) });
+  const nrB = inv({ id: "nrB", status: "needs_review", clubId: "B", createdByUserId: "mgr2", createdAt: d(2026, 7, 2) });
+  const nrK = inv({ id: "nrK", status: "needs_review", clubId: "K", createdByUserId: "mgr", createdAt: d(2026, 7, 3) });
+  const nrX = inv({ id: "nrX", companyId: "C2", clubId: "X", status: "needs_review", createdAt: d(2026, 7, 4) });
+  const qDraftA = inv({ id: "qDraftA", status: "draft", clubId: "A", createdByUserId: "mgr" });
+  const qPaidA = inv({ id: "qPaidA", status: "paid", clubId: "A", paidAt: d(2026, 7, 5) });
+  const queueSet = [nrA, nrB, nrK, nrX, qDraftA, qPaidA];
+  const vRdQ = buildView(rd, {}, queueSet, [], now); // rd → clubs A,B
+  const qIds = new Set(vRdQ.regionalReviewQueue.map((r) => r.id));
+  check("120 regional sees needs_review in own club", qIds.has("nrA"));
+  check("121 regional does NOT see other-club needs_review (K)", !qIds.has("nrK"));
+  check("122 regional does NOT see other-company needs_review", !qIds.has("nrX"));
+  check("123 both accessible clubs visible (independent of author)", qIds.has("nrA") && qIds.has("nrB"));
+  check("124 draft NOT in review queue", !qIds.has("qDraftA"));
+  check("125 paid NOT in review queue", !qIds.has("qPaidA"));
+  check("126 selecting June does not change the queue", buildView(rd, { year: "2026", month: "6" }, queueSet, [], now).regionalReviewQueue.length === vRdQ.regionalReviewQueue.length);
+  check("127 selecting August does not change the queue", buildView(rd, { year: "2026", month: "8" }, queueSet, [], now).regionalReviewQueue.length === vRdQ.regionalReviewQueue.length);
+  check("128 dueDate null does not hide from queue", buildView(rd, {}, [inv({ id: "nrNoDue", status: "needs_review", clubId: "A", dueDate: null })], [], now).regionalReviewQueue.some((r) => r.id === "nrNoDue"));
+  check("129 invoiceDate in past month does not hide from queue", buildView(rd, {}, [inv({ id: "nrPast", status: "needs_review", clubId: "A", invoiceDate: d(2026, 1, 1), dueDate: null })], [], now).regionalReviewQueue.some((r) => r.id === "nrPast"));
+  const vMgrQ = buildView(mgr, {}, queueSet, [], now);
+  check("130 manager gets no review queue", vMgrQ.regionalReviewQueue.length === 0 && vMgrQ.showReviewQueue === false);
+  check("131 elevated club filter does not shrink the queue below full scope", buildView(rd, { clubId: "A" }, queueSet, [], now).regionalReviewQueue.length === vRdQ.regionalReviewQueue.length);
+  check("132 chief accountant also gets the queue", buildView(chf, {}, queueSet, [], now).regionalReviewQueue.length >= 2 && buildView(chf, {}, queueSet, [], now).showReviewQueue === true);
+
+  // === Period logic — operational vs financial (140–146) ====================
+  check("140 draft uses invoiceDate", operationalMonth({ status: "draft", invoiceDate: d(2026, 7, 5), createdAt: d(2026, 1, 1) }) === "2026-07");
+  check("141 draft without invoiceDate uses createdAt", operationalMonth({ status: "draft", invoiceDate: null, createdAt: d(2026, 7, 9) }) === "2026-07");
+  check("142 needs_review uses invoiceDate/createdAt, not dueDate", operationalMonth({ status: "needs_review", invoiceDate: null, dueDate: d(2026, 12, 1), createdAt: d(2026, 7, 1) }) === "2026-07");
+  check("143 paid uses paidAt", operationalMonth({ status: "paid", paidAt: d(2026, 7, 3), dueDate: d(2026, 6, 1) }) === "2026-07");
+  check("144 confirmed-unpaid uses dueDate", operationalMonth({ status: "approved_by_regional", dueDate: d(2026, 7, 25), invoiceDate: d(2026, 1, 1), createdAt: d(2026, 1, 1) }) === "2026-07");
+  check("145 old overdue confirmed debt keeps its dueDate month", operationalMonth({ status: "approved_by_regional", dueDate: d(2026, 5, 1) }) === "2026-05");
+  check("146 financial reporting date (dashboard) rule untouched", reportingMonth({ status: "approved_by_regional", dueDate: d(2026, 6, 28), invoiceDate: null, createdAt: d(2026, 1, 1), paidAt: null }) === "2026-06");
+
+  // === Submission authorization + readiness (150–159) =======================
+  const canSend = (status, roles, isCreator) => status === "draft" && (roles.includes("manager") || roles.includes("regional_director")) && isCreator;
+  check("150 manager-author can send own draft", canSend("draft", ["manager"], true) === true);
+  check("151 other manager cannot send", canSend("draft", ["manager"], false) === false);
+  check("152 regional cannot send on behalf (not creator)", canSend("draft", ["regional_director"], false) === false);
+  check("153 accountant cannot send", canSend("draft", ["accountant"], true) === false);
+  check("154 cannot send a non-draft", canSend("needs_review", ["manager"], true) === false);
+  check("155 submit blocked without counterparty", submitBlocked({ counterpartyName: null, amountKopeks: 1000, hasFile: true }) === "counterparty");
+  check("156 submit blocked with zero amount", submitBlocked({ counterpartyName: "X", amountKopeks: 0, hasFile: true }) === "amount");
+  check("157 submit blocked without file", submitBlocked({ counterpartyName: "X", amountKopeks: 1000, hasFile: false }) === "file");
+  check("158 submit ready with all required fields", submitBlocked({ counterpartyName: "X", amountKopeks: 1000, hasFile: true }) === null);
+  check("159 low AI confidence does NOT block submit", submitBlocked({ counterpartyName: "X", amountKopeks: 1000, hasFile: true, confidence: "low" }) === null);
+
+  // === Real-DB: idempotent submit + sentCount (160–163) =====================
+  const draftDb = await p.invoice.create({ data: { companyId: CO, clubId: "pilot-inv-club", createdByUserId: ACC_U, amountKopeks: 5000, currency: "RUB", status: "draft", confidence: "low", counterpartyName: "Поставщик", originalFileStorageKey: "invoices/x.pdf", invoiceDate: null, dueDate: null, createdAt: d(2026, 7, 10) } });
+  const first = await p.invoice.updateMany({ where: { id: draftDb.id, status: "draft" }, data: { status: "needs_review" } });
+  const second = await p.invoice.updateMany({ where: { id: draftDb.id, status: "draft" }, data: { status: "needs_review" } });
+  check("160 conditional submit updates exactly one row", first.count === 1);
+  check("161 duplicate submit updates zero rows (idempotent)", second.count === 0);
+  await p.auditLog.create({ data: { action: "invoice.sent_to_review", entityType: "Invoice", entityId: draftDb.id, companyId: CO, clubId: "pilot-inv-club", userId: ACC_U, createdAt: d(2026, 7, 10) } });
+  const sc = await p.auditLog.findMany({ where: { action: "invoice.sent_to_review", companyId: CO, createdAt: { gte: d(2026, 7, 1), lt: d(2026, 8, 1) } }, select: { entityId: true }, distinct: ["entityId"] });
+  check("162 sent audit yields sentCount = 1 for the month", sc.length === 1);
+  check("163 draft row flipped to needs_review exactly once", (await p.invoice.findUnique({ where: { id: draftDb.id } })).status === "needs_review");
+
+  // === Static assertions for the fix (S12–S18, U20–U23) =====================
+  check("S12 view uses the operational month helper", viewSrc.includes("getInvoiceOperationalMonth"));
+  check("S13 lib exposes operational helpers + submit gate + queue predicate", lib.includes("getInvoiceOperationalMonth") && lib.includes("invoiceSubmitBlockedReason") && lib.includes("isAwaitingRegionalReview"));
+  check("S14 send_to_review requires the author (pure table)", lib.includes("Отправить на проверку может только автор счёта"));
+  check("S15 transition uses conditional updateMany + clear stale message", actions.includes("updateMany({") && actions.includes("status: existing.status") && actions.includes("Статус счёта уже изменён"));
+  check("S16 submit readiness enforced server-side", actions.includes("invoiceSubmitBlockedReason"));
+  check("S17 view builds a needs_review review queue over accessible clubs", viewSrc.includes("regionalReviewQueue") && viewSrc.includes('status: "needs_review"') && viewSrc.includes("availableClubs.map((c) => c.id)"));
+  check("S18 review queue query carries no month bound", (() => { const i = viewSrc.indexOf('status: "needs_review"'); const seg = viewSrc.slice(i - 200, i + 120); return !/paidAt|gte:|lt:/.test(seg); })());
+  check("U20 review queue rendered above analytics", pageSrc.indexOf("<ReviewQueue") > 0 && pageSrc.indexOf("<ReviewQueue") < pageSrc.indexOf("<CategoryBlock"));
+  check("U21 review queue empty state present", pageSrc.includes("Нет счетов, ожидающих проверки"));
+  check("U22 draft row shows «Продолжить заполнение»", pageSrc.includes("Продолжить заполнение"));
+  check("U23 review queue gated by showReviewQueue", pageSrc.includes("view.showReviewQueue ? <ReviewQueue"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
