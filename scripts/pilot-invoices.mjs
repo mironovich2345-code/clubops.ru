@@ -43,7 +43,7 @@ function buildView(ctx, raw, invoices, sentEvents, now) {
   if (isElevated) { const y = parseInt(raw.year, 10), m = parseInt(raw.month, 10); if (y >= 2000 && y <= 2100 && m >= 1 && m <= 12) { year = y; month = m; } }
   const start = new Date(year, month - 1, 1), end = new Date(year, month, 1), selKey = monthKey(start);
   const emptyMgr = { pendingPaymentAmountKopeks: 0, overdueAmountKopeks: 0, sentCount: 0 };
-  const baseView = () => ({ effectivePeriod: { year, month, start, end }, roleView, canNavigateMonths: isElevated, canFilterByCity: isElevated, canFilterByClub: isElevated, availableCities: [], availableClubs: [], selectedCity: null, selectedClub: null, summary: roleView === "manager" ? { ...emptyMgr } : { ...emptyMgr, totalInvoiceAmountKopeks: 0, paidAmountKopeks: 0 }, currentPeriodInvoices: [], carriedOverdueInvoices: [], categoryDistribution: [], permissions });
+  const baseView = () => ({ effectivePeriod: { year, month, start, end }, roleView, canNavigateMonths: isElevated, canFilterByCity: isElevated, canFilterByClub: isElevated, availableCities: [], availableClubs: [], selectedCity: null, selectedClub: null, summary: roleView === "manager" ? { ...emptyMgr } : { ...emptyMgr, totalInvoiceAmountKopeks: 0, paidAmountKopeks: 0 }, currentPeriodInvoices: [], carriedOverdueInvoices: [], upcomingPayments: [], categoryDistribution: [], permissions });
   if (!ctx.companyId || roleView === "none") return baseView();
   const availableClubs = ctx.clubs.filter((c) => ctx.allowedClubIds.includes(c.id) && c.companyId === ctx.companyId);
   const availableCities = [...new Set(availableClubs.map((c) => c.city))].sort();
@@ -73,6 +73,12 @@ function buildView(ctx, raw, invoices, sentEvents, now) {
   const overdue = sum(currentUnpaid.filter((r) => r.overdue)) + sum(carriedOverdueInvoices);
   const sentCount = new Set(sentEvents.filter((e) => e.companyId === ctx.companyId && clubIds.includes(e.clubId) && e.createdAt >= start && e.createdAt < end && (roleView === "manager" ? e.userId === ctx.userId : true)).map((e) => e.invoiceId)).size;
   view.currentPeriodInvoices = currentPeriodInvoices; view.carriedOverdueInvoices = carriedOverdueInvoices;
+  // «Ближайшие платежи»: awaiting-payment, no paidAt, not overdue, with dueDate;
+  // nearest dueDate → earlier createdAt → id.
+  view.upcomingPayments = currentPeriodInvoices
+    .filter((r) => isAwaiting(r.status) && !r.paidAt && !r.overdue && r.dueDate)
+    .sort((a, b) => (a.dueDate.getTime() - b.dueDate.getTime()) || (a.createdAt.getTime() - b.createdAt.getTime()) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, 6);
   // Month-independent review queue over ALL accessible clubs (not the filtered subset).
   view.regionalReviewQueue = isElevated
     ? invoices.filter((i) => i.companyId === ctx.companyId && availableClubs.some((c) => c.id === i.clubId) && i.status === "needs_review").sort((a, b) => a.createdAt - b.createdAt)
@@ -462,6 +468,41 @@ async function main() {
   check("237 metadata absent → «не прикреплён файл», card still renders", detailForm.includes("К счёту не прикреплён файл"));
   check("238 object absent → «Файл отсутствует в хранилище» warning", detailForm.includes("Файл отсутствует в хранилище") && detailForm.includes('fileStatus === "missing_object"'));
   check("239 detail page resolves fileStatus separately from invoice load", readFileSync(new URL("../src/app/(app)/invoices/[id]/page.tsx", import.meta.url), "utf8").includes("resolveInvoiceFileStatus(invoice.originalFileStorageKey)"));
+
+  // === «Ближайшие платежи» filter + sort (240–256) ==========================
+  const uAcc = ctxOf("uacc", ["accountant"], ["A"]);
+  const uMgr = ctxOf("umgr", ["manager"], ["A"]);
+  const um = (o) => inv({ clubId: "A", createdByUserId: "umgr", invoiceDate: d(2026, 7, 1), ...o });
+  const uSet = [
+    um({ id: "uPaid", status: "paid", paidAt: d(2026, 7, 5), dueDate: d(2026, 7, 20) }),
+    um({ id: "uPaidAtSet", status: "approved_by_regional", paidAt: d(2026, 7, 6), dueDate: d(2026, 7, 22) }),
+    um({ id: "uReview", status: "needs_review", dueDate: d(2026, 7, 25) }),
+    um({ id: "uApproved", status: "approved_by_regional", dueDate: d(2026, 7, 28) }),
+    um({ id: "uDraft", status: "draft", dueDate: d(2026, 7, 26) }),
+    um({ id: "uReject", status: "rejected", dueDate: d(2026, 7, 27) }),
+    um({ id: "uOverdueThisMonth", status: "approved_by_regional", dueDate: d(2026, 7, 10) }), // past today (now=15) → overdue
+    um({ id: "uNoDue", status: "needs_review", dueDate: null }),
+  ];
+  const vU = buildView(uAcc, {}, uSet, [], now);
+  const upIds = vU.upcomingPayments.map((r) => r.id);
+  check("240 paid excluded from Ближайшие платежи", !upIds.includes("uPaid"));
+  check("241 paidAt-set (non-paid status) excluded (defensive)", !upIds.includes("uPaidAtSet"));
+  check("242 needs_review with future dueDate included", upIds.includes("uReview"));
+  check("243 approved with future dueDate included", upIds.includes("uApproved"));
+  check("244 draft excluded from upcoming", !upIds.includes("uDraft"));
+  check("245 rejected excluded from upcoming", !upIds.includes("uReject"));
+  check("246 overdue (this-month, past due) excluded from upcoming", !upIds.includes("uOverdueThisMonth"));
+  check("247 awaiting without dueDate excluded", !upIds.includes("uNoDue"));
+  check("248 status=paid & paidAt=null still excluded (not awaiting)", !buildView(uAcc, {}, [um({ id: "pn", status: "paid", paidAt: null, dueDate: d(2026, 7, 20) })], [], now).upcomingPayments.some((r) => r.id === "pn"));
+  check("249 manager draft with dueDate not upcoming", !buildView(uMgr, {}, [um({ id: "md", status: "draft", dueDate: d(2026, 7, 26) })], [], now).upcomingPayments.some((r) => r.id === "md"));
+  // sort: nearest dueDate → earlier createdAt → id
+  check("250 nearest dueDate first", buildView(uAcc, {}, [um({ id: "s1", status: "needs_review", dueDate: d(2026, 7, 28) }), um({ id: "s2", status: "needs_review", dueDate: d(2026, 7, 20) })], [], now).upcomingPayments.map((r) => r.id).join(",") === "s2,s1");
+  check("251 tie on dueDate → earlier createdAt first", buildView(uAcc, {}, [um({ id: "t1", status: "needs_review", dueDate: d(2026, 7, 25), createdAt: d(2026, 7, 10) }), um({ id: "t2", status: "needs_review", dueDate: d(2026, 7, 25), createdAt: d(2026, 7, 2) })], [], now).upcomingPayments.map((r) => r.id).join(",") === "t2,t1");
+  check("252 stable id tie-breaker", buildView(uAcc, {}, [um({ id: "z2", status: "needs_review", dueDate: d(2026, 7, 25), createdAt: d(2026, 7, 5) }), um({ id: "z1", status: "needs_review", dueDate: d(2026, 7, 25), createdAt: d(2026, 7, 5) })], [], now).upcomingPayments.map((r) => r.id).join(",") === "z1,z2");
+  check("253 upcoming capped at 6", buildView(uAcc, {}, Array.from({ length: 9 }, (_, k) => um({ id: "m" + k, status: "needs_review", dueDate: d(2026, 7, 16 + k) })), [], now).upcomingPayments.length === 6);
+  check("254 paid invoice STILL in the period table (only removed from upcoming)", vU.currentPeriodInvoices.some((r) => r.id === "uPaid") && vU.upcomingPayments.every((r) => r.id !== "uPaid"));
+  check("S19 upcoming computed server-side, reuses awaiting set + paidAt guard", viewSrc.includes("upcomingPayments") && viewSrc.includes("isInvoiceAwaitingPayment(r.status) && !r.paidAt"));
+  check("S20 page renders server upcomingPayments (no client status filter)", pageSrc.includes("view.upcomingPayments") && !pageSrc.includes('r.status !== "paid"'));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

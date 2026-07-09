@@ -10,6 +10,7 @@ import {
   INVOICE_AWAITING_PAYMENT_STATUSES,
   getInvoiceOperationalMonth,
   isInvoiceOverdue,
+  isInvoiceAwaitingPayment,
   canAddPaidInvoice,
 } from "@/lib/invoices";
 import { formatUserDisplayName } from "@/lib/user-display";
@@ -33,6 +34,7 @@ export type InvoiceReportingRow = {
   reportingMonth: string;
   overdue: boolean;
   createdByUserId: string;
+  createdAt: string;
 };
 
 // A row in the month-independent «Ожидают проверки» regional queue.
@@ -81,6 +83,10 @@ export type InvoicesView = {
   // month (only populated for roles that review: elevated). Empty for managers.
   regionalReviewQueue: InvoiceReviewRow[];
   showReviewQueue: boolean;
+  // «Ближайшие платежи» — server-computed: only unpaid obligations awaiting
+  // payment (never paid / paidAt-set / draft / rejected / canceled), with a due
+  // date, nearest first. The page renders this list verbatim.
+  upcomingPayments: InvoiceReportingRow[];
   categoryDistribution: CategoryDistributionItem[];
   permissions: { canAddPaidInvoice: boolean; canUploadInvoice: boolean; canViewPastMonths: boolean };
 };
@@ -124,6 +130,7 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
       : { pendingPaymentAmountKopeks: 0, overdueAmountKopeks: 0, sentCount: 0, totalInvoiceAmountKopeks: 0, paidAmountKopeks: 0 },
     currentPeriodInvoices: [], carriedOverdueInvoices: [],
     regionalReviewQueue: [], showReviewQueue: roleView === "elevated",
+    upcomingPayments: [],
     categoryDistribution: [], permissions,
   });
 
@@ -211,7 +218,7 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
     // Operational month for list membership (draft/needs_review never hidden by a
     // missing dueDate). Financial analytics elsewhere keep their own date rules.
     reportingMonth: getInvoiceOperationalMonth(inv), overdue: isInvoiceOverdue(inv, now),
-    createdByUserId: inv.createdByUserId,
+    createdByUserId: inv.createdByUserId, createdAt: inv.createdAt.toISOString(),
   });
 
   const paidRows = paidInMonth.map(rowOf); // reporting month = paidAt month = selKey
@@ -229,6 +236,21 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
   const sum = (rows: InvoiceReportingRow[]) => rows.reduce((s, r) => s + r.amountKopeks, 0);
   const pendingPaymentAmountKopeks = sum(currentUnpaid.filter((r) => !r.overdue));
   const overdueAmountKopeks = sum(currentUnpaid.filter((r) => r.overdue)) + sum(carriedOverdueInvoices);
+
+  // «Ближайшие платежи»: only obligations still AWAITING payment (reuses the
+  // shared status set), with NO paidAt (defensive — any explicit payment signal
+  // removes it immediately), not overdue, and with a due date. Nearest dueDate
+  // first, then earlier createdAt, then id (stable). Never mutates data.
+  const upcomingPayments = currentPeriodInvoices
+    .filter((r) => isInvoiceAwaitingPayment(r.status) && !r.paidAt && !r.overdue && r.dueDate)
+    .sort((a, b) => {
+      const byDue = new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime();
+      if (byDue !== 0) return byDue;
+      const byCreated = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (byCreated !== 0) return byCreated;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .slice(0, 6);
 
   // «Всего счетов отправлено» — distinct invoices SENT (invoice.sent_to_review)
   // in the month. For a manager, only those they sent themselves. Carried debt
@@ -249,6 +271,7 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
 
   view.currentPeriodInvoices = currentPeriodInvoices;
   view.carriedOverdueInvoices = carriedOverdueInvoices;
+  view.upcomingPayments = upcomingPayments;
   view.summary = roleView === "manager"
     ? { pendingPaymentAmountKopeks, overdueAmountKopeks, sentCount }
     : { pendingPaymentAmountKopeks, overdueAmountKopeks, sentCount, totalInvoiceAmountKopeks: sum(financialRows), paidAmountKopeks: sum(paidRows) };

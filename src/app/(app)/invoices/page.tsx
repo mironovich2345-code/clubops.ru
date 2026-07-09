@@ -234,13 +234,11 @@ function ByClubBlock({ view }: { view: InvoicesView }) {
   );
 }
 
-/** Upcoming payments — derived from the SAME scoped current-period rows (unpaid,
- * not overdue, with a due date). Manager therefore only sees their own. */
+/** Upcoming payments — server-computed in getInvoicesView (only unpaid
+ * obligations awaiting payment, no paidAt, with a due date, nearest first).
+ * Rendered verbatim; no client-side status/payment filtering. */
 function UpcomingBlock({ view }: { view: InvoicesView }) {
-  const upcoming = view.currentPeriodInvoices
-    .filter((r) => r.status !== "paid" && !r.overdue && r.dueDate)
-    .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime())
-    .slice(0, 6);
+  const upcoming = view.upcomingPayments;
   return (
     <Panel title="Ближайшие платежи">
       {upcoming.length === 0 ? (
