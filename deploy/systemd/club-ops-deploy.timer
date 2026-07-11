@@ -1,0 +1,14 @@
+[Unit]
+Description=Check for a new CLUB-OPS image every minute and deploy it safely
+
+[Timer]
+# First check shortly after boot, then every minute. systemd never starts a
+# second instance while the service is still running (plus flock in deploy.sh).
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Persistent=true
+Unit=club-ops-deploy.service
+
+[Install]
+WantedBy=timers.target

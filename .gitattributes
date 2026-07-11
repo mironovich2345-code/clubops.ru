@@ -3,3 +3,8 @@
 *.sh text eol=lf
 docker-entrypoint.sh text eol=lf
 Dockerfile text eol=lf
+# systemd units, Caddyfile and the compose file are consumed on the Linux VM.
+*.service text eol=lf
+*.timer text eol=lf
+deploy/Caddyfile text eol=lf
+deploy/docker-compose.prod.yml text eol=lf

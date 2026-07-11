@@ -1,0 +1,32 @@
+# CLUB-OPS reverse proxy — the only public entrypoint (ports 80/443).
+# Automatic HTTPS (Let's Encrypt / ZeroSSL) for {$SITE_DOMAIN}. SITE_DOMAIN must
+# be a real domain whose A record points at the VM's public IP, with 80+443 open.
+# Certificates persist in the caddy_data volume. Proxies to the internal app only.
+
+{$SITE_DOMAIN} {
+	encode zstd gzip
+
+	# Documents (refund/invoice/expense scans) can be up to ~10 MB each and are
+	# submitted in multi-file forms — allow generous request bodies.
+	request_body {
+		max_size 40MB
+	}
+
+	# Streaming (RSC / Server Actions) works through reverse_proxy by default;
+	# no buffering is forced so responses stream to the client.
+	reverse_proxy app:3000
+
+	# Additive transport-security headers. The app itself sets CSP and the other
+	# content headers via next.config.mjs — these do not override or break it.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

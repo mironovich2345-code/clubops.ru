@@ -1,11 +1,13 @@
 #!/bin/sh
-# Container startup: apply DB migrations, then start Next.js.
-# Sequential statements (no `&&` that could be split when a start command is run
-# without a shell) and `exec` so Next.js becomes the main process (clean signals).
+# Single-container startup (Railway / plain `docker run`): apply DB migrations,
+# then start the standalone Next.js server. Uses `exec` so Next.js becomes PID 1
+# for clean signal handling. The Prisma CLI is invoked directly (standalone does
+# not include npm scripts). On the VM this entrypoint is NOT used — the compose
+# file runs a dedicated migrate service and `node server.js` for the app.
 set -e
 
 echo "[entrypoint] Applying database migrations (prisma migrate deploy)..."
-npm run prisma:migrate:deploy
+node node_modules/prisma/build/index.js migrate deploy --schema=prisma/production/schema.prisma
 
-echo "[entrypoint] Starting Next.js on 0.0.0.0:${PORT:-3000}..."
-exec npm run start -- -p "${PORT:-3000}" -H 0.0.0.0
+echo "[entrypoint] Starting Next.js (standalone) on ${HOSTNAME:-0.0.0.0}:${PORT:-3000}..."
+exec node server.js

@@ -1,22 +1,41 @@
+# Build context hygiene — keep secrets, local data and dev cruft OUT of the image.
+# Prisma migrations + schema + public assets are NOT ignored (needed to build).
+
+# Dependencies / build output (reinstalled + rebuilt inside the image)
 node_modules
 .next
 out
 build
+
+# VCS / CI / editors
 .git
 .gitignore
 .github
+.vscode
+.idea
+.claude
+
+# Secrets and env — never copy any real env into the image
 .env
 .env.*
 !.env.example
 !.env.production.example
+
+# Local databases / uploads / backups / server deploy state
 uploads
+backups
 *.db
 *.db-journal
 prisma/dev.db*
-npm-debug.log*
+
+# Docs / server-only ops files not needed to build the app image
+docs
+deploy
+
+# Logs / temp / OS
 *.log
+npm-debug.log*
 .DS_Store
-.vscode
-.idea
-.claude
+tmp
+scratchpad
 Текстовый документ.txt

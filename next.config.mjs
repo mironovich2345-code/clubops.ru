@@ -32,6 +32,11 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  // Standalone server output: `.next/standalone/server.js` bundles only the
+  // traced runtime deps, so the production Docker image stays small and does not
+  // need the full node_modules or `next start`. Backward-compatible — `next
+  // start` still works locally / in the existing single-container flow.
+  output: "standalone",
   // Keep the AWS SDK (used only by the S3 storage provider, server-side) out of
   // the bundle — it is required at runtime only when STORAGE_PROVIDER=s3.
   serverExternalPackages: ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "unpdf"],

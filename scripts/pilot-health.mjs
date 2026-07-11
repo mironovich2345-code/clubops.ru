@@ -14,11 +14,12 @@ let pass = 0, fail = 0;
 const check = (n, c, x = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${x ? "  :: " + x : ""}`); c ? pass++ : fail++; };
 
 // ---- Mirror of src/lib/deployment-version.ts (kept in lockstep) ----
+const firstNonEmpty = (...vs) => { for (const v of vs) if (typeof v === "string" && v.trim() !== "") return v; return null; };
 function deploymentVersion(env) {
   return {
-    commit: env.RAILWAY_GIT_COMMIT_SHA ?? "local",
-    deploymentId: env.RAILWAY_DEPLOYMENT_ID ?? null,
-    environment: env.RAILWAY_ENVIRONMENT_NAME ?? "local",
+    commit: firstNonEmpty(env.APP_GIT_SHA, env.RAILWAY_GIT_COMMIT_SHA) ?? "local",
+    deploymentId: firstNonEmpty(env.APP_DEPLOYMENT_ID, env.RAILWAY_DEPLOYMENT_ID),
+    environment: firstNonEmpty(env.APP_ENVIRONMENT, env.RAILWAY_ENVIRONMENT_NAME) ?? "local",
   };
 }
 
@@ -44,6 +45,19 @@ function healthPayload(env) {
   const v = deploymentVersion({ RAILWAY_GIT_COMMIT_SHA: sha, RAILWAY_DEPLOYMENT_ID: "dep-1", RAILWAY_ENVIRONMENT_NAME: "production" });
   check("1 commit comes from RAILWAY_GIT_COMMIT_SHA", v.commit === sha, v.commit);
   check("1b environment comes from RAILWAY_ENVIRONMENT_NAME", v.environment === "production");
+}
+
+// 1c. Yandex/self-hosted APP_* vars take priority over Railway vars.
+{
+  const v = deploymentVersion({ APP_GIT_SHA: "yc-sha", APP_DEPLOYMENT_ID: "yc-dep", APP_ENVIRONMENT: "production", RAILWAY_GIT_COMMIT_SHA: "rw-sha", RAILWAY_DEPLOYMENT_ID: "rw-dep", RAILWAY_ENVIRONMENT_NAME: "railway" });
+  check("1c APP_GIT_SHA wins over RAILWAY_GIT_COMMIT_SHA", v.commit === "yc-sha", v.commit);
+  check("1d APP_DEPLOYMENT_ID wins over Railway", v.deploymentId === "yc-dep");
+  check("1e APP_ENVIRONMENT wins over Railway", v.environment === "production");
+  // Empty APP_* must not shadow a present Railway value.
+  const fb = deploymentVersion({ APP_GIT_SHA: "", RAILWAY_GIT_COMMIT_SHA: "rw-sha" });
+  check("1f empty APP_GIT_SHA falls back to Railway", fb.commit === "rw-sha", fb.commit);
+  // APP_GIT_SHA alone (Yandex, no Railway) resolves the commit.
+  check("1g APP_GIT_SHA alone resolves commit", deploymentVersion({ APP_GIT_SHA: "solo" }).commit === "solo");
 }
 
 // 2. endpoint does not blow up when the vars are absent

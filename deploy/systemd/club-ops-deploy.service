@@ -1,0 +1,16 @@
+[Unit]
+Description=CLUB-OPS auto-deploy (pull new :main image, back up DB, migrate, update, health-check, rollback on failure)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/club-ops
+# deploy.sh is single-flight (flock) and no-ops when the image digest is unchanged.
+# It is written to NEVER print secrets/DATABASE_URL/passwords, so the journal is safe.
+ExecStart=/opt/club-ops/deploy.sh
+TimeoutStartSec=900
+Nice=5
+
+# No [Install] section: this unit is triggered only by club-ops-deploy.timer.

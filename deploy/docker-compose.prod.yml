@@ -1,0 +1,111 @@
+# CLUB-OPS production stack for the Yandex Cloud VM.
+#
+# Runs from /opt/club-ops. The app image is PULLED from Yandex Container Registry
+# (never built on the VM). Secrets live only in /opt/club-ops/.env (git-ignored,
+# never in this file). Variable substitution ( ${...} ) auto-reads /opt/club-ops/.env.
+#
+#   deploy.sh handles: pull -> pg_dump backup -> migrate -> app/caddy -> health -> rollback
+#
+# Requires (already provisioned on the VM, must NOT be recreated/renamed):
+#   - external network:  club_ops_internal
+#   - external volume:   club_ops_postgres_data
+name: club-ops
+
+services:
+  # --- PostgreSQL 16 (internal only; data on the pre-existing external volume) ---
+  postgres:
+    image: postgres:16-bookworm
+    container_name: club-ops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    # No `ports:` — 5432 is never published to the host / internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # --- Migrations: same image as the app, runs `prisma migrate deploy` then exits ---
+  migrate:
+    image: ${APP_IMAGE}
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema=prisma/production/schema.prisma"]
+    env_file: [.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+    restart: "no"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # --- App: standalone Next.js server (internal only; reached via Caddy) ---
+  app:
+    image: ${APP_IMAGE}
+    command: ["node", "server.js"]
+    env_file: [.env]
+    environment:
+      # Non-secret deployment metadata surfaced by /api/health (see deployment-version.ts).
+      APP_ENVIRONMENT: production
+      APP_DEPLOYMENT_ID: ${APP_DEPLOYMENT_ID:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    # No `ports:` — 3000 is never published; only Caddy proxies to app:3000.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # --- Reverse proxy / automatic HTTPS (the only public entrypoint) ---
+  caddy:
+    image: caddy:2
+    container_name: club-ops-caddy
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+networks:
+  internal:
+    external: true
+    name: club_ops_internal
+
+volumes:
+  # PRE-EXISTING external volume — never recreated/renamed by this stack.
+  pgdata:
+    external: true
+    name: club_ops_postgres_data
+  caddy_data:
+  caddy_config:
