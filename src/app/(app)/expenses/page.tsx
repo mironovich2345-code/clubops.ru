@@ -5,6 +5,7 @@ import {
   getCurrentCompanyAndClub,
   getClubsInScope,
   getCurrentAccessContext,
+  managerOwnFilter,
 } from "@/lib/access";
 import { canCreateOperational, isStrategicRole } from "@/lib/auth";
 import { resolveStrategicGroups, strategicQuery } from "@/lib/strategic-pages";
@@ -75,13 +76,16 @@ export default async function ExpensesPage({
   // Non-strategic roles keep the single-Company experience.
   const strategic = ctx ? isStrategicRole(ctx.effectiveRoles) : false;
   const groups = strategic && ctx ? await resolveStrategicGroups(ctx, sp) : null;
+  // A plain manager sees only their OWN expenses everywhere on this page (list,
+  // drafts, category summary). Elevated roles see all records of their clubs.
+  const ownCreatorId = ctx ? managerOwnFilter(ctx).createdByUserId : undefined;
 
   let clubs: Awaited<ReturnType<typeof getClubsInScope>>;
   let expenses: ExpenseRow[];
   if (groups) {
     const perCompany = await Promise.all(
       groups.byCompany.map((g) =>
-        getExpensesForScope({ company: { id: g.companyId, name: g.companyName }, club: null, clubIds: g.clubIds }).then(
+        getExpensesForScope({ company: { id: g.companyId, name: g.companyName }, club: null, clubIds: g.clubIds }, ownCreatorId).then(
           (rows) => rows.map((r) => ({ ...r, companyName: g.companyName })),
         ),
       ),
@@ -89,7 +93,7 @@ export default async function ExpensesPage({
     expenses = perCompany.flat();
     clubs = [];
   } else {
-    [clubs, expenses] = await Promise.all([getClubsInScope(scope), getExpensesForScope(scope)]);
+    [clubs, expenses] = await Promise.all([getClubsInScope(scope), getExpensesForScope(scope, ownCreatorId)]);
   }
   const canCreate = ctx ? canCreateOperational(ctx.effectiveRoles) : false;
   const multiCompany = groups?.multiCompany ?? false;

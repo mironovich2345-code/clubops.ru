@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
-import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext } from "@/lib/access";
+import { requirePageAccess, getCurrentCompanyAndClub, getClubsInScope, getCurrentAccessContext, managerOwnFilter } from "@/lib/access";
 import { canCloseMonth } from "@/lib/auth";
 import { getExpensesForScope, expenseCategoryLabel } from "@/lib/expenses";
 import { getRefundsForScope } from "@/lib/refunds";
@@ -59,10 +59,13 @@ export default async function WorkspacePage({
   const manageMonthLabel = capitalize(monthFmt.format(new Date(`${manageMonth}-01T00:00:00`)));
 
   // All data is the existing scoped source of truth (companyId + allowedClubIds).
+  // Defense-in-depth: if a manager-only actor ever reaches this workspace, they
+  // only see their own expenses/refunds (no-op for accounting/elevated roles).
+  const ownCreatorId = ctx ? managerOwnFilter(ctx).createdByUserId : undefined;
   const [clubs, expenses, refunds, pendingReports, { obligations }] = await Promise.all([
     getClubsInScope(scope),
-    getExpensesForScope(scope),
-    getRefundsForScope(scope),
+    getExpensesForScope(scope, ownCreatorId),
+    getRefundsForScope(scope, ownCreatorId),
     getPendingSalesReports(scope),
     loadPaymentObligationsForScope({
       companyId,

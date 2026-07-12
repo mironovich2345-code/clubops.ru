@@ -296,10 +296,13 @@ export async function transitionRefund(formData: FormData): Promise<void> {
     throw new Error(result.error);
   }
 
-  await prisma.refund.update({
-    where: { id: refundId },
+  // Compare-and-set on the exact current status: a stale/duplicate submit updates
+  // 0 rows and gets a clear message instead of double-applying the transition.
+  const updated = await prisma.refund.updateMany({
+    where: { id: refundId, status: existing.status },
     data: { status: result.to, paidAt: result.to === "paid" ? new Date() : null },
   });
+  if (updated.count === 0) throw new Error("Статус возврата уже изменён. Обновите страницу.");
 
   const approverRole = hasActiveRegional ? "regional_director" : "chief_accountant";
   const auditAction =

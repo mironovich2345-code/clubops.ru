@@ -1,6 +1,7 @@
 import type { Refund } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DataScope, AccessContext } from "@/lib/access";
+import { managerCannotSeeRecord } from "@/lib/access";
 import type { ApprovalAction } from "@/lib/approval";
 
 export const REFUND_DOC_TYPES: ReadonlyArray<{ key: string; label: string }> = [
@@ -35,10 +36,18 @@ export type RefundWithClub = Refund & {
   createdBy: { id: string; name: string };
 };
 
-export async function getRefundsForScope(scope: DataScope): Promise<RefundWithClub[]> {
+export async function getRefundsForScope(
+  scope: DataScope,
+  // When set (a manager-only actor), limits the list to refunds that user
+  // created. Elevated actors omit it and see all refunds of their clubs.
+  restrictToCreatorId?: string,
+): Promise<RefundWithClub[]> {
   if (!scope.company || scope.clubIds.length === 0) return [];
   const refunds = await prisma.refund.findMany({
-    where: { companyId: scope.company.id, clubId: { in: scope.clubIds } },
+    where: {
+      companyId: scope.company.id, clubId: { in: scope.clubIds },
+      ...(restrictToCreatorId ? { createdByUserId: restrictToCreatorId } : {}),
+    },
     orderBy: { createdAt: "desc" },
     include: {
       club: { select: { id: true, name: true, city: true } },
@@ -63,6 +72,8 @@ export async function getRefundForContext(
   if (!refund) return null;
   if (refund.companyId !== ctx.selectedCompanyId) return null;
   if (!ctx.allowedClubIds.includes(refund.clubId)) return null;
+  // A plain manager sees only refunds they created (own-only, server-enforced).
+  if (managerCannotSeeRecord(ctx, refund)) return null;
   return refund as RefundWithClub;
 }
 

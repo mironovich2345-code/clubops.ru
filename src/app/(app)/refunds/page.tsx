@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
-import { requirePageAccess, getCurrentCompanyAndClub, getCurrentAccessContext } from "@/lib/access";
+import { requirePageAccess, getCurrentCompanyAndClub, getCurrentAccessContext, managerOwnFilter } from "@/lib/access";
 import { getRefundsForScope, type RefundWithClub } from "@/lib/refunds";
 import { APPROVAL_STATUS_LABELS } from "@/lib/approval";
 import { REFUND_V2_STATUS_LABELS } from "@/lib/refund-workflow";
@@ -18,7 +18,12 @@ export default async function RefundsPage() {
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) return <NoCompanyState title="Возвраты" description="Загрузка и согласование возвратов" />;
 
-  const [refunds, ctx] = await Promise.all([getRefundsForScope(scope), getCurrentAccessContext()]);
+  // Manager-only actors get an own-only query (no all-club refunds ever fetched);
+  // elevated viewers get the whole scope. The in-memory `mine`/`visible` split
+  // below stays correct because a manager's result set is already own-only.
+  const preCtx = await getCurrentAccessContext();
+  const refunds = await getRefundsForScope(scope, preCtx ? managerOwnFilter(preCtx).createdByUserId : undefined);
+  const ctx = preCtx;
   const roles = ctx?.effectiveRoles ?? [];
   const isManager = roles.includes("manager");
   const isRegional = roles.includes("regional_director");

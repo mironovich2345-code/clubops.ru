@@ -50,6 +50,7 @@ const pilots = [
   ["Cash wallets / movements", "pilot-cash-wallets.mjs"],
   ["Invoices phase 1", "pilot-invoices.mjs"],
   ["Refunds phase 1", "pilot-refunds.mjs"],
+  ["Manager own-only visibility", "pilot-manager-visibility.mjs"],
   ["Invoice AI pipeline", "pilot-invoice-ai.mjs"],
   ["Health / deployment version", "pilot-health.mjs"],
   ["Account settings", "pilot-account-settings.mjs"],

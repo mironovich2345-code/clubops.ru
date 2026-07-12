@@ -15,6 +15,9 @@ export const REFUND_V2_STATUS_LABELS: Record<string, string> = {
   pending_regional_review: "На проверке у регионального директора",
   needs_correction: "Требует исправления",
   accounting_in_progress: "В работе у бухгалтера",
+  // Soft-cancelled draft (refund-document-actions cancelRefundDraft) — a v2 refund
+  // never hard-deletes, so this terminal status needs a readable label.
+  canceled: "Отменён",
 };
 
 /** Statuses in which the manager (author) may edit a v2 refund. */

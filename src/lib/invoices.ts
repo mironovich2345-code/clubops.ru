@@ -1,6 +1,7 @@
 import type { Invoice } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DataScope, AccessContext } from "@/lib/access";
+import { managerCannotSeeRecord } from "@/lib/access";
 import type { Role } from "@/lib/auth";
 
 export type InvoiceStatus =
@@ -283,6 +284,8 @@ export async function getInvoiceForContext(
   if (!invoice) return null;
   if (invoice.companyId !== ctx.selectedCompanyId) return null;
   if (!ctx.allowedClubIds.includes(invoice.clubId)) return null;
+  // A plain manager sees only invoices they created (own-only, server-enforced).
+  if (managerCannotSeeRecord(ctx, invoice)) return null;
   return invoice as InvoiceWithClub;
 }
 

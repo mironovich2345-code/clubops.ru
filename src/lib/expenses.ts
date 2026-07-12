@@ -1,6 +1,7 @@
 import type { Expense } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DataScope, AccessContext } from "@/lib/access";
+import { managerCannotSeeRecord } from "@/lib/access";
 
 // Legacy Russian category list (manual entries / imports). Kept for readability.
 export const EXPENSE_CATEGORIES = [
@@ -128,15 +129,23 @@ export async function getExpenseForContext(
   if (!expense) return null;
   if (expense.companyId !== ctx.selectedCompanyId) return null;
   if (!ctx.allowedClubIds.includes(expense.clubId)) return null;
+  // A plain manager sees only expenses they created (own-only, server-enforced).
+  if (managerCannotSeeRecord(ctx, expense)) return null;
   return expense as ExpenseWithRelations;
 }
 
 export async function getExpensesForScope(
   scope: DataScope,
+  // When set (a manager-only actor), limits the list — and every aggregate the
+  // caller derives from it — to expenses that user created. Elevated actors omit it.
+  restrictToCreatorId?: string,
 ): Promise<ExpenseWithRelations[]> {
   if (!scope.company || scope.clubIds.length === 0) return [];
   return prisma.expense.findMany({
-    where: { companyId: scope.company.id, clubId: { in: scope.clubIds } },
+    where: {
+      companyId: scope.company.id, clubId: { in: scope.clubIds },
+      ...(restrictToCreatorId ? { createdByUserId: restrictToCreatorId } : {}),
+    },
     orderBy: { expenseDate: "desc" },
     include: {
       club: true,

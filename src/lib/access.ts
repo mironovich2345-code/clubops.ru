@@ -242,6 +242,34 @@ export type AccessContext = {
   allowedClubIds: string[];
 };
 
+// Roles that see EVERY operational record of their assigned clubs. A pure
+// manager (none of these) sees only records they created — enforced by
+// managerOwnFilter() at every list / aggregate / single-record scope check.
+const ELEVATED_VISIBILITY_ROLES: readonly Role[] = [
+  "regional_director", "general_director", "owner", "accountant", "chief_accountant",
+];
+
+/** True when the actor is a plain manager with no elevated (all-club) role. */
+export function isManagerOnlyVisibility(roles: readonly Role[]): boolean {
+  return roles.includes("manager") && !roles.some((r) => ELEVATED_VISIBILITY_ROLES.includes(r));
+}
+
+/**
+ * Prisma `where` fragment that limits a query to the actor's OWN records when
+ * they are a manager-only actor; an empty fragment (no restriction) otherwise.
+ * Spread into an expense/invoice/refund `where` to keep managers own-only in
+ * lists, cards, aggregates and counters without leaking siblings' records.
+ */
+export function managerOwnFilter(ctx: AccessContext): { createdByUserId?: string } {
+  return isManagerOnlyVisibility(ctx.effectiveRoles) ? { createdByUserId: ctx.user.id } : {};
+}
+
+/** True when a manager-only actor may NOT see this record (created by someone
+ * else). Used by the single-record context loaders to reject direct-URL access. */
+export function managerCannotSeeRecord(ctx: AccessContext, record: { createdByUserId: string }): boolean {
+  return isManagerOnlyVisibility(ctx.effectiveRoles) && record.createdByUserId !== ctx.user.id;
+}
+
 async function listAccessibleCompanyIds(user: CurrentUser): Promise<string[]> {
   if (isPlatformSuperadmin(user.role)) {
     const all = await prisma.company.findMany({ select: { id: true } });
