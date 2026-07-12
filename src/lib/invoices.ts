@@ -249,12 +249,25 @@ export function availableInvoiceActions(status: string, roles: readonly Role[], 
   );
 }
 
-/** Paid invoices are locked except for the accountant (chief accountant inherits
- * the accountant role). Owner is strategic (read-only) and never edits invoices;
- * the updateInvoice action additionally blocks all strategic roles. */
+// The ONLY statuses in which an invoice's business fields may be edited by its
+// author. Once submitted (needs_review) or decided (approved_*, rejected,
+// canceled) the fields are immutable; a reviewer returns it for correction
+// instead of editing on the author's behalf.
+export const INVOICE_EDITABLE_STATUSES = ["draft", "needs_correction"] as const;
+
+/**
+ * Whether an invoice's fields may be edited in `status`:
+ *  - draft / needs_correction: yes (the author — the updateInvoice action also
+ *    enforces createdByUserId === actor for these unpaid statuses);
+ *  - paid: only the accountant / chief accountant (post-payment correction);
+ *  - everything else (needs_review, approved_by_regional / _chief_accountant /
+ *    _owner, rejected, canceled): NO edits by anyone.
+ * Owner / general director are strategic (read-only); the updateInvoice action
+ * additionally blocks all strategic roles.
+ */
 export function canEditInvoice(status: string, roles: readonly Role[]): boolean {
-  if (status !== "paid") return true;
-  return has(roles, "accountant");
+  if (status === "paid") return has(roles, "accountant");
+  return (INVOICE_EDITABLE_STATUSES as readonly string[]).includes(status);
 }
 
 export type InvoiceWithClub = Invoice & {

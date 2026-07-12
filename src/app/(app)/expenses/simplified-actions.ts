@@ -39,6 +39,7 @@ const E = {
   COMMENT: "Комментарий обязателен.",
   SHOPPING: "Список покупок/оплат обязателен.",
   NO_DOC: "Прикрепите хотя бы один документ.",
+  NO_REGIONAL: "Для клуба не назначен региональный директор. Обратитесь к администратору.",
   BAD_STATUS: "Неверный статус для этого действия.",
   VERIFIED: "Расход уже проверен.",
   CANCELLED: "Расход уже отменён.",
@@ -189,12 +190,12 @@ export async function submitExpense(_prev: State | undefined, formData: FormData
 
   const wasResubmit = expense.status === EXP.NEEDS_CORRECTION;
   // Budget route is still computed and stored (analytics: overrun / level), but it
-  // no longer decides the next status. Pilot routing is by the CREATOR's role:
+  // no longer decides the next status. Pilot routing is by the CREATOR's role,
+  // read from the DB (never trusting client/FormData role):
   //  - a manager's expense ALWAYS goes to the regional director first (any budget);
+  //    it may NEVER be auto-routed to accounting / owner / any other role instead;
   //  - a regional director's OWN expense skips regional review (they cannot
-  //    self-approve) and goes straight to accounting;
-  //  - if the club has no active regional director, fall back to accounting so the
-  //    expense is never stranded (mirrors the invoice chief-accountant fallback).
+  //    self-approve) and goes straight to accounting.
   const route = await routeExpenseBudget({ clubId: expense.clubId, category: expense.category, expenseDate: expense.expenseDate, amountKopeks: expense.amountKopeks });
   const creatorIsRegional = await userHasClubRole(expense.createdByUserId, expense.clubId, ["regional_director"]);
   let nextStatus: string;
@@ -204,7 +205,11 @@ export async function submitExpense(_prev: State | undefined, formData: FormData
   } else if (await hasActiveRegionalApproverForClub(expense.companyId, expense.clubId)) {
     nextStatus = EXP.PENDING_REGIONAL; reviewTarget = "regional";
   } else {
-    nextStatus = EXP.PENDING_ACCOUNTANT; reviewTarget = "accountant";
+    // A manager's expense with no active regional director for the club is BLOCKED:
+    // the status and attached documents stay exactly as they are (no update runs),
+    // and the user is told to have a regional director assigned. It is never sent
+    // to accounting/owner as a fallback.
+    return { ok: false, error: E.NO_REGIONAL };
   }
   const now = new Date();
   const res = await prisma.expense.updateMany({

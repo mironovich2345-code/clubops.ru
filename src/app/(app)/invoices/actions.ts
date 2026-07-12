@@ -450,12 +450,21 @@ export async function updateInvoice(
   const existing = await getInvoiceForContext(ctx, invoiceId);
   if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
 
+  // Field edits are allowed ONLY in draft / needs_correction (by the author) or on
+  // a paid invoice (by the accountant). needs_review, approved_*, rejected and
+  // canceled are immutable — a reviewer returns the invoice for correction rather
+  // than editing it. Enforced server-side (the button is also hidden in the UI).
   if (!canEditInvoice(existing.status, ctx.effectiveRoles)) {
-    return { ok: false, error: "Оплаченный счёт может редактировать только бухгалтер" };
+    return {
+      ok: false,
+      error: existing.status === "paid"
+        ? "Оплаченный счёт может редактировать только бухгалтер"
+        : "Счёт можно редактировать только в статусе «Черновик» или «Возвращён на исправление»",
+    };
   }
-  // The regional director reviews but does NOT edit the manager's invoice fields:
-  // an unpaid invoice can only be edited by its author. (A paid invoice is edited
-  // by the accountant — that is handled by canEditInvoice above.)
+  // In the editable unpaid statuses only the AUTHOR may edit — the regional
+  // director reviews but never edits the manager's fields. (A paid invoice is
+  // edited by the accountant — handled by canEditInvoice above.)
   if (existing.status !== "paid" && existing.createdByUserId !== ctx.user.id) {
     return { ok: false, error: "Редактировать поля счёта может только его автор" };
   }

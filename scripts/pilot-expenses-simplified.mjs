@@ -212,9 +212,11 @@ async function main() {
   check("D6 min 1 doc gate + no-duplicate-draft guard kept", form.includes("files.length < 1") && form.includes("draftIdRef"));
 
   // --- Pilot routing: manager expense → regional first (Stage 3) ------------
-  // Routing is by the CREATOR's role, not the budget: a manager's expense always
-  // goes to the regional director; a regional's OWN expense goes straight to
-  // accounting (no self-approval); with no active regional, fall back to accounting.
+  // Routing is by the CREATOR's role (read from the DB), not the budget: a
+  // manager's expense ALWAYS goes to the regional director; a regional's OWN
+  // expense goes straight to accounting (no self-approval); if the club has NO
+  // active regional director, a manager's submit is BLOCKED (never routed to
+  // accounting/owner) and the status + documents stay unchanged.
   const REG = "pilot-exp-reg";
   await p.user.create({ data: { id: REG, email: "pilot-exp-reg@x.dev", name: "РД", role: "regional_director", isActive: true } });
   await p.clubUserAccess.create({ data: { clubId: CLUB, userId: REG, role: "regional_director" } });
@@ -224,26 +226,58 @@ async function main() {
     (await p.clubUserAccess.count({ where: { clubId, role: "regional_director", user: { isActive: true } } })) > 0 ||
     (await p.companyUserAccess.count({ where: { companyId, role: "regional_director", user: { isActive: true } } })) > 0;
   const routeReview = async (createdByUserId, clubId, companyId) => {
-    if (await creatorIsRegional(createdByUserId, clubId)) return "pending_accountant_verification";
-    return (await hasActiveRegional(companyId, clubId)) ? "pending_regional_budget_approval" : "pending_accountant_verification";
+    if (await creatorIsRegional(createdByUserId, clubId)) return { ok: true, next: "pending_accountant_verification" };
+    if (await hasActiveRegional(companyId, clubId)) return { ok: true, next: "pending_regional_budget_approval" };
+    return { ok: false, error: "no_regional" };
+  };
+  // Mirror of the action's control flow: block-BEFORE-update, else compare-and-set.
+  const simulateSubmit = async (expenseId) => {
+    const e = await p.expense.findUnique({ where: { id: expenseId }, select: { createdByUserId: true, clubId: true, companyId: true } });
+    const r = await routeReview(e.createdByUserId, e.clubId, e.companyId);
+    if (!r.ok) return { ok: false, error: r.error };
+    await p.expense.updateMany({ where: { id: expenseId, status: { in: ["draft", "needs_correction"] } }, data: { status: r.next } });
+    return { ok: true };
   };
   // CLUB has an active regional (REG); CLUB2 has none.
-  check("R1 manager expense (within budget) still routes to regional", (await routeReview(MGR, CLUB, CO)) === "pending_regional_budget_approval");
-  check("R2 manager expense (any budget) never skips regional to accounting", (await routeReview(MGR, CLUB, CO)) !== "pending_accountant_verification");
-  check("R3 regional's OWN expense goes straight to accounting", (await routeReview(REG, CLUB, CO)) === "pending_accountant_verification");
-  // No active regional on CLUB2 → manager expense falls back to accounting (not stranded).
-  check("R4 manager expense falls back to accounting when no active regional", (await routeReview(FOREIGN, CLUB2, CO)) === "pending_accountant_verification");
+  check("R1 manager expense (within budget) still routes to regional", (await routeReview(MGR, CLUB, CO)).next === "pending_regional_budget_approval");
+  check("R2 manager expense (any budget) never skips regional to accounting", (await routeReview(MGR, CLUB, CO)).next !== "pending_accountant_verification");
+  check("R3 regional's OWN expense goes straight to accounting", (await routeReview(REG, CLUB, CO)).next === "pending_accountant_verification");
+  check("R4 manager expense with NO active regional is BLOCKED (not routed to accounting)", (await routeReview(FOREIGN, CLUB2, CO)).ok === false);
   // Guard: a regional never approves their own expense (defense for legacy rows).
   const selfApprove = (createdByUserId, actorId, status) => !(createdByUserId && createdByUserId === actorId) && status === "pending_regional_budget_approval";
   check("R5 regional CAN approve a manager's pending_regional expense", selfApprove(MGR, REG, "pending_regional_budget_approval") === true);
   check("R6 regional CANNOT approve their OWN expense", selfApprove(REG, REG, "pending_regional_budget_approval") === false);
-  // Static: the action routes by creator role, not by route.nextStatus, and blocks self-approval.
+  // Static: the action routes by creator role, blocks (not fallbacks) with no regional.
   check("R7 submit routes by creator role (userHasClubRole regional_director)", actions.includes('userHasClubRole(expense.createdByUserId, expense.clubId, ["regional_director"])'));
   check("R8 submit no longer uses the budget route.nextStatus", !actions.includes("status: route.nextStatus"));
-  check("R9 submit uses hasActiveRegionalApproverForClub for the fallback", actions.includes("hasActiveRegionalApproverForClub(expense.companyId, expense.clubId)"));
+  check("R9 submit uses hasActiveRegionalApproverForClub", actions.includes("hasActiveRegionalApproverForClub(expense.companyId, expense.clubId)"));
   check("R10 budget analytics fields still stored on submit", actions.includes("budgetOverrunKopeks: route.overrunKopeks") && actions.includes("budgetApprovalLevel: route.level"));
   const simplifiedLib = readFileSync(new URL("../src/lib/expense-simplified.ts", import.meta.url), "utf8");
   check("R11 canApproveRegionalExpense blocks self-approval", simplifiedLib.includes("e.createdByUserId === a.userId) return false"));
+
+  // --- No-regional block: status + documents unchanged (R12–R20) -----------
+  // FOREIGN is a manager of CLUB2, which has NO regional director.
+  const d1 = await p.expense.create({ data: { companyId: CO, clubId: CLUB2, createdByUserId: FOREIGN, category: "household", amountKopeks: 3000, expenseDate: today, status: "draft", entryVersion: 2 } });
+  const s1 = await simulateSubmit(d1.id);
+  check("R12 manager submit with no regional → blocked", s1.ok === false && s1.error === "no_regional");
+  check("R13 blocked submit leaves the status as draft", (await p.expense.findUnique({ where: { id: d1.id } })).status === "draft");
+  const d2 = await p.expense.create({ data: { companyId: CO, clubId: CLUB2, createdByUserId: FOREIGN, category: "household", amountKopeks: 4000, expenseDate: today, status: "needs_correction", entryVersion: 2 } });
+  const s2 = await simulateSubmit(d2.id);
+  check("R14 manager resubmit (needs_correction) with no regional → blocked", s2.ok === false);
+  check("R15 blocked resubmit leaves the status as needs_correction", (await p.expense.findUnique({ where: { id: d2.id } })).status === "needs_correction");
+  const acctQueue = await p.expense.count({ where: { companyId: CO, clubId: CLUB2, status: "pending_accountant_verification" } });
+  check("R16 blocked expense never appears in the accountant queue", acctQueue === 0);
+  // Assign a regional to CLUB2, then the SAME draft submits successfully to regional.
+  await p.clubUserAccess.create({ data: { clubId: CLUB2, userId: REG, role: "regional_director" } });
+  const s3 = await simulateSubmit(d1.id);
+  check("R17 after a regional is assigned, the same expense routes to regional", s3.ok === true && (await p.expense.findUnique({ where: { id: d1.id } })).status === "pending_regional_budget_approval");
+  // Regional-created expense on CLUB (REG is regional there) still goes straight to accounting.
+  const d3 = await p.expense.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: REG, category: "household", amountKopeks: 5000, expenseDate: today, status: "draft", entryVersion: 2 } });
+  const s4 = await simulateSubmit(d3.id);
+  check("R18 regional-created expense still goes straight to accounting", s4.ok === true && (await p.expense.findUnique({ where: { id: d3.id } })).status === "pending_accountant_verification");
+  // Static: the else branch BLOCKS with the exact error (no accounting fallback).
+  check("R19 no-regional path blocks with E.NO_REGIONAL (no accounting fallback)", actions.includes("return { ok: false, error: E.NO_REGIONAL }"));
+  check("R20 blocked-submit message is the approved Russian text", actions.includes("Для клуба не назначен региональный директор. Обратитесь к администратору."));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

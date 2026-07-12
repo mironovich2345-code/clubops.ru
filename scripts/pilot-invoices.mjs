@@ -579,6 +579,46 @@ async function main() {
   check("332 return form requires a reason (minLength) in the UI", editForm.includes('name="reason"') && editForm.includes("minLength={5}") && editForm.includes('value="return_for_correction"'));
   check("333 return action is separated from the plain button loop", editForm.includes('availableActions.filter((a) => a !== "return_for_correction")'));
 
+  // === Invoice field/file immutability (340–359) ===========================
+  // Effective server decision = canEditInvoice(status, roles) AND (paid OR author).
+  // Editable ONLY in draft / needs_correction (author) or paid (accountant).
+  const canEditInv = (status, roles, isAuthor) => {
+    const roleOk = status === "paid" ? roles.includes("accountant") : ["draft", "needs_correction"].includes(status);
+    if (!roleOk) return false;
+    if (status !== "paid" && !isAuthor) return false; // unpaid → author only
+    return true;
+  };
+  const AUTHOR = ["manager"];
+  check("340 author edits a draft", canEditInv("draft", AUTHOR, true) === true);
+  check("341 author edits a needs_correction invoice", canEditInv("needs_correction", AUTHOR, true) === true);
+  check("342 author CANNOT edit needs_review", canEditInv("needs_review", AUTHOR, true) === false);
+  check("343 author CANNOT edit approved_by_regional", canEditInv("approved_by_regional", AUTHOR, true) === false);
+  check("344 author CANNOT edit approved_by_chief_accountant", canEditInv("approved_by_chief_accountant", AUTHOR, true) === false);
+  check("345 author CANNOT edit approved_by_owner (legacy)", canEditInv("approved_by_owner", AUTHOR, true) === false);
+  check("346 author (manager) CANNOT edit paid", canEditInv("paid", AUTHOR, true) === false);
+  check("347 author CANNOT edit rejected", canEditInv("rejected", AUTHOR, true) === false);
+  check("348 author CANNOT edit canceled", canEditInv("canceled", AUTHOR, true) === false);
+  check("349 accountant CAN edit paid (post-payment correction)", canEditInv("paid", ["accountant"], false) === true);
+  // Another manager (not the author) cannot edit in ANY status.
+  check("350 non-author manager cannot edit draft", canEditInv("draft", AUTHOR, false) === false);
+  check("351 non-author manager cannot edit needs_correction", canEditInv("needs_correction", AUTHOR, false) === false);
+  check("352 non-author manager cannot edit needs_review", canEditInv("needs_review", AUTHOR, false) === false);
+  // Return → author can edit again; resubmit → locked again.
+  check("353 after return (needs_correction) author edits again", canEditInv("needs_correction", AUTHOR, true) === true);
+  check("354 after resubmit (needs_review) editing is locked again", canEditInv("needs_review", AUTHOR, true) === false);
+  // Static: canEditInvoice is the authoritative gate (draft/needs_correction, paid→accountant).
+  check("355 INVOICE_EDITABLE_STATUSES = draft + needs_correction", lib.includes('INVOICE_EDITABLE_STATUSES = ["draft", "needs_correction"]'));
+  check("356 canEditInvoice: paid→accountant, else only editable statuses", lib.includes('if (status === "paid") return has(roles, "accountant")') && lib.includes("INVOICE_EDITABLE_STATUSES as readonly string[]).includes(status)"));
+  check("357 updateInvoice gates on canEditInvoice + author (server-enforced)", actions.includes("canEditInvoice(existing.status, ctx.effectiveRoles)") && actions.includes('existing.status !== "paid" && existing.createdByUserId !== ctx.user.id'));
+  // File immutability: the edit path can never swap the file, and the file route is GET-only.
+  const fileRouteSrc = readFileSync(new URL("../src/app/api/invoices/[id]/file/route.ts", import.meta.url), "utf8");
+  // parseInvoiceFields (used by updateInvoice) returns ONLY business fields — no
+  // file keys — so an edit can never replace the stored document.
+  const pif = actions.slice(actions.indexOf("function parseInvoiceFields"), actions.indexOf("async function clubInCompany"));
+  check("358a edit parser exposes no file fields (file cannot be replaced via edit)", pif.length > 0 && !pif.includes("originalFileStorageKey") && !pif.includes("originalFileName") && !pif.includes("storageKey"));
+  check("358b updateInvoice writes only the parsed business fields", actions.includes("prisma.invoice.update({ where: { id: invoiceId }, data: parsed.data })"));
+  check("359 invoice file route is download-only (no POST/PUT/PATCH)", fileRouteSrc.includes("export async function GET") && !/export async function (POST|PUT|PATCH)/.test(fileRouteSrc));
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();
