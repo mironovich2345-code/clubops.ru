@@ -59,9 +59,17 @@ failure.** The app is never built on the VM.
 
 1. **Container Registry** (one registry in your folder). Note its **registry id**.
 2. **CI service account** with role `container-registry.images.pusher` on that registry → create an **authorized key (JSON)** for it. This JSON becomes the `YC_SA_KEY_JSON` GitHub Secret. Push-only.
-3. **VM pull access**: a service account with role `container-registry.images.puller` on the registry, attached to the VM (or `yc container registry configure-docker` on the VM). Pull-only, separate from the CI account.
+3. **VM pull access** — already provisioned: the service account **`club-ops-vm`** is
+   **attached to the VM** with only `container-registry.images.puller` on this
+   registry. The VM authenticates by fetching a **short-lived IAM token from the
+   instance metadata service** at deploy time (see §4a). **No static key, no JSON
+   key, and no persistent `~/.docker/config.json` are stored on the VM.** Do NOT
+   run `yc container registry configure-docker` (that would persist credentials).
 
-> The two accounts are separate on purpose: CI can push but not pull-to-run; the VM can pull but not push.
+> The two accounts use **different auth schemes** on purpose: CI (GitHub Actions)
+> pushes with an authorized-**key JSON** (`YC_SA_KEY_JSON`); the VM pulls with a
+> **metadata IAM token** from its attached SA. CI can push but not pull-to-run;
+> the VM can pull but not push, and holds no long-lived registry secret.
 
 ---
 
@@ -73,6 +81,72 @@ failure.** The app is never built on the VM.
 | `YC_SA_KEY_JSON` | Authorized-key JSON of the **CI push** service account | used with `docker login --username json_key --password-stdin cr.yandex`; never printed |
 
 Do not add S3 keys, DB passwords, SMTP or OpenAI keys to GitHub — they belong only in `/opt/club-ops/.env`.
+
+---
+
+## 4a. Registry authentication (VM = metadata IAM token; CI = key JSON)
+
+Two independent schemes — the VM never holds a long-lived registry secret:
+
+| | GitHub Actions (push) | Production VM (pull) |
+|---|---|---|
+| Identity | CI service account (pusher) | attached SA **club-ops-vm** (puller) |
+| Credential | `YC_SA_KEY_JSON` (GitHub Secret) | short-lived **IAM token** from metadata |
+| `docker login` | `--username json_key --password-stdin` | `--username iam --password-stdin` |
+| Stored on VM? | no | **no** (temp `DOCKER_CONFIG`, deleted after) |
+
+**How the VM authenticates (in `deploy.sh`):**
+1. After preflight and **before** any registry access, it creates a private temp
+   `DOCKER_CONFIG` (`mktemp -d`, `umask 077`, mode 700) and exports it.
+2. It fetches a fresh token from the metadata service:
+   ```
+   curl -s --fail --connect-timeout 3 --max-time 8 --retry 3 \
+     -H 'Metadata-Flavor: Google' \
+     http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
+   ```
+   The JSON is parsed with `python3` (validates `access_token` + `expires_in`);
+   the raw response and the token are **never logged**.
+3. `printf '%s' "$IAM_TOKEN" | docker login --username iam --password-stdin cr.yandex`
+   (token via **stdin**, never as a process argument).
+4. It resolves the **remote** `:main` digest (`docker buildx imagetools inspect`,
+   manifest-inspect fallback) and pulls only if it changed; it re-authenticates
+   right before the pull so a long backup cannot outlive the token.
+5. On **any** exit/signal a cleanup trap runs `docker logout cr.yandex`, removes
+   the temp `DOCKER_CONFIG`, and unsets `IAM_TOKEN` / `DOCKER_CONFIG`. Nothing is
+   left in `/root/.docker/config.json` or `/home/*/.docker/config.json`.
+
+**Manual verification** (does nothing destructive):
+```bash
+sudo /opt/club-ops/deploy.sh --check      # tests metadata token + temp login + no persistent creds
+```
+One-off manual login test (always with a temp config; clean up after):
+```bash
+export DOCKER_CONFIG="$(mktemp -d)"; chmod 700 "$DOCKER_CONFIG"
+IAM_TOKEN="$(curl -s -H 'Metadata-Flavor: Google' \
+  http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')"
+printf '%s' "$IAM_TOKEN" | docker login --username iam --password-stdin cr.yandex
+docker logout cr.yandex; rm -rf "$DOCKER_CONFIG"; unset IAM_TOKEN DOCKER_CONFIG
+```
+
+**Confirm there are no persistent credentials:**
+```bash
+sudo test ! -f /root/.docker/config.json || sudo grep -q cr.yandex /root/.docker/config.json && echo "LEAK" || echo "clean"
+ls -la /home/*/.docker/config.json 2>/dev/null || echo "none"
+```
+
+**Inspect the journal without exposing secrets** (the script never prints tokens):
+```bash
+journalctl -u club-ops-deploy.service -n 200 --no-pager | grep -iE 'auth|error|deploy'
+```
+
+**Troubleshooting:**
+- *Metadata endpoint error / token empty*: confirm the SA is attached
+  (`curl -s -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/`),
+  that `network-online.target` is reached, and that egress to `169.254.169.254` is allowed.
+- *`docker login` rejected*: the SA lost the `container-registry.images.puller`
+  role, or was detached. Re-attach `club-ops-vm` / re-grant the role on the
+  registry — no change to the VM files is needed; the next timer run recovers.
 
 ---
 
@@ -122,8 +196,9 @@ sudo cp deploy/.env.production.example /opt/club-ops/.env
 sudo chmod 600 /opt/club-ops/.env
 sudo nano /opt/club-ops/.env         # fill secrets (never commit these)
 
-# 2) Make the VM able to PULL from the registry (pull-only SA / configure-docker).
-#    e.g.:  yc container registry configure-docker
+# 2) Registry pull auth is AUTOMATIC via the attached SA (club-ops-vm) + metadata
+#    token — nothing to configure. Do NOT run `configure-docker` (it would persist
+#    a credential). Verify only:  sudo /opt/club-ops/deploy.sh --check
 
 # 3) Install compose + Caddyfile + deploy.sh + systemd units (does NOT enable the timer,
 #    does NOT overwrite .env, backs up any existing compose):
@@ -218,4 +293,5 @@ docker image prune -f                          # dangling only — safe
 - Never commit secrets. `.env*` (except `*.example`) is gitignored; the image build excludes `.env`, `uploads`, `backups` (`.dockerignore`).
 - Server secrets: only `/opt/club-ops/.env` (mode 600).
 - CI secret: only `YC_SA_KEY_JSON` (+ `YC_REGISTRY_ID`) in GitHub Actions; piped via `--password-stdin`, never printed.
+- **VM registry auth**: short-lived metadata IAM token only — **no `YC_SA_KEY_JSON`, no static key, no persistent `~/.docker/config.json` on the VM**. Credentials live in a temp `DOCKER_CONFIG` that is deleted on every run.
 - `/api/health` exposes only non-sensitive metadata (commit, environment, storage provider name, email status) — never DB/S3/SMTP/OpenAI/session values or cloud project/folder/SA ids.

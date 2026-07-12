@@ -25,6 +25,7 @@ const wf = read(".github/workflows/deploy-yandex.yml");
 const entry = read("docker-entrypoint.sh");
 const nextCfg = read("next.config.mjs");
 const depVer = read("src/lib/deployment-version.ts");
+const docs = read("docs/YANDEX_DEPLOYMENT.md");
 
 // ---- Dockerfile ----
 check("D1 multi-stage build (base/deps/builder/runner)", /AS base/.test(dockerfile) && /AS builder/.test(dockerfile) && /AS runner/.test(dockerfile));
@@ -107,6 +108,49 @@ check("SY1 timer checks ~1 minute", /OnUnitActiveSec=1min/.test(timer));
 check("SY2 timer persistent + boot delay", /Persistent=true/.test(timer) && /OnBootSec=/.test(timer));
 check("SY3 service is oneshot", /Type=oneshot/.test(svc));
 check("SY4 service has NO [Install] section (only timer enables it)", !/^\[Install\]/m.test(svc));
+
+// ---- VM registry auth via metadata IAM token (no static key, no persistence) ----
+// The --check block: from the CHECK_ONLY guard to its exit 0.
+const checkBlock = (() => {
+  const i = deploySh.indexOf('if [ "$CHECK_ONLY" = "1" ]');
+  const j = deploySh.indexOf("exit 0", i);
+  return i >= 0 && j >= 0 ? deploySh.slice(i, j) : "";
+})();
+
+check("A1 uses the metadata token endpoint 169.254.169.254", /169\.254\.169\.254\/computeMetadata\/v1\/instance\/service-accounts\/default\/token/.test(deploySh));
+check("A2 sends Metadata-Flavor: Google header", /Metadata-Flavor:\s*Google/.test(deploySh));
+check("A3 docker login username is iam", /docker login --username iam/.test(deploySh));
+check("A4 login uses --password-stdin", /--password-stdin/.test(deploySh));
+check("A5 token never passed as a docker login argument", !/docker login[^\n]*--password\s+[^-\s]/.test(deploySh) && !/docker login[^\n]*\$IAM_TOKEN/.test(deploySh));
+check("A6 temp DOCKER_CONFIG via mktemp -d + export", /mktemp -d/.test(deploySh) && /export DOCKER_CONFIG=/.test(deploySh));
+check("A7 umask 077 before creating the config", /umask 077/.test(deploySh));
+check("A8 cleanup trap on EXIT + INT/TERM", /trap cleanup EXIT/.test(deploySh) && /trap .*INT TERM/.test(deploySh));
+check("A9 temp docker config removed", /rm -rf "\$DOCKER_CONFIG_DIR"/.test(deploySh));
+check("A10 IAM_TOKEN is unset", /unset IAM_TOKEN/.test(deploySh));
+check("A11 DOCKER_CONFIG is unset in cleanup", /unset IAM_TOKEN DOCKER_CONFIG/.test(deploySh));
+check("A12 no YC_SA_KEY_JSON anywhere on the VM side", !/YC_SA_KEY_JSON/.test(deploySh) && !/YC_SA_KEY_JSON/.test(compose) && !/YC_SA_KEY_JSON/.test(svc) && !/YC_SA_KEY_JSON/.test(installSh));
+check("A13 no static key / configure-docker / --password literal", !/configure-docker/.test(deploySh) && !/docker login[^\n]*--password\s+["']?[A-Za-z0-9]/.test(deploySh));
+check("A14 no hardcoded IAM token / access_token value", !/t1\.9eu[A-Za-z0-9._-]{10}/.test(deploySh) && !/"access_token"\s*:\s*"[A-Za-z0-9]/.test(deploySh));
+check("A15 systemd unit carries no token/secret Environment", !/IAM_TOKEN|YC_SA_KEY_JSON|access_token/.test(svc) && !/Environment=[^\n]*(TOKEN|SECRET|PASSWORD|KEY_JSON)/.test(svc));
+check("A16 curl has connect/max timeouts + retries", /--connect-timeout/.test(deploySh) && /--max-time/.test(deploySh) && /--retry/.test(deploySh));
+check("A17 auth happens BEFORE remote digest + pull", deploySh.indexOf("setup_docker_config\nregistry_login") > 0 && deploySh.indexOf("setup_docker_config\nregistry_login") < deploySh.indexOf('REMOTE_DIGEST="$(remote_digest)"') && deploySh.indexOf('REMOTE_DIGEST="$(remote_digest)"') < deploySh.indexOf('docker pull "$NEW_IMAGE"'));
+check("A18 does not enable `set -x` (would echo the token)", !/^\s*set\s+-x/m.test(deploySh) && !/set -[A-Za-z]*x/.test(deploySh.replace("set -Eeuo pipefail", "")));
+check("A19 re-authenticates right before pull", (deploySh.match(/registry_login/g) || []).length >= 3);
+check("A20 does not print raw metadata response / token", !/log[^\n]*\$IAM_TOKEN/.test(deploySh) && !/echo[^\n]*\$IAM_TOKEN/.test(deploySh) && !/log[^\n]*\$resp/.test(deploySh));
+
+// --check must NOT pull / migrate / backup / compose up / touch state.
+check("A21 --check does not pull/migrate/backup/compose-up/write-state", checkBlock.length > 0 && !/docker pull/.test(checkBlock) && !/compose run --rm migrate/.test(checkBlock) && !/pg_dump/.test(checkBlock) && !/compose up/.test(checkBlock) && !/> "\$STATE_FILE"/.test(checkBlock));
+check("A22 --check verifies temp-only config (no persistent creds)", /\/root\/\.docker\/config\.json/.test(deploySh) && /\$HOME\/\.docker\/config\.json/.test(deploySh) && /persistent registry credentials/.test(deploySh));
+
+// VM (iam) and CI (json_key) use DIFFERENT auth schemes.
+check("A23 VM uses iam token, not json_key", /--username iam/.test(deploySh) && !/json_key/.test(deploySh));
+check("A24 CI workflow uses json_key, not the metadata iam token", /json_key/.test(wf) && !/--username iam/.test(wf) && !/169\.254\.169\.254/.test(wf));
+
+// install script checks the metadata-auth deps.
+check("A25 install checks curl + python3 + flock", /curl/.test(installSh) && /python3/.test(installSh) && /flock/.test(installSh) && /missing/.test(installSh));
+
+// docs record the VM auth model.
+check("A26 docs document club-ops-vm + puller + metadata token, no persistent key", /club-ops-vm/.test(docs) && /images\.puller/.test(docs) && /169\.254\.169\.254/.test(docs) && /Metadata-Flavor/.test(docs) && /No static key|no persistent|no long-lived registry secret/i.test(docs));
 
 // ---- no real secrets committed anywhere in the deploy surface ----
 const surface = [dockerfile, compose, caddy, deploySh, installSh, wf, entry].join("\n");

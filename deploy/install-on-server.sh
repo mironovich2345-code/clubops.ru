@@ -19,8 +19,23 @@ log() { echo "[install] $*"; }
 die() { echo "[install] ERROR: $*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run with sudo/root"
-command -v docker >/dev/null 2>&1 || die "docker not installed"
-docker compose version >/dev/null 2>&1 || die "docker compose plugin not available"
+
+# --- required system dependencies (checked, never auto-installed) ------------
+# deploy.sh needs: docker + compose, curl + python3 (metadata IAM token), flock
+# (single-flight). pg_dump runs INSIDE the postgres container, so it is not a host
+# dependency. openssl is only suggested in docs for generating secrets by hand.
+missing=""
+command -v docker  >/dev/null 2>&1 || missing="${missing} docker.io"
+command -v curl    >/dev/null 2>&1 || missing="${missing} curl"
+command -v python3 >/dev/null 2>&1 || missing="${missing} python3"
+command -v flock   >/dev/null 2>&1 || missing="${missing} util-linux"
+if ! docker compose version >/dev/null 2>&1; then missing="${missing} docker-compose-plugin"; fi
+if [ -n "$missing" ]; then
+  die "missing system dependencies:${missing}
+     install them first, e.g.:  sudo apt-get update && sudo apt-get install -y${missing}
+     (deploy.sh will not run without curl + python3 for the metadata IAM token.)"
+fi
+log "system dependencies present: docker, docker compose, curl, python3, flock"
 
 log "ensuring ${DEPLOY_DIR} exists ..."
 mkdir -p "$DEPLOY_DIR" "$DEPLOY_DIR/backups"

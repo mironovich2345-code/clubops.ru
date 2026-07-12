@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # CLUB-OPS safe production deploy (Yandex Cloud VM).
 #
-# Flow: single-flight lock -> preflight -> (digest gate) -> pg_dump backup ->
-#       pull image -> migrate (one-shot) -> recreate app+caddy -> health ->
-#       on failure roll the APP back to the previous image (DB is NOT rolled back).
+# Flow: single-flight lock -> preflight -> registry auth (short-lived IAM token
+#       from the VM metadata service, in a temp DOCKER_CONFIG) -> remote digest
+#       gate -> pg_dump backup -> pull image -> migrate (one-shot) -> recreate
+#       app+caddy -> health -> on failure roll the APP back to the previous image
+#       (DB is NOT rolled back). The temp DOCKER_CONFIG is ALWAYS removed.
 #
-# Never prints secrets, DATABASE_URL, passwords or document contents. Never
-# deletes the postgres volume and never runs `docker system prune -a`.
+# Registry auth uses the VM's attached service account (role
+# container-registry.images.puller) — NO static key / JSON key is ever stored on
+# the VM, and credentials are never written to a persistent ~/.docker/config.json.
+#
+# Never prints secrets, IAM tokens, DATABASE_URL, passwords or document contents.
+# Never deletes the postgres volume and never runs `docker system prune -a`.
 #
 #   deploy.sh            # perform a deploy if the :main image digest changed
-#   deploy.sh --check    # validate configuration only; change nothing
+#   deploy.sh --check    # validate config + registry auth only; change nothing
 set -Eeuo pipefail
 
 DEPLOY_DIR="/opt/club-ops"
@@ -21,15 +27,33 @@ LOCK_FILE="${DEPLOY_DIR}/.deploy.lock"
 NETWORK="club_ops_internal"
 VOLUME="club_ops_postgres_data"
 PG_CONTAINER="club-ops-postgres"
+REGISTRY="cr.yandex"
+METADATA_TOKEN_URL="http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token"
 MAIN_TAG="main"
 KEEP_BACKUPS=7
 KEEP_IMAGES=5
 HEALTH_TIMEOUT=120
 MIN_FREE_KB=2000000   # ~2 GB
 
+DOCKER_CONFIG_DIR=""   # temp dir; created lazily, always removed by cleanup
+
 log()  { echo "[deploy $(date -u +%FT%TZ)] $*"; }
 die()  { log "ERROR: $*"; exit 1; }
-trap 'die "unexpected failure on line ${LINENO}"' ERR
+
+# Best-effort teardown on ANY exit / signal: logout, remove the temp docker
+# config, and scrub token vars. Never masks the original exit code, never fails.
+cleanup() {
+  local rc=$?
+  if [ -n "${DOCKER_CONFIG:-}" ]; then
+    docker logout "$REGISTRY" >/dev/null 2>&1 || true
+  fi
+  [ -n "${DOCKER_CONFIG_DIR:-}" ] && rm -rf "$DOCKER_CONFIG_DIR" 2>/dev/null || true
+  unset IAM_TOKEN DOCKER_CONFIG DOCKER_CONFIG_DIR 2>/dev/null || true
+  return "$rc"
+}
+trap 'die "unexpected failure (line ${LINENO})"' ERR
+trap cleanup EXIT
+trap 'log "interrupted by signal"; exit 130' INT TERM
 
 CHECK_ONLY=0
 [ "${1:-}" = "--check" ] && CHECK_ONLY=1
@@ -38,6 +62,75 @@ CHECK_ONLY=0
 env_get() { grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^["'\'']//; s/["'\'']$//'; }
 
 compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
+
+# Create an isolated, private DOCKER_CONFIG for this run (never $HOME/.docker).
+setup_docker_config() {
+  umask 077
+  DOCKER_CONFIG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/club-ops-docker.XXXXXX")" || die "cannot create temp docker config dir"
+  chmod 700 "$DOCKER_CONFIG_DIR"
+  export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
+}
+
+# Fetch a fresh short-lived IAM token from the VM metadata service and docker
+# login to the registry. The token is passed via stdin only (never as an arg),
+# never logged, and dropped immediately after login. Requires curl + python3.
+registry_login() {
+  local resp token
+  resp="$(curl -s --fail --connect-timeout 3 --max-time 8 --retry 3 --retry-delay 1 \
+    -H 'Metadata-Flavor: Google' "$METADATA_TOKEN_URL" 2>/dev/null)" \
+    || die "metadata service unreachable — cannot obtain IAM token (is service account 'club-ops-vm' attached with the puller role?)"
+
+  # Parse the JSON safely with python3; validate access_token + expires_in.
+  token="$(printf '%s' "$resp" | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(2)
+t = d.get("access_token", "")
+if not t:
+    sys.exit(3)
+e = d.get("expires_in")  # optional; if present must be a number
+if e is not None:
+    try:
+        int(e)
+    except Exception:
+        sys.exit(4)
+sys.stdout.write(t)
+' 2>/dev/null)" || die "metadata token response was not valid JSON / had no access_token"
+  unset resp
+  [ -n "$token" ] || die "metadata service returned an empty access_token"
+
+  IAM_TOKEN="$token"; unset token
+  if ! printf '%s' "$IAM_TOKEN" | docker login --username iam --password-stdin "$REGISTRY" >/dev/null 2>&1; then
+    unset IAM_TOKEN
+    die "docker login to ${REGISTRY} failed (IAM token rejected or puller role missing)"
+  fi
+  unset IAM_TOKEN   # minimal lifetime; cleanup() unsets again defensively
+  log "authenticated to ${REGISTRY} via VM service account (short-lived token, temp config)"
+}
+
+# Resolve the REMOTE manifest digest of :main WITHOUT pulling layers. Uses the
+# temp DOCKER_CONFIG (exported). buildx imagetools first, manifest inspect fallback.
+remote_digest() {
+  local d=""
+  if docker buildx version >/dev/null 2>&1; then
+    d="$(docker buildx imagetools inspect "$MAIN_IMAGE" --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
+  fi
+  if [ -z "$d" ]; then
+    d="$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect --verbose "$MAIN_IMAGE" 2>/dev/null | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+if isinstance(d, list):
+    d = d[0] if d else {}
+print(d.get("Descriptor", {}).get("digest", ""))
+' 2>/dev/null || true)"
+  fi
+  printf '%s' "$d"
+}
 
 # --- single-flight lock ------------------------------------------------------
 exec 9>"$LOCK_FILE" 2>/dev/null || die "cannot open lock file (need write to ${DEPLOY_DIR})"
@@ -48,7 +141,9 @@ cd "$DEPLOY_DIR" || die "cannot cd to ${DEPLOY_DIR}"
 # --- preflight ---------------------------------------------------------------
 [ -f "$ENV_FILE" ]      || die ".env not found at ${ENV_FILE}"
 [ -f "$COMPOSE_FILE" ]  || die "compose file not found at ${COMPOSE_FILE}"
-command -v docker >/dev/null 2>&1 || die "docker not installed"
+command -v docker  >/dev/null 2>&1 || die "docker not installed"
+command -v curl    >/dev/null 2>&1 || die "curl not installed"
+command -v python3 >/dev/null 2>&1 || die "python3 not installed"
 docker compose version >/dev/null 2>&1 || die "docker compose plugin not available"
 docker network inspect "$NETWORK" >/dev/null 2>&1 || die "docker network '${NETWORK}' missing"
 docker volume  inspect "$VOLUME"  >/dev/null 2>&1 || die "docker volume '${VOLUME}' missing"
@@ -60,22 +155,32 @@ MAIN_IMAGE="${APP_IMAGE_REPO}:${MAIN_TAG}"
 AVAIL_KB="$(df -Pk "$DEPLOY_DIR" | awk 'NR==2{print $4}')"
 [ "${AVAIL_KB:-0}" -ge "$MIN_FREE_KB" ] || die "insufficient free disk space (<2GB) on ${DEPLOY_DIR}"
 
+# --- registry auth (temp config; BEFORE any private-registry access) ---------
+setup_docker_config
+registry_login
+
 if [ "$CHECK_ONLY" = "1" ]; then
   compose config >/dev/null || die "compose config invalid"
-  log "check OK: env, docker, compose, network '${NETWORK}', volume '${VOLUME}', APP_IMAGE_REPO present, disk ok"
-  exit 0
+  # Confirm credentials landed ONLY in the temp config, never in a persistent one.
+  [ "${DOCKER_CONFIG:-}" = "$DOCKER_CONFIG_DIR" ] || die "DOCKER_CONFIG is not the temp dir"
+  for cfg in /root/.docker/config.json "$HOME/.docker/config.json"; do
+    if [ -f "$cfg" ] && grep -q "$REGISTRY" "$cfg" 2>/dev/null; then
+      die "persistent registry credentials found in ${cfg} — remove them (VM must use the metadata token only)"
+    fi
+  done
+  log "check OK: env, docker, curl, python3, compose, network '${NETWORK}', volume '${VOLUME}', disk ok, registry auth via metadata service works (temp config), no persistent credentials"
+  exit 0   # cleanup() removes the temp DOCKER_CONFIG
 fi
 
-# --- digest gate: only deploy when the :main image content changed -----------
-log "pulling ${MAIN_IMAGE} ..."
-docker pull "$MAIN_IMAGE" >/dev/null || die "docker pull failed"
-NEW_IMAGE="$(docker image inspect "$MAIN_IMAGE" --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}')"
-[ -n "$NEW_IMAGE" ] || die "could not resolve pulled image digest"
+# --- digest gate: only deploy when the remote :main digest changed -----------
+REMOTE_DIGEST="$(remote_digest)"
+[ -n "$REMOTE_DIGEST" ] || die "could not resolve remote digest for ${MAIN_IMAGE} (registry auth or buildx/manifest issue)"
+NEW_IMAGE="${APP_IMAGE_REPO}@${REMOTE_DIGEST}"
 PREV_IMAGE="$(cat "$STATE_FILE" 2>/dev/null || true)"
 
 if [ -n "$PREV_IMAGE" ] && [ "$NEW_IMAGE" = "$PREV_IMAGE" ]; then
-  log "image digest unchanged — nothing to deploy"
-  exit 0
+  log "remote image digest unchanged — nothing to deploy"
+  exit 0   # cleanup() still removes the temp DOCKER_CONFIG
 fi
 log "new image detected (deploying)"
 
@@ -95,6 +200,11 @@ chmod 600 "$BACKUP_FILE"
 log "backup written: $(basename "$BACKUP_FILE") ($(du -h "$BACKUP_FILE" | cut -f1))"
 # Keep only the most recent N backups.
 ls -1t "${BACKUP_DIR}"/clubops_*.dump 2>/dev/null | tail -n +"$((KEEP_BACKUPS+1))" | xargs -r rm -f
+
+# --- pull the exact digest (refresh the token right before pull) -------------
+registry_login   # re-auth so a long backup cannot expire the login before pull
+log "pulling ${NEW_IMAGE} ..."
+docker pull "$NEW_IMAGE" >/dev/null || die "docker pull failed"
 
 # --- apply: migrate (one-shot), then recreate app + caddy --------------------
 export APP_IMAGE="$NEW_IMAGE"
