@@ -50,14 +50,21 @@ jobs:
           YC_SA_KEY_JSON: ${{ secrets.YC_SA_KEY_JSON }}
         run: printf '%s' "$YC_SA_KEY_JSON" | docker login --username json_key --password-stdin cr.yandex
 
-      - name: Build and push image
+      # Build ONCE (single-platform) and LOAD into the local docker daemon so the
+      # exact image that will be published can be scanned/verified before push.
+      # `pull: true` always refreshes the base image; APT_REFRESH busts the apt
+      # security-upgrade layer so it is never served from stale cache.
+      - name: Build image (load for verification)
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          push: false
+          load: true
+          pull: true
           platforms: linux/amd64
           build-args: |
             APP_GIT_SHA=${{ github.sha }}
+            APT_REFRESH=${{ github.sha }}
           tags: |
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/club-ops:${{ github.sha }}
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/club-ops:main
@@ -67,3 +74,19 @@ jobs:
             org.opencontainers.image.created=${{ steps.meta.outputs.created }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Verify OS package versions in the REAL built image (fails on old
+      # libgnutls30 / wrong arch). The check script is bind-mounted, not baked in.
+      - name: Verify image OS package versions
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/scripts/check-runtime-packages.sh:/tmp/check-runtime-packages.sh:ro" \
+            --entrypoint sh \
+            "cr.yandex/${{ secrets.YC_REGISTRY_ID }}/club-ops:${{ github.sha }}" \
+            /tmp/check-runtime-packages.sh
+
+      # Publish only AFTER verification. Same image (already logged in above).
+      - name: Push image (after verification)
+        run: |
+          docker push "cr.yandex/${{ secrets.YC_REGISTRY_ID }}/club-ops:${{ github.sha }}"
+          docker push "cr.yandex/${{ secrets.YC_REGISTRY_ID }}/club-ops:main"

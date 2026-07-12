@@ -6,14 +6,19 @@
 # the SAME image can run `prisma migrate deploy` (as a separate compose service
 # on the VM, or inline for Railway's single-container flow via the entrypoint).
 #
-# NO secrets are ever baked in and NO secret build args are used. The only build
-# arg is APP_GIT_SHA — non-sensitive deployment metadata surfaced by /api/health.
+# Security: the SHIPPED `runner` stage applies the latest Debian Bookworm
+# security updates (`apt-get upgrade`) on every production build, busted by the
+# non-secret APT_REFRESH build arg. Node 20 + Bookworm are kept intentionally.
+# NO secrets are ever baked in. Non-secret build args only: APP_GIT_SHA, APT_REFRESH.
 
+# --- build base: Node 20 (Bookworm) + minimal libs for the BUILD -------------
+# openssl (libssl3) + ca-certificates are needed by `prisma generate`. wget/curl
+# are NOT installed — the runtime healthcheck uses Node's http module.
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
-# OpenSSL is required by Prisma engines; wget is used by the container healthcheck.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates wget \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 # NOTE: NODE_ENV is intentionally NOT "production" in the build stages — that
 # would make `npm ci` omit devDependencies (typescript/tailwindcss/postcss/
@@ -36,7 +41,7 @@ ENV APP_GIT_SHA=$APP_GIT_SHA
 # Generates the PostgreSQL Prisma client and the standalone Next.js server.
 RUN npm run build:prod
 
-# --- runner: minimal standalone runtime --------------------------------------
+# --- runner: minimal, security-patched standalone runtime --------------------
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -45,6 +50,19 @@ ENV HOSTNAME=0.0.0.0
 # Non-secret deployment metadata baked into the image (surfaced by /api/health).
 ARG APP_GIT_SHA=local
 ENV APP_GIT_SHA=$APP_GIT_SHA
+
+# Apply the latest Bookworm SECURITY updates in the shipped image. APT_REFRESH is
+# a non-secret, per-build value (commit SHA / run id) whose only purpose is to
+# invalidate this layer every production build so `apt-get update && upgrade`
+# never serves stale package lists from the Docker/BuildKit cache.
+ARG APT_REFRESH=none
+RUN echo "APT refresh: ${APT_REFRESH}" >/dev/null \
+  && apt-get update \
+  && apt-get upgrade -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
 # Run as a non-root user.
 RUN useradd --uid 1001 --create-home --shell /usr/sbin/nologin nodejs
 
@@ -68,8 +86,9 @@ RUN chmod +x ./docker-entrypoint.sh
 RUN mkdir -p /app/uploads && chown -R nodejs:nodejs /app/uploads
 USER nodejs
 EXPOSE 3000
+# Healthcheck uses the Node runtime (no wget/curl dependency, no shell injection).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1:${PORT:-3000}/api/health" >/dev/null 2>&1 || exit 1
+  CMD ["node", "-e", "const p=process.env.PORT||3000;require('http').get('http://127.0.0.1:'+p+'/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
 
 # Default CMD = migrate then start (single-container / Railway). On the VM the
 # compose file overrides this: a dedicated `migrate` service runs the migration

@@ -218,10 +218,11 @@ fi
 log "starting postgres + app + caddy on the new image ..."
 compose up -d postgres app caddy
 
-# --- health check (inside the docker network) --------------------------------
+# --- health check (inside the docker network; Node probe, no wget in image) --
+HEALTH_JS="require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 healthy=0
 for i in $(seq 1 "$HEALTH_TIMEOUT"); do
-  if compose exec -T app wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1; then healthy=1; break; fi
+  if compose exec -T app node -e "$HEALTH_JS" >/dev/null 2>&1; then healthy=1; break; fi
   sleep 1
 done
 

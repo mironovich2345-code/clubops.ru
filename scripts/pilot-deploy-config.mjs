@@ -26,6 +26,8 @@ const entry = read("docker-entrypoint.sh");
 const nextCfg = read("next.config.mjs");
 const depVer = read("src/lib/deployment-version.ts");
 const docs = read("docs/YANDEX_DEPLOYMENT.md");
+const chkPkg = read("scripts/check-runtime-packages.sh");
+const docsSec = read("docs/CONTAINER_SECURITY.md");
 
 // ---- Dockerfile ----
 check("D1 multi-stage build (base/deps/builder/runner)", /AS base/.test(dockerfile) && /AS builder/.test(dockerfile) && /AS runner/.test(dockerfile));
@@ -151,6 +153,25 @@ check("A25 install checks curl + python3 + flock", /curl/.test(installSh) && /py
 
 // docs record the VM auth model.
 check("A26 docs document club-ops-vm + puller + metadata token, no persistent key", /club-ops-vm/.test(docs) && /images\.puller/.test(docs) && /169\.254\.169\.254/.test(docs) && /Metadata-Flavor/.test(docs) && /No static key|no persistent|no long-lived registry secret/i.test(docs));
+
+// ---- image security hardening (Debian updates + minimisation) ----
+check("SEC1 Dockerfile runs apt-get update", /apt-get update/.test(dockerfile));
+check("SEC2 Dockerfile runs apt-get upgrade -y", /apt-get upgrade -y/.test(dockerfile));
+check("SEC3 uses --no-install-recommends", /--no-install-recommends/.test(dockerfile));
+check("SEC4 apt lists removed (no stale cache in image)", /rm -rf \/var\/lib\/apt\/lists/.test(dockerfile) && /apt-get clean/.test(dockerfile));
+check("SEC5 APT_REFRESH arg used immediately before apt update", /ARG APT_REFRESH/.test(dockerfile) && /APT refresh: \$\{APT_REFRESH\}"[\s\S]{0,80}apt-get update/.test(dockerfile));
+check("SEC6 runner installs no wget/curl (surface minimised)", !/apt-get install[^\n]*\bwget\b/.test(dockerfile) && !/apt-get install[^\n]*\bcurl\b/.test(dockerfile));
+check("SEC7 HEALTHCHECK uses the Node runtime (not wget)", /HEALTHCHECK[\s\S]{0,240}CMD \["node"/.test(dockerfile) && /\/api\/health/.test(dockerfile));
+check("SEC8 compose app healthcheck uses node, not wget", /test: \["CMD", "node"/.test(compose) && !/wget -/.test(compose));
+check("SEC9 deploy.sh health probe uses node, not wget", /compose exec -T app node -e/.test(deploySh) && !/exec -T app wget/.test(deploySh));
+check("SEC10 workflow pulls a fresh base image", /pull:\s*true/.test(wf));
+check("SEC11 workflow passes APT_REFRESH build-arg", /APT_REFRESH=\$\{\{ github\.sha \}\}/.test(wf));
+check("SEC12 workflow verifies the built image BEFORE push", wf.indexOf("check-runtime-packages.sh") > 0 && wf.indexOf("check-runtime-packages.sh") < wf.indexOf("docker push") && /push: false/.test(wf) && /load: true/.test(wf));
+check("SEC13 check script enforces libgnutls30 >= fix + amd64 + fails hard", /3\.7\.9-2\+deb12u7/.test(chkPkg) && /dpkg --compare-versions/.test(chkPkg) && /dpkg --print-architecture/.test(chkPkg) && /amd64/.test(chkPkg) && /exit 1/.test(chkPkg));
+check("SEC14 check script prints no env/secrets", !/printenv/.test(chkPkg) && !/\$\{?(SESSION_SECRET|DATABASE_URL|S3_SECRET|SMTP_PASSWORD|OPENAI_API_KEY|OTP_SECRET|ACCOUNT_RECOVERY)/.test(chkPkg));
+check("SEC15 CONTAINER_SECURITY docs analyse the 3 remaining Criticals + policy", /CVE-2026-8376/.test(docsSec) && /CVE-2026-42496/.test(docsSec) && /CVE-2023-45853/.test(docsSec) && /32-bit/.test(docsSec) && /Archive::Tar/.test(docsSec) && /MiniZip/.test(docsSec) && /blocks production/i.test(docsSec));
+check("SEC16 base unchanged: Node 20 Bookworm + non-root (not weakened)", /node:20-bookworm-slim/.test(dockerfile) && /USER nodejs/.test(dockerfile));
+check("SEC17 no auto testing/unstable repos or unofficial .deb", !/testing|unstable|trixie|sid/.test(dockerfile) && !/dpkg -i|wget[^\n]*\.deb|curl[^\n]*\.deb/.test(dockerfile));
 
 // ---- no real secrets committed anywhere in the deploy surface ----
 const surface = [dockerfile, compose, caddy, deploySh, installSh, wf, entry].join("\n");
