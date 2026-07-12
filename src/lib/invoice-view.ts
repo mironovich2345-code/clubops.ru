@@ -177,7 +177,7 @@ export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams
   // so a saved draft never disappears. Elevated roles don't get drafts in the
   // period list — they act on the dedicated review queue instead.
   // Managers additionally see their own drafts/rejected (empty for elevated).
-  const managerExtraStatuses = roleView === "manager" ? ["draft", "rejected"] : [];
+  const managerExtraStatuses = roleView === "manager" ? ["draft", "needs_correction", "rejected"] : [];
   const incl = { club: { select: { id: true, name: true, city: true } } } as const;
   // Review queue clubs: ALL accessible clubs of the company (never narrowed by the
   // city/club filter); empty for non-elevated so the query returns nothing.

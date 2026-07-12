@@ -14,7 +14,7 @@ const check = (n, c, x = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${x ?
 // --- Mirrors of lib/invoices.ts -------------------------------------------
 const AWAITING = ["needs_review", "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
 const CONFIRMED_UNPAID = ["approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
-const MANAGER_EXTRA = ["draft", "rejected"]; // operational-only visible statuses
+const MANAGER_EXTRA = ["draft", "needs_correction", "rejected"]; // operational-only visible statuses
 const ELEVATED = ["regional_director", "accountant", "chief_accountant", "owner", "general_director"];
 const OPERATIONAL = ["regional_director", "manager", "accountant", "chief_accountant"];
 const isPaid = (s) => s === "paid";
@@ -503,6 +503,81 @@ async function main() {
   check("254 paid invoice STILL in the period table (only removed from upcoming)", vU.currentPeriodInvoices.some((r) => r.id === "uPaid") && vU.upcomingPayments.every((r) => r.id !== "uPaid"));
   check("S19 upcoming computed server-side, reuses awaiting set + paidAt guard", viewSrc.includes("upcomingPayments") && viewSrc.includes("isInvoiceAwaitingPayment(r.status) && !r.paidAt"));
   check("S20 page renders server upcomingPayments (no client status filter)", pageSrc.includes("view.upcomingPayments") && !pageSrc.includes('r.status !== "paid"'));
+
+  // === Return-for-correction workflow (300–329) ============================
+  // Mirror of applyInvoiceAction for the send/return/approve routing (regional vs
+  // chief fallback, self-approval, author-only submit). needs_correction is the
+  // new "sent back to the author" state; it re-enters review via send_to_review.
+  const applyInv = (action, status, roles, opts) => {
+    const isRegional = roles.includes("regional_director");
+    const isChief = roles.includes("chief_accountant");
+    const isManager = roles.includes("manager");
+    if (action === "send_to_review") {
+      if (status !== "draft" && status !== "needs_correction") return { ok: false };
+      if (!(isManager || isRegional)) return { ok: false };
+      if (!opts.isCreator) return { ok: false };
+      return { ok: true, to: "needs_review" };
+    }
+    if (action === "approve") {
+      if (status !== "needs_review") return { ok: false };
+      if (opts.isCreator) return { ok: false };
+      if (opts.hasActiveRegional) return isRegional ? { ok: true, to: "approved_by_regional" } : { ok: false };
+      return isChief ? { ok: true, to: "approved_by_chief_accountant" } : { ok: false };
+    }
+    if (action === "return_for_correction") {
+      if (status !== "needs_review") return { ok: false };
+      if (opts.hasActiveRegional) return isRegional ? { ok: true, to: "needs_correction" } : { ok: false };
+      return isChief ? { ok: true, to: "needs_correction" } : { ok: false };
+    }
+    return { ok: false };
+  };
+  // availableInvoiceActions mirror — the subset the actor can perform now.
+  const availInv = (status, roles, opts) => ["send_to_review", "approve", "return_for_correction"].filter((a) => applyInv(a, status, roles, opts).ok);
+  const rReg = ["regional_director"], rMgr = ["manager"], rChief = ["chief_accountant"];
+  const withRegional = { hasActiveRegional: true, isCreator: false };
+  // Behaviour: return-for-correction
+  check("300 regional returns a submitted invoice → needs_correction", applyInv("return_for_correction", "needs_review", rReg, withRegional).to === "needs_correction");
+  check("301 chief-fallback returns when no active regional → needs_correction", applyInv("return_for_correction", "needs_review", rChief, { hasActiveRegional: false, isCreator: false }).to === "needs_correction");
+  check("302 non-regional cannot return while a regional is active", applyInv("return_for_correction", "needs_review", rChief, withRegional).ok === false);
+  check("303 manager cannot return", applyInv("return_for_correction", "needs_review", rMgr, withRegional).ok === false);
+  check("304 cannot return a draft (only needs_review)", applyInv("return_for_correction", "draft", rReg, withRegional).ok === false);
+  check("305 cannot return an already-approved invoice", applyInv("return_for_correction", "approved_by_regional", rReg, withRegional).ok === false);
+  check("306 cannot return a needs_correction invoice again", applyInv("return_for_correction", "needs_correction", rReg, withRegional).ok === false);
+  // Behaviour: resubmit after correction
+  check("307 author resubmits from needs_correction → needs_review", applyInv("send_to_review", "needs_correction", rMgr, { hasActiveRegional: true, isCreator: true }).to === "needs_review");
+  check("308 regional-author resubmits own returned invoice", applyInv("send_to_review", "needs_correction", rReg, { hasActiveRegional: true, isCreator: true }).to === "needs_review");
+  check("309 non-author manager cannot resubmit someone else's invoice", applyInv("send_to_review", "needs_correction", rMgr, { hasActiveRegional: true, isCreator: false }).ok === false);
+  check("310 accountant cannot resubmit (not manager/regional)", applyInv("send_to_review", "needs_correction", ["accountant"], { hasActiveRegional: true, isCreator: true }).ok === false);
+  check("311 draft submit still works (unchanged)", applyInv("send_to_review", "draft", rMgr, { hasActiveRegional: true, isCreator: true }).to === "needs_review");
+  // Behaviour: after resubmit the invoice re-enters the same review routing
+  check("312 resubmitted invoice is approvable by the regional (not the author)", applyInv("approve", "needs_review", rReg, { hasActiveRegional: true, isCreator: false }).to === "approved_by_regional");
+  check("313 author still cannot approve own resubmitted invoice", applyInv("approve", "needs_review", rReg, { hasActiveRegional: true, isCreator: true }).ok === false);
+  // availableInvoiceActions surface
+  check("314 regional sees return_for_correction on a submitted invoice", availInv("needs_review", rReg, withRegional).includes("return_for_correction"));
+  check("315 manager (author) sees send_to_review on needs_correction, not approve", (() => { const a = availInv("needs_correction", rMgr, { hasActiveRegional: true, isCreator: true }); return a.includes("send_to_review") && !a.includes("approve") && !a.includes("return_for_correction"); })());
+  check("316 regional does NOT see return on a draft", !availInv("draft", rReg, withRegional).includes("return_for_correction"));
+  // Manager visibility of the new + legacy operational statuses
+  check("317 manager list surfaces own needs_correction invoice", buildView(uMgr, {}, [um({ id: "nc1", status: "needs_correction" })], [], now).currentPeriodInvoices.some((r) => r.id === "nc1"));
+  check("318 legacy rejected stays visible to the manager (not converted/deleted)", MANAGER_EXTRA.includes("rejected"));
+  check("319 needs_correction is an operational-only status (hidden from elevated awaiting)", !AWAITING.includes("needs_correction"));
+
+  // === Static contract: correction workflow wiring (320–333) ===============
+  const detailSrc = readFileSync(new URL("../src/app/(app)/invoices/[id]/page.tsx", import.meta.url), "utf8");
+  const editForm = readFileSync(new URL("../src/app/(app)/invoices/[id]/_components/InvoiceEditForm.tsx", import.meta.url), "utf8");
+  check("320 status union carries needs_correction", lib.includes('"needs_correction"'));
+  check("321 needs_correction has a Russian label", lib.includes('needs_correction: "Возвращён на исправление"'));
+  check("322 return_for_correction case exists in the decision table", lib.includes('case "return_for_correction"'));
+  check("323 send_to_review accepts a needs_correction resubmit", lib.includes('status !== "draft" && status !== "needs_correction"'));
+  check("324 a minimum return-reason length is enforced", lib.includes("INVOICE_RETURN_REASON_MIN"));
+  check("325 server action requires the reason before returning", actions.includes("INVOICE_RETURN_REASON_MIN") && actions.includes('action === "return_for_correction" && returnReason.length'));
+  check("326 return stamps comment + requestedAt + requestedBy", actions.includes("data.correctionComment = returnReason") && actions.includes("data.correctionRequestedAt = new Date()") && actions.includes("data.correctionRequestedByUserId = ctx.user.id"));
+  check("327 transition uses compare-and-set on the current status", actions.includes("where: { id: invoiceId, status: existing.status }"));
+  check("328 the reason is audited (not silently dropped)", actions.includes('action === "return_for_correction" ? { reason: returnReason }'));
+  check("329 field edits are author-only while unpaid", actions.includes('existing.status !== "paid" && existing.createdByUserId !== ctx.user.id'));
+  check("330 detail page shows the correction banner", detailSrc.includes('invoice.status === "needs_correction"') && detailSrc.includes("view.correctionComment"));
+  check("331 edit form is author-gated (not shown to the reviewer) while unpaid", detailSrc.includes('invoice.status === "paid" || invoice.createdByUserId === ctx.user.id'));
+  check("332 return form requires a reason (minLength) in the UI", editForm.includes('name="reason"') && editForm.includes("minLength={5}") && editForm.includes('value="return_for_correction"'));
+  check("333 return action is separated from the plain button loop", editForm.includes('availableActions.filter((a) => a !== "return_for_correction")'));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

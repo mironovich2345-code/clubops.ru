@@ -17,6 +17,7 @@ import {
   canAddPaidInvoice,
   invoiceSubmitBlockedReason,
   INVOICE_ACTION_AUDIT,
+  INVOICE_RETURN_REASON_MIN,
   type InvoiceAction,
 } from "@/lib/invoices";
 import { getClubLegalEntities } from "@/lib/legal-entities";
@@ -452,6 +453,12 @@ export async function updateInvoice(
   if (!canEditInvoice(existing.status, ctx.effectiveRoles)) {
     return { ok: false, error: "Оплаченный счёт может редактировать только бухгалтер" };
   }
+  // The regional director reviews but does NOT edit the manager's invoice fields:
+  // an unpaid invoice can only be edited by its author. (A paid invoice is edited
+  // by the accountant — that is handled by canEditInvoice above.)
+  if (existing.status !== "paid" && existing.createdByUserId !== ctx.user.id) {
+    return { ok: false, error: "Редактировать поля счёта может только его автор" };
+  }
   const closedEdit = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
   if (closedEdit) return { ok: false, error: closedEdit };
 
@@ -581,13 +588,20 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
     if (blocked) throw new Error(blocked);
   }
 
+  // Returning for correction requires a reason (shown to the author). Same
+  // minimum length as refunds. The reason is NOT a document/bank detail.
+  const returnReason = String(formData.get("reason") ?? "").trim();
+  if (action === "return_for_correction" && returnReason.length < INVOICE_RETURN_REASON_MIN) {
+    throw new Error(`Укажите причину возврата (не менее ${INVOICE_RETURN_REASON_MIN} символов).`);
+  }
+
   // Resolve approver routing from live access (regional vs chief fallback) + the
   // self-approval rule, then apply the pure decision table.
   const hasActiveRegional = await hasActiveRegionalApproverForClub(existing.companyId, existing.clubId);
   const isCreator = existing.createdByUserId === ctx.user.id;
   const result = applyInvoiceAction(action, existing.status, ctx.effectiveRoles, { hasActiveRegional, isCreator });
   if (!result.ok) {
-    if (action === "approve" || action === "reject") {
+    if (action === "approve" || action === "reject" || action === "return_for_correction") {
       await recordAudit({
         action: "invoice.approval_blocked",
         entityType: "Invoice",
@@ -604,9 +618,18 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
   // Conditional (compare-and-set) update on the exact current status: only one
   // concurrent request can flip the status. A stale/duplicate submit updates 0
   // rows and gets a clear "already changed" message — never a raw Prisma error.
+  const data: {
+    status: string; paidAt: Date | null;
+    correctionComment?: string; correctionRequestedAt?: Date; correctionRequestedByUserId?: string;
+  } = { status: result.to, paidAt: result.to === "paid" ? new Date() : null };
+  if (action === "return_for_correction") {
+    data.correctionComment = returnReason;
+    data.correctionRequestedAt = new Date();
+    data.correctionRequestedByUserId = ctx.user.id;
+  }
   const updated = await prisma.invoice.updateMany({
     where: { id: invoiceId, status: existing.status },
-    data: { status: result.to, paidAt: result.to === "paid" ? new Date() : null },
+    data,
   });
   if (updated.count === 0) {
     throw new Error("Статус счёта уже изменён. Обновите страницу.");
@@ -636,6 +659,7 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
       to: result.to,
       action,
       ...(action === "approve" || action === "reject" ? { approverRole, fallbackUsed: !hasActiveRegional } : {}),
+      ...(action === "return_for_correction" ? { reason: returnReason } : {}),
     },
   });
 

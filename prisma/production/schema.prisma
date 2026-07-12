@@ -665,10 +665,16 @@ model Invoice {
   dueDate         DateTime?
   paidAt          DateTime?
 
-  // draft | needs_review | approved | paid | rejected
+  // draft | needs_review | needs_correction | approved_* | paid | rejected | canceled
   status String @default("draft")
   // low | medium | high (document recognition confidence)
   confidence String @default("low")
+
+  // Regional return-for-correction (needs_correction): reason shown to the author,
+  // plus actor + timestamp for the audit trail. Never holds document contents.
+  correctionComment           String?
+  correctionRequestedAt       DateTime?
+  correctionRequestedByUserId String?
 
   // Uploaded document metadata (binary kept on disk, never in DB)
   originalFileName       String?

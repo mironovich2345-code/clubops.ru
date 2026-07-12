@@ -73,7 +73,12 @@ export default async function InvoiceDetailPage({
       ? hasActiveRegional
         ? "Ожидает согласования регионального директора"
         : "Региональный директор не назначен — ожидает главного бухгалтера"
-      : null;
+      : invoice.status === "needs_correction"
+        ? "Возвращён управляющему на исправление"
+        : null;
+  const correctionRequestedAtLabel = invoice.correctionRequestedAt
+    ? isoDay(invoice.correctionRequestedAt).split("-").reverse().join(".")
+    : "";
 
   const view = {
     id: invoice.id,
@@ -98,6 +103,8 @@ export default async function InvoiceDetailPage({
     confidence: invoice.confidence,
     clubName: invoice.club.name,
     fileStatus,
+    correctionComment: invoice.correctionComment ?? "",
+    correctionRequestedAtLabel,
     originalFileName: invoice.originalFileName ?? "",
     // Accounting contour only: explicit download (attachment). Others view inline.
     canDownload: canDownloadDocuments(ctx.effectiveRoles),
@@ -126,13 +133,26 @@ export default async function InvoiceDetailPage({
         </div>
       ) : null}
 
+      {invoice.status === "needs_correction" && view.correctionComment ? (
+        <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <div className="font-semibold">Возвращён на исправление{view.correctionRequestedAtLabel ? ` · ${view.correctionRequestedAtLabel}` : ""}</div>
+          <div className="mt-1 whitespace-pre-wrap">{view.correctionComment}</div>
+        </div>
+      ) : null}
+
       <InvoiceEditForm
         invoice={view}
         categories={EXPENSE_CATEGORY_OPTIONS}
         availableActions={availableInvoiceActions(invoice.status, ctx.effectiveRoles, approvalOpts)}
         actionLabels={INVOICE_ACTION_LABELS}
         statusLabel={INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}
-        canEdit={canMutateOperationalRecords(ctx.effectiveRoles) && canEditInvoice(invoice.status, ctx.effectiveRoles)}
+        canEdit={
+          canMutateOperationalRecords(ctx.effectiveRoles) &&
+          canEditInvoice(invoice.status, ctx.effectiveRoles) &&
+          // Unpaid invoices: only the author edits fields (regional reviews, does
+          // not edit). Paid invoices: the accountant edits (canEditInvoice above).
+          (invoice.status === "paid" || invoice.createdByUserId === ctx.user.id)
+        }
       />
 
       {canCancel ? (

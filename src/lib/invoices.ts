@@ -6,6 +6,7 @@ import type { Role } from "@/lib/auth";
 export type InvoiceStatus =
   | "draft"
   | "needs_review"
+  | "needs_correction"
   | "approved_by_regional"
   | "approved_by_chief_accountant"
   | "approved_by_owner" // legacy — kept readable/payable, never produced by new actions
@@ -81,6 +82,7 @@ export function formatExpensePeriod(period: string | null | undefined): string {
 export const INVOICE_STATUSES: InvoiceStatus[] = [
   "draft",
   "needs_review",
+  "needs_correction",
   "approved_by_regional",
   "approved_by_owner",
   "paid",
@@ -91,6 +93,7 @@ export const INVOICE_STATUSES: InvoiceStatus[] = [
 export const INVOICE_STATUS_LABELS: Record<string, string> = {
   draft: "Черновик",
   needs_review: "На согласовании",
+  needs_correction: "Возвращён на исправление",
   approved_by_regional: "Согласовано регионалом",
   approved_by_chief_accountant: "Согласовано главным бухгалтером",
   approved_by_owner: "Согласовано собственником",
@@ -117,11 +120,15 @@ export const INVOICE_CONFIDENCE_LABELS: Record<string, string> = {
 
 // --- Workflow: draft -> needs_review -> approved_* -> paid (or rejected) ------
 
-export type InvoiceAction = "send_to_review" | "approve" | "reject" | "pay" | "cancel";
+export type InvoiceAction = "send_to_review" | "approve" | "return_for_correction" | "reject" | "pay" | "cancel";
+
+// Minimum length of a return-for-correction reason (shared rule; matches refunds).
+export const INVOICE_RETURN_REASON_MIN = 5;
 
 export const INVOICE_ACTION_LABELS: Record<InvoiceAction, string> = {
   send_to_review: "Отправить на согласование",
   approve: "Согласовать",
+  return_for_correction: "Вернуть на исправление",
   reject: "Отклонить",
   pay: "Отметить оплачено",
   cancel: "Отменить счёт",
@@ -130,6 +137,7 @@ export const INVOICE_ACTION_LABELS: Record<InvoiceAction, string> = {
 export const INVOICE_ACTION_AUDIT: Record<InvoiceAction, string> = {
   send_to_review: "invoice.sent_to_review",
   approve: "invoice.approved",
+  return_for_correction: "invoice.returned_for_correction",
   reject: "invoice.rejected",
   pay: "invoice.paid",
   cancel: "invoice.canceled",
@@ -174,7 +182,8 @@ export function applyInvoiceAction(
 
   switch (action) {
     case "send_to_review":
-      if (status !== "draft") return { ok: false, error: "Отправить на согласование можно только черновик" };
+      // A fresh draft OR one returned for correction is (re)submitted for review.
+      if (status !== "draft" && status !== "needs_correction") return { ok: false, error: "Отправить на согласование можно только черновик" };
       if (!(isManager || isRegional)) return { ok: false, error: "Недостаточно прав" };
       // Only the author submits their own draft — a regional/other manager does
       // not send on someone else's behalf (they review it once it arrives).
@@ -189,6 +198,19 @@ export function applyInvoiceAction(
         return { ok: false, error: APPROVAL_REGIONAL_ONLY_MSG };
       }
       if (isChief) return { ok: true, to: "approved_by_chief_accountant" };
+      return { ok: false, error: APPROVAL_FALLBACK_CHIEF_MSG };
+    }
+
+    case "return_for_correction": {
+      // Reviewer sends a submitted invoice back to its author to fix (a comment is
+      // required — enforced in the server action). Only from needs_review; the same
+      // regional / chief-fallback routing as approve/reject.
+      if (status !== "needs_review") return { ok: false, error: "Вернуть на исправление можно счёт на согласовании" };
+      if (opts.hasActiveRegional) {
+        if (isRegional) return { ok: true, to: "needs_correction" };
+        return { ok: false, error: APPROVAL_REGIONAL_ONLY_MSG };
+      }
+      if (isChief) return { ok: true, to: "needs_correction" };
       return { ok: false, error: APPROVAL_FALLBACK_CHIEF_MSG };
     }
 

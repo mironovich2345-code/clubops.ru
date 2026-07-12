@@ -26,6 +26,8 @@ type InvoiceView = {
   confidence: string;
   clubName: string;
   fileStatus: "available" | "no_metadata" | "missing_object";
+  correctionComment: string;
+  correctionRequestedAtLabel: string;
   originalFileName: string;
   canDownload: boolean;
 };
@@ -109,9 +111,24 @@ export function InvoiceEditForm({
           <DocumentBlock invoice={invoice} />
         </div>
 
-        {availableActions.length > 0 ? (
+        {/* Return for correction — a reason is required (regional/chief reviewer). */}
+        {availableActions.includes("return_for_correction") ? (
+          <form action={transitionInvoice} className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <input type="hidden" name="invoiceId" value={invoice.id} />
+            <input type="hidden" name="action" value="return_for_correction" />
+            <label className="block text-xs font-medium text-amber-900">
+              Причина возврата на исправление (обязательно)
+              <textarea name="reason" required minLength={5} rows={2} className="input mt-1" placeholder="Что нужно исправить управляющему" />
+            </label>
+            <button type="submit" className="mt-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100">
+              Вернуть на исправление
+            </button>
+          </form>
+        ) : null}
+
+        {availableActions.filter((a) => a !== "return_for_correction").length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
-            {availableActions.map((action) => (
+            {availableActions.filter((a) => a !== "return_for_correction").map((action) => (
               <form
                 key={action}
                 action={transitionInvoice}
@@ -133,9 +150,10 @@ export function InvoiceEditForm({
               </form>
             ))}
           </div>
-        ) : (
+        ) : null}
+        {availableActions.length === 0 ? (
           <div className="mt-4 text-sm text-slate-500">Нет доступных действий для вашей роли.</div>
-        )}
+        ) : null}
       </div>
 
       {/* Editable fields */}
