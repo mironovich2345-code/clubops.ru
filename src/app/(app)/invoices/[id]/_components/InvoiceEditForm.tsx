@@ -1,7 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
-import { transitionInvoice, updateInvoice } from "../../actions";
+import { transitionInvoice, updateInvoice, replaceInvoiceFile } from "../../actions";
 
 type InvoiceView = {
   id: string;
@@ -34,6 +34,8 @@ type InvoiceView = {
 
 type SaveState = { ok: boolean; error?: string; invoiceId?: string };
 const saveInitial: SaveState = { ok: false };
+type ReplaceState = { ok: boolean; error?: string; invoiceId?: string };
+const replaceInitial: ReplaceState = { ok: false };
 
 // Button styling per workflow action.
 const ACTION_CLASS: Record<string, string> = {
@@ -70,6 +72,19 @@ function SaveButton() {
   );
 }
 
+function ReplaceFileButton({ hasFile }: { hasFile: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="mt-2 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+    >
+      {pending ? "Загрузка..." : hasFile ? "Заменить файл" : "Загрузить файл"}
+    </button>
+  );
+}
+
 export function InvoiceEditForm({
   invoice,
   categories,
@@ -77,6 +92,7 @@ export function InvoiceEditForm({
   actionLabels,
   statusLabel,
   canEdit,
+  canReplaceFile,
 }: {
   invoice: InvoiceView;
   categories: readonly { key: string; label: string }[];
@@ -84,8 +100,10 @@ export function InvoiceEditForm({
   actionLabels: Record<string, string>;
   statusLabel: string;
   canEdit: boolean;
+  canReplaceFile: boolean;
 }) {
   const [saved, saveAction] = useFormState(updateInvoice, saveInitial);
+  const [replaced, replaceAction] = useFormState(replaceInvoiceFile, replaceInitial);
 
   return (
     <div className="space-y-6">
@@ -153,6 +171,34 @@ export function InvoiceEditForm({
         ) : null}
         {availableActions.length === 0 ? (
           <div className="mt-4 text-sm text-slate-500">Нет доступных действий для вашей роли.</div>
+        ) : null}
+
+        {/* Replace / upload the document — author only, draft or needs_correction. */}
+        {canReplaceFile ? (
+          <form action={replaceAction} className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <input type="hidden" name="invoiceId" value={invoice.id} />
+            <label className="block text-xs font-medium text-slate-700">
+              {invoice.fileStatus === "no_metadata" ? "Загрузить файл счёта" : "Заменить файл счёта"}
+              <input
+                type="file"
+                name="file"
+                required
+                accept="application/pdf,image/jpeg,image/png,image/webp"
+                className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+              />
+            </label>
+            <p className="mt-1 text-xs text-slate-400">PDF, JPEG, PNG или WEBP, до 10 МБ. Файл проверяется на сервере.</p>
+            {replaced.ok ? (
+              <div className="mt-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">
+                Файл счёта обновлён.
+              </div>
+            ) : replaced.error ? (
+              <div className="mt-2 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
+                {replaced.error}
+              </div>
+            ) : null}
+            <ReplaceFileButton hasFile={invoice.fileStatus !== "no_metadata"} />
+          </form>
         ) : null}
       </div>
 

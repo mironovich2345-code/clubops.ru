@@ -17,6 +17,7 @@ import {
   canAddPaidInvoice,
   invoiceSubmitBlockedReason,
   INVOICE_ACTION_AUDIT,
+  INVOICE_EDITABLE_STATUSES,
   INVOICE_RETURN_REASON_MIN,
   type InvoiceAction,
 } from "@/lib/invoices";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/ai/invoice-analyzer";
 import { comparePayer, type PayerMatch } from "@/lib/ai/invoice-party";
 import { validateInvoiceFile, persistInvoiceFile } from "@/lib/invoice-storage";
+import { getStorage } from "@/lib/storage";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import {
   UPLOAD_ERROR_MESSAGES,
@@ -483,6 +485,123 @@ export async function updateInvoice(
     companyId: existing.companyId,
     clubId: existing.clubId,
     userId: ctx.user.id,
+  });
+
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${invoiceId}`);
+  return { ok: true, invoiceId };
+}
+
+// --- secure file replacement (draft / needs_correction only) ----------------
+
+type ReplaceFileState = { ok: boolean; error?: string; invoiceId?: string };
+
+/**
+ * Replaces the invoice's stored document. Only the AUTHOR, and only while the
+ * invoice is a draft or was returned for correction, may swap the file. Server
+ * enforces role → author → scope → status → file validation (magic bytes); the
+ * client MIME / extension / storage key are never trusted (a fresh key is minted
+ * server-side). Storage-safe ordering: upload NEW → compare-and-set DB → on DB
+ * miss delete the new object (old file stays authoritative) → on success delete
+ * the OLD object best-effort. No storage keys / PII in the error or audit.
+ */
+export async function replaceInvoiceFile(
+  _prev: ReplaceFileState | undefined,
+  formData: FormData,
+): Promise<ReplaceFileState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  // Strategic roles (owner / GD) view invoices but never mutate them.
+  if (!canMutateOperationalRecords(ctx.effectiveRoles)) {
+    return { ok: false, error: STRATEGIC_READONLY_ERROR };
+  }
+
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  // Scoped loader: enforces selectedCompanyId + allowedClubIds (and manager-own).
+  const existing = await getInvoiceForContext(ctx, invoiceId);
+  if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
+
+  // Only the AUTHOR replaces the file — a regional director / other manager
+  // reviews but never swaps the author's document.
+  if (existing.createdByUserId !== ctx.user.id) {
+    return { ok: false, error: "Заменить файл может только автор счёта" };
+  }
+  // And only while the invoice is still being prepared or was returned to fix.
+  if (!(INVOICE_EDITABLE_STATUSES as readonly string[]).includes(existing.status)) {
+    return { ok: false, error: "Заменить файл можно только в статусе «Черновик» или «Возвращён на исправление»" };
+  }
+
+  const closed = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
+  if (closed) return { ok: false, error: closed };
+
+  const fileEntry = formData.get("file");
+  const file = isUploadedFile(fileEntry) ? fileEntry : null;
+  if (!file) return { ok: false, error: "Прикрепите файл счёта." };
+  // Allowlist (PDF/JPEG/PNG/WEBP) + size — declared MIME only gets past here if it
+  // is on the allowlist; the magic-byte check below is the real gate.
+  const validationCode = validateInvoiceFile(file);
+  if (validationCode) return { ok: false, error: UPLOAD_ERROR_MESSAGES[validationCode] };
+
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(await file.arrayBuffer());
+  } catch {
+    return { ok: false, error: UPLOAD_ERROR_MESSAGES.FILE_READ_FAILED };
+  }
+
+  // 1. Persist the NEW file first. persistInvoiceFile sniffs magic bytes (rejects
+  //    HTML/SVG/script disguised behind an image MIME) and mints a fresh random
+  //    server-side storage key — the client never supplies the key or extension.
+  let stored: Awaited<ReturnType<typeof persistInvoiceFile>>;
+  try {
+    stored = await persistInvoiceFile(buffer, file.type, file.name);
+  } catch {
+    return { ok: false, error: "Файл не распознан как PDF/JPEG/PNG/WEBP или повреждён." };
+  }
+
+  const oldStorageKey = existing.originalFileStorageKey;
+
+  // 2. Compare-and-set: swap the file only if the invoice is STILL this author's
+  //    and STILL in the same status/scope (no concurrent transition slipped in).
+  const updated = await prisma.invoice.updateMany({
+    where: {
+      id: invoiceId, status: existing.status, createdByUserId: ctx.user.id,
+      companyId: existing.companyId, clubId: existing.clubId,
+    },
+    data: {
+      originalFileStorageKey: stored.storageKey,
+      originalFileName: stored.fileName,
+      originalFileMime: stored.mime,
+      originalFileSize: stored.size,
+    },
+  });
+
+  // 3. DB update didn't happen (status/owner changed) → roll back the just-uploaded
+  //    object; the OLD file stays authoritative. Never surface the storage key.
+  if (updated.count === 0) {
+    try { await getStorage().delete(stored.storageKey); } catch { /* best-effort rollback */ }
+    return { ok: false, error: "Статус счёта изменился. Обновите страницу." };
+  }
+
+  // 4. Success → best-effort delete of the OLD object. A cleanup failure must NOT
+  //    undo the replacement (the DB already points at the new file — an orphaned
+  //    old object is tolerated over losing the successful swap).
+  if (oldStorageKey && oldStorageKey !== stored.storageKey) {
+    try { await getStorage().delete(oldStorageKey); } catch { /* orphan tolerated */ }
+  }
+
+  // Audit: ids + status transition + timestamp only. Never storage keys, document
+  // content, recognized text, bank requisites or other PII (recordAudit stamps ts).
+  await recordAudit({
+    action: "invoice.file_replaced",
+    entityType: "Invoice",
+    entityId: invoiceId,
+    companyId: existing.companyId,
+    clubId: existing.clubId,
+    userId: ctx.user.id,
+    metadata: { fromStatus: existing.status, toStatus: existing.status },
   });
 
   revalidatePath("/invoices");

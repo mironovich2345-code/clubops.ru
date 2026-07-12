@@ -153,6 +153,13 @@ export default async function InvoiceDetailPage({
           // not edit). Paid invoices: the accountant edits (canEditInvoice above).
           (invoice.status === "paid" || invoice.createdByUserId === ctx.user.id)
         }
+        // The author may (re)upload/replace the document only while the invoice is
+        // a draft or was returned for correction — never in review/approved/paid.
+        canReplaceFile={
+          canMutateOperationalRecords(ctx.effectiveRoles) &&
+          invoice.createdByUserId === ctx.user.id &&
+          (invoice.status === "draft" || invoice.status === "needs_correction")
+        }
       />
 
       {canCancel ? (

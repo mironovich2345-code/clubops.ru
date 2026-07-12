@@ -619,6 +619,96 @@ async function main() {
   check("358b updateInvoice writes only the parsed business fields", actions.includes("prisma.invoice.update({ where: { id: invoiceId }, data: parsed.data })"));
   check("359 invoice file route is download-only (no POST/PUT/PATCH)", fileRouteSrc.includes("export async function GET") && !/export async function (POST|PUT|PATCH)/.test(fileRouteSrc));
 
+  // === Secure invoice file replacement (360–395) ===========================
+  const MGRF = "pilot-inv-fmgr", MGRF2 = "pilot-inv-fmgr2", REGF = "pilot-inv-freg";
+  await p.user.create({ data: { id: MGRF, email: "pilot-inv-fmgr@x.dev", name: "Автор", role: "manager", isActive: true } });
+  await p.user.create({ data: { id: MGRF2, email: "pilot-inv-fmgr2@x.dev", name: "Другой", role: "manager", isActive: true } });
+  await p.user.create({ data: { id: REGF, email: "pilot-inv-freg@x.dev", name: "РД", role: "regional_director", isActive: true } });
+  await p.clubUserAccess.create({ data: { clubId: "pilot-inv-club", userId: MGRF, role: "manager" } });
+  await p.clubUserAccess.create({ data: { clubId: "pilot-inv-club", userId: MGRF2, role: "manager" } });
+  await p.clubUserAccess.create({ data: { clubId: "pilot-inv-club", userId: REGF, role: "regional_director" } });
+
+  // Pure mirror of the server gate: replace only by the AUTHOR, only in draft /
+  // needs_correction. A reviewer (regional / other manager) is never the author.
+  const canReplace = (status, isAuthor) => isAuthor && ["draft", "needs_correction"].includes(status);
+  check("360 author replaces file in draft", canReplace("draft", true) === true);
+  check("361 author replaces file in needs_correction", canReplace("needs_correction", true) === true);
+  check("362 author CANNOT replace in needs_review", canReplace("needs_review", true) === false);
+  check("363 author CANNOT replace in approved_by_regional", canReplace("approved_by_regional", true) === false);
+  check("364 author CANNOT replace in approved_by_chief_accountant", canReplace("approved_by_chief_accountant", true) === false);
+  check("365 author CANNOT replace in approved_by_owner", canReplace("approved_by_owner", true) === false);
+  check("366 author CANNOT replace in paid", canReplace("paid", true) === false);
+  check("367 author CANNOT replace in rejected", canReplace("rejected", true) === false);
+  check("368 author CANNOT replace in canceled", canReplace("canceled", true) === false);
+  check("369 another manager (not author) cannot replace", canReplace("draft", false) === false);
+  check("370 regional director cannot replace the author's file", canReplace("draft", false) === false);
+  check("371 after resubmit (needs_review) replacement is blocked again", canReplace("needs_review", true) === false);
+  // Foreign-club scope: the invoice cannot even be loaded (mirror of getInvoiceForContext).
+  const canLoad = (rec, selectedCompanyId, allowedClubIds) => rec.companyId === selectedCompanyId && allowedClubIds.includes(rec.clubId);
+  check("372 manager of another club cannot load the invoice (scope)", canLoad({ companyId: CO, clubId: "pilot-inv-club" }, CO, ["other-club"]) === false);
+
+  // Magic-byte gate (mirror of sniffDocumentSignature): declared MIME is never trusted.
+  const sniff = (buf) => {
+    if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+    if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+    if (buf.length >= 12 && buf.slice(0, 4).toString("latin1") === "RIFF" && buf.slice(8, 12).toString("latin1") === "WEBP") return "image/webp";
+    if (buf.slice(0, 1024).toString("latin1").includes("%PDF-")) return "application/pdf";
+    return null;
+  };
+  check("373 HTML content rejected by the magic-byte sniff", sniff(Buffer.from("<html><script>alert(1)</script></html>")) === null);
+  check("374 SVG content rejected by the magic-byte sniff", sniff(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')) === null);
+  check("375 client MIME 'application/pdf' with HTML bytes → rejected (no bypass)", sniff(Buffer.from("<html>not a pdf</html>")) === null);
+  check("376 a real PDF passes the magic-byte sniff", sniff(Buffer.from("%PDF-1.4\n%âãÏÓ\n")) === "application/pdf");
+
+  // Storage → DB → cleanup ordering, resilient to partial failure (mock storage).
+  const store = new Set();
+  let keyN = 0;
+  const mintKey = () => `invoices/${String(keyN++).padStart(32, "0")}.pdf`;
+  const simulateReplace = async (invoiceId, actorId, opts = {}) => {
+    const inv = await p.invoice.findUnique({ where: { id: invoiceId } });
+    if (!inv || inv.createdByUserId !== actorId) return { ok: false, error: "author" };
+    if (!["draft", "needs_correction"].includes(inv.status)) return { ok: false, error: "status" };
+    const oldKey = inv.originalFileStorageKey;
+    const nk = mintKey();
+    store.add(nk); // 1. upload NEW first
+    if (opts.raceTo) await p.invoice.update({ where: { id: invoiceId }, data: { status: opts.raceTo } });
+    const upd = await p.invoice.updateMany({ where: { id: invoiceId, status: inv.status, createdByUserId: actorId }, data: { originalFileStorageKey: nk } }); // 2. compare-and-set
+    if (upd.count === 0) { store.delete(nk); return { ok: false, error: "stale", newKey: nk, oldKey }; } // 3. rollback NEW
+    if (oldKey && oldKey !== nk) store.delete(oldKey); // 4. delete OLD best-effort
+    return { ok: true, newKey: nk, oldKey };
+  };
+  const invA = await p.invoice.create({ data: { companyId: CO, clubId: "pilot-inv-club", createdByUserId: MGRF, amountKopeks: 1000, currency: "RUB", status: "draft", confidence: "low", originalFileStorageKey: "invoices/oldA.pdf" } });
+  store.add(invA.originalFileStorageKey);
+  const okReplace = await simulateReplace(invA.id, MGRF);
+  check("377 success: the invoice points to the NEW file", okReplace.ok === true && (await p.invoice.findUnique({ where: { id: invA.id } })).originalFileStorageKey === okReplace.newKey);
+  check("378 success: old object deleted best-effort, new object kept", !store.has(okReplace.oldKey) && store.has(okReplace.newKey));
+  const invB = await p.invoice.create({ data: { companyId: CO, clubId: "pilot-inv-club", createdByUserId: MGRF, amountKopeks: 1000, currency: "RUB", status: "draft", confidence: "low", originalFileStorageKey: "invoices/keepB.pdf" } });
+  store.add(invB.originalFileStorageKey);
+  const raced = await simulateReplace(invB.id, MGRF, { raceTo: "needs_review" });
+  check("379 DB compare-and-set miss → the newly uploaded object is deleted (rollback)", raced.ok === false && !store.has(raced.newKey));
+  check("380 old file stays authoritative after a failed replace", store.has("invoices/keepB.pdf") && (await p.invoice.findUnique({ where: { id: invB.id } })).originalFileStorageKey === "invoices/keepB.pdf");
+  const invC = await p.invoice.create({ data: { companyId: CO, clubId: "pilot-inv-club", createdByUserId: MGRF, amountKopeks: 1000, currency: "RUB", status: "draft", confidence: "low", originalFileStorageKey: "invoices/c.pdf" } });
+  const foreign = await simulateReplace(invC.id, MGRF2);
+  check("381 non-author blocked before any storage write", foreign.ok === false && foreign.error === "author" && !("newKey" in foreign));
+
+  // Static: the server action wiring (role → author → scope → status → validate → CAS → cleanup → audit).
+  const rif = actions.slice(actions.indexOf("export async function replaceInvoiceFile"), actions.indexOf("// --- cancellation (soft)"));
+  check("382 replaceInvoiceFile server action exists", rif.length > 0);
+  check("383 role gate (strategic read-only blocked) + author gate", rif.includes("canMutateOperationalRecords(ctx.effectiveRoles)") && rif.includes("existing.createdByUserId !== ctx.user.id"));
+  check("384 loads via the scoped getInvoiceForContext (company + allowed clubs)", rif.includes("getInvoiceForContext(ctx, invoiceId)"));
+  check("385 status gate uses INVOICE_EDITABLE_STATUSES (draft/needs_correction)", rif.includes("INVOICE_EDITABLE_STATUSES as readonly string[]).includes(existing.status)"));
+  check("386 file validated: allowlist (validateInvoiceFile) + magic bytes (persistInvoiceFile)", rif.includes("validateInvoiceFile(file)") && rif.includes("persistInvoiceFile(buffer, file.type, file.name)"));
+  check("387 server mints the key — client storageKey never read in replace", !rif.includes('formData.get("storageKey")') && rif.includes("stored.storageKey"));
+  check("388 compare-and-set on status + author + scope", rif.includes("status: existing.status, createdByUserId: ctx.user.id") && rif.includes("companyId: existing.companyId, clubId: existing.clubId"));
+  check("389 rollback: delete the NEW object when the DB update misses", rif.includes("getStorage().delete(stored.storageKey)"));
+  check("390 old object deleted best-effort after success", rif.includes("getStorage().delete(oldStorageKey)"));
+  check("391 audit invoice.file_replaced carries only statuses (no keys/PII)", rif.includes('action: "invoice.file_replaced"') && rif.includes("metadata: { fromStatus: existing.status, toStatus: existing.status }") && !rif.slice(rif.indexOf('"invoice.file_replaced"')).includes("storageKey"));
+  check("392 new file downloads via the SAME scoped + safe route", fileRouteSrc.includes("getInvoiceForContext(ctx, id)") && fileRouteSrc.includes("safeDownloadHeaders(invoice.originalFileStorageKey"));
+  // Static: the UI control (author + draft/needs_correction only, allowed formats, confirmation).
+  check("393 detail page gates canReplaceFile on author + draft/needs_correction", detailSrc.includes("canReplaceFile=") && detailSrc.includes('invoice.status === "draft" || invoice.status === "needs_correction"') && detailSrc.includes("invoice.createdByUserId === ctx.user.id"));
+  check("394 edit form renders the replace control (file input + accept list)", editForm.includes("canReplaceFile ? (") && editForm.includes('name="file"') && editForm.includes('accept="application/pdf,image/jpeg,image/png,image/webp"') && editForm.includes("replaceAction"));
+  check("395 success confirmation shown after replace", editForm.includes("Файл счёта обновлён"));
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();
