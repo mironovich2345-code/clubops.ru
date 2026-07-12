@@ -41,9 +41,9 @@ async function cleanup() {
   await p.budget.deleteMany({ where: { clubId: CLUB } });
   await p.monthClose.deleteMany({ where: { clubId: CLUB } }).catch(() => {});
   await p.expenseCategory.deleteMany({ where: { key: { startsWith: "pilot-exp-cat" } } });
-  await p.clubUserAccess.deleteMany({ where: { userId: { in: [MGR, GONE, FOREIGN] } } });
+  await p.clubUserAccess.deleteMany({ where: { userId: { in: [MGR, GONE, FOREIGN, "pilot-exp-reg"] } } });
   await p.company.deleteMany({ where: { id: CO } });
-  await p.user.deleteMany({ where: { id: { in: [MGR, GONE, FOREIGN] } } });
+  await p.user.deleteMany({ where: { id: { in: [MGR, GONE, FOREIGN, "pilot-exp-reg"] } } });
 }
 
 // Employees selectable as "Кто оплатил" for a Club — mirrors simple/page.tsx.
@@ -210,6 +210,40 @@ async function main() {
   check("D4 PDF shown as a compact card", form.includes(">PDF<"));
   check("D5 client mirrors max 3 + 10MB + formats", form.includes("MAX_FILES = 3") && form.includes("MAX_FILE_BYTES = 10 * 1024 * 1024") && form.includes('accept="image/jpeg,image/png,image/webp,application/pdf"'));
   check("D6 min 1 doc gate + no-duplicate-draft guard kept", form.includes("files.length < 1") && form.includes("draftIdRef"));
+
+  // --- Pilot routing: manager expense → regional first (Stage 3) ------------
+  // Routing is by the CREATOR's role, not the budget: a manager's expense always
+  // goes to the regional director; a regional's OWN expense goes straight to
+  // accounting (no self-approval); with no active regional, fall back to accounting.
+  const REG = "pilot-exp-reg";
+  await p.user.create({ data: { id: REG, email: "pilot-exp-reg@x.dev", name: "РД", role: "regional_director", isActive: true } });
+  await p.clubUserAccess.create({ data: { clubId: CLUB, userId: REG, role: "regional_director" } });
+  // Mirror of the submitExpense routing override (createdBy role + active-regional).
+  const creatorIsRegional = (uid, clubId) => p.clubUserAccess.count({ where: { userId: uid, clubId, role: "regional_director" } }).then((n) => n > 0);
+  const hasActiveRegional = async (companyId, clubId) =>
+    (await p.clubUserAccess.count({ where: { clubId, role: "regional_director", user: { isActive: true } } })) > 0 ||
+    (await p.companyUserAccess.count({ where: { companyId, role: "regional_director", user: { isActive: true } } })) > 0;
+  const routeReview = async (createdByUserId, clubId, companyId) => {
+    if (await creatorIsRegional(createdByUserId, clubId)) return "pending_accountant_verification";
+    return (await hasActiveRegional(companyId, clubId)) ? "pending_regional_budget_approval" : "pending_accountant_verification";
+  };
+  // CLUB has an active regional (REG); CLUB2 has none.
+  check("R1 manager expense (within budget) still routes to regional", (await routeReview(MGR, CLUB, CO)) === "pending_regional_budget_approval");
+  check("R2 manager expense (any budget) never skips regional to accounting", (await routeReview(MGR, CLUB, CO)) !== "pending_accountant_verification");
+  check("R3 regional's OWN expense goes straight to accounting", (await routeReview(REG, CLUB, CO)) === "pending_accountant_verification");
+  // No active regional on CLUB2 → manager expense falls back to accounting (not stranded).
+  check("R4 manager expense falls back to accounting when no active regional", (await routeReview(FOREIGN, CLUB2, CO)) === "pending_accountant_verification");
+  // Guard: a regional never approves their own expense (defense for legacy rows).
+  const selfApprove = (createdByUserId, actorId, status) => !(createdByUserId && createdByUserId === actorId) && status === "pending_regional_budget_approval";
+  check("R5 regional CAN approve a manager's pending_regional expense", selfApprove(MGR, REG, "pending_regional_budget_approval") === true);
+  check("R6 regional CANNOT approve their OWN expense", selfApprove(REG, REG, "pending_regional_budget_approval") === false);
+  // Static: the action routes by creator role, not by route.nextStatus, and blocks self-approval.
+  check("R7 submit routes by creator role (userHasClubRole regional_director)", actions.includes('userHasClubRole(expense.createdByUserId, expense.clubId, ["regional_director"])'));
+  check("R8 submit no longer uses the budget route.nextStatus", !actions.includes("status: route.nextStatus"));
+  check("R9 submit uses hasActiveRegionalApproverForClub for the fallback", actions.includes("hasActiveRegionalApproverForClub(expense.companyId, expense.clubId)"));
+  check("R10 budget analytics fields still stored on submit", actions.includes("budgetOverrunKopeks: route.overrunKopeks") && actions.includes("budgetApprovalLevel: route.level"));
+  const simplifiedLib = readFileSync(new URL("../src/lib/expense-simplified.ts", import.meta.url), "utf8");
+  check("R11 canApproveRegionalExpense blocks self-approval", simplifiedLib.includes("e.createdByUserId === a.userId) return false"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

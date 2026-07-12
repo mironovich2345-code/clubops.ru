@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, canCreateOperational } from "@/lib/auth";
 import {
   getCurrentAccessContext, recordAudit,
-  userHasCompanyRole, userHasClubRole,
+  userHasCompanyRole, userHasClubRole, hasActiveRegionalApproverForClub,
 } from "@/lib/access";
 import { monthClosedError } from "@/lib/month-close";
 import { getExpenseForContext, isCashForbiddenCategory } from "@/lib/expenses";
@@ -188,21 +188,38 @@ export async function submitExpense(_prev: State | undefined, formData: FormData
   if (!ip.ok) return { ok: false, error: ip.error };
 
   const wasResubmit = expense.status === EXP.NEEDS_CORRECTION;
+  // Budget route is still computed and stored (analytics: overrun / level), but it
+  // no longer decides the next status. Pilot routing is by the CREATOR's role:
+  //  - a manager's expense ALWAYS goes to the regional director first (any budget);
+  //  - a regional director's OWN expense skips regional review (they cannot
+  //    self-approve) and goes straight to accounting;
+  //  - if the club has no active regional director, fall back to accounting so the
+  //    expense is never stranded (mirrors the invoice chief-accountant fallback).
   const route = await routeExpenseBudget({ clubId: expense.clubId, category: expense.category, expenseDate: expense.expenseDate, amountKopeks: expense.amountKopeks });
+  const creatorIsRegional = await userHasClubRole(expense.createdByUserId, expense.clubId, ["regional_director"]);
+  let nextStatus: string;
+  let reviewTarget: "regional" | "accountant";
+  if (creatorIsRegional) {
+    nextStatus = EXP.PENDING_ACCOUNTANT; reviewTarget = "accountant";
+  } else if (await hasActiveRegionalApproverForClub(expense.companyId, expense.clubId)) {
+    nextStatus = EXP.PENDING_REGIONAL; reviewTarget = "regional";
+  } else {
+    nextStatus = EXP.PENDING_ACCOUNTANT; reviewTarget = "accountant";
+  }
   const now = new Date();
   const res = await prisma.expense.updateMany({
     where: { id: expenseId, status: { in: ["draft", "needs_correction"] } },
     data: {
-      status: route.nextStatus, submittedAt: now, legalEntityId: ip.legalEntityId, paymentMethod: "cash",
+      status: nextStatus, submittedAt: now, legalEntityId: ip.legalEntityId, paymentMethod: "cash",
       budgetOverrunKopeks: route.overrunKopeks, budgetOverrunBasisPoints: route.overrunBasisPoints, budgetApprovalLevel: route.level,
       // Clear the active correction request on resubmission (history stays in audit).
       correctionReason: null, correctionRequestedAt: null, correctionRequestedByUserId: null,
     },
   });
   if (res.count === 0) return { ok: false, error: E.BAD_STATUS }; // idempotent: already submitted
-  await recordAudit({ action: wasResubmit ? "expense.resubmitted" : "expense.submitted", entityType: "Expense", entityId: expenseId, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { amountKopeks: expense.amountKopeks, overrunBasisPoints: route.overrunBasisPoints, level: route.level } });
-  const routedAction = route.level === "regional" ? "expense.routed_to_regional" : route.level === "owner" ? "expense.routed_to_owner" : "expense.routed_to_accounting";
-  await recordAudit({ action: routedAction, entityType: "Expense", entityId: expenseId, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { level: route.level, overrunBasisPoints: route.overrunBasisPoints } });
+  await recordAudit({ action: wasResubmit ? "expense.resubmitted" : "expense.submitted", entityType: "Expense", entityId: expenseId, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { amountKopeks: expense.amountKopeks, overrunBasisPoints: route.overrunBasisPoints, level: route.level, reviewTarget } });
+  const routedAction = reviewTarget === "regional" ? "expense.routed_to_regional" : "expense.routed_to_accounting";
+  await recordAudit({ action: routedAction, entityType: "Expense", entityId: expenseId, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { reviewTarget, level: route.level, overrunBasisPoints: route.overrunBasisPoints } });
   revalidatePath(`/expenses/${expenseId}`);
   return { ok: true };
 }

@@ -175,7 +175,7 @@ export type ExpenseActor = {
   manager: boolean; // create-capable operational role (manager/regional)
 };
 
-type ExpenseLike = { entryVersion: number; status: string; clubId: string; firstSavedAt: Date | null };
+type ExpenseLike = { entryVersion: number; status: string; clubId: string; firstSavedAt: Date | null; createdByUserId?: string };
 
 const inScope = (a: ExpenseActor, e: ExpenseLike) => a.allowedClubIds.includes(e.clubId);
 const isV2 = (e: ExpenseLike) => e.entryVersion === 2;
@@ -187,6 +187,9 @@ export function canSubmitExpense(e: ExpenseLike, a: ExpenseActor): boolean {
   return canEditExpense(e, a); // document-count check happens in the action
 }
 export function canApproveRegionalExpense(e: ExpenseLike, a: ExpenseActor): boolean {
+  // A regional director never approves their OWN expense — those are routed
+  // straight to accounting on submit, but this blocks any legacy row too.
+  if (e.createdByUserId && e.createdByUserId === a.userId) return false;
   return isV2(e) && e.status === EXP.PENDING_REGIONAL && a.regionalForClub;
 }
 export function canApproveOwnerExpense(e: ExpenseLike, a: ExpenseActor): boolean {
