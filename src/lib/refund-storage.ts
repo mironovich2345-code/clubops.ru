@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { getStorage } from "@/lib/storage";
+import { sniffDocumentSignature } from "@/lib/document-access";
 
 // Refund documents are addressed by relative storageKeys ("refunds/<hex>.ext"),
 // kept in the DB as a JSON array (documentsJson), and persisted through the
@@ -40,6 +41,8 @@ export async function storeRefundFile(file: UploadedFile): Promise<StoredRefundF
   if (!ext) throw new Error("Unsupported file type");
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  // Defense-in-depth: reject non-image/PDF bytes (disguised HTML/SVG/script).
+  if (!sniffDocumentSignature(buffer)) throw new Error("File content does not match an allowed image/PDF type");
   const storageKey = `${KEY_PREFIX}/${randomBytes(16).toString("hex")}.${ext}`;
   await getStorage().put(storageKey, buffer, file.type);
 

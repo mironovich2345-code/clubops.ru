@@ -2,6 +2,7 @@ import { randomBytes, createHash } from "node:crypto";
 import type { UploadErrorCode } from "@/lib/upload-errors";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { getStorage, storageProviderName } from "@/lib/storage";
+import { sniffDocumentSignature } from "@/lib/document-access";
 
 // Invoice documents are addressed by a relative storageKey ("invoices/<hex>.ext")
 // and persisted through the storage abstraction: local disk in dev (default) or
@@ -63,6 +64,9 @@ export async function persistInvoiceFile(
 ): Promise<{ storageKey: string; fileName: string; mime: string; size: number }> {
   const ext = ALLOWED_MIME[mime];
   if (!ext) throw new Error("Unsupported file type");
+  // Defense-in-depth: reject bytes that are not a real jpg/png/webp/pdf (e.g.
+  // HTML/SVG/script disguised by a declared image MIME) before persisting.
+  if (!sniffDocumentSignature(buffer)) throw new Error("File content does not match an allowed image/PDF type");
   const storageKey = newKey(ext);
   await getStorage().put(storageKey, buffer, mime);
   return { storageKey, fileName: originalName, mime, size: buffer.length };

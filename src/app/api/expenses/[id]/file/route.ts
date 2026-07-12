@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { getExpenseForContext } from "@/lib/expenses";
 import { readExpenseFile } from "@/lib/expense-storage";
-import { wantsAttachment, dispositionHeader, isInitialDocumentRequest } from "@/lib/document-access";
+import { wantsAttachment, safeDownloadHeaders, isInitialDocumentRequest } from "@/lib/document-access";
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +42,7 @@ export async function GET(
   }
 
   return new NextResponse(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": expense.originalFileMime ?? "application/octet-stream",
-      "Content-Disposition": dispositionHeader(attachment, expense.originalFileName ?? "expense"),
-      "Cache-Control": "private, no-store",
-    },
+    // Safe content type from the storage-key extension + nosniff (stored-XSS hardening).
+    headers: safeDownloadHeaders(expense.originalFileStorageKey, expense.originalFileName ?? "expense", attachment),
   });
 }

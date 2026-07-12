@@ -3,7 +3,7 @@ import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { canAnyRoleAccessPage } from "@/lib/auth";
 import { getSalesReportForContext } from "@/lib/sales-reports";
 import { readReportFile } from "@/lib/sales-report-storage";
-import { wantsAttachment, dispositionHeader, isInitialDocumentRequest } from "@/lib/document-access";
+import { wantsAttachment, safeDownloadHeaders, isInitialDocumentRequest } from "@/lib/document-access";
 
 export const dynamic = "force-dynamic";
 
@@ -46,10 +46,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   return new NextResponse(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": doc.originalFileMime || "application/octet-stream",
-      "Content-Disposition": dispositionHeader(attachment, doc.originalFileName || "document"),
-      "Cache-Control": "private, no-store",
-    },
+    // Safe content type from the storage-key extension + nosniff. Office/csv/heic
+    // report docs are not in the inline allowlist, so they download as attachments.
+    headers: safeDownloadHeaders(doc.storageKey, doc.originalFileName || "document", attachment),
   });
 }

@@ -432,8 +432,8 @@ async function main() {
   check("214 client cannot supply a storageKey (route reads DB key only)", !fileRoute.includes('searchParams.get("key")') && fileRoute.includes("invoice.originalFileStorageKey"));
   check("215 metadata absent → controlled INVOICE_FILE_NO_METADATA", routeResult(iNoKey, mgrCtx, false).code === "INVOICE_FILE_NO_METADATA");
   check("216 object absent → controlled INVOICE_FILE_NOT_FOUND", routeResult(iA, mgrCtx, false).code === "INVOICE_FILE_NOT_FOUND");
-  check("217 Content-Type from stored mime", fileRoute.includes("invoice.originalFileMime"));
-  check("218 Content-Disposition via safe helper", fileRoute.includes("dispositionHeader("));
+  check("217 Content-Type derived safely, NOT from client-stored mime", fileRoute.includes("safeDownloadHeaders(") && !fileRoute.includes("invoice.originalFileMime"));
+  check("218 response headers via safeDownloadHeaders (nosniff + safe disposition)", fileRoute.includes("safeDownloadHeaders(invoice.originalFileStorageKey"));
   check("219 file name sanitized in disposition", readFileSync(new URL("../src/lib/document-access.ts", import.meta.url), "utf8").includes("encodeURIComponent(fileName)"));
   check("220 bucket/storageKey never in response (only mime + disposition headers)", !fileRoute.includes("originalFileStorageKey ??") && !/headers:\s*{[^}]*storageKey/.test(fileRoute));
   check("221 no public URL returned (streams bytes)", fileRoute.includes("new NextResponse(new Uint8Array(buffer)") && !fileRoute.includes("getSignedUrl"));

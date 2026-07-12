@@ -55,6 +55,7 @@ const pilots = [
   ["Account settings", "pilot-account-settings.mjs"],
   ["Employee role management", "pilot-employee-role-management.mjs"],
   ["Deploy config", "pilot-deploy-config.mjs"],
+  ["Document security", "pilot-document-security.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;

@@ -4,7 +4,7 @@ import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { getRefundForContext, parseRefundDocuments } from "@/lib/refunds";
 import { readRefundFile } from "@/lib/refund-storage";
 import { readRefundDocument } from "@/lib/refund-document-storage";
-import { wantsAttachment, dispositionHeader, isInitialDocumentRequest } from "@/lib/document-access";
+import { wantsAttachment, safeDownloadHeaders, isInitialDocumentRequest } from "@/lib/document-access";
 
 export const dynamic = "force-dynamic";
 
@@ -29,12 +29,11 @@ export async function GET(
   // Legacy v1 doc (documentsJson) first, then a v2 active RefundDocument.
   const legacy = parseRefundDocuments(refund.documentsJson).find((d) => d.storageKey === key);
   let buffer: Buffer | null = null;
-  let mime = "application/octet-stream";
   let fileName = "document";
   let docType = "refund";
   if (legacy) {
     buffer = await readRefundFile(legacy.storageKey);
-    mime = legacy.mime ?? mime; fileName = legacy.fileName ?? fileName; docType = legacy.type ?? docType;
+    fileName = legacy.fileName ?? fileName; docType = legacy.type ?? docType;
   } else {
     const v2 = await prisma.refundDocument.findFirst({
       where: { refundId: refund.id, storageKey: key, removedAt: null },
@@ -42,7 +41,7 @@ export async function GET(
     });
     if (v2) {
       buffer = await readRefundDocument(v2.storageKey);
-      mime = v2.mimeType; fileName = v2.originalFilename; docType = v2.documentType;
+      fileName = v2.originalFilename; docType = v2.documentType;
     }
   }
   if (!buffer) return new NextResponse("Not found", { status: 404 });
@@ -62,10 +61,8 @@ export async function GET(
   }
 
   return new NextResponse(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": mime,
-      "Content-Disposition": dispositionHeader(attachment, fileName),
-      "Cache-Control": "private, no-store",
-    },
+    // Safe content type from the (server-generated) storage key + nosniff. `key`
+    // is already validated to belong to this refund's own documents.
+    headers: safeDownloadHeaders(key, fileName, attachment),
   });
 }
