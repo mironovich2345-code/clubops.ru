@@ -28,6 +28,7 @@ const depVer = read("src/lib/deployment-version.ts");
 const docs = read("docs/YANDEX_DEPLOYMENT.md");
 const chkPkg = read("scripts/check-runtime-packages.sh");
 const docsSec = read("docs/CONTAINER_SECURITY.md");
+const envExample = read("deploy/.env.production.example");
 
 // ---- Dockerfile ----
 check("D1 multi-stage build (base/deps/builder/runner)", /AS base/.test(dockerfile) && /AS builder/.test(dockerfile) && /AS runner/.test(dockerfile));
@@ -153,6 +154,15 @@ check("A25 install checks curl + python3 + flock", /curl/.test(installSh) && /py
 
 // docs record the VM auth model.
 check("A26 docs document club-ops-vm + puller + metadata token, no persistent key", /club-ops-vm/.test(docs) && /images\.puller/.test(docs) && /169\.254\.169\.254/.test(docs) && /Metadata-Flavor/.test(docs) && /No static key|no persistent|no long-lived registry secret/i.test(docs));
+
+// ---- --check compose validation (APP_IMAGE placeholder, no side effects) ----
+check("CK1 --check prefixes compose config with a non-empty APP_IMAGE", /APP_IMAGE="\$MAIN_IMAGE" APP_DEPLOYMENT_ID="preflight-check"[\s\S]{0,40}compose config/.test(checkBlock));
+check("CK2 --check sets APP_DEPLOYMENT_ID (throwaway)", /APP_DEPLOYMENT_ID="preflight-check"/.test(checkBlock));
+check("CK3 --check placeholder is scoped, not exported/persisted", !/export APP_IMAGE/.test(checkBlock) && !/ENV_FILE/.test(checkBlock));
+check("CK4 --check still does NOT pull/migrate/backup/up/write-state", !/docker pull/.test(checkBlock) && !/compose run --rm migrate/.test(checkBlock) && !/pg_dump/.test(checkBlock) && !/compose up/.test(checkBlock) && !/> "\$STATE_FILE"/.test(checkBlock));
+check("CK5 APP_IMAGE / APP_DEPLOYMENT_ID are NOT runtime vars in env example", !/^APP_IMAGE=/m.test(envExample) && !/^APP_DEPLOYMENT_ID=/m.test(envExample) && /^APP_IMAGE_REPO=/m.test(envExample));
+check("CK6 real deploy pins an immutable digest (repo@sha), not :main, for run", /NEW_IMAGE="\$\{APP_IMAGE_REPO\}@\$\{REMOTE_DIGEST\}"/.test(deploySh) && /export APP_IMAGE="\$NEW_IMAGE"/.test(deploySh));
+check("CK7 digest gate precedes APP_IMAGE export for the actual run", deploySh.indexOf('REMOTE_DIGEST="$(remote_digest)"') < deploySh.indexOf('export APP_IMAGE="$NEW_IMAGE"'));
 
 // ---- image security hardening (Debian updates + minimisation) ----
 check("SEC1 Dockerfile runs apt-get update", /apt-get update/.test(dockerfile));

@@ -160,7 +160,14 @@ setup_docker_config
 registry_login
 
 if [ "$CHECK_ONLY" = "1" ]; then
-  compose config >/dev/null || die "compose config invalid"
+  # --check only VALIDATES compose syntax — it never pulls/migrates/backs up/starts
+  # anything and never writes STATE_FILE. `docker compose config` still needs the
+  # ${APP_IMAGE}/${APP_DEPLOYMENT_ID} placeholders substituted, so pass throwaway
+  # values scoped to THIS one command only (not exported, never persisted, never
+  # added to .env). The :main tag is used here purely for static validation; the
+  # real deploy always pins an immutable digest (see the digest gate below).
+  APP_IMAGE="$MAIN_IMAGE" APP_DEPLOYMENT_ID="preflight-check" \
+    compose config >/dev/null || die "compose config invalid"
   # Confirm credentials landed ONLY in the temp config, never in a persistent one.
   [ "${DOCKER_CONFIG:-}" = "$DOCKER_CONFIG_DIR" ] || die "DOCKER_CONFIG is not the temp dir"
   for cfg in /root/.docker/config.json "$HOME/.docker/config.json"; do
