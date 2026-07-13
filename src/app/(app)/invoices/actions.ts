@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage, canCreateOperational, canMutateOperationalRecords, STRATEGIC_READONLY_ERROR } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
@@ -259,7 +260,14 @@ export async function uploadAndAnalyzeInvoice(
   }
 }
 
-export async function saveInvoice(
+/**
+ * Draftless create: validate → create the invoice ALREADY in `needs_review` →
+ * audit, in one operation. There is no draft and no separate "send for review"
+ * step. Expected business errors are RETURNED (never thrown) so the page never
+ * falls into the error boundary. Idempotent: a per-form clientSubmissionId makes
+ * a double-click / retried POST return the same invoice instead of a duplicate.
+ */
+export async function createAndSubmitInvoice(
   _prev: SaveState | undefined,
   formData: FormData,
 ): Promise<SaveState> {
@@ -283,6 +291,16 @@ export async function saveInvoice(
   const parsed = parseInvoiceFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
+  // Same minimum-data gate the submit-for-review used, applied up-front so an
+  // incomplete invoice is never created. AI confidence is NOT a gate.
+  const storageKey = str(formData, "storageKey");
+  const blocked = invoiceSubmitBlockedReason({
+    counterpartyName: parsed.data.counterpartyName,
+    amountKopeks: parsed.data.amountKopeks,
+    hasFile: Boolean(storageKey),
+  });
+  if (blocked) return { ok: false, error: blocked };
+
   const closed = await monthClosedError(companyId, clubId, parsed.data.invoiceDate ?? new Date());
   if (closed) return { ok: false, error: closed };
 
@@ -297,25 +315,50 @@ export async function saveInvoice(
   const confidenceRaw = String(formData.get("confidence") ?? "low");
   const confidence = ["low", "medium", "high"].includes(confidenceRaw) ? confidenceRaw : "low";
 
-  const invoice = await prisma.invoice.create({
-    data: {
-      companyId,
-      clubId,
-      createdByUserId: ctx.user.id,
-      ...parsed.data,
-      legalEntityId,
-      status: "draft",
-      confidence,
-      payerName: str(formData, "payerName"),
-      payerInn: str(formData, "payerInn"),
-      payerKpp: str(formData, "payerKpp"),
-      originalFileName: str(formData, "fileName"),
-      originalFileMime: str(formData, "fileMime"),
-      originalFileSize: Number(formData.get("fileSize")) || null,
-      originalFileStorageKey: str(formData, "storageKey"),
-      rawExtractedJson: str(formData, "rawExtractedJson"),
-    },
-  });
+  // Idempotency: a repeated submit with the same key returns the existing invoice
+  // (author-scoped) instead of creating a second one.
+  const clientSubmissionId = str(formData, "clientSubmissionId");
+  if (clientSubmissionId) {
+    const dup = await prisma.invoice.findUnique({
+      where: { clientSubmissionId },
+      select: { id: true, createdByUserId: true },
+    });
+    if (dup && dup.createdByUserId === ctx.user.id) return { ok: true, invoiceId: dup.id };
+  }
+
+  let invoice;
+  try {
+    invoice = await prisma.invoice.create({
+      data: {
+        companyId,
+        clubId,
+        createdByUserId: ctx.user.id,
+        ...parsed.data,
+        legalEntityId,
+        // Draftless: created directly in the regional review queue.
+        status: "needs_review",
+        confidence,
+        clientSubmissionId: clientSubmissionId || null,
+        payerName: str(formData, "payerName"),
+        payerInn: str(formData, "payerInn"),
+        payerKpp: str(formData, "payerKpp"),
+        originalFileName: str(formData, "fileName"),
+        originalFileMime: str(formData, "fileMime"),
+        originalFileSize: Number(formData.get("fileSize")) || null,
+        originalFileStorageKey: storageKey,
+        rawExtractedJson: str(formData, "rawExtractedJson"),
+      },
+    });
+  } catch (error) {
+    // Concurrent double-submit that raced past the pre-check: the unique key
+    // rejects the second create — return the row the winner made.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" && clientSubmissionId) {
+      const dup = await prisma.invoice.findUnique({ where: { clientSubmissionId }, select: { id: true } });
+      if (dup) return { ok: true, invoiceId: dup.id };
+    }
+    console.error("createAndSubmitInvoice failed", error instanceof Error ? error.message : error);
+    return { ok: false, error: "Не удалось сохранить счёт. Повторите попытку." };
+  }
 
   await recordAudit({
     action: "invoice.created",
@@ -324,10 +367,20 @@ export async function saveInvoice(
     companyId,
     clubId,
     userId: ctx.user.id,
-    metadata: { confidence, amountKopeks: invoice.amountKopeks },
+    metadata: { confidence, amountKopeks: invoice.amountKopeks, status: "needs_review" },
+  });
+  await recordAudit({
+    action: "invoice.sent_for_review",
+    entityType: "Invoice",
+    entityId: invoice.id,
+    companyId,
+    clubId,
+    userId: ctx.user.id,
+    metadata: { amountKopeks: invoice.amountKopeks },
   });
 
   revalidatePath("/invoices");
+  revalidatePath("/dashboard");
   return { ok: true, invoiceId: invoice.id };
 }
 
@@ -689,38 +742,50 @@ export async function cancelInvoicesForMonth(): Promise<BulkState> {
   return { ok: false, error: BULK_MONTHLY_DISABLED_MESSAGE };
 }
 
-export async function transitionInvoice(formData: FormData): Promise<void> {
+type TransitionState = { ok: boolean; error?: string; info?: string };
+
+/**
+ * Workflow transition (approve / reject / return / pay / send). Returns a state
+ * object for EVERY outcome — expected business errors (stale status, blocked
+ * submit, month closed, self-approval, missing reason) are RETURNED, never
+ * thrown, so a bound form never triggers the app error boundary. Only a truly
+ * unexpected fault propagates.
+ */
+export async function transitionInvoice(
+  _prev: TransitionState | undefined,
+  formData: FormData,
+): Promise<TransitionState> {
   const ctx = await getCurrentAccessContext();
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
-    throw new Error("Нет доступа");
+    return { ok: false, error: "Нет доступа" };
   }
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   const action = String(formData.get("action") ?? "").trim() as InvoiceAction;
-  if (!(action in INVOICE_ACTION_AUDIT)) throw new Error("Неверное действие");
+  if (!(action in INVOICE_ACTION_AUDIT)) return { ok: false, error: "Неверное действие" };
 
   const existing = await getInvoiceForContext(ctx, invoiceId);
-  if (!existing) throw new Error("Счёт не найден или нет доступа");
+  if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
 
   const closedTx = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
-  if (closedTx) throw new Error(closedTx);
+  if (closedTx) return { ok: false, error: closedTx };
 
-  // Sending a draft for review requires the minimum data (counterparty, amount,
-  // file). AI confidence is NOT a gate — a hand-filled invoice may always be sent.
+  // Sending for review requires the minimum data (counterparty, amount, file).
+  // AI confidence is NOT a gate — a hand-filled invoice may always be sent.
   if (action === "send_to_review") {
     const blocked = invoiceSubmitBlockedReason({
       counterpartyName: existing.counterpartyName,
       amountKopeks: existing.amountKopeks,
       hasFile: Boolean(existing.originalFileStorageKey),
     });
-    if (blocked) throw new Error(blocked);
+    if (blocked) return { ok: false, error: blocked };
   }
 
   // Returning for correction requires a reason (shown to the author). Same
   // minimum length as refunds. The reason is NOT a document/bank detail.
   const returnReason = String(formData.get("reason") ?? "").trim();
   if (action === "return_for_correction" && returnReason.length < INVOICE_RETURN_REASON_MIN) {
-    throw new Error(`Укажите причину возврата (не менее ${INVOICE_RETURN_REASON_MIN} символов).`);
+    return { ok: false, error: `Укажите причину возврата (не менее ${INVOICE_RETURN_REASON_MIN} символов).` };
   }
 
   // Resolve approver routing from live access (regional vs chief fallback) + the
@@ -740,7 +805,7 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
         metadata: { from: existing.status, action, fallbackAvailable: !hasActiveRegional, reason: result.error },
       });
     }
-    throw new Error(result.error);
+    return { ok: false, error: result.error };
   }
 
   // Conditional (compare-and-set) update on the exact current status: only one
@@ -760,7 +825,7 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
     data,
   });
   if (updated.count === 0) {
-    throw new Error("Статус счёта уже изменён. Обновите страницу.");
+    return { ok: false, error: "Статус счёта уже изменён. Обновите страницу." };
   }
 
   const approverRole = hasActiveRegional ? "regional_director" : "chief_accountant";
@@ -793,4 +858,128 @@ export async function transitionInvoice(formData: FormData): Promise<void> {
 
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+// --- Correction resubmit (needs_correction -> needs_review) -----------------
+
+/**
+ * One-button "Сохранить и повторно отправить" for a returned invoice. Saves the
+ * author's field edits, optionally replaces the file, and flips
+ * needs_correction → needs_review in a single compare-and-set — no separate
+ * "send" step. Safe file ordering (upload NEW → CAS → roll back NEW on miss →
+ * delete OLD on success). Never re-runs AI. Returns state for every outcome.
+ */
+export async function saveAndResubmitInvoice(
+  _prev: SaveState | undefined,
+  formData: FormData,
+): Promise<SaveState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  if (!canMutateOperationalRecords(ctx.effectiveRoles)) {
+    return { ok: false, error: STRATEGIC_READONLY_ERROR };
+  }
+
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  const existing = await getInvoiceForContext(ctx, invoiceId);
+  if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
+
+  if (existing.status !== "needs_correction") {
+    return { ok: false, error: "Действие доступно только для счёта, возвращённого на исправление." };
+  }
+  // Only the AUTHOR corrects and resubmits their own invoice.
+  if (existing.createdByUserId !== ctx.user.id) {
+    return { ok: false, error: "Исправить и отправить счёт может только его автор." };
+  }
+  const closed = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
+  if (closed) return { ok: false, error: closed };
+
+  const parsed = parseInvoiceFields(formData);
+  if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
+
+  // Optional file replacement — persist the NEW object first (magic-byte checked,
+  // fresh server-side key). Never trust the client MIME / key.
+  const fileEntry = formData.get("file");
+  const file = isUploadedFile(fileEntry) ? fileEntry : null;
+  let newStored: Awaited<ReturnType<typeof persistInvoiceFile>> | null = null;
+  if (file && file.size > 0) {
+    const validationCode = validateInvoiceFile(file);
+    if (validationCode) return { ok: false, error: UPLOAD_ERROR_MESSAGES[validationCode] };
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(await file.arrayBuffer());
+    } catch {
+      return { ok: false, error: UPLOAD_ERROR_MESSAGES.FILE_READ_FAILED };
+    }
+    try {
+      newStored = await persistInvoiceFile(buffer, file.type, file.name);
+    } catch {
+      return { ok: false, error: "Файл не распознан как PDF/JPEG/PNG/WEBP или повреждён." };
+    }
+  }
+
+  // Required-data gate on the SUBMITTED values (new file counts if attached).
+  const hasFile = Boolean(newStored?.storageKey ?? existing.originalFileStorageKey);
+  const blocked = invoiceSubmitBlockedReason({
+    counterpartyName: parsed.data.counterpartyName,
+    amountKopeks: parsed.data.amountKopeks,
+    hasFile,
+  });
+  if (blocked) {
+    if (newStored) { try { await getStorage().delete(newStored.storageKey); } catch { /* best-effort */ } }
+    return { ok: false, error: blocked };
+  }
+
+  // Single compare-and-set: fields + (optional) file metadata + status flip, only
+  // while STILL this author's needs_correction invoice. No partial state.
+  const data: Record<string, unknown> = { ...parsed.data, status: "needs_review" };
+  if (newStored) {
+    data.originalFileStorageKey = newStored.storageKey;
+    data.originalFileName = newStored.fileName;
+    data.originalFileMime = newStored.mime;
+    data.originalFileSize = newStored.size;
+  }
+  const updated = await prisma.invoice.updateMany({
+    where: {
+      id: invoiceId, status: "needs_correction", createdByUserId: ctx.user.id,
+      companyId: existing.companyId, clubId: existing.clubId,
+    },
+    data,
+  });
+  if (updated.count === 0) {
+    if (newStored) { try { await getStorage().delete(newStored.storageKey); } catch { /* best-effort */ } }
+    return { ok: false, error: "Статус счёта изменился. Обновите страницу." };
+  }
+
+  // Success → best-effort delete of the replaced OLD object (orphan tolerated).
+  if (newStored && existing.originalFileStorageKey && existing.originalFileStorageKey !== newStored.storageKey) {
+    try { await getStorage().delete(existing.originalFileStorageKey); } catch { /* orphan tolerated */ }
+  }
+
+  await recordAudit({
+    action: "invoice.updated",
+    entityType: "Invoice",
+    entityId: invoiceId,
+    companyId: existing.companyId,
+    clubId: existing.clubId,
+    userId: ctx.user.id,
+    metadata: { fileReplaced: Boolean(newStored) },
+  });
+  await recordAudit({
+    action: "invoice.resubmitted",
+    entityType: "Invoice",
+    entityId: invoiceId,
+    companyId: existing.companyId,
+    clubId: existing.clubId,
+    userId: ctx.user.id,
+    metadata: { from: "needs_correction", to: "needs_review" },
+  });
+
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/dashboard");
+  return { ok: true, invoiceId };
 }

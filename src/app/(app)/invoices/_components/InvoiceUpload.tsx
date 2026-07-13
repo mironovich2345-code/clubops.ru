@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import type { InvoiceExtraction } from "@/lib/ai/invoice-analyzer";
 import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors";
-import { uploadAndAnalyzeInvoice, saveInvoice } from "../actions";
+import { uploadAndAnalyzeInvoice, createAndSubmitInvoice } from "../actions";
+
+// Random per-form idempotency key. Regenerated after a successful create so the
+// next invoice is not deduped against the previous one. Falls back gracefully
+// where crypto.randomUUID is unavailable.
+function newSubmissionId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `sub-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+}
 
 type ClubOption = { id: string; name: string; city: string };
 type EntityOption = { id: string; name: string; type: string; inn: string | null; kpp: string | null; bankName: string | null; accountNumber: string | null };
@@ -69,11 +77,16 @@ export function InvoiceUpload({
   legalEntitiesByClub: EntitiesByClub;
 }) {
   const [analyze, analyzeAction] = useFormState(uploadAndAnalyzeInvoice, analyzeInitial);
-  const [saved, saveAction] = useFormState(saveInvoice, saveInitial);
+  const [saved, saveAction] = useFormState(createAndSubmitInvoice, saveInitial);
   // Controlled so the selected club survives the form reset React performs after
   // a form action (otherwise the dropdown would clear on a failed upload).
   const [clubId, setClubId] = useState(clubs.length === 1 ? clubs[0].id : "");
   const [legalEntityId, setLegalEntityId] = useState("");
+  // Idempotency key — regenerated after each successful create.
+  const [submissionId, setSubmissionId] = useState(newSubmissionId);
+  useEffect(() => {
+    if (saved.ok) setSubmissionId(newSubmissionId());
+  }, [saved]);
 
   const extraction = analyze.ok ? analyze.extraction : undefined;
   const reviewReady = Boolean(analyze.ok && extraction);
@@ -135,6 +148,7 @@ export function InvoiceUpload({
       {reviewReady && extraction ? (
         <form action={saveAction} className="mt-6 border-t border-slate-200 pt-5">
           <input type="hidden" name="clubId" value={analyze.clubId} />
+          <input type="hidden" name="clientSubmissionId" value={submissionId} />
           <input type="hidden" name="storageKey" value={analyze.storageKey} />
           <input type="hidden" name="fileName" value={analyze.fileName} />
           <input type="hidden" name="fileMime" value={analyze.fileMime} />
@@ -297,7 +311,7 @@ export function InvoiceUpload({
 
           {saved.ok ? (
             <div className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">
-              Счёт сохранён как черновик. Он появился в списке ниже.
+              Счёт создан и отправлен региональному директору.
             </div>
           ) : saved.error ? (
             <div className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
@@ -306,7 +320,7 @@ export function InvoiceUpload({
           ) : null}
 
           <div className="mt-5 flex justify-end">
-            <Button idle="Сохранить счёт" busy="Сохранение..." />
+            <Button idle="Создать и отправить на согласование" busy="Отправка..." />
           </div>
         </form>
       ) : null}

@@ -701,6 +701,11 @@ model Invoice {
   fileUrl   String?
   // Set when the row was created by an Excel import batch (for undo + dedup).
   importBatchId String?
+  // Idempotency key for the "create and submit" flow: a random per-form id sent
+  // by the client so a double-click / retried request returns the SAME invoice
+  // instead of creating a second one. Nullable + unique → legacy rows (null) are
+  // unaffected (many NULLs allowed in a unique index). Never contains PII.
+  clientSubmissionId String? @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

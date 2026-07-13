@@ -576,7 +576,7 @@ async function main() {
   check("329 field edits are author-only while unpaid", actions.includes('existing.status !== "paid" && existing.createdByUserId !== ctx.user.id'));
   check("330 detail page shows the correction banner", detailSrc.includes('invoice.status === "needs_correction"') && detailSrc.includes("view.correctionComment"));
   check("331 edit form is author-gated (not shown to the reviewer) while unpaid", detailSrc.includes('invoice.status === "paid" || invoice.createdByUserId === ctx.user.id'));
-  check("332 return form requires a reason (minLength) in the UI", editForm.includes('name="reason"') && editForm.includes("minLength={5}") && editForm.includes('value="return_for_correction"'));
+  check("332 return form requires a reason (minLength) in the UI", editForm.includes('name="reason"') && editForm.includes("minLength={5}") && editForm.includes('action="return_for_correction"'));
   check("333 return action is separated from the plain button loop", editForm.includes('availableActions.filter((a) => a !== "return_for_correction")'));
 
   // === Invoice field/file immutability (340–359) ===========================
@@ -706,8 +706,81 @@ async function main() {
   check("392 new file downloads via the SAME scoped + safe route", fileRouteSrc.includes("getInvoiceForContext(ctx, id)") && fileRouteSrc.includes("safeDownloadHeaders(invoice.originalFileStorageKey"));
   // Static: the UI control (author + draft/needs_correction only, allowed formats, confirmation).
   check("393 detail page gates canReplaceFile on author + draft/needs_correction", detailSrc.includes("canReplaceFile=") && detailSrc.includes('invoice.status === "draft" || invoice.status === "needs_correction"') && detailSrc.includes("invoice.createdByUserId === ctx.user.id"));
-  check("394 edit form renders the replace control (file input + accept list)", editForm.includes("canReplaceFile ? (") && editForm.includes('name="file"') && editForm.includes('accept="application/pdf,image/jpeg,image/png,image/webp"') && editForm.includes("replaceAction"));
+  check("394 edit form renders the replace control (file input + accept list)", editForm.includes("canReplaceFile && !isCorrection ? (") && editForm.includes('name="file"') && editForm.includes('accept="application/pdf,image/jpeg,image/png,image/webp"') && editForm.includes("replaceAction"));
   check("395 success confirmation shown after replace", editForm.includes("Файл счёта обновлён"));
+
+  // ===== Block B: draftless create + submit + one-button correction ==========
+  const uploadSrc = readFileSync(new URL("../src/app/(app)/invoices/_components/InvoiceUpload.tsx", import.meta.url), "utf8");
+
+  // Mirror of createAndSubmitInvoice: creates directly in needs_review, idempotent.
+  const mkCreate = async (clientSubmissionId, over = {}) => {
+    if (clientSubmissionId) {
+      const dup = await p.invoice.findUnique({ where: { clientSubmissionId }, select: { id: true, createdByUserId: true } });
+      if (dup && dup.createdByUserId === MGRF) return { ok: true, invoiceId: dup.id, deduped: true };
+    }
+    try {
+      const inv = await p.invoice.create({ data: { companyId: CO, clubId: "pilot-inv-club", createdByUserId: MGRF, amountKopeks: 1000, currency: "RUB", counterpartyName: "ООО Ромашка", status: "needs_review", confidence: "low", originalFileStorageKey: "invoices/bcreate.pdf", clientSubmissionId: clientSubmissionId || null, ...over } });
+      return { ok: true, invoiceId: inv.id };
+    } catch (e) {
+      if (e.code === "P2002" && clientSubmissionId) {
+        const dup = await p.invoice.findUnique({ where: { clientSubmissionId }, select: { id: true } });
+        if (dup) return { ok: true, invoiceId: dup.id, deduped: true };
+      }
+      throw e;
+    }
+  };
+
+  // B2: new invoice is created ALREADY in needs_review — never draft.
+  const c1 = await mkCreate("pilot-b-key-1");
+  check("B1 create-and-submit lands in needs_review (no draft)", (await p.invoice.findUnique({ where: { id: c1.invoiceId } })).status === "needs_review");
+  // B10.10/11: repeated submit with the same idempotency key returns the SAME row.
+  const c1again = await mkCreate("pilot-b-key-1");
+  check("B2 same clientSubmissionId returns the same invoice (idempotent)", c1again.invoiceId === c1.invoiceId && c1again.deduped === true);
+  check("B3 idempotent submit created no second row", (await p.invoice.count({ where: { clientSubmissionId: "pilot-b-key-1" } })) === 1);
+  // B10.10: concurrent double submit → exactly one row (unique key).
+  await Promise.allSettled([mkCreate("pilot-b-key-2"), mkCreate("pilot-b-key-2")]);
+  check("B4 concurrent double submit → exactly one invoice", (await p.invoice.count({ where: { clientSubmissionId: "pilot-b-key-2" } })) === 1);
+  // B10.5: incomplete invoice is blocked by the same submit gate (mirror).
+  check("B5 incomplete invoice blocked (no counterparty)", submitBlocked({ counterpartyName: "", amountKopeks: 1000, hasFile: true }) === "counterparty");
+  check("B6 incomplete invoice blocked (amount 0)", submitBlocked({ counterpartyName: "X", amountKopeks: 0, hasFile: true }) === "amount");
+  check("B7 incomplete invoice blocked (no file)", submitBlocked({ counterpartyName: "X", amountKopeks: 10, hasFile: false }) === "file");
+
+  // Mirror of saveAndResubmitInvoice CAS (needs_correction -> needs_review).
+  const resubmit = (id, actor) => p.invoice.updateMany({ where: { id, status: "needs_correction", createdByUserId: actor, companyId: CO, clubId: "pilot-inv-club" }, data: { status: "needs_review" } });
+  const corr = await p.invoice.create({ data: { companyId: CO, clubId: "pilot-inv-club", createdByUserId: MGRF, amountKopeks: 2000, currency: "RUB", counterpartyName: "ООО Возврат", status: "needs_correction", confidence: "low", originalFileStorageKey: "invoices/corr.pdf", correctionComment: "исправьте сумму" } });
+  // B15/17: author resubmit flips exactly once.
+  const r1 = await resubmit(corr.id, MGRF);
+  check("B8 correction resubmit flips needs_correction → needs_review once", r1.count === 1 && (await p.invoice.findUnique({ where: { id: corr.id } })).status === "needs_review");
+  // B18: a stale resubmit (already needs_review) changes nothing — no partial state.
+  const r2 = await resubmit(corr.id, MGRF);
+  check("B9 stale resubmit is a no-op (status unchanged)", r2.count === 0 && (await p.invoice.findUnique({ where: { id: corr.id } })).status === "needs_review");
+  // B: non-author cannot resubmit someone else's correction.
+  const corr2 = await p.invoice.create({ data: { companyId: CO, clubId: "pilot-inv-club", createdByUserId: MGRF, amountKopeks: 2000, currency: "RUB", counterpartyName: "X", status: "needs_correction", confidence: "low", originalFileStorageKey: "invoices/corr2.pdf" } });
+  check("B10 non-author cannot resubmit the correction", (await resubmit(corr2.id, MGRF2)).count === 0);
+
+  // --- Static: the new draftless + one-button wiring on the real source -------
+  const createFn = actions.slice(actions.indexOf("export async function createAndSubmitInvoice"), actions.indexOf("export async function saveHistoricalInvoice"));
+  const transitionFn = actions.slice(actions.indexOf("export async function transitionInvoice"), actions.indexOf("// --- Correction resubmit"));
+  const resubmitFn = actions.slice(actions.indexOf("export async function saveAndResubmitInvoice"));
+  check("B-S1 create action lands invoice in needs_review, never draft", createFn.includes('status: "needs_review"') && !createFn.includes('status: "draft"'));
+  check("B-S2 draft-creating saveInvoice removed", !actions.includes("export async function saveInvoice"));
+  check("B-S3 create is idempotent (clientSubmissionId + P2002 handling)", createFn.includes("clientSubmissionId") && createFn.includes('code === "P2002"'));
+  check("B-S4 create validates required fields via invoiceSubmitBlockedReason", createFn.includes("invoiceSubmitBlockedReason("));
+  check("B-S5 create audits invoice.created + invoice.sent_for_review", createFn.includes('action: "invoice.created"') && createFn.includes('action: "invoice.sent_for_review"'));
+  check("B-S6 transitionInvoice returns state (no throw to error boundary)", transitionFn.includes("Promise<TransitionState>") && !transitionFn.includes("throw new Error"));
+  check("B-S7 saveAndResubmitInvoice CAS on needs_correction + author, flips to needs_review", resubmitFn.includes('status: "needs_correction", createdByUserId: ctx.user.id') && resubmitFn.includes('status: "needs_review"'));
+  check("B-S8 resubmit rolls back a new file on CAS miss, never re-runs AI", resubmitFn.includes("getStorage().delete(newStored.storageKey)") && !resubmitFn.includes("analyzeInvoiceDocument"));
+  check("B-S9 idempotency key is unique + nullable in the schema", lib !== null && readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8").includes("clientSubmissionId String? @unique"));
+
+  // --- Static: the create + correction UI (single primary button each) --------
+  check("B-U1 upload UI submits via createAndSubmitInvoice (not draft save)", uploadSrc.includes("createAndSubmitInvoice") && !uploadSrc.includes("saveInvoice"));
+  check("B-U2 primary button = «Создать и отправить на согласование»", uploadSrc.includes("Создать и отправить на согласование"));
+  check("B-U3 no «черновик» wording / no separate send button in create UI", !uploadSrc.includes("черновик") && !uploadSrc.includes("Сохранить черновик"));
+  check("B-U4 create UI sends an idempotency key", uploadSrc.includes('name="clientSubmissionId"'));
+  check("B-U5 create success message confirms it went to the regional director", uploadSrc.includes("отправлен региональному директору"));
+  check("B-U6 correction UI has one «Сохранить и повторно отправить» button", editForm.includes("Сохранить и повторно отправить") && editForm.includes("saveAndResubmitInvoice"));
+  check("B-U7 legacy draft completed with «Завершить и отправить»", editForm.includes("Завершить и отправить"));
+  check("B-U8 transitions are state-returning (inline errors, no boundary)", editForm.includes("useFormState(transitionInvoice"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

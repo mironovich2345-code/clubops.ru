@@ -1,7 +1,12 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
-import { transitionInvoice, updateInvoice, replaceInvoiceFile } from "../../actions";
+import {
+  transitionInvoice,
+  updateInvoice,
+  replaceInvoiceFile,
+  saveAndResubmitInvoice,
+} from "../../actions";
 
 type InvoiceView = {
   id: string;
@@ -36,10 +41,12 @@ type SaveState = { ok: boolean; error?: string; invoiceId?: string };
 const saveInitial: SaveState = { ok: false };
 type ReplaceState = { ok: boolean; error?: string; invoiceId?: string };
 const replaceInitial: ReplaceState = { ok: false };
+type TransitionState = { ok: boolean; error?: string; info?: string };
+const transitionInitial: TransitionState = { ok: false };
 
 // Button styling per workflow action.
 const ACTION_CLASS: Record<string, string> = {
-  send_to_review: "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+  send_to_review: "border-brand-300 bg-brand-600 text-white hover:bg-brand-700",
   approve: "border-emerald-300 bg-emerald-600 text-white hover:bg-emerald-700",
   reject: "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100",
   cancel: "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100",
@@ -59,29 +66,46 @@ const STATUS_TONE: Record<string, string> = {
   canceled: "bg-amber-50 text-amber-800 ring-amber-200",
 };
 
-function SaveButton() {
+function PendingButton({ idle, busy, className }: { idle: string; busy: string; className: string }) {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
-    >
-      {pending ? "Сохранение..." : "Сохранить изменения"}
+    <button type="submit" disabled={pending} className={`${className} disabled:opacity-60`}>
+      {pending ? busy : idle}
     </button>
   );
 }
 
-function ReplaceFileButton({ hasFile }: { hasFile: boolean }) {
-  const { pending } = useFormStatus();
+/** A single workflow transition, state-returning so an expected error renders
+ * inline instead of triggering the whole-page error boundary. */
+function TransitionForm({
+  invoiceId,
+  action,
+  label,
+  confirmText,
+  className,
+  children,
+}: {
+  invoiceId: string;
+  action: string;
+  label: string;
+  confirmText?: string;
+  className: string;
+  children?: React.ReactNode;
+}) {
+  const [state, formAction] = useFormState(transitionInvoice, transitionInitial);
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="mt-2 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+    <form
+      action={formAction}
+      onSubmit={(e) => {
+        if (confirmText && !window.confirm(confirmText)) e.preventDefault();
+      }}
     >
-      {pending ? "Загрузка..." : hasFile ? "Заменить файл" : "Загрузить файл"}
-    </button>
+      <input type="hidden" name="invoiceId" value={invoiceId} />
+      <input type="hidden" name="action" value={action} />
+      {children}
+      <PendingButton idle={label} busy="..." className={`rounded-md border px-3 py-2 text-sm font-medium ${className}`} />
+      {state.error ? <div className="mt-1 text-xs text-rose-600">{state.error}</div> : null}
+    </form>
   );
 }
 
@@ -104,6 +128,14 @@ export function InvoiceEditForm({
 }) {
   const [saved, saveAction] = useFormState(updateInvoice, saveInitial);
   const [replaced, replaceAction] = useFormState(replaceInvoiceFile, replaceInitial);
+
+  // needs_correction author: a single "save + resubmit" form replaces the split
+  // edit / send / replace-file controls.
+  const isCorrection = invoice.status === "needs_correction" && canEdit;
+  // Legacy draft is completed and submitted with one button ("Завершить и отправить").
+  const isDraft = invoice.status === "draft";
+  const labelFor = (action: string): string =>
+    action === "send_to_review" && isDraft ? "Завершить и отправить" : actionLabels[action] ?? action;
 
   return (
     <div className="space-y-6">
@@ -129,52 +161,48 @@ export function InvoiceEditForm({
           <DocumentBlock invoice={invoice} />
         </div>
 
-        {/* Return for correction — a reason is required (regional/chief reviewer). */}
+        {/* Return for correction — reviewer, requires a reason. */}
         {availableActions.includes("return_for_correction") ? (
-          <form action={transitionInvoice} className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
-            <input type="hidden" name="invoiceId" value={invoice.id} />
-            <input type="hidden" name="action" value="return_for_correction" />
-            <label className="block text-xs font-medium text-amber-900">
-              Причина возврата на исправление (обязательно)
-              <textarea name="reason" required minLength={5} rows={2} className="input mt-1" placeholder="Что нужно исправить управляющему" />
-            </label>
-            <button type="submit" className="mt-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100">
-              Вернуть на исправление
-            </button>
-          </form>
-        ) : null}
-
-        {availableActions.filter((a) => a !== "return_for_correction").length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {availableActions.filter((a) => a !== "return_for_correction").map((action) => (
-              <form
-                key={action}
-                action={transitionInvoice}
-                onSubmit={(e) => {
-                  const confirmText = CONFIRM_ACTIONS[action];
-                  if (confirmText && !window.confirm(confirmText)) e.preventDefault();
-                }}
-              >
-                <input type="hidden" name="invoiceId" value={invoice.id} />
-                <input type="hidden" name="action" value={action} />
-                <button
-                  type="submit"
-                  className={`rounded-md border px-3 py-2 text-sm font-medium ${
-                    ACTION_CLASS[action] ?? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  {actionLabels[action] ?? action}
-                </button>
-              </form>
-            ))}
+          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <TransitionForm
+              invoiceId={invoice.id}
+              action="return_for_correction"
+              label="Вернуть на исправление"
+              className="mt-2 border-amber-300 bg-white text-amber-800 hover:bg-amber-100"
+            >
+              <label className="block text-xs font-medium text-amber-900">
+                Причина возврата на исправление (обязательно)
+                <textarea name="reason" required minLength={5} rows={2} className="input mt-1" placeholder="Что нужно исправить управляющему" />
+              </label>
+            </TransitionForm>
           </div>
         ) : null}
-        {availableActions.length === 0 ? (
+
+        {/* Other workflow actions (approve / reject / pay / send). Hidden for a
+            needs_correction author — they use the combined form below. */}
+        {!isCorrection && availableActions.filter((a) => a !== "return_for_correction").length > 0 ? (
+          <div className="mt-4 flex flex-wrap gap-3">
+            {availableActions
+              .filter((a) => a !== "return_for_correction")
+              .map((action) => (
+                <TransitionForm
+                  key={action}
+                  invoiceId={invoice.id}
+                  action={action}
+                  label={labelFor(action)}
+                  confirmText={CONFIRM_ACTIONS[action]}
+                  className={ACTION_CLASS[action] ?? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}
+                />
+              ))}
+          </div>
+        ) : null}
+        {!isCorrection && availableActions.length === 0 ? (
           <div className="mt-4 text-sm text-slate-500">Нет доступных действий для вашей роли.</div>
         ) : null}
 
-        {/* Replace / upload the document — author only, draft or needs_correction. */}
-        {canReplaceFile ? (
+        {/* Replace / upload the document — shown for a draft author. For a
+            needs_correction author the file input lives in the combined form. */}
+        {canReplaceFile && !isCorrection ? (
           <form action={replaceAction} className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
             <input type="hidden" name="invoiceId" value={invoice.id} />
             <label className="block text-xs font-medium text-slate-700">
@@ -197,73 +225,22 @@ export function InvoiceEditForm({
                 {replaced.error}
               </div>
             ) : null}
-            <ReplaceFileButton hasFile={invoice.fileStatus !== "no_metadata"} />
+            <PendingButton
+              idle={invoice.fileStatus !== "no_metadata" ? "Заменить файл" : "Загрузить файл"}
+              busy="Загрузка..."
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            />
           </form>
         ) : null}
       </div>
 
-      {/* Editable fields */}
-      {canEdit ? (
+      {/* needs_correction → one combined "save and resubmit" form. */}
+      {isCorrection ? (
+        <CorrectionForm invoice={invoice} categories={categories} />
+      ) : canEdit ? (
         <form action={saveAction} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <input type="hidden" name="invoiceId" value={invoice.id} />
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="Контрагент">
-              <input name="counterpartyName" defaultValue={invoice.counterpartyName} className="input" />
-              <span className="mt-1 block text-xs text-slate-400">Поставщик / получатель оплаты</span>
-            </Field>
-            <Field label="ИНН">
-              <input name="counterpartyInn" defaultValue={invoice.counterpartyInn} className="input" />
-            </Field>
-            <Field label="КПП">
-              <input name="counterpartyKpp" defaultValue={invoice.counterpartyKpp} className="input" />
-            </Field>
-            <Field label="Банк">
-              <input name="counterpartyBankName" defaultValue={invoice.counterpartyBankName} className="input" />
-            </Field>
-            <Field label="БИК">
-              <input name="counterpartyBankBik" defaultValue={invoice.counterpartyBankBik} className="input" />
-            </Field>
-            <Field label="Расчётный счёт">
-              <input name="counterpartyAccount" defaultValue={invoice.counterpartyAccount} className="input" />
-            </Field>
-            <Field label="Корр. счёт">
-              <input name="counterpartyCorrAccount" defaultValue={invoice.counterpartyCorrAccount} className="input" />
-            </Field>
-            <Field label="Статья расходов">
-              <select name="expenseCategory" defaultValue={invoice.expenseCategory} className="input">
-                <option value="">—</option>
-                {categories.map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Сумма, ₽">
-              <input name="amount" inputMode="decimal" defaultValue={invoice.amount} className="input" />
-            </Field>
-            <Field label="Валюта">
-              <input name="currency" defaultValue={invoice.currency} className="input" />
-            </Field>
-            <Field label="Номер счёта">
-              <input name="invoiceNumber" defaultValue={invoice.invoiceNumber} className="input" />
-            </Field>
-            <Field label="Дата счёта">
-              <input type="date" name="invoiceDate" defaultValue={invoice.invoiceDate} className="input" />
-            </Field>
-            <Field label="Период расхода">
-              <input type="month" name="expensePeriod" defaultValue={invoice.expensePeriod} className="input" />
-              <span className="mt-1 block text-xs text-slate-400">Месяц, к которому относится расход</span>
-            </Field>
-            <Field label="Срок оплаты">
-              <input type="date" name="dueDate" defaultValue={invoice.dueDate} className="input" />
-            </Field>
-            <div className="md:col-span-2">
-              <Field label="Примечания">
-                <textarea name="notes" rows={2} defaultValue={invoice.notes} className="input" />
-              </Field>
-            </div>
-          </div>
+          <FieldsGrid invoice={invoice} categories={categories} />
 
           {saved.ok ? (
             <div className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">
@@ -276,7 +253,11 @@ export function InvoiceEditForm({
           ) : null}
 
           <div className="mt-5 flex justify-end">
-            <SaveButton />
+            <PendingButton
+              idle="Сохранить изменения"
+              busy="Сохранение..."
+              className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
+            />
           </div>
         </form>
       ) : (
@@ -284,6 +265,122 @@ export function InvoiceEditForm({
           Счёт оплачен — редактирование доступно только владельцу или бухгалтеру.
         </div>
       )}
+    </div>
+  );
+}
+
+/** One-button correction flow: edit fields, optionally replace the file, and
+ * resubmit for review in a single server operation. */
+function CorrectionForm({
+  invoice,
+  categories,
+}: {
+  invoice: InvoiceView;
+  categories: readonly { key: string; label: string }[];
+}) {
+  const [state, formAction] = useFormState(saveAndResubmitInvoice, saveInitial);
+  return (
+    <form action={formAction} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <input type="hidden" name="invoiceId" value={invoice.id} />
+      <div className="mb-4 text-sm font-semibold text-slate-700">Исправьте счёт и отправьте повторно</div>
+      <FieldsGrid invoice={invoice} categories={categories} />
+
+      <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+        <label className="block text-xs font-medium text-slate-700">
+          Заменить файл счёта (необязательно)
+          <input
+            type="file"
+            name="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+          />
+        </label>
+        <p className="mt-1 text-xs text-slate-400">Оставьте пустым, чтобы сохранить текущий файл. PDF, JPEG, PNG или WEBP, до 10 МБ.</p>
+      </div>
+
+      {state.error ? (
+        <div className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
+          {state.error}
+        </div>
+      ) : null}
+
+      <div className="mt-5 flex justify-end">
+        <PendingButton
+          idle="Сохранить и повторно отправить"
+          busy="Отправка..."
+          className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
+        />
+      </div>
+    </form>
+  );
+}
+
+/** Shared editable fields grid (create-review, edit and correction forms). */
+function FieldsGrid({
+  invoice,
+  categories,
+}: {
+  invoice: InvoiceView;
+  categories: readonly { key: string; label: string }[];
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <Field label="Контрагент">
+        <input name="counterpartyName" defaultValue={invoice.counterpartyName} className="input" />
+        <span className="mt-1 block text-xs text-slate-400">Поставщик / получатель оплаты</span>
+      </Field>
+      <Field label="ИНН">
+        <input name="counterpartyInn" defaultValue={invoice.counterpartyInn} className="input" />
+      </Field>
+      <Field label="КПП">
+        <input name="counterpartyKpp" defaultValue={invoice.counterpartyKpp} className="input" />
+      </Field>
+      <Field label="Банк">
+        <input name="counterpartyBankName" defaultValue={invoice.counterpartyBankName} className="input" />
+      </Field>
+      <Field label="БИК">
+        <input name="counterpartyBankBik" defaultValue={invoice.counterpartyBankBik} className="input" />
+      </Field>
+      <Field label="Расчётный счёт">
+        <input name="counterpartyAccount" defaultValue={invoice.counterpartyAccount} className="input" />
+      </Field>
+      <Field label="Корр. счёт">
+        <input name="counterpartyCorrAccount" defaultValue={invoice.counterpartyCorrAccount} className="input" />
+      </Field>
+      <Field label="Статья расходов">
+        <select name="expenseCategory" defaultValue={invoice.expenseCategory} className="input">
+          <option value="">—</option>
+          {categories.map((c) => (
+            <option key={c.key} value={c.key}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Сумма, ₽">
+        <input name="amount" inputMode="decimal" defaultValue={invoice.amount} className="input" />
+      </Field>
+      <Field label="Валюта">
+        <input name="currency" defaultValue={invoice.currency} className="input" />
+      </Field>
+      <Field label="Номер счёта">
+        <input name="invoiceNumber" defaultValue={invoice.invoiceNumber} className="input" />
+      </Field>
+      <Field label="Дата счёта">
+        <input type="date" name="invoiceDate" defaultValue={invoice.invoiceDate} className="input" />
+      </Field>
+      <Field label="Период расхода">
+        <input type="month" name="expensePeriod" defaultValue={invoice.expensePeriod} className="input" />
+        <span className="mt-1 block text-xs text-slate-400">Месяц, к которому относится расход</span>
+      </Field>
+      <Field label="Срок оплаты">
+        <input type="date" name="dueDate" defaultValue={invoice.dueDate} className="input" />
+      </Field>
+      <div className="md:col-span-2">
+        <Field label="Примечания">
+          <textarea name="notes" rows={2} defaultValue={invoice.notes} className="input" />
+        </Field>
+      </div>
     </div>
   );
 }
