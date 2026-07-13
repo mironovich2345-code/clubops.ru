@@ -11,6 +11,7 @@ import { hashToken } from "@/lib/tokens";
 import { recordAudit } from "@/lib/access";
 import { createSession } from "@/lib/session";
 import { sendOtpEmail } from "@/lib/email";
+import { applyPendingInvitesForUser } from "@/lib/invite-service";
 import {
   generateOtp,
   otpDigest,
@@ -247,6 +248,14 @@ export async function verifyCurrentChallenge(code: string): Promise<VerifyResult
   if (emailWasUnverified) {
     await prisma.user.updateMany({ where: { id: user.id, emailVerifiedAt: null }, data: { emailVerifiedAt: new Date() } });
     await recordAudit({ action: "user.email_verified", entityType: "User", entityId: user.id, userId: user.id, metadata: { maskedEmail: maskEmail(user.email) } });
+    // Auto-apply any active pending invites for this now-verified email so the
+    // user lands with access already granted (no manual "Accept" step). Never
+    // blocks login — a failure here is logged and swallowed.
+    try {
+      await applyPendingInvitesForUser({ id: user.id, email: user.email });
+    } catch (err) {
+      console.error("auto-apply invites failed", { userId: user.id, code: (err as { code?: string })?.code });
+    }
   }
   // Supersede any other live challenges for this user.
   await prisma.emailOtpChallenge.updateMany({

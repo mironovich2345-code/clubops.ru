@@ -38,6 +38,7 @@ if (reasons.length > 0) {
 // --- Pilot order (cheap → broad) -------------------------------------------
 const pilots = [
   ["APP_URL / invitation links", "pilot-appurl.mjs"],
+  ["Invitations / email access", "pilot-invites.mjs"],
   ["Email OTP", "pilot-otp.mjs"],
   ["Sessions / revocation", "pilot-sessions.mjs"],
   ["Club / LegalEntity", "pilot-club-legal-entity.mjs"],

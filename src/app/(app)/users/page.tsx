@@ -12,11 +12,12 @@ import {
   type CompanyMember,
 } from "@/lib/access";
 import { countActiveSessionsForUser } from "@/lib/session";
-import { INVITE_ROLE_LABELS } from "@/lib/invites";
+import { INVITE_ROLE_LABELS, deriveInviteStatus, INVITE_STATUS_LABELS, type InviteStatus } from "@/lib/invites";
 import { ROLE_LABELS } from "@/lib/navigation";
 import { prisma } from "@/lib/prisma";
 import { classifyRoleShape } from "@/lib/employee-roles";
 import { InviteForm } from "./_components/InviteForm";
+import { InviteRowActions } from "./_components/InviteRowActions";
 import { UserAdminControls } from "./_components/UserAdminControls";
 import { OwnerDeleteControl } from "./_components/OwnerDeleteControl";
 import { RoleControls } from "./_components/RoleControls";
@@ -47,6 +48,32 @@ export default async function UsersPage() {
   const roleOptions = invitableRoles.map((value) => ({
     value,
     label: INVITE_ROLE_LABELS[value] ?? value,
+  }));
+
+  // Invitations visible to the actor: owner / general director see every invite
+  // in the company; a regional director sees only invites for the clubs they
+  // manage. Company-level invites are owner/GD-only.
+  const canManageCompany = isOwner || isGeneralDirector;
+  const inviteWhere = canManageCompany
+    ? { companyId }
+    : { companyId, clubId: { in: manageableClubIds } };
+  const invites = manageableClubIds.length > 0 || canManageCompany
+    ? await prisma.invite.findMany({
+        where: inviteWhere,
+        include: { club: { select: { name: true } }, invitedBy: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const inviteRows = invites.map((inv) => ({
+    id: inv.id,
+    email: inv.email,
+    roleLabel: INVITE_ROLE_LABELS[inv.role] ?? inv.role,
+    clubName: inv.club?.name ?? null,
+    invitedBy: inv.invitedBy.name,
+    createdAt: inv.createdAt,
+    lastSentAt: inv.lastSentAt,
+    expiresAt: inv.expiresAt,
+    status: deriveInviteStatus(inv),
   }));
 
   // Per-user active session counts + which users the actor may administer
@@ -184,7 +211,73 @@ export default async function UsersPage() {
           </tbody>
         </table>
       </div>
+
+      {inviteRows.length > 0 ? (
+        <div className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Приглашения</h2>
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <Th>Email</Th>
+                  <Th>Роль</Th>
+                  <Th>Доступ</Th>
+                  <Th>Пригласил</Th>
+                  <Th>Отправлено</Th>
+                  <Th>Действует до</Th>
+                  <Th>Статус</Th>
+                  <Th>Действия</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {inviteRows.map((inv) => {
+                  const actionable = inv.status !== "accepted" && inv.status !== "revoked";
+                  return (
+                    <tr key={inv.id} className="hover:bg-slate-50">
+                      <Td>{inv.email}</Td>
+                      <Td>{inv.roleLabel}</Td>
+                      <Td>{inv.clubName ? `Клуб: ${inv.clubName}` : "Вся компания"}</Td>
+                      <Td>{inv.invitedBy}</Td>
+                      <Td>{inv.lastSentAt ? inv.lastSentAt.toLocaleDateString("ru-RU") : "—"}</Td>
+                      <Td>{inv.expiresAt.toLocaleDateString("ru-RU")}</Td>
+                      <Td>
+                        <InviteStatusBadge status={inv.status} />
+                      </Td>
+                      <Td>
+                        {actionable ? (
+                          <InviteRowActions inviteId={inv.id} canResend />
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+const INVITE_STATUS_TONE: Record<InviteStatus, string> = {
+  accepted: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  revoked: "bg-slate-100 text-slate-600 ring-slate-200",
+  expired: "bg-amber-50 text-amber-700 ring-amber-200",
+  email_failed: "bg-rose-50 text-rose-700 ring-rose-200",
+  email_sent: "bg-sky-50 text-sky-700 ring-sky-200",
+  pending: "bg-slate-50 text-slate-600 ring-slate-200",
+};
+
+function InviteStatusBadge({ status }: { status: InviteStatus }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${INVITE_STATUS_TONE[status]}`}
+    >
+      {INVITE_STATUS_LABELS[status]}
+    </span>
   );
 }
 

@@ -23,7 +23,7 @@ export async function completeOnboarding(
 
   // An invited user must accept their invite, not create a new company here.
   const pendingInvite = await prisma.invite.findFirst({
-    where: { email: user.email.toLowerCase(), acceptedAt: null, expiresAt: { gt: new Date() } },
+    where: { email: user.email.toLowerCase(), acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
     select: { id: true },
   });
   if (pendingInvite) redirect("/accept-invite");

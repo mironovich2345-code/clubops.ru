@@ -32,6 +32,7 @@
     "pilot:expense-cards": "node scripts/pilot-expense-cards.mjs",
     "pilot:cash-wallets": "node scripts/pilot-cash-wallets.mjs",
     "pilot:invoices": "node scripts/pilot-invoices.mjs",
+    "pilot:invites": "node scripts/pilot-invites.mjs",
     "pilot:refunds": "node scripts/pilot-refunds.mjs",
     "pilot:manager-visibility": "node scripts/pilot-manager-visibility.mjs",
     "pilot:full": "node scripts/pilot-full.mjs",

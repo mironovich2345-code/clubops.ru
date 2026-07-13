@@ -19,7 +19,7 @@ export default async function AcceptInvitePage({
   if (!token) {
     if (!user) return <Shell>{<ErrorText text="Ссылка приглашения недействительна." />}</Shell>;
     const pending = await prisma.invite.findMany({
-      where: { email: user.email.toLowerCase(), acceptedAt: null, expiresAt: { gt: new Date() } },
+      where: { email: user.email.toLowerCase(), acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
       include: { company: true, club: true },
       orderBy: { createdAt: "desc" },
     });
@@ -63,6 +63,9 @@ export default async function AcceptInvitePage({
   if (!invite) return <Shell>{<ErrorText text="Приглашение не найдено." />}</Shell>;
   if (invite.acceptedAt) {
     return <Shell>{<ErrorText text="Это приглашение уже использовано." />}</Shell>;
+  }
+  if (invite.revokedAt) {
+    return <Shell>{<ErrorText text="Это приглашение было отозвано." />}</Shell>;
   }
   if (isInviteExpired(invite.expiresAt)) {
     return <Shell>{<ErrorText text="Срок действия приглашения истёк." />}</Shell>;
