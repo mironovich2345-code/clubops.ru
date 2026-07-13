@@ -16,5 +16,8 @@ uploads/
 .claude/
 next-env.d.ts
 
+# TypeScript incremental build cache (local artifact of `tsc`/`next build`)
+*.tsbuildinfo
+
 # unrelated local file
 Текстовый документ.txt

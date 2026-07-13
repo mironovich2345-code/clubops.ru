@@ -5,10 +5,14 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { toProductionSchema } from "./sync-prod-schema.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
-const read = (p) => readFileSync(resolve(root, p), "utf8");
+// Normalise CRLF -> LF so line-anchored checks (`(^|\n)…(\n|$)`) behave the same
+// on a Windows checkout as on Linux/CI. This changes no check's meaning — it only
+// removes the `\r` that would otherwise sit between the token and the `\n`.
+const read = (p) => readFileSync(resolve(root, p), "utf8").replace(/\r\n/g, "\n");
 
 let pass = 0, fail = 0;
 const check = (n, c, x = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${x ? "  :: " + x : ""}`); c ? pass++ : fail++; };
@@ -188,6 +192,36 @@ const surface = [dockerfile, compose, caddy, deploySh, installSh, wf, entry].joi
 check("X1 no private key blocks", !/BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY/.test(surface));
 check("X2 no AWS/YC access-key literals", !/AKIA[0-9A-Z]{16}/.test(surface) && !/aws_secret_access_key\s*=/i.test(surface));
 check("X3 no inline DATABASE_URL with credentials", !/postgres(ql)?:\/\/[^\s"']*:[^\s"'@]+@/.test(surface));
+
+// ---- CRLF-safety regressions (Windows checkout must not defeat the checks) ----
+// The .dockerignore guard must recognise .env regardless of line endings. Prove
+// the same regex passes on synthetic LF and CRLF content once normalised.
+const diLF = "node_modules\n.env\n.env.*\n!.env.example\nuploads\nbackups\n*.db\n";
+const diCRLF = diLF.replace(/\n/g, "\r\n");
+const norm = (s) => s.replace(/\r\n/g, "\n");
+const envIgnored = (s) => /(^|\n)\.env(\n|$)/.test(norm(s)) && /\.env\.\*/.test(norm(s));
+const localDataIgnored = (s) => /(^|\n)uploads(\n|$)/.test(norm(s)) && /backups/.test(norm(s)) && /\*\.db/.test(norm(s));
+check("CRLF1 .env recognised in .dockerignore with LF", envIgnored(diLF));
+check("CRLF2 .env recognised in .dockerignore with CRLF", envIgnored(diCRLF));
+check("CRLF3 uploads/backups/db recognised with CRLF", localDataIgnored(diCRLF));
+check("CRLF4 real .dockerignore (normalised) still ignores .env", envIgnored(dockerignore) && localDataIgnored(dockerignore));
+
+// prisma:sync-prod must produce a PostgreSQL schema (no leftover SQLite datasource)
+// from BOTH LF and CRLF dev-schema input.
+const devLF =
+  'datasource db {\n' +
+  '  // Temporarily on SQLite for local beta (no Docker/Postgres required).\n' +
+  '  // Switch back to "postgresql" for staging/production.\n' +
+  '  provider = "sqlite"\n' +
+  '  url      = env("DATABASE_URL")\n' +
+  '}\n\nmodel Foo {\n  id String @id\n}\n';
+const devCRLF = devLF.replace(/\n/g, "\r\n");
+for (const [name, input] of [["LF", devLF], ["CRLF", devCRLF]]) {
+  const out = toProductionSchema(input);
+  check(`SYNC-${name} provider swapped to postgresql`, out.includes('provider = "postgresql"') && !out.includes('provider = "sqlite"'));
+  check(`SYNC-${name} SQLite datasource comment removed`, !out.includes("Temporarily on SQLite") && out.includes("PostgreSQL for Railway deployments"));
+  check(`SYNC-${name} output is LF-normalised`, !out.includes("\r"));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
