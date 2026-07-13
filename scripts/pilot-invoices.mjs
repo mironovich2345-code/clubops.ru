@@ -92,6 +92,7 @@ function buildView(ctx, raw, invoices, sentEvents, now) {
 const CO = "pilot-inv-co", ACC_U = "pilot-inv-acc", CHF_U = "pilot-inv-chf";
 async function cleanup() {
   await p.auditLog.deleteMany({ where: { companyId: CO } }).catch(() => {});
+  await p.pendingInvoiceUpload.deleteMany({ where: { companyId: { in: [CO, "some-other-co"] } } }).catch(() => {});
   await p.invoice.deleteMany({ where: { companyId: CO } }).catch(() => {});
   await p.monthClose.deleteMany({ where: { companyId: CO } }).catch(() => {});
   await p.clubUserAccess.deleteMany({ where: { userId: { startsWith: "pilot-inv-" } } }).catch(() => {});
@@ -781,6 +782,86 @@ async function main() {
   check("B-U6 correction UI has one «Сохранить и повторно отправить» button", editForm.includes("Сохранить и повторно отправить") && editForm.includes("saveAndResubmitInvoice"));
   check("B-U7 legacy draft completed with «Завершить и отправить»", editForm.includes("Завершить и отправить"));
   check("B-U8 transitions are state-returning (inline errors, no boundary)", editForm.includes("useFormState(transitionInvoice"));
+
+  // ===== File-ownership binding for createAndSubmitInvoice (Option A) =========
+  // A second club + a manager assigned to it (cross-club negative cases).
+  const club2 = await p.club.create({ data: { name: "Inv Club 2", city: "Москва", companyId: CO } });
+  const MGR2C = "pilot-inv-mgr2c";
+  await p.user.create({ data: { id: MGR2C, email: "pilot-inv-mgr2c@x.dev", name: "Клуб2", role: "manager", isActive: true } });
+  await p.clubUserAccess.create({ data: { clubId: club2.id, userId: MGR2C, role: "manager" } });
+
+  const mkUpload = (key, over = {}) => p.pendingInvoiceUpload.create({ data: { storageKey: key, uploadedByUserId: MGRF, companyId: CO, clubId: "pilot-inv-club", purpose: "invoice", originalFileName: "f.pdf", originalFileMime: "application/pdf", originalFileSize: 100, expiresAt: new Date(Date.now() + 864e5), ...over } });
+
+  // Mirror of createAndSubmitInvoice's binding: validate ref, then transactional
+  // single-use consume + create using the SERVER-owned file metadata.
+  const createBound = async (actorId, companyId, clubId, storageKey, clientSubmissionId = null, now = new Date()) => {
+    const pending = storageKey ? await p.pendingInvoiceUpload.findUnique({ where: { storageKey } }) : null;
+    const valid = !!pending && pending.uploadedByUserId === actorId && pending.companyId === companyId && pending.clubId === clubId && pending.purpose === "invoice" && pending.consumedAt === null && pending.expiresAt > now;
+    if (!valid) return { ok: false, reason: "file" };
+    if (clientSubmissionId) {
+      const dup = await p.invoice.findUnique({ where: { clientSubmissionId }, select: { id: true, createdByUserId: true } });
+      if (dup && dup.createdByUserId === actorId) return { ok: true, invoiceId: dup.id, deduped: true };
+    }
+    try {
+      const inv = await p.$transaction(async (tx) => {
+        const consumed = await tx.pendingInvoiceUpload.updateMany({ where: { storageKey, uploadedByUserId: actorId, companyId, clubId, purpose: "invoice", consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
+        if (consumed.count !== 1) throw new Error("UPLOAD_UNAVAILABLE");
+        return tx.invoice.create({ data: { companyId, clubId, createdByUserId: actorId, amountKopeks: 1000, currency: "RUB", counterpartyName: "X", status: "needs_review", confidence: "low", originalFileStorageKey: pending.storageKey, originalFileName: pending.originalFileName, clientSubmissionId: clientSubmissionId || null } });
+      });
+      return { ok: true, invoiceId: inv.id };
+    } catch (e) {
+      if (e.code === "P2002" && clientSubmissionId) { const dup = await p.invoice.findUnique({ where: { clientSubmissionId }, select: { id: true } }); if (dup) return { ok: true, invoiceId: dup.id, deduped: true }; }
+      if (e.message === "UPLOAD_UNAVAILABLE") { if (clientSubmissionId) { const dup = await p.invoice.findUnique({ where: { clientSubmissionId }, select: { id: true } }); if (dup) return { ok: true, invoiceId: dup.id, deduped: true }; } return { ok: false, reason: "unavailable" }; }
+      throw e;
+    }
+  };
+
+  // F1/F9: owner uses OWN reference → invoice bound to that exact key, upload consumed.
+  const u1 = await mkUpload("invoices/own-1.pdf");
+  const f1 = await createBound(MGRF, CO, "pilot-inv-club", "invoices/own-1.pdf");
+  check("F1 author creates invoice with own upload reference", f1.ok === true);
+  check("F9 invoice binds only the authorized file key", (await p.invoice.findUnique({ where: { id: f1.invoiceId } })).originalFileStorageKey === "invoices/own-1.pdf");
+  check("F1b upload marked consumed after success", (await p.pendingInvoiceUpload.findUnique({ where: { id: u1.id } })).consumedAt !== null);
+
+  // F2: another manager (same club) cannot use someone else's reference.
+  await mkUpload("invoices/own-2.pdf");
+  check("F2 different manager cannot use another user's reference", (await createBound(MGRF2, CO, "pilot-inv-club", "invoices/own-2.pdf")).reason === "file");
+
+  // F3: a user of another club cannot use the reference (clubId mismatch).
+  check("F3 user of another club cannot use the reference", (await createBound(MGR2C, CO, club2.id, "invoices/own-2.pdf")).reason === "file");
+
+  // F4: forging companyId/clubId in the request does not match the bound scope.
+  check("F4 forged companyId does not match", (await createBound(MGRF, "some-other-co", "pilot-inv-club", "invoices/own-2.pdf")).reason === "file");
+  check("F4b forged clubId does not match", (await createBound(MGRF, CO, club2.id, "invoices/own-2.pdf")).reason === "file");
+
+  // F5: an expired reference cannot be used.
+  await mkUpload("invoices/expired.pdf", { expiresAt: new Date(Date.now() - 1000) });
+  check("F5 expired reference cannot be used", (await createBound(MGRF, CO, "pilot-inv-club", "invoices/expired.pdf")).reason === "file");
+
+  // F6: a consumed reference cannot create a second invoice.
+  const before = await p.invoice.count({ where: { originalFileStorageKey: "invoices/own-1.pdf" } });
+  check("F6 consumed reference cannot be reused", (await createBound(MGRF, CO, "pilot-inv-club", "invoices/own-1.pdf")).reason === "file");
+  check("F6b no second invoice created from a consumed reference", (await p.invoice.count({ where: { originalFileStorageKey: "invoices/own-1.pdf" } })) === before);
+
+  // F8: a DB error inside the transaction does NOT mark the upload consumed.
+  const GHOST = "pilot-inv-ghost"; // no such User → invoice.create FK fails inside tx
+  const uGhost = await mkUpload("invoices/ghost.pdf", { uploadedByUserId: GHOST });
+  let ghostThrew = false;
+  try { await createBound(GHOST, CO, "pilot-inv-club", "invoices/ghost.pdf"); } catch { ghostThrew = true; }
+  check("F8 DB error rolls back the consume (upload stays claimable)", ghostThrew === true && (await p.pendingInvoiceUpload.findUnique({ where: { id: uGhost.id } })).consumedAt === null);
+
+  // F10: neither storage key nor an upload id ever appears in an audit metadata field.
+  const bindingAudits = await p.auditLog.findMany({ where: { companyId: CO, action: { in: ["invoice.created", "invoice.sent_for_review"] } }, select: { metadataJson: true } });
+  check("F10 audit never carries storage keys", bindingAudits.every((a) => !a.metadataJson || (!a.metadataJson.includes("storageKey") && !a.metadataJson.includes("invoices/"))));
+
+  // --- Static: the real binding wiring -----------------------------------------
+  const uploadFn = actions.slice(actions.indexOf("export async function uploadAndAnalyzeInvoice"), actions.indexOf("export async function createAndSubmitInvoice"));
+  const createFn2 = actions.slice(actions.indexOf("export async function createAndSubmitInvoice"), actions.indexOf("export async function saveHistoricalInvoice"));
+  check("F-S1 upload records a scoped PendingInvoiceUpload (owner + purpose + expiry)", uploadFn.includes("pendingInvoiceUpload.create") && uploadFn.includes("uploadedByUserId: ctx.user.id") && uploadFn.includes('purpose: "invoice"') && uploadFn.includes("expiresAt:"));
+  check("F-S2 create validates the reference against owner + scope + purpose + unconsumed + not-expired", createFn2.includes("pending.uploadedByUserId === ctx.user.id") && createFn2.includes("pending.companyId === companyId") && createFn2.includes("pending.clubId === clubId") && createFn2.includes("pending.consumedAt === null") && createFn2.includes("pending.expiresAt > now"));
+  check("F-S3 create consumes the upload via CAS inside the invoice transaction", createFn2.includes("$transaction") && createFn2.includes("pendingInvoiceUpload.updateMany") && createFn2.includes("consumed.count !== 1"));
+  check("F-S4 file metadata comes from the server upload record, not client form", createFn2.includes("originalFileStorageKey: bound.storageKey") && createFn2.includes("originalFileName: bound.originalFileName") && !createFn2.includes('originalFileName: str(formData, "fileName")'));
+  check("F-S5 create audit metadata carries no storage key", !/metadata:\s*\{[^}]*storageKey/.test(createFn2) && !/metadata:\s*\{[^}]*originalFile/.test(createFn2));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

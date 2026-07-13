@@ -722,6 +722,30 @@ model Invoice {
   @@index([importBatchId])
 }
 
+// Server-side proof that an uploaded invoice document belongs to the uploader and
+// their scope. uploadAndAnalyzeInvoice records one row per persisted file;
+// createAndSubmitInvoice CONSUMES it (compare-and-set on owner + scope + purpose +
+// unconsumed + not-expired) in the same transaction that creates the Invoice, so
+// a client can never bind an Invoice to someone else's storage key. Single-use
+// (consumedAt) and time-bounded (expiresAt). Never holds document content.
+model PendingInvoiceUpload {
+  id               String    @id @default(cuid())
+  storageKey       String    @unique
+  uploadedByUserId String
+  companyId        String
+  clubId           String
+  purpose          String    @default("invoice")
+  originalFileName String?
+  originalFileMime String?
+  originalFileSize Int?
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([uploadedByUserId])
+  @@index([expiresAt])
+}
+
 model Expense {
   id              String   @id @default(cuid())
   companyId       String

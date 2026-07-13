@@ -55,6 +55,15 @@ type AnalyzeState = {
 
 type SaveState = { ok: boolean; error?: string; invoiceId?: string };
 
+// How long a persisted-but-unsubmitted invoice upload stays claimable. After this
+// it can no longer be consumed and becomes eligible for background cleanup.
+const INVOICE_UPLOAD_TTL_HOURS = 24;
+
+// Thrown inside the create transaction when the upload reference cannot be
+// consumed (foreign / out-of-scope / expired / already used). Caught to map to a
+// safe message — never leaks which condition failed.
+class InvoiceUploadUnavailable extends Error {}
+
 function str(formData: FormData, key: string): string | null {
   const v = String(formData.get(key) ?? "").trim();
   return v || null;
@@ -183,6 +192,22 @@ export async function uploadAndAnalyzeInvoice(
       const stored = await persistInvoiceFile(buffer, file.type, file.name);
       storageKey = stored.storageKey;
       size = stored.size;
+      // Record server-side ownership of this upload so the later create step can
+      // prove the file belongs to THIS user + scope (never trusting the client
+      // storage key). Consumed single-use at invoice creation; expires in 24h.
+      await prisma.pendingInvoiceUpload.create({
+        data: {
+          storageKey: stored.storageKey,
+          uploadedByUserId: ctx.user.id,
+          companyId: ctx.selectedCompanyId ?? "",
+          clubId,
+          purpose: "invoice",
+          originalFileName: file.name,
+          originalFileMime: file.type,
+          originalFileSize: stored.size,
+          expiresAt: new Date(Date.now() + INVOICE_UPLOAD_TTL_HOURS * 60 * 60 * 1000),
+        },
+      });
     } catch (storeError) {
       storageFailed = true;
       logUploadFailure("invoice", {
@@ -291,13 +316,31 @@ export async function createAndSubmitInvoice(
   const parsed = parseInvoiceFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
-  // Same minimum-data gate the submit-for-review used, applied up-front so an
-  // incomplete invoice is never created. AI confidence is NOT a gate.
+  // File binding: the client sends only the storage key; the SERVER proves the
+  // upload belongs to this user + scope via the PendingInvoiceUpload row (created
+  // when the file was persisted). A guessed / substituted / foreign key never
+  // matches, so an invoice can never reference someone else's document.
   const storageKey = str(formData, "storageKey");
+  const now = new Date();
+  const pending = storageKey
+    ? await prisma.pendingInvoiceUpload.findUnique({ where: { storageKey } })
+    : null;
+  const validUpload =
+    !!pending &&
+    pending.uploadedByUserId === ctx.user.id &&
+    pending.companyId === companyId &&
+    pending.clubId === clubId &&
+    pending.purpose === "invoice" &&
+    pending.consumedAt === null &&
+    pending.expiresAt > now;
+
+  // Same minimum-data gate the submit-for-review used, applied up-front so an
+  // incomplete invoice is never created. AI confidence is NOT a gate. A missing
+  // OR unauthorized upload both read as "no file" (no enumeration of foreign keys).
   const blocked = invoiceSubmitBlockedReason({
     counterpartyName: parsed.data.counterpartyName,
     amountKopeks: parsed.data.amountKopeks,
-    hasFile: Boolean(storageKey),
+    hasFile: validUpload,
   });
   if (blocked) return { ok: false, error: blocked };
 
@@ -326,35 +369,70 @@ export async function createAndSubmitInvoice(
     if (dup && dup.createdByUserId === ctx.user.id) return { ok: true, invoiceId: dup.id };
   }
 
+  // File metadata is taken from the server-owned PendingInvoiceUpload, NOT the
+  // client form. pending is guaranteed non-null here (validUpload passed the gate).
+  const bound = pending!;
+
   let invoice;
   try {
-    invoice = await prisma.invoice.create({
-      data: {
-        companyId,
-        clubId,
-        createdByUserId: ctx.user.id,
-        ...parsed.data,
-        legalEntityId,
-        // Draftless: created directly in the regional review queue.
-        status: "needs_review",
-        confidence,
-        clientSubmissionId: clientSubmissionId || null,
-        payerName: str(formData, "payerName"),
-        payerInn: str(formData, "payerInn"),
-        payerKpp: str(formData, "payerKpp"),
-        originalFileName: str(formData, "fileName"),
-        originalFileMime: str(formData, "fileMime"),
-        originalFileSize: Number(formData.get("fileSize")) || null,
-        originalFileStorageKey: storageKey,
-        rawExtractedJson: str(formData, "rawExtractedJson"),
-      },
+    invoice = await prisma.$transaction(async (tx) => {
+      // Single-use consume: only an unconsumed, unexpired upload owned by this
+      // user + scope can be claimed. Atomic with the invoice create — a DB error
+      // rolls back BOTH (the upload stays claimable, no orphan invoice).
+      const consumed = await tx.pendingInvoiceUpload.updateMany({
+        where: {
+          storageKey: bound.storageKey,
+          uploadedByUserId: ctx.user.id,
+          companyId,
+          clubId,
+          purpose: "invoice",
+          consumedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { consumedAt: now },
+      });
+      if (consumed.count !== 1) throw new InvoiceUploadUnavailable();
+
+      return tx.invoice.create({
+        data: {
+          companyId,
+          clubId,
+          createdByUserId: ctx.user.id,
+          ...parsed.data,
+          legalEntityId,
+          // Draftless: created directly in the regional review queue.
+          status: "needs_review",
+          confidence,
+          clientSubmissionId: clientSubmissionId || null,
+          payerName: str(formData, "payerName"),
+          payerInn: str(formData, "payerInn"),
+          payerKpp: str(formData, "payerKpp"),
+          // File fields come from the server-owned upload record only.
+          originalFileName: bound.originalFileName,
+          originalFileMime: bound.originalFileMime,
+          originalFileSize: bound.originalFileSize,
+          originalFileStorageKey: bound.storageKey,
+          rawExtractedJson: str(formData, "rawExtractedJson"),
+        },
+      });
     });
   } catch (error) {
     // Concurrent double-submit that raced past the pre-check: the unique key
-    // rejects the second create — return the row the winner made.
+    // rejects the second create — return the row the winner made (upload consume
+    // was rolled back with it, so the winner's file binding stays intact).
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" && clientSubmissionId) {
       const dup = await prisma.invoice.findUnique({ where: { clientSubmissionId }, select: { id: true } });
       if (dup) return { ok: true, invoiceId: dup.id };
+    }
+    // Upload became unclaimable mid-flight. If this same submission already
+    // produced an invoice (idempotent retry / race loser), return it; otherwise
+    // ask the user to re-upload — never revealing why the reference failed.
+    if (error instanceof InvoiceUploadUnavailable) {
+      if (clientSubmissionId) {
+        const dup = await prisma.invoice.findUnique({ where: { clientSubmissionId }, select: { id: true } });
+        if (dup) return { ok: true, invoiceId: dup.id };
+      }
+      return { ok: false, error: "Файл счёта не найден или недоступен. Загрузите документ заново." };
     }
     console.error("createAndSubmitInvoice failed", error instanceof Error ? error.message : error);
     return { ok: false, error: "Не удалось сохранить счёт. Повторите попытку." };
