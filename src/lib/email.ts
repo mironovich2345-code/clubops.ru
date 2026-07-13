@@ -245,3 +245,63 @@ export function sendRestorationCompletedEmail(to: string, requestId: string): Pr
   return sendMail(to, subject, text, wrap(`<p>${body}</p>`), requestId);
 }
 
+// --- Invitation emails (Block A) -------------------------------------------
+// Carry NO tokens outside the URL, NO bank data, documents, internal ids or
+// extra PII. The link is a full APP_URL-based accept-invite URL (built by the
+// caller). Failures return a sanitized SendResult; the business operation
+// (invite/access) is never rolled back on SMTP error.
+
+function esc(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+}
+
+/** Invitation to a not-yet-registered (or unverified) email — contains the link. */
+export function sendInviteEmail(
+  to: string,
+  params: { inviterLabel: string; roleLabel: string; scopeLabel: string; expiresLabel: string; acceptUrl: string },
+  requestId: string,
+): Promise<SendResult> {
+  const { inviterLabel, roleLabel, scopeLabel, expiresLabel, acceptUrl } = params;
+  const subject = "Вас пригласили в CLUB-OPS";
+  const text =
+    `CLUB-OPS\n\n` +
+    `${inviterLabel} предоставил(а) вам доступ.\n` +
+    `Роль: ${roleLabel}\n` +
+    `Доступ: ${scopeLabel}\n` +
+    `Ссылка действует до: ${expiresLabel}\n\n` +
+    `Чтобы получить доступ, перейдите по ссылке и войдите или зарегистрируйтесь с этим же адресом email:\n${acceptUrl}\n\n` +
+    `Если вы не ожидали это приглашение, просто проигнорируйте письмо.`;
+  const html = wrap(
+    `<p>${esc(inviterLabel)} предоставил(а) вам доступ.</p>` +
+      `<p><b>Роль:</b> ${esc(roleLabel)}<br/><b>Доступ:</b> ${esc(scopeLabel)}<br/><b>Ссылка действует до:</b> ${esc(expiresLabel)}</p>` +
+      `<p><a href="${esc(acceptUrl)}">Принять приглашение</a></p>` +
+      `<p>Войдите или зарегистрируйтесь с этим же адресом email.</p>` +
+      `<p style="color:#64748b;font-size:12px">Если вы не ожидали это приглашение, проигнорируйте письмо.</p>`,
+  );
+  return sendMail(to, subject, text, html, requestId);
+}
+
+/** Notice to an existing verified user who was granted access directly (no link). */
+export function sendAccessGrantedEmail(
+  to: string,
+  params: { companyName: string; roleLabel: string; scopeLabel: string; loginUrl: string | null },
+  requestId: string,
+): Promise<SendResult> {
+  const { companyName, roleLabel, scopeLabel, loginUrl } = params;
+  const subject = "Вам предоставлен доступ к CLUB-OPS";
+  const linkLine = loginUrl ? `\n\nВойти: ${loginUrl}` : "";
+  const text =
+    `CLUB-OPS\n\n` +
+    `Вам предоставлен доступ в компании «${companyName}».\n` +
+    `Роль: ${roleLabel}\n` +
+    `Доступ: ${scopeLabel}${linkLine}\n\n` +
+    `Доступ уже активен — войдите под своим адресом email.`;
+  const html = wrap(
+    `<p>Вам предоставлен доступ в компании «${esc(companyName)}».</p>` +
+      `<p><b>Роль:</b> ${esc(roleLabel)}<br/><b>Доступ:</b> ${esc(scopeLabel)}</p>` +
+      (loginUrl ? `<p><a href="${esc(loginUrl)}">Войти в CLUB-OPS</a></p>` : "") +
+      `<p>Доступ уже активен — войдите под своим адресом email.</p>`,
+  );
+  return sendMail(to, subject, text, html, requestId);
+}
+

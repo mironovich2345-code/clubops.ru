@@ -339,6 +339,19 @@ model Invite {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // Additive delivery/lifecycle metadata (all nullable / defaulted → legacy rows
+  // unaffected). Status is DERIVED from acceptedAt/revokedAt/expiresAt +
+  // emailDeliveryStatus, so no status enum is stored.
+  revokedAt           DateTime?
+  acceptedByUserId    String?
+  lastSentAt          DateTime?
+  sentCount           Int       @default(0)
+  emailDeliveryStatus String? // "sent" | "failed" | null (never sent)
+  // Rolling 24h send window for the resend rate-limit (5 / 24h). Reset lazily
+  // when the window has elapsed; enforced together with a 60s cooldown.
+  sendWindowStartedAt DateTime?
+  sendCountInWindow   Int       @default(0)
+
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   club      Club?   @relation(fields: [clubId], references: [id], onDelete: Cascade)
   invitedBy User    @relation(fields: [invitedByUserId], references: [id], onDelete: Cascade)
