@@ -225,6 +225,38 @@ async function main() {
   const casAcc = await p.invite.updateMany({ where: { id: i27b.id, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
   check("27c accepted invite cannot be revoked (CAS count 0)", casAcc.count === 0);
 
+  // ===== Strict single-use atomicity (existing access, rollback) =============
+  // A1-A3: existing IDENTICAL access + pending invite → idempotent upsert does not
+  // fail, invite is accepted, access stays single, acceptedAt + acceptedByUserId set.
+  await p.companyUserAccess.create({ data: { companyId: CO, userId: VERIFIED, role: "accountant" } });
+  const iExist = await mkInvite({ email: "verified@inv.test", clubId: null, role: "accountant" });
+  const rExist = await applyInvite(iExist.id, { id: VERIFIED, email: "verified@inv.test" });
+  const iExistRow = await p.invite.findUnique({ where: { id: iExist.id } });
+  check("A1 existing identical access + pending invite → accepted (no failure)", rExist.ok === true);
+  check("A2 access remains a single row", (await p.companyUserAccess.count({ where: { companyId: CO, userId: VERIFIED, role: "accountant" } })) === 1);
+  check("A3 acceptedAt + acceptedByUserId set", iExistRow.acceptedAt !== null && iExistRow.acceptedByUserId === VERIFIED);
+  // A7: a repeat accept after success returns a safe already result (no change).
+  check("A7 repeat accept after success → already", (await applyInvite(iExist.id, { id: VERIFIED, email: "verified@inv.test" })).reason === "already");
+
+  // A5-A6: an error inside the transaction rolls EVERYTHING back — the invite CAS
+  // is undone (acceptedAt stays null) and no access/audit is written. Mirrors the
+  // real applyInvite structure (CAS → access op → all-or-nothing).
+  const iFail = await mkInvite({ email: "other@inv.test", clubId: clubA.id, role: "manager" });
+  let threw = false;
+  try {
+    await p.$transaction(async (tx) => {
+      const cas = await tx.invite.updateMany({ where: { id: iFail.id, acceptedAt: null, revokedAt: null }, data: { acceptedAt: new Date(), acceptedByUserId: OTHER } });
+      if (cas.count !== 1) throw new Error("cas");
+      // Access op fails (FK to a non-existent club) → the whole tx must roll back,
+      // undoing the invite CAS above. Mirrors an upsert error inside applyInvite.
+      await tx.clubUserAccess.create({ data: { clubId: "does-not-exist-club", userId: OTHER, role: "manager" } });
+    });
+  } catch { threw = true; }
+  const iFailRow = await p.invite.findUnique({ where: { id: iFail.id } });
+  check("A5 transaction error rolls back the invite CAS (acceptedAt null)", threw === true && iFailRow.acceptedAt === null && iFailRow.acceptedByUserId === null);
+  check("A6 no access created after rollback", (await p.clubUserAccess.count({ where: { userId: OTHER, clubId: "does-not-exist-club" } })) === 0);
+  check("A6b no audit written after rollback (audit is post-commit only)", (await p.auditLog.count({ where: { entityId: iFail.id } })) === 0);
+
   await cleanup();
 
   // ===== Static assertions on the real source =====
@@ -237,6 +269,7 @@ async function main() {
   const page = readFileSync(new URL("../src/app/(app)/users/page.tsx", import.meta.url), "utf8");
 
   check("S1 applyInvite uses transaction + compare-and-set", svc.includes("$transaction") && svc.includes("acceptedAt: null, revokedAt: null, expiresAt: { gt: now }") && svc.includes("cas.count !== 1"));
+  check("S1b P2002 caught OUTSIDE the tx callback (rollback → already), audit is post-commit", svc.indexOf("} catch (error) {") > svc.indexOf("return true;") && svc.indexOf("if (!committed)") < svc.indexOf('action: "invitation.accepted"') && svc.indexOf('code === "P2002"') > svc.indexOf("$transaction"));
   check("S2 applyInvite enforces email match + active/non-deleted user", svc.includes('reason: "email_mismatch"') && svc.includes("!u.isActive || u.deletedAt"));
   check("S3 direct grant guarded by verified+active+not-deleted", actions.includes("existingUser.emailVerifiedAt && existingUser.isActive && !existingUser.deletedAt"));
   check("S4 direct grant audit uses via direct_email_grant", svc.includes('via: "direct_email_grant"'));
