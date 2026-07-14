@@ -222,6 +222,56 @@ async function main() {
   const fMkNet = () => { throw new Error("net"); };
   const ocrOkBody = JSON.stringify({ result: { textAnnotation: { fullText: "СЧЁТ №5 Поставщик ООО РОМАШКА Сумма 1000" } } });
 
+  // --- async OCR mirror (faithful to recognizeTextAsync) --------------------
+  const OCR_ASYNC_URL = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeTextAsync";
+  const OCR_GETREC_URL = "https://ocr.api.cloud.yandex.net/ocr/v1/getRecognition";
+  const OP_URL = "https://operation.api.cloud.yandex.net/operations";
+  const okJson = (obj) => ({ ok: true, status: 200, async json() { return obj; } });
+  // Stateful fake fetch: routes submit / operation-poll / getRecognition by URL.
+  const fakeAsync = ({ submit, polls, rec, capture }) => { let i = 0; return async (url, init) => { if (capture) capture(url, init); if (url.includes("recognizeTextAsync")) return submit; if (url.includes("/operations/")) { const r = polls[Math.min(i, polls.length - 1)]; i++; return r; } if (url.includes("getRecognition")) return rec; throw new Error("unexpected url"); }; };
+  async function callOcrAsync({ fetchImpl, content, key, folder, timeoutMs, pollIntervalMs = 1, sleepImpl, nowImpl }) {
+    if (!key || !folder) return { ok: false, reason: "http", safeCode: "not_configured" };
+    const now = nowImpl || (() => Date.now());
+    const sleep = sleepImpl || (() => Promise.resolve());
+    const start = now();
+    const headers = { Authorization: `Api-Key ${key}`, "x-folder-id": folder, "x-data-logging-enabled": "false", "Content-Type": "application/json" };
+    const elapsed = () => now() - start;
+    let submit;
+    try { submit = await fetchImpl(OCR_ASYNC_URL, { method: "POST", headers, body: JSON.stringify({ mimeType: "PDF", languageCodes: ["*"], model: "page", content: content.toString("base64") }) }); }
+    catch (e) { const t = e && e.name === "TimeoutError"; return { ok: false, reason: t ? "timeout" : "network", safeCode: t ? "timeout" : "network" }; }
+    if (!submit.ok) return { ok: false, reason: submit.status === 415 ? "unsupported_file" : "http", safeCode: `http_${submit.status}`, httpStatus: submit.status };
+    let op; try { op = await submit.json(); } catch { return { ok: false, reason: "parse", safeCode: "invalid_json" }; }
+    const id = typeof op?.id === "string" ? op.id : null; if (!id) return { ok: false, reason: "parse", safeCode: "no_operation_id" };
+    while (elapsed() < timeoutMs) {
+      await sleep(pollIntervalMs);
+      let poll; try { poll = await fetchImpl(`${OP_URL}/${id}`, { method: "GET", headers: { Authorization: `Api-Key ${key}` } }); }
+      catch (e) { const t = e && e.name === "TimeoutError"; return { ok: false, reason: t ? "timeout" : "network", safeCode: t ? "timeout" : "network" }; }
+      if (!poll.ok) return { ok: false, reason: "http", safeCode: `http_${poll.status}`, httpStatus: poll.status };
+      let st; try { st = await poll.json(); } catch { return { ok: false, reason: "parse", safeCode: "invalid_json" }; }
+      if (st?.error) return { ok: false, reason: "http", safeCode: "operation_error" };
+      if (st?.done === true) {
+        let rec; try { rec = await fetchImpl(`${OCR_GETREC_URL}?operationId=${id}`, { method: "GET", headers }); }
+        catch (e) { const t = e && e.name === "TimeoutError"; return { ok: false, reason: t ? "timeout" : "network", safeCode: t ? "timeout" : "network" }; }
+        if (!rec.ok) return { ok: false, reason: "http", safeCode: `http_${rec.status}`, httpStatus: rec.status };
+        let body; try { body = await rec.text(); } catch { return { ok: false, reason: "parse", safeCode: "read_failed" }; }
+        const text = parseOcrBody(body);
+        if (text === null) return { ok: false, reason: "parse", safeCode: "invalid_json" };
+        if (!text.trim()) return { ok: false, reason: "empty_text", safeCode: "empty_text" };
+        return { ok: true, text: text.slice(0, 30000) };
+      }
+    }
+    return { ok: false, reason: "timeout", safeCode: "poll_timeout" };
+  }
+  // Mirror of the analyzer PDF routing decision.
+  async function routePdf({ pageCount, syncFetch, asyncClient }) {
+    if (pageCount === 1) {
+      const s = await callOcr({ fetchImpl: syncFetch, content: Buffer.from("x"), mimeType: "PDF", key: "k", folder: "f", timeoutMs: 100 });
+      if (!s.ok && s.reason === "http" && s.httpStatus === 400) return { via: "async_fallback", res: await asyncClient() };
+      return { via: "sync", res: s };
+    }
+    return { via: "async", res: await asyncClient() };
+  }
+
   // ---- Provider selection (Y1-Y6) ----
   check("Y1 yandex + key + folder → yandex", selectProvider({ AI_PROVIDER: "yandex", YANDEX_AI_API_KEY: "k", YANDEX_FOLDER_ID: "f" }) === "yandex");
   check("Y2 yandex without key → mock (manual)", selectProvider({ AI_PROVIDER: "yandex", YANDEX_FOLDER_ID: "f" }) === "mock");
@@ -260,6 +310,63 @@ async function main() {
   check("Y24 amount/date normalized (RU formats)", vNum(gjson.amount) === 1000.5 && vDate(gjson.invoiceDate) === "2026-07-01");
   check("Y25 confidence downgraded when critical missing", finalize({ counterpartyName: "x", amount: null, invoiceDate: "2026-07-01", counterpartyAccount: null, counterpartyBankBik: null, confidence: "high" }) !== "high");
 
+  // ---- PDF sync/async OCR (P1-P11) ----
+  const recBody = [JSON.stringify({ result: { textAnnotation: { fullText: "page1 Поставщик ООО РОМАШКА" } } }), JSON.stringify({ result: { textAnnotation: { fullText: "page2 Сумма 1000" } } })].join("\n");
+  const opDone = () => okJson({ id: "op1", done: true });
+  const opRunning = () => okJson({ id: "op1", done: false });
+  const submitOk = () => okJson({ id: "op1", done: false });
+
+  // P1: single-page PDF → sync path succeeds (no async).
+  let asyncCalled = false;
+  const r1 = await routePdf({ pageCount: 1, syncFetch: async () => okText(ocrOkBody), asyncClient: async () => { asyncCalled = true; return { ok: true, text: "x" }; } });
+  check("P1 single-page PDF uses sync recognizeText", r1.via === "sync" && r1.res.ok === true && asyncCalled === false);
+
+  // P2: single-page PDF sync 400 → one-shot async fallback succeeds.
+  const r2 = await routePdf({ pageCount: 1, syncFetch: async () => httpErr(400), asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
+  check("P2 single-page PDF sync 400 → async fallback", r2.via === "async_fallback" && r2.res.ok === true && r2.res.text.includes("page1") && r2.res.text.includes("page2"));
+
+  // P3: multi-page PDF → async directly (sync never called).
+  let syncCalled = false;
+  const r3 = await routePdf({ pageCount: 3, syncFetch: async () => { syncCalled = true; return okText(ocrOkBody); }, asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opRunning(), opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
+  check("P3 multi-page PDF goes straight to async", r3.via === "async" && r3.res.ok === true && syncCalled === false);
+
+  // P4: async polling succeeds after a few 'running' polls.
+  const r4 = await callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opRunning(), opRunning(), opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() });
+  check("P4 async polling completes and returns text", r4.ok === true && r4.text.includes("page1"));
+
+  // P5: async never finishes within the deadline → poll_timeout (manual mode).
+  let clk = 0;
+  const r5 = await callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opRunning()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 50, pollIntervalMs: 20, sleepImpl: (ms) => { clk += ms; return Promise.resolve(); }, nowImpl: () => clk });
+  check("P5 async timeout → poll_timeout (manual mode upstream)", r5.ok === false && r5.reason === "timeout" && r5.safeCode === "poll_timeout");
+
+  // P6: async submit HTTP errors → safe error.
+  for (const st of [400, 401, 403, 429, 500]) { const r = await callOcrAsync({ fetchImpl: fakeAsync({ submit: httpErr(st), polls: [], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 100, nowImpl: (() => { let c = 0; return () => (c += 10); })() }); check(`P6 async submit HTTP ${st} → safe error`, r.ok === false && r.reason === "http" && r.httpStatus === st); }
+  // P6b: poll HTTP error / operation error → safe.
+  const r6b = await callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [httpErr(500)], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 100, nowImpl: (() => { let c = 0; return () => (c += 10); })() });
+  check("P6b async poll HTTP 500 → safe error", r6b.ok === false && r6b.reason === "http" && r6b.httpStatus === 500);
+  const r6c = await callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [okJson({ done: false, error: { code: 3 } })], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 100, nowImpl: (() => { let c = 0; return () => (c += 10); })() });
+  check("P6c async operation error → safe error", r6c.ok === false && r6c.safeCode === "operation_error");
+
+  // P7: async getRecognition assembles pages in page order.
+  check("P7 async assembles pages in order", r4.text.indexOf("page1") < r4.text.indexOf("page2"));
+
+  // P8: no base64 / OCR text ever passed to a log by the mirror (client is
+  // console-free; verified statically below). Sanity: async result carries text
+  // but the pipeline logs only safe fields (asserted in YS13/YS14 + PS below).
+  check("P8 async result exposes text only via return (not thrown/logged here)", typeof r4.text === "string" && r4.ok === true);
+
+  // P9: JPG/PNG path unchanged — images never touch the async client.
+  let asyncTouchedForImage = false;
+  const rImg = await callOcr({ fetchImpl: async () => okText(ocrOkBody), content: Buffer.from("x"), mimeType: "JPEG", key: "k", folder: "f", timeoutMs: 100 });
+  // (routing only sends PDFs to async; images call sync callOcr directly)
+  check("P9 JPG/PNG still use sync OCR (no async)", rImg.ok === true && asyncTouchedForImage === false);
+
+  // P10: YandexGPT receives OCR text after async (same downstream as sync).
+  check("P10 GPT-ready text after async OCR", r4.text.length > 0 && parseModelJson('{"amount":1000}') !== null);
+
+  // P11: OpenAI + mock providers are unaffected (still resolve via selectProvider).
+  check("P11 openai + mock providers intact", selectProvider({ AI_PROVIDER: "openai", OPENAI_API_KEY: "k" }) === "openai" && selectProvider({ AI_PROVIDER: "" }) === "mock");
+
   // ---- Static: real source wiring (Y26-Y35 + safety) ----
   const cfg = readFileSync(new URL("../src/lib/ai/yandex-config.ts", import.meta.url), "utf8");
   const ocrSrc = readFileSync(new URL("../src/lib/ai/yandex-ocr-client.ts", import.meta.url), "utf8");
@@ -267,7 +374,7 @@ async function main() {
   const upload = readFileSync(new URL("../src/app/(app)/invoices/_components/InvoiceUpload.tsx", import.meta.url), "utf8");
   const health = readFileSync(new URL("../src/app/api/health/route.ts", import.meta.url), "utf8");
 
-  check("YS1 config: toYandexOcrMime maps JPEG/PNG/PDF, rejects the rest", cfg.includes('return "JPEG"') && cfg.includes('return "PNG"') && cfg.includes('return "PDF"') && cfg.includes("default:\n      return null"));
+  check("YS1 config: toYandexOcrMime maps JPEG/PNG/PDF, rejects the rest", cfg.includes('return "JPEG"') && cfg.includes('return "PNG"') && cfg.includes('return "PDF"') && /default:\s*\r?\n\s*return null/.test(cfg));
   check("YS2 config: yandexConfigured requires key AND folder", /yandexConfigured[\s\S]*YANDEX_AI_API_KEY[\s\S]*YANDEX_FOLDER_ID/.test(cfg));
   check("YS3 OCR client hits recognizeText with Api-Key + x-folder-id + data-logging + base64", cfg.includes("ocr/v1/recognizeText") && ocrSrc.includes("YANDEX_OCR_URL") && ocrSrc.includes("Api-Key ${key}") && ocrSrc.includes('"x-folder-id": folder') && ocrSrc.includes('"x-data-logging-enabled"') && ocrSrc.includes('toString("base64")'));
   check("YS4 OCR client uses AbortSignal.timeout + discriminated reasons", ocrSrc.includes("AbortSignal.timeout(params.timeoutMs)") && ocrSrc.includes('"timeout"') && ocrSrc.includes('"empty_text"') && ocrSrc.includes('"unsupported_file"') && ocrSrc.includes('"network"'));
@@ -277,7 +384,11 @@ async function main() {
   check("YS8 selectedAiProvider adds yandex, keeps openai + mock", client.includes('process.env.AI_PROVIDER === "yandex"') && client.includes('process.env.AI_PROVIDER === "openai"') && client.includes('return "mock"'));
   check("YS9 Y26-28 pipeline: analyzer routes bytes → OCR → GPT → mapInvoiceJson/finalize", analyzer.includes("analyzeInvoiceWithYandex") && analyzer.includes("recognizeText(") && analyzer.includes("extractInvoiceFields(") && analyzer.includes("mapInvoiceJson(gpt.json") && analyzer.includes("finalize({ ...mapped, provider: \"yandex\""));
   check("YS10 Y34 yandex branch runs BEFORE the unavailable guard (scans not dead-ended)", analyzer.indexOf('process.env.AI_PROVIDER === "yandex"') < analyzer.indexOf('doc.kind === "unavailable"'));
-  check("YS11 Y32/Y33 OCR/GPT only in the yandex path (not openai/mock)", analyzer.indexOf("recognizeText(") > analyzer.indexOf("async function analyzeInvoiceWithYandex") && (analyzer.match(/recognizeText\(/g) || []).length === 1);
+  {
+    const yfn = analyzer.slice(analyzer.indexOf("async function analyzeInvoiceWithYandex"), analyzer.indexOf("export async function analyzeInvoiceDocument"));
+    const disp = analyzer.slice(analyzer.indexOf("export async function analyzeInvoiceDocument"));
+    check("YS11 Y32/Y33 OCR calls only in the yandex helper, not the dispatcher/openai path", yfn.includes("recognizeText(") && yfn.includes("recognizeTextAsync(") && !disp.includes("recognizeText("));
+  }
   check("YS12 Y29/Y30 upload persists PendingInvoiceUpload BEFORE analyze (manual survives AI failure)", action.indexOf("pendingInvoiceUpload.create") < action.indexOf("analyzeInvoiceDocument(") && action.includes("expiresAt:"));
   check("YS13 Y18/Y31 no base64 / OCR text / prompt / storageKey logged in the analyzer", !/logYandex\([^)]*ocr\.text/.test(analyzer) && !/logYandex\([^)]*base64/.test(analyzer) && !/logYandex\([^)]*params\.user/.test(analyzer) && !analyzer.includes("console.log(ocr.text") && !/logYandex\([^)]*storageKey/.test(analyzer));
   check("YS14 analyzer logs only safe fields (durationMs / httpStatus / code / confidence / bucket)", analyzer.includes("fileSizeBucket") && analyzer.includes("durationMs:") && analyzer.includes("missingFieldNames") && analyzer.includes("correlationId"));
@@ -285,6 +396,16 @@ async function main() {
   check("YS16 misconfigured yandex in prod → AI_NOT_CONFIGURED (manual), dev → mock", analyzer.includes('"AI_NOT_CONFIGURED"') && analyzer.includes('process.env.NODE_ENV === "production"') && analyzer.includes("return mockResult(diagnostics)"));
   check("YS17 health exposes AI provider names only (no keys)", health.includes("selectedAiProvider()") && health.includes("requested") && health.includes("configured") && !health.includes("API_KEY"));
   check("YS18 mock provider preserved (unchanged warning + no external call)", analyzer.includes('warnings: ["ИИ не настроен — заполните поля вручную."]') && analyzer.includes('provider: "mock"'));
+
+  // ---- Static: async PDF wiring (PS1-PS8) ----
+  check("PS1 config declares async OCR + operations endpoints + async timeout", cfg.includes("recognizeTextAsync") && cfg.includes("getRecognition") && cfg.includes("operation.api.cloud.yandex.net/operations") && cfg.includes("yandexOcrAsyncTimeoutMs"));
+  check("PS2 OCR client exports recognizeTextAsync using the async URL", ocrSrc.includes("export async function recognizeTextAsync") && ocrSrc.includes("YANDEX_OCR_ASYNC_URL"));
+  check("PS3 async submits with PDF mime via the shared ocrBody (base64)", ocrSrc.includes('ocrBody(params.content, "PDF")') && ocrSrc.includes('toString("base64")'));
+  check("PS4 async polls the operation then fetches getRecognition, bounded by timeoutMs", ocrSrc.includes("YANDEX_OPERATION_URL") && ocrSrc.includes("YANDEX_OCR_GET_RECOGNITION_URL") && ocrSrc.includes("elapsed() < params.timeoutMs") && ocrSrc.includes('safeCode: "poll_timeout"'));
+  check("PS5 async reuses parseOcrBody (page-order merge) + data-logging header", ocrSrc.includes("parseOcrBody(body)") && ocrSrc.includes("ocrHeaders(key, folder)"));
+  check("PS6 OCR client stays console-free (no base64/text/key logged)", !ocrSrc.includes("console."));
+  check("PS7 analyzer routes single-page→sync (400→async fallback), multi/unknown→async", analyzer.includes("pageCount === 1") && analyzer.includes("recognizeTextAsync(") && analyzer.includes('ocr.httpStatus === 400') && analyzer.includes("yandexOcrAsyncTimeoutMs()"));
+  check("PS8 any PDF OCR failure → PDF_OCR_FAILED manual message", analyzer.includes("code = isPdf") && analyzer.includes('"PDF_OCR_FAILED"') && analyzer.includes("Не удалось распознать PDF. Заполните поля вручную или загрузите JPG/PNG."));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);

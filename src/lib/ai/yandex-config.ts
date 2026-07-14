@@ -3,8 +3,16 @@
 // into the client bundle. Selected via AI_PROVIDER=yandex (see selectedAiProvider
 // in openai-client.ts). Endpoints per Yandex Cloud AI docs.
 
+// Synchronous OCR — single image / single-page PDF only.
 export const YANDEX_OCR_URL = "https://ai.api.cloud.yandex.net/ocr/v1/recognizeText";
+// Asynchronous OCR — multi-page PDF: submit → poll operation → fetch results.
+export const YANDEX_OCR_ASYNC_URL = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeTextAsync";
+export const YANDEX_OCR_GET_RECOGNITION_URL = "https://ocr.api.cloud.yandex.net/ocr/v1/getRecognition";
+export const YANDEX_OPERATION_URL = "https://operation.api.cloud.yandex.net/operations";
 export const YANDEX_GPT_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion";
+
+// Poll interval while waiting for an async OCR operation to finish.
+export const YANDEX_OCR_POLL_INTERVAL_MS = 2_000;
 
 // Max OCR characters forwarded to YandexGPT (bounded so a huge scan cannot blow
 // the token budget). Content is never logged.
@@ -36,6 +44,17 @@ export function yandexGptModelUri(folderId: string): string {
 export function yandexAiTimeoutMs(): number {
   const n = Number(process.env.YANDEX_AI_TIMEOUT_MS);
   return Number.isFinite(n) && n >= 5_000 && n <= 120_000 ? n : 60_000;
+}
+
+/**
+ * Overall deadline for the async OCR flow (submit + polling + fetch results).
+ * Async PDF recognition is slower than sync, so this defaults higher. Falls back
+ * to YANDEX_OCR_ASYNC_TIMEOUT_MS, else max(sync timeout, 90s).
+ */
+export function yandexOcrAsyncTimeoutMs(): number {
+  const n = Number(process.env.YANDEX_OCR_ASYNC_TIMEOUT_MS);
+  if (Number.isFinite(n) && n >= 5_000 && n <= 300_000) return n;
+  return Math.max(yandexAiTimeoutMs(), 90_000);
 }
 
 /** Whether Yandex may retain request payloads. Default OFF (privacy). */

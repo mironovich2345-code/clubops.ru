@@ -5,6 +5,10 @@
 // returns safe, structured results.
 import {
   YANDEX_OCR_URL,
+  YANDEX_OCR_ASYNC_URL,
+  YANDEX_OCR_GET_RECOGNITION_URL,
+  YANDEX_OPERATION_URL,
+  YANDEX_OCR_POLL_INTERVAL_MS,
   YANDEX_OCR_MAX_TEXT,
   yandexOcrModel,
   yandexOcrLanguageCodes,
@@ -21,6 +25,35 @@ export type OcrResult =
       httpStatus?: number;
       durationMs: number;
     };
+
+/** Auth + privacy headers shared by every Yandex OCR request. Never logged. */
+function ocrHeaders(key: string, folder: string): Record<string, string> {
+  return {
+    Authorization: `Api-Key ${key}`,
+    "x-folder-id": folder,
+    // Privacy: ask Yandex not to retain the payload unless explicitly enabled.
+    "x-data-logging-enabled": yandexDataLoggingEnabled() ? "true" : "false",
+    "Content-Type": "application/json",
+  };
+}
+
+/** Request body shared by the sync and async recognize endpoints. */
+function ocrBody(content: Buffer, mimeType: YandexOcrMime): string {
+  return JSON.stringify({
+    mimeType,
+    languageCodes: yandexOcrLanguageCodes(),
+    model: yandexOcrModel(),
+    content: content.toString("base64"),
+  });
+}
+
+function classifyThrow(error: unknown): "timeout" | "network" {
+  return error instanceof Error && error.name === "TimeoutError" ? "timeout" : "network";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Recognize text from a document via Yandex Vision OCR. `content` is the raw,
@@ -42,29 +75,13 @@ export async function recognizeText(params: {
   try {
     res = await fetch(YANDEX_OCR_URL, {
       method: "POST",
-      headers: {
-        Authorization: `Api-Key ${key}`,
-        "x-folder-id": folder,
-        // Privacy: ask Yandex not to retain the payload unless explicitly enabled.
-        "x-data-logging-enabled": yandexDataLoggingEnabled() ? "true" : "false",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        mimeType: params.mimeType,
-        languageCodes: yandexOcrLanguageCodes(),
-        model: yandexOcrModel(),
-        content: params.content.toString("base64"),
-      }),
+      headers: ocrHeaders(key, folder),
+      body: ocrBody(params.content, params.mimeType),
       signal: AbortSignal.timeout(params.timeoutMs),
     });
   } catch (error) {
-    const timedOut = error instanceof Error && error.name === "TimeoutError";
-    return {
-      ok: false,
-      reason: timedOut ? "timeout" : "network",
-      safeCode: timedOut ? "timeout" : "network",
-      durationMs: Date.now() - start,
-    };
+    const reason = classifyThrow(error);
+    return { ok: false, reason, safeCode: reason, durationMs: Date.now() - start };
   }
 
   const durationMs = Date.now() - start;
@@ -87,6 +104,126 @@ export async function recognizeText(params: {
   if (!text.trim()) return { ok: false, reason: "empty_text", safeCode: "empty_text", durationMs };
 
   return { ok: true, text: text.slice(0, YANDEX_OCR_MAX_TEXT), durationMs };
+}
+
+/**
+ * Asynchronous OCR for multi-page (or unknown-page-count) PDFs. Yandex requires
+ * the async flow for multi-page PDFs — the sync endpoint returns HTTP 400:
+ *   1. POST recognizeTextAsync → an Operation { id }.
+ *   2. Poll operations/{id} until done (bounded by timeoutMs).
+ *   3. GET getRecognition?operationId=… → NDJSON pages, merged in page order.
+ * Same key/folder + x-data-logging-enabled=false. The base64, the recognized text
+ * and the response bodies are never logged. Errors are the same discriminated
+ * union as the sync path so the analyzer maps them to a manual-mode message.
+ */
+export async function recognizeTextAsync(params: {
+  content: Buffer;
+  timeoutMs: number;
+  pollIntervalMs?: number;
+}): Promise<OcrResult> {
+  const key = process.env.YANDEX_AI_API_KEY;
+  const folder = process.env.YANDEX_FOLDER_ID;
+  if (!key || !folder) return { ok: false, reason: "http", safeCode: "not_configured", durationMs: 0 };
+
+  const start = Date.now();
+  const headers = ocrHeaders(key, folder);
+  // Each individual HTTP call is bounded so a single hung request cannot exceed
+  // the overall deadline unnoticed.
+  const perRequestTimeout = Math.min(params.timeoutMs, 30_000);
+  const pollInterval = Math.max(params.pollIntervalMs ?? YANDEX_OCR_POLL_INTERVAL_MS, 1);
+  const elapsed = () => Date.now() - start;
+
+  // 1) Submit the document for async recognition.
+  let submitRes: Response;
+  try {
+    submitRes = await fetch(YANDEX_OCR_ASYNC_URL, {
+      method: "POST",
+      headers,
+      body: ocrBody(params.content, "PDF"),
+      signal: AbortSignal.timeout(perRequestTimeout),
+    });
+  } catch (error) {
+    const reason = classifyThrow(error);
+    return { ok: false, reason, safeCode: reason, durationMs: elapsed() };
+  }
+  if (!submitRes.ok) {
+    const reason = submitRes.status === 415 ? "unsupported_file" : "http";
+    return { ok: false, reason, safeCode: `http_${submitRes.status}`, httpStatus: submitRes.status, durationMs: elapsed() };
+  }
+  let op: unknown;
+  try {
+    op = await submitRes.json();
+  } catch {
+    return { ok: false, reason: "parse", safeCode: "invalid_json", durationMs: elapsed() };
+  }
+  const operationId = typeof (op as { id?: unknown })?.id === "string" ? (op as { id: string }).id : null;
+  if (!operationId) return { ok: false, reason: "parse", safeCode: "no_operation_id", durationMs: elapsed() };
+
+  // 2) Poll the operation until it is done or the deadline passes.
+  while (elapsed() < params.timeoutMs) {
+    await sleep(pollInterval);
+    let pollRes: Response;
+    try {
+      pollRes = await fetch(`${YANDEX_OPERATION_URL}/${encodeURIComponent(operationId)}`, {
+        method: "GET",
+        headers: { Authorization: `Api-Key ${key}` },
+        signal: AbortSignal.timeout(perRequestTimeout),
+      });
+    } catch (error) {
+      const reason = classifyThrow(error);
+      return { ok: false, reason, safeCode: reason, durationMs: elapsed() };
+    }
+    if (!pollRes.ok) {
+      return { ok: false, reason: "http", safeCode: `http_${pollRes.status}`, httpStatus: pollRes.status, durationMs: elapsed() };
+    }
+    let status: unknown;
+    try {
+      status = await pollRes.json();
+    } catch {
+      return { ok: false, reason: "parse", safeCode: "invalid_json", durationMs: elapsed() };
+    }
+    if ((status as { error?: unknown })?.error) {
+      return { ok: false, reason: "http", safeCode: "operation_error", durationMs: elapsed() };
+    }
+    if ((status as { done?: unknown })?.done === true) {
+      return await fetchAsyncResults(operationId, headers, perRequestTimeout, start);
+    }
+  }
+  return { ok: false, reason: "timeout", safeCode: "poll_timeout", durationMs: elapsed() };
+}
+
+/** Fetch + merge the finished async recognition pages (NDJSON, page order). */
+async function fetchAsyncResults(
+  operationId: string,
+  headers: Record<string, string>,
+  perRequestTimeout: number,
+  start: number,
+): Promise<OcrResult> {
+  const elapsed = () => Date.now() - start;
+  let res: Response;
+  try {
+    res = await fetch(`${YANDEX_OCR_GET_RECOGNITION_URL}?operationId=${encodeURIComponent(operationId)}`, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(perRequestTimeout),
+    });
+  } catch (error) {
+    const reason = classifyThrow(error);
+    return { ok: false, reason, safeCode: reason, durationMs: elapsed() };
+  }
+  if (!res.ok) {
+    return { ok: false, reason: "http", safeCode: `http_${res.status}`, httpStatus: res.status, durationMs: elapsed() };
+  }
+  let body: string;
+  try {
+    body = await res.text();
+  } catch {
+    return { ok: false, reason: "parse", safeCode: "read_failed", durationMs: elapsed() };
+  }
+  const text = parseOcrBody(body);
+  if (text === null) return { ok: false, reason: "parse", safeCode: "invalid_json", durationMs: elapsed() };
+  if (!text.trim()) return { ok: false, reason: "empty_text", safeCode: "empty_text", durationMs: elapsed() };
+  return { ok: true, text: text.slice(0, YANDEX_OCR_MAX_TEXT), durationMs: elapsed() };
 }
 
 /** Parse a single-object OR NDJSON OCR response body into merged text. Returns

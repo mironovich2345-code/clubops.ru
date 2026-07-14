@@ -32,6 +32,13 @@ YandexGPT (foundationModels completion, JSON) → mapInvoiceJson/finalize`.
 
 - OCR ingests **images and PDFs directly** (incl. scans) — the `PDF_RENDER_REQUIRED`
   dead-end does **not** apply to the yandex path.
+- **PDF routing:** images and single-page PDFs use the **sync** `recognizeText`;
+  multi-page (or unknown-page-count) PDFs use the **async** flow
+  (`recognizeTextAsync` → poll `operations/{id}` → `getRecognition`), because the
+  sync endpoint returns HTTP 400 for multi-page PDFs. A single-page PDF that the
+  sync endpoint still rejects (400) falls back to async once. Async deadline:
+  `YANDEX_OCR_ASYNC_TIMEOUT_MS` (default 90s). Any PDF OCR failure → a clear
+  manual-mode message ("Не удалось распознать PDF…").
 - MIME is taken from magic bytes; only `JPEG`/`PNG`/`PDF` are sent (WEBP/unknown →
   manual). Base64 content, OCR text, the prompt/response and the API key are never
   logged. `x-data-logging-enabled` defaults to `false`.

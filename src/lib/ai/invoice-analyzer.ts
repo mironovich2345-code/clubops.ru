@@ -10,8 +10,8 @@ import {
 } from "@/lib/ai/openai-client";
 import { resolveCounterparty } from "@/lib/ai/invoice-party";
 import { prepareDocumentInput, detectMime, type DocDiagnostics, type DocErrorCode } from "@/lib/ai/document-input";
-import { yandexConfigured, yandexAiTimeoutMs, toYandexOcrMime } from "@/lib/ai/yandex-config";
-import { recognizeText } from "@/lib/ai/yandex-ocr-client";
+import { yandexConfigured, yandexAiTimeoutMs, yandexOcrAsyncTimeoutMs, toYandexOcrMime } from "@/lib/ai/yandex-config";
+import { recognizeText, recognizeTextAsync, type OcrResult } from "@/lib/ai/yandex-ocr-client";
 import { extractInvoiceFields } from "@/lib/ai/yandex-gpt-client";
 
 export type InvoiceConfidence = "low" | "medium" | "high";
@@ -228,6 +228,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   AI_PARSE: "Сервис распознавания вернул некорректный ответ — проверьте поля вручную.",
   AI_NOT_CONFIGURED: "Распознавание документов не настроено — обратитесь к администратору. Заполните поля вручную.",
   OCR_EMPTY: "Не удалось распознать текст документа. Заполните поля вручную.",
+  PDF_OCR_FAILED: "Не удалось распознать PDF. Заполните поля вручную или загрузите JPG/PNG.",
 };
 
 function technicalResult(errorCode: string, mode: AnalysisMode, diagnostics: DocDiagnostics | null, quality: TechnicalQuality): InvoiceExtraction {
@@ -276,19 +277,46 @@ async function analyzeInvoiceWithYandex(input: AnalysisInput, diagnostics: DocDi
     logYandex({ correlationId, stage: "prepare", mime: realMime, code: "unsupported_file" });
     return technicalResult("DOCUMENT_CONTENT_UNAVAILABLE", "unavailable", diagnostics, "unreadable");
   }
-  const sourceMode: InvoiceExtraction["sourceMode"] = realMime === "application/pdf" ? "pdf_text" : "image";
+  const isPdf = ocrMime === "PDF";
+  const sourceMode: InvoiceExtraction["sourceMode"] = isPdf ? "pdf_text" : "image";
   const timeoutMs = yandexAiTimeoutMs();
   const sizeBkt = sizeBucket(input.buffer.length);
 
-  const ocr = await recognizeText({ content: input.buffer, mimeType: ocrMime, timeoutMs });
+  // OCR routing:
+  //  - images (JPEG/PNG) → sync recognizeText.
+  //  - single-page PDF   → sync recognizeText, with a one-shot async fallback if
+  //    the sync endpoint rejects it (HTTP 400).
+  //  - multi-page / unknown-page-count PDF → async recognizeTextAsync (Yandex
+  //    requires the async flow for multi-page PDFs; sync returns HTTP 400).
+  let ocr: OcrResult;
+  if (isPdf) {
+    const pageCount = diagnostics?.pageCount ?? 0;
+    const asyncTimeoutMs = yandexOcrAsyncTimeoutMs();
+    if (pageCount === 1) {
+      ocr = await recognizeText({ content: input.buffer, mimeType: "PDF", timeoutMs });
+      if (!ocr.ok && ocr.reason === "http" && ocr.httpStatus === 400) {
+        logYandex({ correlationId, stage: "ocr", source: "pdf", mime: realMime, fileSizeBucket: sizeBkt, code: "sync_pdf_400_fallback_async" });
+        ocr = await recognizeTextAsync({ content: input.buffer, timeoutMs: asyncTimeoutMs });
+      }
+    } else {
+      ocr = await recognizeTextAsync({ content: input.buffer, timeoutMs: asyncTimeoutMs });
+    }
+  } else {
+    ocr = await recognizeText({ content: input.buffer, mimeType: ocrMime, timeoutMs });
+  }
+
   logYandex({
     correlationId, stage: "ocr", source: sourceMode === "image" ? "image" : "pdf", mime: realMime,
+    ocrMode: isPdf ? (diagnostics?.pageCount === 1 ? "pdf_sync" : "pdf_async") : "image_sync",
     fileSizeBucket: sizeBkt, durationMs: ocr.durationMs, httpStatus: ocr.ok ? undefined : ocr.httpStatus,
     code: ocr.ok ? "ok" : ocr.safeCode,
   });
   if (!ocr.ok) {
-    const code =
-      ocr.reason === "timeout" ? "AI_TIMEOUT"
+    // Any PDF OCR failure (too large / unsupported / timed out / empty) → one
+    // clear manual-mode message. Images keep their specific codes.
+    const code = isPdf
+      ? "PDF_OCR_FAILED"
+      : ocr.reason === "timeout" ? "AI_TIMEOUT"
         : ocr.reason === "empty_text" ? "OCR_EMPTY"
           : ocr.reason === "unsupported_file" ? "DOCUMENT_CONTENT_UNAVAILABLE"
             : "AI_UNAVAILABLE";
