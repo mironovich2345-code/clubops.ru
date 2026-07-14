@@ -24,6 +24,13 @@ export default async function NewRefundPage() {
   return (
     <div>
       <PageHeader title="Новый возврат" description="Выберите тип возврата, затем загрузите документы и реквизиты" />
+      {/* Sender is ALWAYS the current signed-in user (read-only). There is no
+          sender selector; the server sets createdByUserId from the session and
+          ignores any client-supplied sender field. */}
+      <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+        Кто отправляет: <span className="font-medium text-slate-900">{ctx.user.name}</span>
+        <span className="text-slate-400"> · {ctx.user.email}</span>
+      </div>
       <NewRefundStarter clubs={clubs} defaultClubId={defaultClubId} />
     </div>
   );

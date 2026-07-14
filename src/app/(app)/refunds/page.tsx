@@ -92,7 +92,10 @@ function RefundTable({ rows, empty }: { rows: RefundWithClub[]; empty: string })
           ) : (
             rows.map((r) => (
               <tr key={r.id} className="hover:bg-slate-50">
-                <Td><div className="font-medium text-slate-900">{r.clientName ?? "— без клиента —"}</div></Td>
+                {/* v1 refunds set clientName; v2 (slot-based) capture the recipient
+                    name as bankRecipientName — show it as the client. Only a NAME
+                    is shown here — never phone or bank account/BIK. */}
+                <Td><div className="font-medium text-slate-900">{r.clientName || r.bankRecipientName || "— без клиента —"}</div></Td>
                 <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
                 <Td className="whitespace-nowrap">{statusLabel(r)}</Td>
                 <Td className="whitespace-nowrap text-slate-600">{r.club.name}</Td>

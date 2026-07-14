@@ -594,6 +594,28 @@ async function main() {
   check("W-regional guard re-checks club access on server", actSrc.includes('userHasClubRole(ctx.user.id, refund.clubId, ["regional_director"])'));
   check("W-conditional updates guard status (races)", actSrc.includes('status: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW') && actSrc.includes("res.count === 0"));
 
+  // === Client shown in the list (fix #1) ==================================
+  // List label: clientName (v1) → bankRecipientName (v2 recipient) → fallback.
+  const clientLabel = (r) => r.clientName || r.bankRecipientName || "— без клиента —";
+  const rV1 = await p.refund.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: MGR, status: "draft", clientName: "Пётр Петров" }, select: { clientName: true, bankRecipientName: true } });
+  const rV2 = await p.refund.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: MGR, entryVersion: 2, returnType: "membership", status: "pending_regional_review", bankRecipientName: "Иван Иванов" }, select: { clientName: true, bankRecipientName: true } });
+  const rNone = await p.refund.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: MGR, entryVersion: 2, returnType: "membership", status: "draft" }, select: { clientName: true, bankRecipientName: true } });
+  check("C1 v1 refund shows clientName", clientLabel(rV1) === "Пётр Петров");
+  check("C2 v2 refund shows recipient name as client (needs_review queue + all)", clientLabel(rV2) === "Иван Иванов");
+  check("C3 legacy with neither → fallback «— без клиента —»", clientLabel(rNone) === "— без клиента —");
+  check("C4 list renders clientName||bankRecipientName fallback", listSrc.includes('r.clientName || r.bankRecipientName || "— без клиента —"'));
+  check("C5 list shows only a NAME — no phone / account / BIK", !listSrc.includes("clientPhone") && !listSrc.includes("bankAccount") && !listSrc.includes("bankBik"));
+
+  // === Sender = current user, read-only (fix #3) ==========================
+  const newSrc = readFileSync(new URL("../src/app/(app)/refunds/new/page.tsx", import.meta.url), "utf8");
+  check("S-sender new page shows read-only «Кто отправляет» = current user", newSrc.includes("Кто отправляет") && newSrc.includes("ctx.user.name") && newSrc.includes("ctx.user.email"));
+  check("S-sender no editable sender select in the refund flow", !newSrc.includes('name="senderId"') && !newSrc.includes('name="createdByUserId"') && !editor.includes('name="senderId"'));
+  check("S-sender server sets createdByUserId from session (draft create)", actSrc.includes("createdByUserId: ctx.user.id") && !actSrc.includes('formData.get("createdByUserId")') && !actSrc.includes('formData.get("senderId")'));
+  check("S-sender submit keeps author, sets submittedByManagerId from session", actSrc.includes("submittedByManagerId: ctx.user.id") && !/data:\s*\{[^}]*createdByUserId/.test(actSrc.slice(actSrc.indexOf("submitRefundToRegional"))));
+  // DB: submit does not change the author.
+  const draftAuthor = await p.refund.create({ data: { companyId: CO, clubId: CLUB, createdByUserId: MGR, entryVersion: 2, returnType: "membership", status: "pending_regional_review", submittedByManagerId: MGR }, select: { id: true, createdByUserId: true, submittedByManagerId: true } });
+  check("S-sender author + submitter are the session user (not client-supplied)", draftAuthor.createdByUserId === MGR && draftAuthor.submittedByManagerId === MGR);
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();
