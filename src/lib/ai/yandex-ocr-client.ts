@@ -23,8 +23,31 @@ export type OcrResult =
       reason: "http" | "timeout" | "network" | "parse" | "unsupported_file" | "empty_text";
       safeCode: string;
       httpStatus?: number;
+      // Yandex error {code,message} extracted from a JSON error envelope, capped
+      // at 200 chars. NEVER the raw/non-JSON body (which could echo content).
+      safeMessage?: string;
       durationMs: number;
     };
+
+/**
+ * Extract a SAFE Yandex error descriptor from a non-OK response. Yandex returns a
+ * standard error envelope { code, message, details }. Only `code` + `message` are
+ * read (capped at 200 chars); a non-JSON body is ignored so document content can
+ * never leak through the error path.
+ */
+async function safeYandexError(res: Response): Promise<string | undefined> {
+  try {
+    const body = await res.text();
+    if (!body) return undefined;
+    const j = JSON.parse(body) as { code?: unknown; message?: unknown };
+    const code = typeof j?.code === "number" || typeof j?.code === "string" ? String(j.code) : "";
+    const message = typeof j?.message === "string" ? j.message : "";
+    const combined = [code, message].filter(Boolean).join(": ");
+    return combined ? combined.slice(0, 200) : undefined;
+  } catch {
+    return undefined; // not JSON / read failed → never surface the raw body
+  }
+}
 
 /** Auth + privacy headers shared by every Yandex OCR request. Never logged. */
 function ocrHeaders(key: string, folder: string): Record<string, string> {
@@ -86,9 +109,10 @@ export async function recognizeText(params: {
 
   const durationMs = Date.now() - start;
   if (!res.ok) {
-    // Never read/keep the body (it may echo the content). Only the status.
+    // Only the status + the safe {code,message} error descriptor (never content).
     const reason = res.status === 415 ? "unsupported_file" : "http";
-    return { ok: false, reason, safeCode: `http_${res.status}`, httpStatus: res.status, durationMs };
+    const safeMessage = await safeYandexError(res);
+    return { ok: false, reason, safeCode: `http_${res.status}`, httpStatus: res.status, safeMessage, durationMs };
   }
 
   // The sync recognizeText endpoint may return a single JSON object or, for
@@ -148,7 +172,8 @@ export async function recognizeTextAsync(params: {
   }
   if (!submitRes.ok) {
     const reason = submitRes.status === 415 ? "unsupported_file" : "http";
-    return { ok: false, reason, safeCode: `http_${submitRes.status}`, httpStatus: submitRes.status, durationMs: elapsed() };
+    const safeMessage = await safeYandexError(submitRes);
+    return { ok: false, reason, safeCode: `http_${submitRes.status}`, httpStatus: submitRes.status, safeMessage, durationMs: elapsed() };
   }
   let op: unknown;
   try {

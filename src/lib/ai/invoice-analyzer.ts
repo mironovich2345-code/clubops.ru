@@ -282,34 +282,25 @@ async function analyzeInvoiceWithYandex(input: AnalysisInput, diagnostics: DocDi
   const timeoutMs = yandexAiTimeoutMs();
   const sizeBkt = sizeBucket(input.buffer.length);
 
-  // OCR routing:
+  // OCR routing (reliability over speed for the pilot):
   //  - images (JPEG/PNG) → sync recognizeText.
-  //  - single-page PDF   → sync recognizeText, with a one-shot async fallback if
-  //    the sync endpoint rejects it (HTTP 400).
-  //  - multi-page / unknown-page-count PDF → async recognizeTextAsync (Yandex
-  //    requires the async flow for multi-page PDFs; sync returns HTTP 400).
+  //  - EVERY PDF (single- OR multi-page) → async recognizeTextAsync. The sync
+  //    endpoint rejects PDFs with HTTP 400 regardless of page count, so we never
+  //    attempt sync for a PDF; async handles both cases on the correct OCR host.
   let ocr: OcrResult;
   if (isPdf) {
-    const pageCount = diagnostics?.pageCount ?? 0;
-    const asyncTimeoutMs = yandexOcrAsyncTimeoutMs();
-    if (pageCount === 1) {
-      ocr = await recognizeText({ content: input.buffer, mimeType: "PDF", timeoutMs });
-      if (!ocr.ok && ocr.reason === "http" && ocr.httpStatus === 400) {
-        logYandex({ correlationId, stage: "ocr", source: "pdf", mime: realMime, fileSizeBucket: sizeBkt, code: "sync_pdf_400_fallback_async" });
-        ocr = await recognizeTextAsync({ content: input.buffer, timeoutMs: asyncTimeoutMs });
-      }
-    } else {
-      ocr = await recognizeTextAsync({ content: input.buffer, timeoutMs: asyncTimeoutMs });
-    }
+    ocr = await recognizeTextAsync({ content: input.buffer, timeoutMs: yandexOcrAsyncTimeoutMs() });
   } else {
     ocr = await recognizeText({ content: input.buffer, mimeType: ocrMime, timeoutMs });
   }
 
   logYandex({
     correlationId, stage: "ocr", source: sourceMode === "image" ? "image" : "pdf", mime: realMime,
-    ocrMode: isPdf ? (diagnostics?.pageCount === 1 ? "pdf_sync" : "pdf_async") : "image_sync",
+    ocrMode: isPdf ? "pdf_async" : "image_sync",
+    pageCount: diagnostics?.pageCount ?? null,
     fileSizeBucket: sizeBkt, durationMs: ocr.durationMs, httpStatus: ocr.ok ? undefined : ocr.httpStatus,
     code: ocr.ok ? "ok" : ocr.safeCode,
+    safeMessage: ocr.ok ? undefined : ocr.safeMessage,
   });
   if (!ocr.ok) {
     // Any PDF OCR failure (too large / unsupported / timed out / empty) → one

@@ -262,15 +262,14 @@ async function main() {
     }
     return { ok: false, reason: "timeout", safeCode: "poll_timeout" };
   }
-  // Mirror of the analyzer PDF routing decision.
-  async function routePdf({ pageCount, syncFetch, asyncClient }) {
-    if (pageCount === 1) {
-      const s = await callOcr({ fetchImpl: syncFetch, content: Buffer.from("x"), mimeType: "PDF", key: "k", folder: "f", timeoutMs: 100 });
-      if (!s.ok && s.reason === "http" && s.httpStatus === 400) return { via: "async_fallback", res: await asyncClient() };
-      return { via: "sync", res: s };
-    }
+  // Mirror of the analyzer PDF routing decision: reliability over speed — EVERY
+  // PDF goes through async OCR (sync is never called for PDF), so single- and
+  // multi-page both take the same reliable path.
+  async function routePdf({ asyncClient }) {
     return { via: "async", res: await asyncClient() };
   }
+  // Safe Yandex error extractor mirror (yandex-ocr-client.safeYandexError).
+  const safeYE = (body) => { try { const j = JSON.parse(body); const c = (typeof j?.code === "number" || typeof j?.code === "string") ? String(j.code) : ""; const m = typeof j?.message === "string" ? j.message : ""; const s = [c, m].filter(Boolean).join(": "); return s ? s.slice(0, 200) : undefined; } catch { return undefined; } };
 
   // ---- Provider selection (Y1-Y6) ----
   check("Y1 yandex + key + folder → yandex", selectProvider({ AI_PROVIDER: "yandex", YANDEX_AI_API_KEY: "k", YANDEX_FOLDER_ID: "f" }) === "yandex");
@@ -316,19 +315,24 @@ async function main() {
   const opRunning = () => okJson({ id: "op1", done: false });
   const submitOk = () => okJson({ id: "op1", done: false });
 
-  // P1: single-page PDF → sync path succeeds (no async).
-  let asyncCalled = false;
-  const r1 = await routePdf({ pageCount: 1, syncFetch: async () => okText(ocrOkBody), asyncClient: async () => { asyncCalled = true; return { ok: true, text: "x" }; } });
-  check("P1 single-page PDF uses sync recognizeText", r1.via === "sync" && r1.res.ok === true && asyncCalled === false);
+  // P1: single-page PDF → async OCR (reliability; sync never attempted for PDF).
+  const r1 = await routePdf({ asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
+  check("P1 single-page PDF uses async OCR (not sync)", r1.via === "async" && r1.res.ok === true && r1.res.text.includes("page1"));
 
-  // P2: single-page PDF sync 400 → one-shot async fallback succeeds.
-  const r2 = await routePdf({ pageCount: 1, syncFetch: async () => httpErr(400), asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
-  check("P2 single-page PDF sync 400 → async fallback", r2.via === "async_fallback" && r2.res.ok === true && r2.res.text.includes("page1") && r2.res.text.includes("page2"));
+  // P2: a PDF that would 400 on sync still succeeds — because sync is never used.
+  let syncTouched = false;
+  const syncSpy = async () => { syncTouched = true; return httpErr(400); };
+  void syncSpy; // routePdf must NOT call any sync fetch for a PDF
+  const r2 = await routePdf({ asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
+  check("P2 PDF never calls sync recognizeText (no sync-400 dependency)", r2.via === "async" && r2.res.ok === true && syncTouched === false);
 
-  // P3: multi-page PDF → async directly (sync never called).
-  let syncCalled = false;
-  const r3 = await routePdf({ pageCount: 3, syncFetch: async () => { syncCalled = true; return okText(ocrOkBody); }, asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opRunning(), opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
-  check("P3 multi-page PDF goes straight to async", r3.via === "async" && r3.res.ok === true && syncCalled === false);
+  // P3: multi-page PDF → async (unchanged).
+  const r3 = await routePdf({ asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opRunning(), opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
+  check("P3 multi-page PDF goes through async", r3.via === "async" && r3.res.ok === true);
+  // P3b: safe Yandex error extraction (code/message ≤200; non-JSON never leaks).
+  check("P3c 400 JSON error → safe code:message", safeYE(JSON.stringify({ code: 3, message: "mimeType PDF is not supported by sync" })) === "3: mimeType PDF is not supported by sync");
+  check("P3d non-JSON error body → undefined (no content leak)", safeYE("<html>secret document content</html>") === undefined);
+  check("P3e safeMessage capped at 200 chars", (safeYE(JSON.stringify({ message: "x".repeat(500) })) || "").length === 200);
 
   // P4: async polling succeeds after a few 'running' polls.
   const r4 = await callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opRunning(), opRunning(), opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() });
@@ -404,8 +408,10 @@ async function main() {
   check("PS4 async polls the operation then fetches getRecognition, bounded by timeoutMs", ocrSrc.includes("YANDEX_OPERATION_URL") && ocrSrc.includes("YANDEX_OCR_GET_RECOGNITION_URL") && ocrSrc.includes("elapsed() < params.timeoutMs") && ocrSrc.includes('safeCode: "poll_timeout"'));
   check("PS5 async reuses parseOcrBody (page-order merge) + data-logging header", ocrSrc.includes("parseOcrBody(body)") && ocrSrc.includes("ocrHeaders(key, folder)"));
   check("PS6 OCR client stays console-free (no base64/text/key logged)", !ocrSrc.includes("console."));
-  check("PS7 analyzer routes single-page→sync (400→async fallback), multi/unknown→async", analyzer.includes("pageCount === 1") && analyzer.includes("recognizeTextAsync(") && analyzer.includes('ocr.httpStatus === 400') && analyzer.includes("yandexOcrAsyncTimeoutMs()"));
+  check("PS7 analyzer routes EVERY PDF via async OCR (reliability; sync only for images)", analyzer.includes("recognizeTextAsync({ content: input.buffer, timeoutMs: yandexOcrAsyncTimeoutMs() })") && !analyzer.includes("pageCount === 1") && analyzer.includes('ocrMode: isPdf ? "pdf_async"'));
   check("PS8 any PDF OCR failure → PDF_OCR_FAILED manual message", analyzer.includes("code = isPdf") && analyzer.includes('"PDF_OCR_FAILED"') && analyzer.includes("Не удалось распознать PDF. Заполните поля вручную или загрузите JPG/PNG."));
+  check("PS9 OCR client extracts a SAFE {code,message} from JSON errors only (≤200, no raw body)", ocrSrc.includes("safeYandexError") && ocrSrc.includes("safeMessage") && ocrSrc.includes(".slice(0, 200)") && ocrSrc.includes("JSON.parse(body)"));
+  check("PS10 analyzer logs pageCount + safeMessage (safe diagnostics for PDF)", analyzer.includes("pageCount: diagnostics?.pageCount") && analyzer.includes("safeMessage: ocr.ok ? undefined : ocr.safeMessage"));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
