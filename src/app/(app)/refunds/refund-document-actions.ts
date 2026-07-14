@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canCreateOperational } from "@/lib/auth";
 import { getCurrentAccessContext, canAccessClub, recordAudit, userHasClubRole } from "@/lib/access";
+import { notifyRegionalReview, notifyAuthor } from "@/lib/notifications/events";
 import { getStorage } from "@/lib/storage";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import { getRefundForContext, getActiveRefundDocuments, getClubTrainer } from "@/lib/refunds";
@@ -499,6 +500,8 @@ export async function submitRefundToRegional(_prev: State | undefined, formData:
     entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id,
     metadata: { previousStatus: refund.status, newStatus: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW, amountKopeks: refund.amountKopeks, returnType: refund.returnType, calculationVersion: refund.calculationVersion, regionalReviewRequestedAt: now.toISOString() },
   });
+  // Notify the regional director(s) that a refund awaits review (best-effort).
+  await notifyRegionalReview({ resourceType: "refund", resourceId: refundId, companyId: refund.companyId, clubId: refund.clubId, amountKopeks: refund.amountKopeks, actorUserId: ctx.user.id, isResubmit: wasCorrection });
   revalidatePath("/refunds");
   revalidatePath(`/refunds/${refundId}`);
   revalidatePath(`/refunds/new/${refundId}/details`);
@@ -537,6 +540,8 @@ export async function approveRefundByRegional(_prev: State | undefined, formData
   const base = { entityType: "Refund" as const, entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id };
   await recordAudit({ action: "refund.approved_by_regional", ...base, metadata: { previousStatus: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW, newStatus: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, amountKopeks: refund.amountKopeks, returnType: refund.returnType, regionalReviewedAt: now.toISOString() } });
   await recordAudit({ action: "refund.sent_to_accounting", ...base, metadata: { newStatus: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, accountingStartedAt: now.toISOString(), calculationVersion: refund.calculationVersion } });
+  // Notify the refund author that the regional approved it (best-effort).
+  await notifyAuthor({ resourceType: "refund", resourceId: refundId, companyId: refund.companyId, clubId: refund.clubId, amountKopeks: refund.amountKopeks, authorUserId: refund.createdByUserId, actorUserId: ctx.user.id, event: "approved" });
   revalidatePath("/refunds");
   revalidatePath(`/refunds/${refundId}`);
   return { ok: true, refundId };
@@ -563,6 +568,8 @@ export async function returnRefundForCorrection(_prev: State | undefined, formDa
     action: "refund.returned_for_correction", entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id,
     metadata: { previousStatus: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW, newStatus: REFUND_V2_STATUS.NEEDS_CORRECTION, commentLength: comment.value.length, returnType: refund.returnType },
   });
+  // Notify the refund author it was returned (best-effort; comment NOT included).
+  await notifyAuthor({ resourceType: "refund", resourceId: refundId, companyId: refund.companyId, clubId: refund.clubId, amountKopeks: refund.amountKopeks, authorUserId: refund.createdByUserId, actorUserId: ctx.user.id, event: "returned" });
   revalidatePath("/refunds");
   revalidatePath(`/refunds/${refundId}`);
   revalidatePath(`/refunds/new/${refundId}/details`);

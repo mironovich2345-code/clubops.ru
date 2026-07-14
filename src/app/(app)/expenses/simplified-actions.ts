@@ -8,6 +8,7 @@ import {
   userHasCompanyRole, userHasClubRole, hasActiveRegionalApproverForClub,
 } from "@/lib/access";
 import { monthClosedError } from "@/lib/month-close";
+import { notifyRegionalReview, notifyAuthor } from "@/lib/notifications/events";
 import { getExpenseForContext, isCashForbiddenCategory } from "@/lib/expenses";
 import { buildExpenseTitle } from "@/lib/expense-title";
 import { isActiveExpenseCategoryKey } from "@/lib/expense-categories";
@@ -225,6 +226,11 @@ export async function submitExpense(_prev: State | undefined, formData: FormData
   await recordAudit({ action: wasResubmit ? "expense.resubmitted" : "expense.submitted", entityType: "Expense", entityId: expenseId, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { amountKopeks: expense.amountKopeks, overrunBasisPoints: route.overrunBasisPoints, level: route.level, reviewTarget } });
   const routedAction = reviewTarget === "regional" ? "expense.routed_to_regional" : "expense.routed_to_accounting";
   await recordAudit({ action: routedAction, entityType: "Expense", entityId: expenseId, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { reviewTarget, level: route.level, overrunBasisPoints: route.overrunBasisPoints } });
+  // Notify the regional director(s) of a manager's submission (best-effort; a
+  // Telegram failure never affects the submission).
+  if (reviewTarget === "regional") {
+    await notifyRegionalReview({ resourceType: "expense", resourceId: expenseId, companyId: expense.companyId, clubId: expense.clubId, amountKopeks: expense.amountKopeks, actorUserId: ctx.user.id, isResubmit: wasResubmit });
+  }
   revalidatePath(`/expenses/${expenseId}`);
   return { ok: true };
 }
@@ -236,6 +242,8 @@ async function transition(formData: FormData, opts: {
   fromStatus: string[]; toStatus: string; audit: string;
   reasonError?: string; // when set, a non-empty `reason` field is required
   extra?: (userId: string, reason: string) => Record<string, unknown>;
+  // Best-effort side effect (e.g. notifications) after a successful transition.
+  onSuccess?: (expense: NonNullable<ExpenseLite>, actorId: string) => Promise<void>;
 }): Promise<State> {
   const expenseId = String(formData.get("expenseId") ?? "").trim();
   const loaded = await loadForAction(expenseId);
@@ -256,12 +264,16 @@ async function transition(formData: FormData, opts: {
   });
   if (res.count === 0) return { ok: false, error: E.BAD_STATUS }; // idempotent (already transitioned)
   await recordAudit({ action: opts.audit, entityType: "Expense", entityId: expenseId, companyId: expense.companyId, clubId: expense.clubId, userId: ctx.user.id, metadata: { from: expense.status, to: opts.toStatus, ...(reason ? { reasonLen: reason.length } : {}) } });
+  if (opts.onSuccess) await opts.onSuccess(expense, ctx.user.id);
   revalidatePath(`/expenses/${expenseId}`);
   return { ok: true };
 }
 
 export async function approveRegionalBudget(_p: State | undefined, formData: FormData): Promise<State> {
-  return transition(formData, { guard: canApproveRegionalExpense, fromStatus: [EXP.PENDING_REGIONAL], toStatus: EXP.PENDING_ACCOUNTANT, audit: "expense.regional_budget_approved" });
+  return transition(formData, {
+    guard: canApproveRegionalExpense, fromStatus: [EXP.PENDING_REGIONAL], toStatus: EXP.PENDING_ACCOUNTANT, audit: "expense.regional_budget_approved",
+    onSuccess: (e, actorId) => notifyAuthor({ resourceType: "expense", resourceId: e.id, companyId: e.companyId, clubId: e.clubId, amountKopeks: e.amountKopeks, authorUserId: e.createdByUserId, actorUserId: actorId, event: "approved" }),
+  });
 }
 export async function approveOwnerBudget(_p: State | undefined, formData: FormData): Promise<State> {
   return transition(formData, { guard: canApproveOwnerExpense, fromStatus: [EXP.PENDING_OWNER], toStatus: EXP.PENDING_ACCOUNTANT, audit: "expense.owner_budget_approved" });
@@ -287,6 +299,7 @@ export async function returnForCorrection(_p: State | undefined, formData: FormD
     guard: canReturnExpenseForCorrection, fromStatus: [EXP.PENDING_REGIONAL, EXP.PENDING_OWNER, EXP.PENDING_ACCOUNTANT],
     toStatus: EXP.NEEDS_CORRECTION, audit: "expense.returned_for_correction", reasonError: E.CORRECTION_REASON,
     extra: (userId, reason) => ({ correctionRequestedAt: new Date(), correctionRequestedByUserId: userId, correctionReason: reason.slice(0, 300) }),
+    onSuccess: (e, actorId) => notifyAuthor({ resourceType: "expense", resourceId: e.id, companyId: e.companyId, clubId: e.clubId, amountKopeks: e.amountKopeks, authorUserId: e.createdByUserId, actorUserId: actorId, event: "returned" }),
   });
 }
 export async function cancelSimplifiedExpense(_p: State | undefined, formData: FormData): Promise<State> {

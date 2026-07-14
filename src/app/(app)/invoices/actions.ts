@@ -24,6 +24,7 @@ import {
 } from "@/lib/invoices";
 import { getClubLegalEntities } from "@/lib/legal-entities";
 import { monthClosedError } from "@/lib/month-close";
+import { notifyRegionalReview, notifyAuthor } from "@/lib/notifications/events";
 import { BULK_MONTHLY_DISABLED_MESSAGE, auditBlockedFeature } from "@/lib/disabled-features";
 import type { Role } from "@/lib/auth";
 import {
@@ -456,6 +457,9 @@ export async function createAndSubmitInvoice(
     userId: ctx.user.id,
     metadata: { amountKopeks: invoice.amountKopeks },
   });
+
+  // Notify the regional director(s) that a new invoice awaits review (best-effort).
+  await notifyRegionalReview({ resourceType: "invoice", resourceId: invoice.id, companyId, clubId, amountKopeks: invoice.amountKopeks, actorUserId: ctx.user.id, isResubmit: false });
 
   revalidatePath("/invoices");
   revalidatePath("/dashboard");
@@ -934,6 +938,14 @@ export async function transitionInvoice(
     },
   });
 
+  // Notify the invoice author when a regional approves it or returns it for
+  // correction (best-effort; never notifies the actor themselves).
+  if (action === "approve" && result.to === "approved_by_regional") {
+    await notifyAuthor({ resourceType: "invoice", resourceId: invoiceId, companyId: existing.companyId, clubId: existing.clubId, amountKopeks: existing.amountKopeks, authorUserId: existing.createdByUserId, actorUserId: ctx.user.id, event: "approved" });
+  } else if (action === "return_for_correction") {
+    await notifyAuthor({ resourceType: "invoice", resourceId: invoiceId, companyId: existing.companyId, clubId: existing.clubId, amountKopeks: existing.amountKopeks, authorUserId: existing.createdByUserId, actorUserId: ctx.user.id, event: "returned" });
+  }
+
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${invoiceId}`);
   revalidatePath("/dashboard");
@@ -1055,6 +1067,9 @@ export async function saveAndResubmitInvoice(
     userId: ctx.user.id,
     metadata: { from: "needs_correction", to: "needs_review" },
   });
+
+  // Notify the regional director(s) that a corrected invoice was resubmitted.
+  await notifyRegionalReview({ resourceType: "invoice", resourceId: invoiceId, companyId: existing.companyId, clubId: existing.clubId, amountKopeks: parsed.data.amountKopeks, actorUserId: ctx.user.id, isResubmit: true });
 
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${invoiceId}`);
