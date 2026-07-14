@@ -1336,3 +1336,79 @@ model SalesReportDocument {
 
   @@index([salesReportId])
 }
+
+// ---------------------------------------------------------------------------
+// Telegram notifications (additive; opt-in, off by default). No relations to
+// User (plain indexed userId, like PendingInvoiceUpload) so the User model is
+// untouched. The raw start-link code is NEVER stored — only its HMAC hash.
+// ---------------------------------------------------------------------------
+
+// A user's Telegram account link. Exactly one ACTIVE row per user and per chat
+// is enforced in application code (see lib/telegram/linking.ts); unlinked rows
+// are kept (isActive=false, unlinkedAt) for history. chatId is a Telegram id,
+// never shown to the user and never logged alongside personal data.
+model TelegramConnection {
+  id         String    @id @default(cuid())
+  userId     String
+  chatId     String
+  username   String?
+  firstName  String?
+  lastName   String?
+  isActive   Boolean   @default(true)
+  linkedAt   DateTime  @default(now())
+  unlinkedAt DateTime?
+  lastSeenAt DateTime?
+  blockedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([chatId])
+  @@index([userId, isActive])
+  @@index([chatId, isActive])
+}
+
+// One-time Telegram link code. Only the HMAC hash of the raw code is stored; the
+// raw code is shown once in the UI and carried in the t.me/<bot>?start=<code>
+// link. 10-minute TTL, max 5 attempts, single-use (usedAt).
+model TelegramLinkCode {
+  id               String    @id @default(cuid())
+  userId           String
+  codeHash         String    @unique
+  expiresAt        DateTime
+  usedAt           DateTime?
+  attempts         Int       @default(0)
+  consumedByChatId String?
+  lastAttemptAt    DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Durable notification outbox. A business action enqueues a row after its status
+// change commits; a separate drain delivers it. payloadJson holds ONLY safe
+// fields (resourceType/id, clubName, amountKopeks, kind) — never documents,
+// requisites, client PII, comments, OCR text or storage keys.
+model NotificationOutbox {
+  id              String    @id @default(cuid())
+  channel         String    @default("telegram")
+  type            String
+  recipientUserId String
+  resourceType    String
+  resourceId      String
+  companyId       String
+  clubId          String?
+  payloadJson     String
+  status          String    @default("pending")
+  attempts        Int       @default(0)
+  nextAttemptAt   DateTime?
+  lastErrorCode   String?
+  sentAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([recipientUserId])
+  @@index([resourceType, resourceId])
+}

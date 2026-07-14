@@ -3,6 +3,7 @@ import { deploymentVersion } from "@/lib/deployment-version";
 import { storageProviderName } from "@/lib/storage";
 import { emailConfigured } from "@/lib/email";
 import { selectedAiProvider } from "@/lib/ai/openai-client";
+import { telegramHealth } from "@/lib/telegram/config";
 
 // Liveness probe for Docker / orchestrators / load balancers. Intentionally
 // dependency-free (no DB call) so it reports the app process being up and does
@@ -24,7 +25,7 @@ export function GET() {
   const ai = { requested, effective, configured: requested === "mock" ? true : requested === effective };
 
   return NextResponse.json(
-    { status: "ok", service: "club-ops", time: new Date().toISOString(), ...deploymentVersion(), storage: storageProviderName(), email: emailConfigured() ? "configured" : "absent", ai },
+    { status: "ok", service: "club-ops", time: new Date().toISOString(), ...deploymentVersion(), storage: storageProviderName(), email: emailConfigured() ? "configured" : "absent", ai, telegram: telegramHealth() },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

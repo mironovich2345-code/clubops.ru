@@ -7,6 +7,9 @@ import { getCurrentSessionId, listActiveSessionsForUser } from "@/lib/session";
 import { endOwnSession, endOtherOwnSessions, endAllOwnSessions } from "./actions";
 import { DeleteAccountFlow } from "./_components/DeleteAccountFlow";
 import { PersonalDataForm, PasswordChangeFlow, EmailChangeFlow } from "./_components/AccountForms";
+import { TelegramLink } from "./_components/TelegramLink";
+import { telegramEnabled } from "@/lib/telegram/config";
+import { getActiveConnectionView } from "@/lib/telegram/linking";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +19,11 @@ const dateFmt = new Intl.DateTimeFormat("ru-RU", {
 
 export default async function SecurityPage() {
   const user = await requireUser();
-  const [sessions, currentId, profile] = await Promise.all([
+  const [sessions, currentId, profile, telegram] = await Promise.all([
     listActiveSessionsForUser(user.id),
     getCurrentSessionId(),
     prisma.user.findUnique({ where: { id: user.id }, select: { firstName: true, lastName: true, email: true, updatedAt: true } }),
+    getActiveConnectionView(user.id),
   ]);
   const others = sessions.filter((s) => s.id !== currentId).length;
   const emailEnabled = emailConfigured();
@@ -38,6 +42,13 @@ export default async function SecurityPage() {
       ) : null}
       <PasswordChangeFlow emailEnabled={emailEnabled} maskedEmail={maskedEmail} />
       <EmailChangeFlow emailEnabled={emailEnabled} maskedEmail={maskedEmail} />
+
+      <TelegramLink
+        enabled={telegramEnabled()}
+        connected={telegram.connected}
+        username={telegram.username}
+        linkedAtLabel={telegram.linkedAt ? dateFmt.format(telegram.linkedAt) : null}
+      />
 
       <div className="mt-8 mb-2 text-sm font-semibold text-slate-700">Активные сессии</div>
 
