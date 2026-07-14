@@ -18,11 +18,13 @@ export function aiTimeoutMs(): number {
   return Number.isFinite(n) && n >= 5_000 && n <= 120_000 ? n : 60_000;
 }
 
+// "yandex" — production RU provider: Yandex Vision OCR + YandexGPT (data stays in
+//            RU). Wired up in invoice-analyzer via the yandex-*-client modules.
 // "openai" — dev/test only (data leaves RU jurisdiction; see COMPLIANCE_RU.md).
-// "ru_ai" — production placeholder for a Russian AI/OCR provider (not yet
+// "ru_ai" — reserved placeholder for another Russian AI/OCR provider (not yet
 //           implemented; analyzers fall back to mock until it is wired up).
 // "mock"  — safe default, no external calls.
-export type AiProvider = "openai" | "ru_ai" | "mock";
+export type AiProvider = "yandex" | "openai" | "ru_ai" | "mock";
 
 let warnedOpenAiInProd = false;
 
@@ -43,6 +45,13 @@ function warnOpenAiInProduction(): void {
  *  - "mock"   otherwise (safe default).
  */
 export function selectedAiProvider(): AiProvider {
+  // Yandex (RU production): requires the API key AND the folder id. When
+  // AI_PROVIDER=yandex but these are missing, this falls through to "mock" so the
+  // app never crashes — the analyzer surfaces a clear "not configured" outcome in
+  // production and a plain mock in dev/test.
+  if (process.env.AI_PROVIDER === "yandex" && process.env.YANDEX_AI_API_KEY && process.env.YANDEX_FOLDER_ID) {
+    return "yandex";
+  }
   if (process.env.AI_PROVIDER === "openai" && process.env.OPENAI_API_KEY) {
     warnOpenAiInProduction();
     return "openai";

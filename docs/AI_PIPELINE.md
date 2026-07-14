@@ -14,6 +14,33 @@ was not actually given readable content.
 Each stage records only **safe metadata** — never document text, base64, image bytes,
 bank details, storage URLs, or the OpenAI key.
 
+## Providers (`AI_PROVIDER`)
+
+Selected server-side by `selectedAiProvider()` (`src/lib/ai/openai-client.ts`):
+
+| `AI_PROVIDER` | Behaviour |
+|---|---|
+| `yandex` | **RU production.** Yandex Vision OCR → YandexGPT. Data stays in RU. Requires `YANDEX_AI_API_KEY` + `YANDEX_FOLDER_ID`; missing → mock (dev/test) or a clear "not configured" manual outcome (production). |
+| `openai` | **Dev/test only.** OpenAI Vision / text. Data leaves RU (a RU VM gets HTTP 403). |
+| `ru_ai` | Reserved placeholder (not wired up → mock). |
+| `""` / other | `mock` — no external calls; the form goes to manual entry. |
+
+### Yandex path (`src/lib/ai/yandex-*`)
+
+`file bytes → Yandex Vision OCR (recognizeText, model "page") → OCR text →
+YandexGPT (foundationModels completion, JSON) → mapInvoiceJson/finalize`.
+
+- OCR ingests **images and PDFs directly** (incl. scans) — the `PDF_RENDER_REQUIRED`
+  dead-end does **not** apply to the yandex path.
+- MIME is taken from magic bytes; only `JPEG`/`PNG`/`PDF` are sent (WEBP/unknown →
+  manual). Base64 content, OCR text, the prompt/response and the API key are never
+  logged. `x-data-logging-enabled` defaults to `false`.
+- Env: `YANDEX_OCR_MODEL` (`page`), `YANDEX_GPT_MODEL` (`yandexgpt-5-lite`, expanded
+  to `gpt://<folder>/<name>`), `YANDEX_AI_TIMEOUT_MS` (`60000`),
+  `YANDEX_OCR_LANGUAGE_CODES` (`*`), `YANDEX_DATA_LOGGING_ENABLED` (`false`).
+- `/api/health` reports `ai: { requested, effective, configured }` — provider NAMES
+  only, never keys.
+
 ## Document preparation (`src/lib/ai/document-input.ts`)
 
 1. **Real MIME by magic bytes** (`detectMime`) — the declared upload type is not

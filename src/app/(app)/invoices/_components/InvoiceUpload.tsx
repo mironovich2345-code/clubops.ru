@@ -168,7 +168,11 @@ export function InvoiceUpload({
                   : "bg-slate-100 text-slate-600 ring-slate-200"
               }`}
             >
-              {extraction.mode === "ai" ? "Распознано с помощью ИИ" : "Режим ручного заполнения"}
+              {extraction.mode !== "ai"
+                ? "Режим ручного заполнения"
+                : extraction.provider === "yandex"
+                  ? "Документ распознан через Yandex OCR"
+                  : "Распознано с помощью ИИ"}
             </span>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
               Обработка: {SOURCE_MODE_LABELS[extraction.sourceMode] ?? extraction.sourceMode}
