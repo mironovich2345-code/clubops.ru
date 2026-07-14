@@ -63,8 +63,10 @@ export default async function InvoicesPage({
       {/* 1–2. Title + subtitle */}
       <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
 
-      {/* 3. Regular invoice upload — moved to the TOP, above the cards. */}
-      {view.permissions.canUploadInvoice && formClubs.length > 0 ? (
+      {/* 3. Regular invoice upload — TOP for a MANAGER (creating is their main job).
+          A regional director mainly APPROVES, so their upload block is moved BELOW
+          the lists (see the "regional upload" block near the bottom). */}
+      {view.permissions.canUploadInvoice && isManager && formClubs.length > 0 ? (
         <div className="mt-4">
           <InvoiceUpload clubs={formClubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={companyName} legalEntitiesByClub={legalEntitiesByClub} />
         </div>
@@ -108,6 +110,14 @@ export default async function InvoicesPage({
 
       {/* 8. Main invoice list */}
       <MainList view={view} />
+
+      {/* 8b. Regional director's invoice upload — BELOW the lists (they mainly
+          approve; the ability to add a invoice is kept, just not at the top). */}
+      {view.permissions.canUploadInvoice && !isManager && formClubs.length > 0 ? (
+        <div className="mt-6">
+          <InvoiceUpload clubs={formClubs} categories={EXPENSE_CATEGORY_OPTIONS} companyName={companyName} legalEntitiesByClub={legalEntitiesByClub} />
+        </div>
+      ) : null}
 
       {/* 9. Add a historical PAID invoice — accountant / chief only. */}
       {view.permissions.canAddPaidInvoice && formClubs.length > 0 ? (

@@ -267,11 +267,14 @@ async function main() {
   check("U3 no old InvoiceAnalytics aggregate on the page", !pageSrc.includes("InvoiceAnalytics"));
   check("U4 no second full invoice query on the page", !pageSrc.includes("prisma.invoice.findMany"));
   check("U5 summary comes from the contract (view.summary)", pageSrc.includes("view.summary"));
-  // upload block is ABOVE the summary cards
+  // Manager: upload block ABOVE the cards. Regional: upload block BELOW the list
+  // (they mainly approve). Two role-gated <InvoiceUpload> blocks now exist.
   const idxUpload = pageSrc.indexOf("<InvoiceUpload");
+  const idxUploadLast = pageSrc.lastIndexOf("<InvoiceUpload");
   const idxCards = Math.min(...["<ManagerCards", "<ElevatedCards"].map((s) => (pageSrc.indexOf(s) === -1 ? Infinity : pageSrc.indexOf(s))));
-  check("U6 upload block is above the summary cards", idxUpload > 0 && idxUpload < idxCards);
-  check("U7 no bottom duplicate of the upload form", pageSrc.split("<InvoiceUpload").length === 2);
+  const idxMainList = pageSrc.indexOf("<MainList");
+  check("U6 manager upload block is above the cards (gated on isManager)", idxUpload > 0 && idxUpload < idxCards && pageSrc.includes("canUploadInvoice && isManager && formClubs.length > 0"));
+  check("U7 regional upload block is BELOW the main list (gated on !isManager)", pageSrc.includes("canUploadInvoice && !isManager && formClubs.length > 0") && idxUploadLast > idxMainList);
   // manager cards: exactly the 3 allowed, none of the forbidden
   const mgrCards = pageSrc.slice(pageSrc.indexOf("function ManagerCards"), pageSrc.indexOf("function ElevatedCards"));
   check("U8 manager has the 3 allowed cards", mgrCards.includes("Ожидает оплаты") && mgrCards.includes("Просрочено") && mgrCards.includes("Всего счетов отправлено"));
@@ -521,7 +524,9 @@ async function main() {
     }
     if (action === "approve") {
       if (status !== "needs_review") return { ok: false };
-      if (opts.isCreator) return { ok: false };
+      // INVOICES ONLY: a regional director may approve an invoice they created
+      // themselves (self-approval allowed for the invoice contour). Role + status
+      // are still enforced; scope is enforced separately by getInvoiceForContext.
       if (opts.hasActiveRegional) return isRegional ? { ok: true, to: "approved_by_regional" } : { ok: false };
       return isChief ? { ok: true, to: "approved_by_chief_accountant" } : { ok: false };
     }
@@ -552,7 +557,12 @@ async function main() {
   check("311 draft submit still works (unchanged)", applyInv("send_to_review", "draft", rMgr, { hasActiveRegional: true, isCreator: true }).to === "needs_review");
   // Behaviour: after resubmit the invoice re-enters the same review routing
   check("312 resubmitted invoice is approvable by the regional (not the author)", applyInv("approve", "needs_review", rReg, { hasActiveRegional: true, isCreator: false }).to === "approved_by_regional");
-  check("313 author still cannot approve own resubmitted invoice", applyInv("approve", "needs_review", rReg, { hasActiveRegional: true, isCreator: true }).ok === false);
+  // NEW invoice rule: a regional may approve their OWN invoice.
+  check("313 regional CAN approve their OWN invoice (invoice self-approval)", applyInv("approve", "needs_review", rReg, { hasActiveRegional: true, isCreator: true }).to === "approved_by_regional");
+  check("313b manager still cannot approve (even own)", applyInv("approve", "needs_review", rMgr, { hasActiveRegional: true, isCreator: true }).ok === false);
+  check("313c non-regional cannot approve while an active regional exists", applyInv("approve", "needs_review", rChief, { hasActiveRegional: true, isCreator: false }).ok === false);
+  check("313d cannot approve a paid/rejected/canceled invoice (status guard)", applyInv("approve", "paid", rReg, { hasActiveRegional: true, isCreator: true }).ok === false && applyInv("approve", "rejected", rReg, { hasActiveRegional: true, isCreator: true }).ok === false && applyInv("approve", "canceled", rReg, { hasActiveRegional: true, isCreator: true }).ok === false);
+  check("313e invoice self-approval block removed in lib/invoices.ts, scope still enforced via getInvoiceForContext", lib.includes("INVOICES ONLY: a regional director MAY approve an invoice they created") && !/case "approve":[\s\S]*?opts\.isCreator/.test(lib) && actions.includes("getInvoiceForContext(ctx, invoiceId)"));
   // availableInvoiceActions surface
   check("314 regional sees return_for_correction on a submitted invoice", availInv("needs_review", rReg, withRegional).includes("return_for_correction"));
   check("315 manager (author) sees send_to_review on needs_correction, not approve", (() => { const a = availInv("needs_correction", rMgr, { hasActiveRegional: true, isCreator: true }); return a.includes("send_to_review") && !a.includes("approve") && !a.includes("return_for_correction"); })());

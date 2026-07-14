@@ -192,8 +192,11 @@ export function applyInvoiceAction(
       return { ok: true, to: "needs_review" };
 
     case "approve": {
+      // INVOICES ONLY: a regional director MAY approve an invoice they created
+      // themselves (confirmed business rule for the invoice contour). Role +
+      // scope + status are still enforced; expenses/refunds keep their own
+      // self-approval rules in their own decision tables (unchanged here).
       if (status !== "needs_review") return { ok: false, error: "Согласовать можно счёт на согласовании" };
-      if (opts.isCreator) return { ok: false, error: "Нельзя согласовать собственный счёт" };
       if (opts.hasActiveRegional) {
         if (isRegional) return { ok: true, to: "approved_by_regional" };
         return { ok: false, error: APPROVAL_REGIONAL_ONLY_MSG };
