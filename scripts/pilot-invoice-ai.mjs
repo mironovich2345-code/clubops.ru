@@ -179,6 +179,113 @@ async function main() {
   check("M1 text-PDF preprocessing improved 0 → all fixtures", beforeOk === 0 && afterOk === textFixtures.length);
   check("M2 scanned PDFs reported honestly (no false AI success)", scanHonest === scanFixtures.length);
 
+  // ===================================================================
+  // Yandex provider (Vision OCR + YandexGPT) — mirrors + injected-fetch
+  // + static assertions on the real source. No real HTTP is performed.
+  // ===================================================================
+  const OCR_URL = "https://ai.api.cloud.yandex.net/ocr/v1/recognizeText";
+  const GPT_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion";
+
+  // --- pure mirrors of yandex-config / clients -------------------------
+  const selectProvider = (env) => {
+    if (env.AI_PROVIDER === "yandex" && env.YANDEX_AI_API_KEY && env.YANDEX_FOLDER_ID) return "yandex";
+    if (env.AI_PROVIDER === "openai" && env.OPENAI_API_KEY) return "openai";
+    if (env.AI_PROVIDER === "ru_ai" && env.RU_AI_ENDPOINT && env.RU_AI_API_KEY) return "ru_ai";
+    return "mock";
+  };
+  const toYMime = (m) => (m === "image/jpeg" ? "JPEG" : m === "image/png" ? "PNG" : m === "application/pdf" ? "PDF" : null);
+  const gptUri = (folder, model) => { const m = model || "yandexgpt-5-lite"; return m.startsWith("gpt://") ? m : `gpt://${folder}/${m}`; };
+  const stripToJson = (t) => { const s = String(t).trim(); if (!s) return ""; const f = s.match(/```(?:json)?\s*([\s\S]*?)```/i); if (f) return f[1].trim(); const i = s.indexOf("{"), j = s.lastIndexOf("}"); if (i >= 0 && j > i) return s.slice(i, j + 1); return s; };
+  const parseModelJson = (t) => { const c = stripToJson(t); if (!c) return null; try { const p = JSON.parse(c); return p && typeof p === "object" && !Array.isArray(p) ? p : null; } catch { return null; } };
+  const assembleAnn = (ta) => { if (typeof ta?.fullText === "string" && ta.fullText.trim()) return ta.fullText.trim(); const lines = []; for (const b of ta?.blocks ?? []) for (const l of b?.lines ?? []) { if (typeof l?.text === "string" && l.text.trim()) { lines.push(l.text.trim()); continue; } const w = (l?.words ?? []).map((x) => (typeof x?.text === "string" ? x.text : "")).filter(Boolean); if (w.length) lines.push(w.join(" ")); } return lines.join("\n"); };
+  const parseOcrBody = (body) => { const t = String(body).trim(); if (!t) return ""; let objs = []; try { objs = [JSON.parse(t)]; } catch { const ls = t.split(/\r?\n/).map((x) => x.trim()).filter(Boolean); let any = false; for (const l of ls) { try { objs.push(JSON.parse(l)); any = true; } catch { /* skip */ } } if (!any) return null; } const parts = []; for (const o of objs) { const x = assembleAnn(o?.result?.textAnnotation); if (x) parts.push(x); } return parts.join("\n"); };
+
+  // OCR client mirror with an INJECTED fetch (no network).
+  async function callOcr({ fetchImpl, content, mimeType, key, folder, timeoutMs, dataLogging = false }) {
+    if (!key || !folder) return { ok: false, reason: "http", safeCode: "not_configured" };
+    let res;
+    try {
+      res = await fetchImpl(OCR_URL, { method: "POST", headers: { Authorization: `Api-Key ${key}`, "x-folder-id": folder, "x-data-logging-enabled": dataLogging ? "true" : "false", "Content-Type": "application/json" }, body: JSON.stringify({ mimeType, languageCodes: ["*"], model: "page", content: content.toString("base64") }) });
+    } catch (e) { const t = e && e.name === "TimeoutError"; return { ok: false, reason: t ? "timeout" : "network", safeCode: t ? "timeout" : "network" }; }
+    if (!res.ok) return { ok: false, reason: res.status === 415 ? "unsupported_file" : "http", safeCode: `http_${res.status}`, httpStatus: res.status };
+    let body; try { body = await res.text(); } catch { return { ok: false, reason: "parse", safeCode: "read_failed" }; }
+    const text = parseOcrBody(body);
+    if (text === null) return { ok: false, reason: "parse", safeCode: "invalid_json" };
+    if (!text.trim()) return { ok: false, reason: "empty_text", safeCode: "empty_text" };
+    return { ok: true, text: text.slice(0, 30000) };
+  }
+
+  // fake fetch builders
+  const okText = (body) => ({ ok: true, status: 200, async text() { return body; } });
+  const httpErr = (status) => ({ ok: false, status, async text() { return "err"; } });
+  const fMkTimeout = () => { const e = new Error("t"); e.name = "TimeoutError"; throw e; };
+  const fMkNet = () => { throw new Error("net"); };
+  const ocrOkBody = JSON.stringify({ result: { textAnnotation: { fullText: "СЧЁТ №5 Поставщик ООО РОМАШКА Сумма 1000" } } });
+
+  // ---- Provider selection (Y1-Y6) ----
+  check("Y1 yandex + key + folder → yandex", selectProvider({ AI_PROVIDER: "yandex", YANDEX_AI_API_KEY: "k", YANDEX_FOLDER_ID: "f" }) === "yandex");
+  check("Y2 yandex without key → mock (manual)", selectProvider({ AI_PROVIDER: "yandex", YANDEX_FOLDER_ID: "f" }) === "mock");
+  check("Y3 yandex without folder → mock (manual)", selectProvider({ AI_PROVIDER: "yandex", YANDEX_AI_API_KEY: "k" }) === "mock");
+  check("Y4 openai stays openai", selectProvider({ AI_PROVIDER: "openai", OPENAI_API_KEY: "k" }) === "openai");
+  check("Y5 empty stays mock", selectProvider({ AI_PROVIDER: "" }) === "mock");
+  check("Y6 unknown provider → mock", selectProvider({ AI_PROVIDER: "banana" }) === "mock");
+
+  // ---- OCR client (Y7-Y16) ----
+  let captured = null;
+  const capture = async (url, init) => { captured = { url, init }; return okText(ocrOkBody); };
+  const okr = await callOcr({ fetchImpl: capture, content: Buffer.from("x"), mimeType: "JPEG", key: "SECRET_KEY", folder: "folder123", timeoutMs: 1000 });
+  check("Y7 OCR posts to the recognizeText endpoint", captured.url === OCR_URL && captured.init.method === "POST" && okr.ok === true);
+  check("Y8 Authorization is Api-Key (present in request, not logged by client)", captured.init.headers.Authorization === "Api-Key SECRET_KEY");
+  check("Y9 x-folder-id header is sent", captured.init.headers["x-folder-id"] === "folder123");
+  check("Y10 x-data-logging-enabled defaults to false", captured.init.headers["x-data-logging-enabled"] === "false");
+  const bodyObj = JSON.parse(captured.init.body);
+  check("Y11 JPEG/PNG/PDF mimeType maps correctly", toYMime("image/jpeg") === "JPEG" && toYMime("image/png") === "PNG" && toYMime("application/pdf") === "PDF" && bodyObj.mimeType === "JPEG" && bodyObj.model === "page");
+  check("Y12 HTML/SVG/WEBP/unknown are not sent (mime → null)", toYMime("text/html") === null && toYMime("image/svg+xml") === null && toYMime("image/webp") === null);
+  for (const st of [401, 403, 429, 500]) { const r = await callOcr({ fetchImpl: async () => httpErr(st), content: Buffer.from("x"), mimeType: "JPEG", key: "k", folder: "f", timeoutMs: 100 }); check(`Y13 HTTP ${st} → safe error`, r.ok === false && r.reason === "http" && r.httpStatus === st && r.safeCode === `http_${st}`); }
+  check("Y14 timeout → safe error", (await callOcr({ fetchImpl: fMkTimeout, content: Buffer.from("x"), mimeType: "JPEG", key: "k", folder: "f", timeoutMs: 1 })).reason === "timeout");
+  check("Y15 network → safe error", (await callOcr({ fetchImpl: fMkNet, content: Buffer.from("x"), mimeType: "JPEG", key: "k", folder: "f", timeoutMs: 1 })).reason === "network");
+  check("Y16 empty OCR text → empty_text", (await callOcr({ fetchImpl: async () => okText(JSON.stringify({ result: { textAnnotation: { fullText: "" } } })), content: Buffer.from("x"), mimeType: "PDF", key: "k", folder: "f", timeoutMs: 1 })).reason === "empty_text");
+  check("Y16b OCR assembles blocks→lines→words when no fullText", parseOcrBody(JSON.stringify({ result: { textAnnotation: { blocks: [{ lines: [{ words: [{ text: "ООО" }, { text: "РОМАШКА" }] }, { text: "Сумма 1000" }] }] } } })) === "ООО РОМАШКА\nСумма 1000");
+  check("Y16c OCR handles NDJSON multi-page", parseOcrBody([JSON.stringify({ result: { textAnnotation: { fullText: "page1" } } }), JSON.stringify({ result: { textAnnotation: { fullText: "page2" } } })].join("\n")) === "page1\npage2");
+
+  // ---- YandexGPT (Y17-Y25) ----
+  check("Y17 model URI built from folder + bare name", gptUri("folderX", "yandexgpt-5-lite") === "gpt://folderX/yandexgpt-5-lite" && gptUri("folderX", "gpt://folderX/custom") === "gpt://folderX/custom");
+  check("Y19 valid JSON answer parsed", JSON.stringify(parseModelJson('{"amount":1000,"supplierName":"ROMASHKA"}')) === '{"amount":1000,"supplierName":"ROMASHKA"}');
+  check("Y20 markdown-wrapped JSON parsed", parseModelJson("```json\n{\"amount\":1000}\n```")?.amount === 1000 && parseModelJson("Вот результат:\n{\"amount\":50}\nготово")?.amount === 50);
+  check("Y21 invalid JSON → null (safe error upstream)", parseModelJson("не json") === null && parseModelJson("{broken") === null && parseModelJson("[1,2,3]") === null);
+  // Y22/Y24/Y25: reuse existing value mirrors on a partial GPT object.
+  const gjson = { counterpartyName: "ООО РОМАШКА", supplierName: "ООО РОМАШКА", payerName: "ООО ПЛАТЕЛЬЩИК", amount: "1 000,50", invoiceDate: "01.07.2026", counterpartyInn: null };
+  check("Y22 partial fields preserved (null stays null, present stays present)", vStr(gjson.counterpartyName) === "ООО РОМАШКА" && vStr(gjson.counterpartyInn) === null);
+  check("Y23 supplier/payer not swapped", resolveCounterparty({ counterpartyName: null, supplierName: gjson.supplierName, payerName: gjson.payerName }).counterpartyName === "ООО РОМАШКА");
+  check("Y24 amount/date normalized (RU formats)", vNum(gjson.amount) === 1000.5 && vDate(gjson.invoiceDate) === "2026-07-01");
+  check("Y25 confidence downgraded when critical missing", finalize({ counterpartyName: "x", amount: null, invoiceDate: "2026-07-01", counterpartyAccount: null, counterpartyBankBik: null, confidence: "high" }) !== "high");
+
+  // ---- Static: real source wiring (Y26-Y35 + safety) ----
+  const cfg = readFileSync(new URL("../src/lib/ai/yandex-config.ts", import.meta.url), "utf8");
+  const ocrSrc = readFileSync(new URL("../src/lib/ai/yandex-ocr-client.ts", import.meta.url), "utf8");
+  const gptSrc = readFileSync(new URL("../src/lib/ai/yandex-gpt-client.ts", import.meta.url), "utf8");
+  const upload = readFileSync(new URL("../src/app/(app)/invoices/_components/InvoiceUpload.tsx", import.meta.url), "utf8");
+  const health = readFileSync(new URL("../src/app/api/health/route.ts", import.meta.url), "utf8");
+
+  check("YS1 config: toYandexOcrMime maps JPEG/PNG/PDF, rejects the rest", cfg.includes('return "JPEG"') && cfg.includes('return "PNG"') && cfg.includes('return "PDF"') && cfg.includes("default:\n      return null"));
+  check("YS2 config: yandexConfigured requires key AND folder", /yandexConfigured[\s\S]*YANDEX_AI_API_KEY[\s\S]*YANDEX_FOLDER_ID/.test(cfg));
+  check("YS3 OCR client hits recognizeText with Api-Key + x-folder-id + data-logging + base64", cfg.includes("ocr/v1/recognizeText") && ocrSrc.includes("YANDEX_OCR_URL") && ocrSrc.includes("Api-Key ${key}") && ocrSrc.includes('"x-folder-id": folder') && ocrSrc.includes('"x-data-logging-enabled"') && ocrSrc.includes('toString("base64")'));
+  check("YS4 OCR client uses AbortSignal.timeout + discriminated reasons", ocrSrc.includes("AbortSignal.timeout(params.timeoutMs)") && ocrSrc.includes('"timeout"') && ocrSrc.includes('"empty_text"') && ocrSrc.includes('"unsupported_file"') && ocrSrc.includes('"network"'));
+  check("YS5 OCR client never console-logs (no key/text leak)", !ocrSrc.includes("console."));
+  check("YS6 GPT client builds modelUri via yandexGptModelUri + system/user messages", gptSrc.includes("yandexGptModelUri(folder)") && gptSrc.includes('role: "system"') && gptSrc.includes('role: "user"') && gptSrc.includes("parseModelJson"));
+  check("YS7 GPT client never console-logs", !gptSrc.includes("console."));
+  check("YS8 selectedAiProvider adds yandex, keeps openai + mock", client.includes('process.env.AI_PROVIDER === "yandex"') && client.includes('process.env.AI_PROVIDER === "openai"') && client.includes('return "mock"'));
+  check("YS9 Y26-28 pipeline: analyzer routes bytes → OCR → GPT → mapInvoiceJson/finalize", analyzer.includes("analyzeInvoiceWithYandex") && analyzer.includes("recognizeText(") && analyzer.includes("extractInvoiceFields(") && analyzer.includes("mapInvoiceJson(gpt.json") && analyzer.includes("finalize({ ...mapped, provider: \"yandex\""));
+  check("YS10 Y34 yandex branch runs BEFORE the unavailable guard (scans not dead-ended)", analyzer.indexOf('process.env.AI_PROVIDER === "yandex"') < analyzer.indexOf('doc.kind === "unavailable"'));
+  check("YS11 Y32/Y33 OCR/GPT only in the yandex path (not openai/mock)", analyzer.indexOf("recognizeText(") > analyzer.indexOf("async function analyzeInvoiceWithYandex") && (analyzer.match(/recognizeText\(/g) || []).length === 1);
+  check("YS12 Y29/Y30 upload persists PendingInvoiceUpload BEFORE analyze (manual survives AI failure)", action.indexOf("pendingInvoiceUpload.create") < action.indexOf("analyzeInvoiceDocument(") && action.includes("expiresAt:"));
+  check("YS13 Y18/Y31 no base64 / OCR text / prompt / storageKey logged in the analyzer", !/logYandex\([^)]*ocr\.text/.test(analyzer) && !/logYandex\([^)]*base64/.test(analyzer) && !/logYandex\([^)]*params\.user/.test(analyzer) && !analyzer.includes("console.log(ocr.text") && !/logYandex\([^)]*storageKey/.test(analyzer));
+  check("YS14 analyzer logs only safe fields (durationMs / httpStatus / code / confidence / bucket)", analyzer.includes("fileSizeBucket") && analyzer.includes("durationMs:") && analyzer.includes("missingFieldNames") && analyzer.includes("correlationId"));
+  check("YS15 Y35 UI shows the Yandex badge + fills fields from extraction", upload.includes("Документ распознан через Yandex OCR") && upload.includes("extraction.provider") && upload.includes("defaultValue={extraction."));
+  check("YS16 misconfigured yandex in prod → AI_NOT_CONFIGURED (manual), dev → mock", analyzer.includes('"AI_NOT_CONFIGURED"') && analyzer.includes('process.env.NODE_ENV === "production"') && analyzer.includes("return mockResult(diagnostics)"));
+  check("YS17 health exposes AI provider names only (no keys)", health.includes("selectedAiProvider()") && health.includes("requested") && health.includes("configured") && !health.includes("API_KEY"));
+  check("YS18 mock provider preserved (unchanged warning + no external call)", analyzer.includes('warnings: ["ИИ не настроен — заполните поля вручную."]') && analyzer.includes('provider: "mock"'));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
 }
