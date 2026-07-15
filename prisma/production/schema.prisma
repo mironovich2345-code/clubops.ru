@@ -1412,3 +1412,163 @@ model NotificationOutbox {
   @@index([recipientUserId])
   @@index([resourceType, resourceId])
 }
+
+// ---------------------------------------------------------------------------
+// OFD (Такском) sales integration — additive, opt-in. No relations to existing
+// models (plain indexed ids, like the other integration tables) so nothing else
+// is touched. Connection secrets are stored ENCRYPTED (AES-256-GCM, OFD_SECRET);
+// NO buyer PII, item lists or raw fiscal JSON are ever stored.
+// ---------------------------------------------------------------------------
+
+// One OFD connection per company / legal entity. Secrets are ciphertext only.
+model OfdConnection {
+  id                        String    @id @default(cuid())
+  companyId                 String
+  legalEntityId             String?
+  provider                  String    @default("taxcom")
+  displayName               String
+  serverBaseUrl             String
+  contractNumber            String?
+  authType                  String // "login_password" | "integration_token" | "oauth"
+  loginEncrypted            String?
+  passwordEncrypted         String?
+  integrationTokenEncrypted String?
+  integratorIdEncrypted     String?
+  isActive                  Boolean   @default(true)
+  lastSyncAt                DateTime?
+  createdByUserId           String
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([legalEntityId])
+  @@index([provider])
+}
+
+// Maps a Taxcom KKT (by ФН) to a club + legal entity. One active mapping per
+// (provider, fnNumber) is enforced in code (activeMappingKey unique below).
+model OfdCashRegisterMapping {
+  id               String    @id @default(cuid())
+  connectionId     String
+  companyId        String
+  clubId           String
+  legalEntityId    String?
+  provider         String    @default("taxcom")
+  fnNumber         String
+  kktRegNumber     String?
+  kktFactoryNumber String?
+  kktName          String?
+  isActive         Boolean   @default(true)
+  // "<provider>:<fnNumber>" while active; null when disabled → many disabled
+  // rows allowed, at most one ACTIVE mapping per (provider, fn).
+  activeMappingKey String?   @unique
+  startDate        DateTime?
+  endDate          DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([connectionId])
+  @@index([companyId, clubId])
+  @@index([provider, fnNumber])
+}
+
+// A safe fiscal fingerprint of a receipt (NO buyer PII, NO items, NO raw JSON).
+// dedupeKey makes re-import idempotent.
+model OfdReceiptImport {
+  id                   String   @id @default(cuid())
+  connectionId         String
+  companyId            String
+  clubId               String
+  legalEntityId        String?
+  provider             String   @default("taxcom")
+  fnNumber             String
+  shiftNumber          Int?
+  fiscalDocumentNumber Int
+  fiscalSign           String?
+  operationType        String // income | income_return
+  receiptDate          DateTime
+  totalKopeks          Int
+  cashKopeks           Int
+  electronicKopeks     Int
+  dedupeKey            String   @unique
+  source               String   @default("taxcom")
+  importedAt           DateTime @default(now())
+  syncRunId            String?
+  createdAt            DateTime @default(now())
+
+  @@index([companyId, clubId])
+  @@index([fnNumber])
+  @@index([receiptDate])
+  @@index([syncRunId])
+}
+
+// Per-day aggregate for fast cards. summaryKey enforces one row per
+// (company, club, legalEntity, provider, date) robustly (nullable-safe).
+model OfdDailySalesSummary {
+  id                     String   @id @default(cuid())
+  companyId              String
+  clubId                 String
+  legalEntityId          String?
+  provider               String   @default("taxcom")
+  date                   String // "YYYY-MM-DD"
+  summaryKey             String   @unique
+  incomeTotalKopeks      Int      @default(0)
+  incomeCashKopeks       Int      @default(0)
+  incomeElectronicKopeks Int      @default(0)
+  returnTotalKopeks      Int      @default(0)
+  returnCashKopeks       Int      @default(0)
+  returnElectronicKopeks Int      @default(0)
+  netTotalKopeks         Int      @default(0)
+  receiptCount           Int      @default(0)
+  returnReceiptCount     Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([companyId, clubId])
+  @@index([date])
+}
+
+// One sync attempt (manual day / period / July backfill / daily).
+model OfdSyncRun {
+  id                 String    @id @default(cuid())
+  connectionId       String
+  companyId          String
+  legalEntityId      String?
+  mode               String // manual_day | manual_period | backfill_july | daily
+  dateFrom           String // "YYYY-MM-DD"
+  dateTo             String
+  status             String    @default("pending") // pending|running|success|partial_failed|failed
+  requestedByUserId  String?
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  foundReceipts      Int       @default(0)
+  importedReceipts   Int       @default(0)
+  skippedReceipts    Int       @default(0)
+  totalIncomeKopeks  Int       @default(0)
+  totalReturnKopeks  Int       @default(0)
+  safeErrorCode      String?
+  safeErrorMessage   String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([connectionId])
+  @@index([companyId])
+  @@index([createdAt])
+}
+
+// Safe (redacted) per-stage sync errors. NEVER stores a raw response.
+model OfdSyncError {
+  id           String   @id @default(cuid())
+  syncRunId    String
+  connectionId String?
+  companyId    String
+  clubId       String?
+  fnNumber     String?
+  stage        String
+  safeCode     String
+  safeMessage  String?
+  createdAt    DateTime @default(now())
+
+  @@index([syncRunId])
+  @@index([companyId])
+}
