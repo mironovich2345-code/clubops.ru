@@ -11,6 +11,7 @@ import type {
   OfdConnectionConfig,
   OfdResult,
   OfdSafeCode,
+  TaxcomAccountList,
   TaxcomDocumentInfo,
   TaxcomDocumentSummary,
   TaxcomKkt,
@@ -24,6 +25,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // Adjustable endpoint paths (relative to serverBaseUrl). Confirm vs Taxcom v2.17.
 const PATHS = {
   login: "/API/v2/Login",
+  accountList: "/API/v2/AccountList",
   kktList: "/API/v2/KktList",
   shiftList: "/API/v2/ShiftList",
   documentList: "/API/v2/DocumentList",
@@ -55,9 +57,19 @@ function safeErrorMessage(apiErrorCode: number | null, description: string | nul
 export function classifyTaxcomError(status: number, apiErrorCode: number | null, description: string | null): { safeCode: OfdSafeCode; safeMessage?: string } {
   const desc = (description ?? "").toLowerCase();
   const safeMessage = safeErrorMessage(apiErrorCode, description);
+  // 2108 "Ошибка авторизации" — invalid login/password pair. A real auth failure
+  // (this is the code Taxcom returned when agreementNumber was wrongly sent).
+  if (apiErrorCode === 2108) {
+    return { safeCode: "auth_failed", safeMessage };
+  }
   // "ККТ не найдена" — apiErrorCode 3103 or a matching description.
   if (apiErrorCode === 3103 || desc.includes("ккт не найдена") || desc.includes("kkt not found")) {
     return { safeCode: "kkt_not_found", safeMessage };
+  }
+  // 3106 — no KKT available / no access to the KKT in the current session. Not an
+  // auth failure: the session is valid, the KKT is just not reachable from it.
+  if (apiErrorCode === 3106) {
+    return { safeCode: "no_kkt_found", safeMessage };
   }
   // Real authorization problems only.
   if (status === 401 || desc.includes("session-token") || desc.includes("session token") || desc.includes("авториз") || desc.includes("unauthorized") || desc.includes("токен")) {
@@ -79,6 +91,7 @@ function joinUrl(base: string, path: string): string {
 
 export type TaxcomClient = {
   login(): Promise<OfdResult<string>>;
+  listAccounts(): Promise<OfdResult<TaxcomAccountList>>;
   listKkt(): Promise<OfdResult<TaxcomKkt[]>>;
   listShifts(fnNumber: string, dateFrom: string, dateTo: string): Promise<OfdResult<TaxcomShift[]>>;
   listDocumentsByShift(fnNumber: string, shiftNumber: number): Promise<OfdResult<TaxcomDocumentSummary[]>>;
@@ -95,17 +108,18 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let sessionToken: string | null = null;
 
-  async function raw(path: string, body: unknown, withSession: boolean): Promise<OfdResult<unknown>> {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+  async function raw(path: string, body: unknown, withSession: boolean, method: "POST" | "GET" = "POST"): Promise<OfdResult<unknown>> {
+    const headers: Record<string, string> = {};
+    if (method === "POST") headers["Content-Type"] = "application/json";
     // Integrator-ID is required by Taxcom on Login and accepted on later calls.
     if (cfg.integratorId) headers["Integrator-ID"] = cfg.integratorId;
     if (withSession && sessionToken) headers["Session-Token"] = sessionToken;
     let res: Response;
     try {
       res = await fetchImpl(joinUrl(cfg.serverBaseUrl, path), {
-        method: "POST",
+        method,
         headers,
-        body: JSON.stringify(body ?? {}),
+        ...(method === "POST" ? { body: JSON.stringify(body ?? {}) } : {}),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
@@ -136,10 +150,10 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
 
   async function ensureSession(): Promise<OfdResult<string>> {
     if (sessionToken) return { ok: true, data: sessionToken };
-    // Taxcom Login body: { login, password } (Integrator-ID is a HEADER, added in
-    // raw()). agreementNumber selects the right ЛК/договор when a single login has
-    // several organizations — without it Taxcom picks another current session and
-    // the target company's KKT resolves to "ККТ не найдена" (3103).
+    // Taxcom Login body is ONLY { login, password } (Integrator-ID is a HEADER,
+    // added in raw()). agreementNumber must NOT be sent here — Taxcom rejects it
+    // with apiErrorCode 2108 "Ошибка авторизации". The target agreement/договор is
+    // verified separately via AccountList (see checkOfdConnection), not at Login.
     const loginBody: Record<string, unknown> = {};
     if (cfg.authType === "integration_token") {
       loginBody.integrationToken = cfg.integrationToken ?? "";
@@ -147,8 +161,6 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
       loginBody.login = cfg.login ?? "";
       loginBody.password = cfg.password ?? "";
     }
-    const agreement = cfg.contractNumber?.trim();
-    if (agreement) loginBody.agreementNumber = agreement;
 
     const r = await raw(PATHS.login, loginBody, false);
     if (!r.ok) return r;
@@ -161,6 +173,13 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
   return {
     async login() {
       return ensureSession();
+    },
+    async listAccounts() {
+      const s = await ensureSession();
+      if (!s.ok) return s;
+      const r = await raw(PATHS.accountList, null, true, "GET");
+      if (!r.ok) return r;
+      return { ok: true, data: parseAccountList(r.data) };
     },
     async listKkt() {
       const s = await ensureSession();
@@ -200,6 +219,27 @@ export function extractToken(data: unknown): string | null {
   // Primary Taxcom key is `sessionToken`; accept common casings/aliases.
   const t = d?.sessionToken ?? d?.SessionToken ?? d?.token ?? d?.accessToken ?? d?.Token;
   return typeof t === "string" && t.length > 0 ? t : null;
+}
+
+/** Parse AccountList into the current session's agreement + the available ЛК.
+ * SAFE fields only (agreementNumber / companyName / inn / kpp) — access rights,
+ * counts and the raw payload are never surfaced. */
+export function parseAccountList(data: unknown): TaxcomAccountList {
+  const d = (data as Record<string, unknown>) ?? {};
+  const session = (d.currentSession ?? d.CurrentSession ?? d.current ?? null) as Record<string, unknown> | null;
+  const currentAgreementNumber =
+    str(session?.agreementNumber ?? session?.AgreementNumber) ??
+    str(d.currentAgreementNumber ?? d.CurrentAgreementNumber);
+  const records = asArray(data, "records", "Records", "Items", "items", "accounts", "Accounts").map((raw) => {
+    const o = raw as Record<string, unknown>;
+    return {
+      agreementNumber: str(o.agreementNumber ?? o.AgreementNumber ?? o.contractNumber ?? o.ContractNumber),
+      companyName: str(o.companyName ?? o.CompanyName ?? o.orgName ?? o.OrgName ?? o.name ?? o.Name),
+      inn: str(o.inn ?? o.Inn ?? o.INN),
+      kpp: str(o.kpp ?? o.Kpp ?? o.KPP),
+    };
+  });
+  return { currentAgreementNumber, records };
 }
 
 function asArray(data: unknown, ...keys: string[]): unknown[] {

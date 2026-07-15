@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection } from "../actions";
 
@@ -41,7 +42,9 @@ export function OfdConnectionForm({
   entities: EntityOpt[];
 }) {
   const [state, action] = useFormState(saveOfdConnection, initial);
+  const [authType, setAuthType] = useState(connection?.authType ?? "login_password");
   const secretStatus = (has: boolean) => (has ? "настроен" : "не настроен");
+  const isTokenAuth = authType === "integration_token";
   return (
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <Field label="Название">
@@ -51,17 +54,17 @@ export function OfdConnectionForm({
         <input name="serverBaseUrl" required placeholder="https://server.taxcom.ru" defaultValue={connection?.serverBaseUrl ?? ""} className="input" />
       </Field>
       <Field label="Тип авторизации">
-        <select name="authType" defaultValue={connection?.authType ?? "login_password"} className="input">
+        <select name="authType" value={authType} onChange={(e) => setAuthType(e.target.value)} className="input">
           <option value="login_password">Логин / пароль</option>
           <option value="integration_token">Токен интеграции</option>
         </select>
       </Field>
       <div className="md:col-span-2 rounded-md border border-brand-200 bg-brand-50/40 p-3">
         <Field label="Номер договора Такском">
-          <input name="contractNumber" required defaultValue={connection?.contractNumber ?? ""} placeholder="CD-25/45507" className="input" />
+          <input name="contractNumber" defaultValue={connection?.contractNumber ?? ""} placeholder="CD-25/45507" className="input" />
         </Field>
         <p className="mt-1 text-xs text-slate-600">
-          Нужен, если в одном логине несколько организаций / личных кабинетов. Выбирает нужный договор при входе. Например: <span className="font-mono">CD-25/45507</span>.
+          Используется для проверки, что выбран нужный ЛК/договор. Сам Login Такском выполняется без этого поля. Например: <span className="font-mono">CD-25/45507</span>.
         </p>
       </div>
       <Field label="Юрлицо (ООО)">
@@ -76,9 +79,14 @@ export function OfdConnectionForm({
           {connection ? ` Текущий статус — логин: ${secretStatus(connection.hasLogin)}, пароль: ${secretStatus(connection.hasPassword)}, токен: ${secretStatus(connection.hasToken)}.` : ""}
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Field label="Логин"><input name="login" autoComplete="off" placeholder="••••••" className="input" /></Field>
-          <Field label="Пароль"><input name="password" type="password" autoComplete="new-password" placeholder="••••••" className="input" /></Field>
-          <Field label="Токен интеграции"><input name="integrationToken" autoComplete="off" placeholder="••••••" className="input" /></Field>
+          {isTokenAuth ? (
+            <Field label="Токен интеграции"><input name="integrationToken" autoComplete="off" placeholder="••••••" className="input" /></Field>
+          ) : (
+            <>
+              <Field label="Логин"><input name="login" autoComplete="off" placeholder="••••••" className="input" /></Field>
+              <Field label="Пароль"><input name="password" type="password" autoComplete="new-password" placeholder="••••••" className="input" /></Field>
+            </>
+          )}
           <Field label="Integrator ID"><input name="integratorId" autoComplete="off" placeholder="••••••" className="input" /></Field>
         </div>
       </div>

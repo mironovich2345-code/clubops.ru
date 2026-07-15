@@ -7,7 +7,9 @@ export type OfdSafeCode =
   | "forbidden"
   | "rate_limited"
   | "kkt_not_found"
+  | "no_kkt_found"
   | "shift_not_found"
+  | "contract_not_found"
   | "network"
   | "timeout"
   | "parse_error"
@@ -25,8 +27,9 @@ export type OfdConnectionConfig = {
   provider: string;
   serverBaseUrl: string;
   authType: string;
-  // Taxcom agreementNumber — selects the target ЛК/договор when one login has
-  // several organizations. Not a secret; passed in the Login body.
+  // Taxcom agreementNumber (договор) — identifies the target ЛК when one login
+  // has several organizations. Not a secret and NOT sent at Login; used only to
+  // verify, via AccountList, that the expected ЛК is reachable.
   contractNumber: string | null;
   login: string | null;
   password: string | null;
@@ -48,6 +51,20 @@ export type TaxcomShift = {
   shiftNumber: number;
   dateOpen?: string | null;
   dateClose?: string | null;
+};
+
+/** One agreement (договор / ЛК) from AccountList — SAFE fields only. */
+export type TaxcomAccount = {
+  agreementNumber: string | null;
+  companyName?: string | null;
+  inn?: string | null;
+  kpp?: string | null;
+};
+
+/** AccountList response: the current session's agreement + the available ones. */
+export type TaxcomAccountList = {
+  currentAgreementNumber: string | null;
+  records: TaxcomAccount[];
 };
 
 /** Craft of Taxcom DocumentList: the SAFE per-receipt summary (no items/buyer). */

@@ -41,13 +41,10 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
   if (!/^https:\/\//i.test(serverBaseUrl)) return { ok: false, error: "Адрес сервера должен начинаться с https://" };
   if (!["login_password", "integration_token", "oauth"].includes(authType)) return { ok: false, error: "Неверный тип авторизации." };
 
+  // Optional: identifies the target ЛК/договор. NOT sent at Login and never
+  // blocks saving — it is used only by "Проверить подключение" to confirm, via
+  // AccountList, that the expected ЛК is reachable.
   const contractNumber = str(formData, "contractNumber");
-  // Taxcom login/password: the agreement (договор) is required to select the
-  // right ЛК — without it a multi-organization login resolves to the wrong
-  // session and the KKT is reported as "ККТ не найдена".
-  if (authType === "login_password" && !contractNumber) {
-    return { ok: false, error: "Укажите номер договора Такском, чтобы выбрать нужный личный кабинет." };
-  }
 
   // Secrets require OFD_SECRET to encrypt in production.
   const hasSecrets = ["login", "password", "integrationToken", "integratorId"].some((k) => str(formData, k));
@@ -58,9 +55,12 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
   const legalEntityId = str(formData, "legalEntityId");
   const existing = await prisma.ofdConnection.findFirst({ where: { companyId: g.companyId, provider: "taxcom" } });
 
+  // A blank field — or the "••••••" placeholder mask if it is ever submitted —
+  // means "leave the stored secret unchanged"; only a real new value is encrypted.
+  const MASK_RE = /^[•·*∙•]+$/;
   const enc = (k: string): string | undefined => {
     const v = str(formData, k);
-    return v ? encryptOfdSecret(v) : undefined;
+    return v && !MASK_RE.test(v) ? encryptOfdSecret(v) : undefined;
   };
 
   try {
@@ -96,9 +96,11 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
   return { ok: true, notice: "Подключение сохранено." };
 }
 
-/** Check the saved connection: performs ONLY Login (with agreementNumber from
- * contractNumber) and confirms a sessionToken came back. Never exposes the token
- * or secrets; returns a safe status only. */
+/** Diagnostics for the saved connection: Login (WITHOUT agreementNumber) → if a
+ * sessionToken comes back, call AccountList and confirm the expected договор
+ * (contractNumber) is among the reachable ЛК. Never exposes the token/secrets or
+ * the raw AccountList — only a safe status and, in the notice, the safe fields of
+ * matched ЛК (agreementNumber / название / ИНН). */
 export async function checkOfdConnection(_p: State | undefined, formData: FormData): Promise<State> {
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
@@ -114,18 +116,47 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
     integrationToken: decryptOfdSecret(c.integrationTokenEncrypted), integratorId: decryptOfdSecret(c.integratorIdEncrypted),
   };
   const client = createTaxcomClient(cfg);
-  const res = await client.login(); // Login only — the token is never returned to the client.
-  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: res.ok, code: res.ok ? "ok" : res.safeCode } });
-  if (res.ok) return { ok: true, notice: "Подключение успешно. Договор выбран." };
-  const map: Record<string, string> = {
+
+  const errMap: Record<string, string> = {
     auth_failed: "Ошибка авторизации. Проверьте логин, пароль и Integrator-ID.",
     forbidden: "Доступ запрещён. Проверьте права пользователя в Такском.",
+    rate_limited: "Слишком много запросов к Такском. Повторите позже.",
     network: "Сеть недоступна. Повторите позже.",
     timeout: "Сервер Такском не ответил вовремя. Повторите позже.",
     parse_error: "Неожиданный ответ от Такском — токен не получен.",
     not_configured: "Секреты подключения не заполнены.",
   };
-  return { ok: false, error: map[res.safeCode] ?? "Не удалось подключиться к Такском." };
+
+  // Step 1 — Login WITHOUT agreementNumber. The token is never returned to the UI.
+  const login = await client.login();
+  if (!login.ok) {
+    await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: false, stage: "login", code: login.safeCode } });
+    return { ok: false, error: errMap[login.safeCode] ?? "Не удалось подключиться к Такском." };
+  }
+
+  // Step 2 — AccountList: the reachable ЛК/договоры for this login.
+  const accounts = await client.listAccounts();
+  if (!accounts.ok) {
+    await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: false, stage: "account_list", code: accounts.safeCode } });
+    // Login succeeded but we could not enumerate ЛК — still report the good login.
+    return { ok: true, notice: "Вход выполнен, но список ЛК получить не удалось. Проверьте права доступа пользователя в Такском." };
+  }
+
+  const want = c.contractNumber?.trim();
+  const records = accounts.data.records;
+  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: records.length, contractMatched: want ? records.some((r) => r.agreementNumber === want) : null } });
+
+  // Step 3 — verify the expected договор is reachable.
+  if (!want) {
+    return { ok: true, notice: "Подключение успешно. Укажите номер договора, если в логине несколько ЛК." };
+  }
+  const match = records.find((r) => r.agreementNumber === want);
+  if (match) {
+    const label = [match.agreementNumber, match.companyName, match.inn ? `ИНН ${match.inn}` : null].filter(Boolean).join(" · ");
+    return { ok: true, notice: `Подключение успешно. Договор найден в доступных ЛК: ${label}.` };
+  }
+  // Not found — a WARNING, not a blocking failure. Login itself works.
+  return { ok: false, error: "Подключение выполнено, но номер договора не найден среди доступных ЛК Такском. Проверьте номер договора." };
 }
 
 /** Add a KKT (ФН) → club mapping. Blocks a duplicate ACTIVE fn. */
