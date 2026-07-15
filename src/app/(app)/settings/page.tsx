@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
 import { requirePageAccess, getAccessibleClubsDetailed, type AccessibleClubRow } from "@/lib/access";
@@ -72,6 +73,15 @@ export default async function SettingsPage() {
   return (
     <div>
       <PageHeader title="Настройки" description="Организации и клубы" />
+
+      {leAccess.length > 0 ? (
+        <div className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Интеграции</h2>
+          <Link href="/settings/integrations/ofd" className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+            ОФД Такском — подключение продаж по кассам →
+          </Link>
+        </div>
+      ) : null}
 
       <div className="mb-8">
         <AvailableClubsSection clubs={accessibleClubs} />
