@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
 import { toggleOfdMapping } from "./actions";
-import { OfdConnectionForm, OfdMappingForm, OfdImportForm } from "./_components/OfdForms";
+import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection } from "./_components/OfdForms";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +85,11 @@ export default async function OfdIntegrationPage() {
 
           <Section title="Подключение">
             <OfdConnectionForm connection={connection} clubs={clubs} entities={entities} />
+            {connectionRow ? (
+              <div className="mt-4 border-t border-slate-200 pt-4">
+                <OfdCheckConnection connectionId={connectionRow.id} />
+              </div>
+            ) : null}
           </Section>
 
           {connectionRow ? (

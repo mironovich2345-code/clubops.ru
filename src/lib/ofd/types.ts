@@ -25,6 +25,9 @@ export type OfdConnectionConfig = {
   provider: string;
   serverBaseUrl: string;
   authType: string;
+  // Taxcom agreementNumber — selects the target ЛК/договор when one login has
+  // several organizations. Not a secret; passed in the Login body.
+  contractNumber: string | null;
   login: string | null;
   password: string | null;
   integrationToken: string | null;
@@ -36,6 +39,9 @@ export type TaxcomKkt = {
   kktRegNumber?: string | null;
   kktFactoryNumber?: string | null;
   kktName?: string | null;
+  outletId?: string | null;
+  outletName?: string | null;
+  outletAddress?: string | null;
 };
 
 export type TaxcomShift = {

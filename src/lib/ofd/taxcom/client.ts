@@ -30,12 +30,47 @@ const PATHS = {
   documentInfo: "/API/v2/DocumentInfo",
 };
 
-function classifyHttp(status: number): OfdSafeCode {
-  if (status === 401) return "auth_failed";
-  if (status === 403) return "forbidden";
-  if (status === 404) return "kkt_not_found";
-  if (status === 429) return "rate_limited";
-  return "unknown";
+/** Extract ONLY the safe Taxcom error descriptor (apiErrorCode + commonDescription)
+ * from a parsed body. Never returns the raw body. */
+function extractApiError(data: unknown): { apiErrorCode: number | null; description: string | null } {
+  const d = data as Record<string, unknown> | null;
+  const rawCode = d?.apiErrorCode ?? d?.ApiErrorCode ?? d?.errorCode;
+  const apiErrorCode = typeof rawCode === "number" ? rawCode : typeof rawCode === "string" && rawCode.trim() !== "" && Number.isFinite(Number(rawCode)) ? Number(rawCode) : null;
+  const rawDesc = d?.commonDescription ?? d?.CommonDescription ?? d?.description ?? d?.message;
+  const description = typeof rawDesc === "string" && rawDesc.trim() ? rawDesc.trim() : null;
+  return { apiErrorCode, description };
+}
+
+function safeErrorMessage(apiErrorCode: number | null, description: string | null): string | undefined {
+  const parts = [apiErrorCode != null ? String(apiErrorCode) : "", description ?? ""].filter(Boolean);
+  return parts.length ? parts.join(": ").slice(0, 200) : undefined;
+}
+
+/**
+ * Classify a Taxcom error into a safe code. "ККТ не найдена" (apiErrorCode 3103,
+ * or a 404 on a KKT-scoped call) is NEVER an auth failure. auth_failed / forbidden
+ * are reserved for real authorization problems (Login 401/403, invalid/expired
+ * Session-Token, explicit access-denied text).
+ */
+export function classifyTaxcomError(status: number, apiErrorCode: number | null, description: string | null): { safeCode: OfdSafeCode; safeMessage?: string } {
+  const desc = (description ?? "").toLowerCase();
+  const safeMessage = safeErrorMessage(apiErrorCode, description);
+  // "ККТ не найдена" — apiErrorCode 3103 or a matching description.
+  if (apiErrorCode === 3103 || desc.includes("ккт не найдена") || desc.includes("kkt not found")) {
+    return { safeCode: "kkt_not_found", safeMessage };
+  }
+  // Real authorization problems only.
+  if (status === 401 || desc.includes("session-token") || desc.includes("session token") || desc.includes("авториз") || desc.includes("unauthorized") || desc.includes("токен")) {
+    return { safeCode: "auth_failed", safeMessage };
+  }
+  if (status === 403 || desc.includes("доступ запрещ") || desc.includes("forbidden") || desc.includes("access denied")) {
+    return { safeCode: "forbidden", safeMessage };
+  }
+  if (status === 429) return { safeCode: "rate_limited", safeMessage };
+  // A 404 on our KKT-scoped calls (shift/document lists) means the KKT is not in
+  // the CURRENT agreement/session — not an auth failure.
+  if (status === 404) return { safeCode: "kkt_not_found", safeMessage };
+  return { safeCode: "unknown", safeMessage };
 }
 
 function joinUrl(base: string, path: string): string {
@@ -62,6 +97,8 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
 
   async function raw(path: string, body: unknown, withSession: boolean): Promise<OfdResult<unknown>> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
+    // Integrator-ID is required by Taxcom on Login and accepted on later calls.
+    if (cfg.integratorId) headers["Integrator-ID"] = cfg.integratorId;
     if (withSession && sessionToken) headers["Session-Token"] = sessionToken;
     let res: Response;
     try {
@@ -75,31 +112,48 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
       const timedOut = error instanceof Error && error.name === "TimeoutError";
       return { ok: false, safeCode: timedOut ? "timeout" : "network" };
     }
-    if (!res.ok) {
-      // Do NOT surface the body (may echo credentials/fiscal content). Status only.
-      return { ok: false, safeCode: classifyHttp(res.status), httpStatus: res.status };
-    }
+
+    // Read the body ONCE. Only the safe error descriptor (apiErrorCode +
+    // commonDescription) is ever extracted — the raw body is never returned/logged.
+    const text = await res.text().catch(() => "");
+    let parsed: unknown = null;
     try {
-      return { ok: true, data: await res.json() };
+      parsed = text ? JSON.parse(text) : {};
     } catch {
-      return { ok: false, safeCode: "parse_error" };
+      parsed = null;
     }
+    const { apiErrorCode, description } = extractApiError(parsed);
+
+    // Taxcom may return an API-level error with HTTP 200 (apiErrorCode set) OR a
+    // non-2xx status. Both are classified the same way.
+    if (!res.ok || (apiErrorCode != null && apiErrorCode !== 0)) {
+      const c = classifyTaxcomError(res.status, apiErrorCode, description);
+      return { ok: false, safeCode: c.safeCode, safeMessage: c.safeMessage, httpStatus: res.status };
+    }
+    if (parsed == null) return { ok: false, safeCode: "parse_error", httpStatus: res.status };
+    return { ok: true, data: parsed };
   }
 
   async function ensureSession(): Promise<OfdResult<string>> {
     if (sessionToken) return { ok: true, data: sessionToken };
+    // Taxcom Login body: { login, password } (Integrator-ID is a HEADER, added in
+    // raw()). agreementNumber selects the right ЛК/договор when a single login has
+    // several organizations — without it Taxcom picks another current session and
+    // the target company's KKT resolves to "ККТ не найдена" (3103).
     const loginBody: Record<string, unknown> = {};
     if (cfg.authType === "integration_token") {
-      loginBody.IntegrationToken = cfg.integrationToken ?? "";
-      if (cfg.integratorId) loginBody.IntegratorId = cfg.integratorId;
+      loginBody.integrationToken = cfg.integrationToken ?? "";
     } else {
-      loginBody.Login = cfg.login ?? "";
-      loginBody.Pass = cfg.password ?? "";
+      loginBody.login = cfg.login ?? "";
+      loginBody.password = cfg.password ?? "";
     }
+    const agreement = cfg.contractNumber?.trim();
+    if (agreement) loginBody.agreementNumber = agreement;
+
     const r = await raw(PATHS.login, loginBody, false);
     if (!r.ok) return r;
     const token = extractToken(r.data);
-    if (!token) return { ok: false, safeCode: "auth_failed" };
+    if (!token) return { ok: false, safeCode: "parse_error" }; // 200 but no token
     sessionToken = token;
     return { ok: true, data: token };
   }
@@ -141,9 +195,10 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
 
 // --- Response parsers (defensive; accept common Taxcom field casings) --------
 
-function extractToken(data: unknown): string | null {
-  const d = data as { SessionToken?: unknown; sessionToken?: unknown; Token?: unknown } | null;
-  const t = d?.SessionToken ?? d?.sessionToken ?? d?.Token;
+export function extractToken(data: unknown): string | null {
+  const d = data as { sessionToken?: unknown; SessionToken?: unknown; token?: unknown; accessToken?: unknown; Token?: unknown } | null;
+  // Primary Taxcom key is `sessionToken`; accept common casings/aliases.
+  const t = d?.sessionToken ?? d?.SessionToken ?? d?.token ?? d?.accessToken ?? d?.Token;
   return typeof t === "string" && t.length > 0 ? t : null;
 }
 
@@ -163,13 +218,17 @@ function num(v: unknown): number {
 }
 
 export function parseKktList(data: unknown): TaxcomKkt[] {
-  return asArray(data, "Items", "Kkts", "kkts").map((raw) => {
+  // kktstat/kktinfo returns the list under "Infos"; other calls use Items/Kkts.
+  return asArray(data, "Infos", "infos", "Items", "Kkts", "kkts").map((raw) => {
     const o = raw as Record<string, unknown>;
     return {
-      fnNumber: String(o.Fn ?? o.fn ?? o.FnNumber ?? o.fnNumber ?? ""),
-      kktRegNumber: str(o.RegNumber ?? o.KktRegNumber ?? o.regNumber),
-      kktFactoryNumber: str(o.FactoryNumber ?? o.KktFactoryNumber),
-      kktName: str(o.Name ?? o.KktName ?? o.name),
+      fnNumber: String(o.Fn ?? o.fn ?? o.FnNumber ?? o.fnNumber ?? o.FnFactoryNumber ?? o.fnFactoryNumber ?? ""),
+      kktRegNumber: str(o.KktRegNumber ?? o.kktRegNumber ?? o.RegNumber ?? o.regNumber),
+      kktFactoryNumber: str(o.FnFactoryNumber ?? o.fnFactoryNumber ?? o.FactoryNumber ?? o.KktFactoryNumber),
+      kktName: str(o.KktName ?? o.kktName ?? o.Name ?? o.name),
+      outletId: str(o.OutletId ?? o.outletId),
+      outletName: str(o.OutletName ?? o.outletName),
+      outletAddress: str(o.OutletAddress ?? o.outletAddress),
     };
   }).filter((k) => k.fnNumber);
 }

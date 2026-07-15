@@ -76,6 +76,7 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     provider: connection.provider,
     serverBaseUrl: connection.serverBaseUrl,
     authType: connection.authType,
+    contractNumber: connection.contractNumber,
     login: decryptOfdSecret(connection.loginEncrypted),
     password: decryptOfdSecret(connection.passwordEncrypted),
     integrationToken: decryptOfdSecret(connection.integrationTokenEncrypted),

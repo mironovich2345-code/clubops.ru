@@ -1,7 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
-import { saveOfdConnection, addOfdMapping, runOfdImport } from "../actions";
+import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection } from "../actions";
 
 type State = { ok: boolean; error?: string; notice?: string };
 const initial: State = { ok: false };
@@ -50,15 +50,20 @@ export function OfdConnectionForm({
       <Field label="Адрес сервера (https://…)">
         <input name="serverBaseUrl" required placeholder="https://server.taxcom.ru" defaultValue={connection?.serverBaseUrl ?? ""} className="input" />
       </Field>
-      <Field label="Номер договора (необязательно)">
-        <input name="contractNumber" defaultValue={connection?.contractNumber ?? ""} className="input" />
-      </Field>
       <Field label="Тип авторизации">
         <select name="authType" defaultValue={connection?.authType ?? "login_password"} className="input">
           <option value="login_password">Логин / пароль</option>
           <option value="integration_token">Токен интеграции</option>
         </select>
       </Field>
+      <div className="md:col-span-2 rounded-md border border-brand-200 bg-brand-50/40 p-3">
+        <Field label="Номер договора Такском">
+          <input name="contractNumber" required defaultValue={connection?.contractNumber ?? ""} placeholder="CD-25/45507" className="input" />
+        </Field>
+        <p className="mt-1 text-xs text-slate-600">
+          Нужен, если в одном логине несколько организаций / личных кабинетов. Выбирает нужный договор при входе. Например: <span className="font-mono">CD-25/45507</span>.
+        </p>
+      </div>
       <Field label="Юрлицо (ООО)">
         <select name="legalEntityId" defaultValue={connection?.legalEntityId ?? ""} className="input">
           <option value="">— не выбрано —</option>
@@ -81,6 +86,19 @@ export function OfdConnectionForm({
         <Msg s={state} />
         <Submit idle="Сохранить подключение" busy="Сохранение..." />
       </div>
+    </form>
+  );
+}
+
+export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
+  const [state, action] = useFormState(checkOfdConnection, initial);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="connectionId" value={connectionId} />
+      <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+        Проверить подключение
+      </button>
+      <Msg s={state} />
     </form>
   );
 }

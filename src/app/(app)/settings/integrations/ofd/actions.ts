@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
 import { ofdEnabled, ofdSecretPresent } from "@/lib/ofd/config";
-import { encryptOfdSecret } from "@/lib/ofd/crypto";
+import { encryptOfdSecret, decryptOfdSecret } from "@/lib/ofd/crypto";
 import { importTaxcomSalesForPeriod, type ImportMode } from "@/lib/ofd/importer";
+import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
+import type { OfdConnectionConfig } from "@/lib/ofd/types";
 
 type State = { ok: boolean; error?: string; notice?: string };
 
@@ -39,6 +41,14 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
   if (!/^https:\/\//i.test(serverBaseUrl)) return { ok: false, error: "Адрес сервера должен начинаться с https://" };
   if (!["login_password", "integration_token", "oauth"].includes(authType)) return { ok: false, error: "Неверный тип авторизации." };
 
+  const contractNumber = str(formData, "contractNumber");
+  // Taxcom login/password: the agreement (договор) is required to select the
+  // right ЛК — without it a multi-organization login resolves to the wrong
+  // session and the KKT is reported as "ККТ не найдена".
+  if (authType === "login_password" && !contractNumber) {
+    return { ok: false, error: "Укажите номер договора Такском, чтобы выбрать нужный личный кабинет." };
+  }
+
   // Secrets require OFD_SECRET to encrypt in production.
   const hasSecrets = ["login", "password", "integrationToken", "integratorId"].some((k) => str(formData, k));
   if (hasSecrets && process.env.NODE_ENV === "production" && !ofdSecretPresent()) {
@@ -46,7 +56,6 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
   }
 
   const legalEntityId = str(formData, "legalEntityId");
-  const contractNumber = str(formData, "contractNumber");
   const existing = await prisma.ofdConnection.findFirst({ where: { companyId: g.companyId, provider: "taxcom" } });
 
   const enc = (k: string): string | undefined => {
@@ -85,6 +94,38 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
   }
   revalidatePath("/settings/integrations/ofd");
   return { ok: true, notice: "Подключение сохранено." };
+}
+
+/** Check the saved connection: performs ONLY Login (with agreementNumber from
+ * contractNumber) and confirms a sessionToken came back. Never exposes the token
+ * or secrets; returns a safe status only. */
+export async function checkOfdConnection(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const connectionId = str(formData, "connectionId");
+  if (!connectionId) return { ok: false, error: "Подключение не найдено." };
+  const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });
+  if (!c) return { ok: false, error: "Подключение не найдено." };
+
+  const cfg: OfdConnectionConfig = {
+    id: c.id, companyId: c.companyId, legalEntityId: c.legalEntityId, provider: c.provider,
+    serverBaseUrl: c.serverBaseUrl, authType: c.authType, contractNumber: c.contractNumber,
+    login: decryptOfdSecret(c.loginEncrypted), password: decryptOfdSecret(c.passwordEncrypted),
+    integrationToken: decryptOfdSecret(c.integrationTokenEncrypted), integratorId: decryptOfdSecret(c.integratorIdEncrypted),
+  };
+  const client = createTaxcomClient(cfg);
+  const res = await client.login(); // Login only — the token is never returned to the client.
+  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: res.ok, code: res.ok ? "ok" : res.safeCode } });
+  if (res.ok) return { ok: true, notice: "Подключение успешно. Договор выбран." };
+  const map: Record<string, string> = {
+    auth_failed: "Ошибка авторизации. Проверьте логин, пароль и Integrator-ID.",
+    forbidden: "Доступ запрещён. Проверьте права пользователя в Такском.",
+    network: "Сеть недоступна. Повторите позже.",
+    timeout: "Сервер Такском не ответил вовремя. Повторите позже.",
+    parse_error: "Неожиданный ответ от Такском — токен не получен.",
+    not_configured: "Секреты подключения не заполнены.",
+  };
+  return { ok: false, error: map[res.safeCode] ?? "Не удалось подключиться к Такском." };
 }
 
 /** Add a KKT (ФН) → club mapping. Blocks a duplicate ACTIVE fn. */

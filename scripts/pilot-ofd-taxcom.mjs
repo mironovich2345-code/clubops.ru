@@ -129,6 +129,77 @@ async function main() {
   // ===== July backfill day batching (18,19) =====
   check("18 July backfill iterates day-by-day (31 days)", eachDay("2026-07-01", "2026-07-31").length === 31);
 
+  // ===== Taxcom login (agreementNumber) + error classification mirrors =======
+  // Mirror of client.extractToken / classifyTaxcomError / parseKktList / raw.
+  const extractToken = (d) => { const t = d?.sessionToken ?? d?.SessionToken ?? d?.token ?? d?.accessToken ?? d?.Token; return typeof t === "string" && t.length > 0 ? t : null; };
+  const extractApiError = (d) => { const rc = d?.apiErrorCode ?? d?.ApiErrorCode ?? d?.errorCode; const apiErrorCode = typeof rc === "number" ? rc : (typeof rc === "string" && rc.trim() !== "" && Number.isFinite(Number(rc)) ? Number(rc) : null); const rd = d?.commonDescription ?? d?.CommonDescription ?? d?.description ?? d?.message; return { apiErrorCode, description: typeof rd === "string" && rd.trim() ? rd.trim() : null }; };
+  function classifyErr(status, apiErrorCode, description) {
+    const desc = (description ?? "").toLowerCase();
+    if (apiErrorCode === 3103 || desc.includes("ккт не найдена") || desc.includes("kkt not found")) return { safeCode: "kkt_not_found" };
+    if (status === 401 || desc.includes("session-token") || desc.includes("авториз") || desc.includes("unauthorized") || desc.includes("токен")) return { safeCode: "auth_failed" };
+    if (status === 403 || desc.includes("доступ запрещ") || desc.includes("forbidden")) return { safeCode: "forbidden" };
+    if (status === 429) return { safeCode: "rate_limited" };
+    if (status === 404) return { safeCode: "kkt_not_found" };
+    return { safeCode: "unknown" };
+  }
+  const parseKktList = (data) => { const arr = Array.isArray(data) ? data : (data?.Infos ?? data?.infos ?? data?.Items ?? []); return (arr || []).map((o) => ({ fnNumber: String(o.Fn ?? o.fn ?? o.FnFactoryNumber ?? ""), kktRegNumber: o.KktRegNumber ?? null, kktName: o.KktName ?? null, outletName: o.OutletName ?? null })).filter((k) => k.fnNumber); };
+
+  // Client mirror with an INJECTED fetch that captures requests.
+  function makeClient(cfg, fetchImpl) {
+    let token = null; const captured = [];
+    async function raw(path, body, withSession) {
+      const headers = { "Content-Type": "application/json" };
+      if (cfg.integratorId) headers["Integrator-ID"] = cfg.integratorId;
+      if (withSession && token) headers["Session-Token"] = token;
+      captured.push({ path, headers, body });
+      let res; try { res = await fetchImpl(cfg.serverBaseUrl + path, { method: "POST", headers, body: JSON.stringify(body ?? {}) }); } catch (e) { return { ok: false, safeCode: e && e.name === "TimeoutError" ? "timeout" : "network" }; }
+      const text = await res.text().catch(() => ""); let parsed = null; try { parsed = text ? JSON.parse(text) : {}; } catch { parsed = null; }
+      const { apiErrorCode, description } = extractApiError(parsed);
+      if (!res.ok || (apiErrorCode != null && apiErrorCode !== 0)) { const c = classifyErr(res.status, apiErrorCode, description); return { ok: false, safeCode: c.safeCode, httpStatus: res.status }; }
+      if (parsed == null) return { ok: false, safeCode: "parse_error" };
+      return { ok: true, data: parsed };
+    }
+    async function ensureSession() {
+      if (token) return { ok: true, data: token };
+      const b = {}; if (cfg.authType === "integration_token") b.integrationToken = cfg.integrationToken ?? ""; else { b.login = cfg.login ?? ""; b.password = cfg.password ?? ""; }
+      const ag = cfg.contractNumber && cfg.contractNumber.trim(); if (ag) b.agreementNumber = cfg.contractNumber.trim();
+      const r = await raw("/API/v2/Login", b, false); if (!r.ok) return r; const t = extractToken(r.data); if (!t) return { ok: false, safeCode: "parse_error" }; token = t; return { ok: true, data: t };
+    }
+    return { captured, login: ensureSession, listShifts: async (fn, from, to) => { const s = await ensureSession(); if (!s.ok) return s; return raw("/API/v2/ShiftList", { Fn: fn, DateFrom: from, DateTo: to }, true); } };
+  }
+  const okJson = (obj) => ({ ok: true, status: 200, async text() { return JSON.stringify(obj); } });
+  const errJson = (status, obj) => ({ ok: false, status, async text() { return JSON.stringify(obj); } });
+
+  const cfgAg = { serverBaseUrl: "https://api-lk-ofd.taxcom.ru", authType: "login_password", contractNumber: "CD-25/45507", login: "l", password: "p", integratorId: "INT-1", integrationToken: null };
+  const cfgNoAg = { ...cfgAg, contractNumber: "" };
+
+  // T1: sessionToken accepted.
+  const cli1 = makeClient(cfgAg, async () => okJson({ sessionToken: "abc" }));
+  check("T1 Login response { sessionToken } accepted", (await cli1.login()).data === "abc");
+  check("T1b token also read from token/accessToken", extractToken({ token: "t2" }) === "t2" && extractToken({ accessToken: "t3" }) === "t3" && extractToken({}) === null);
+  // T2: agreementNumber included when contractNumber set.
+  await cli1.login();
+  const loginReq1 = cli1.captured.find((c) => c.path === "/API/v2/Login");
+  check("T2 Login body includes agreementNumber from contractNumber", loginReq1.body.agreementNumber === "CD-25/45507" && loginReq1.body.login === "l" && loginReq1.body.password === "p");
+  check("T2b Integrator-ID sent as a header (not logged)", loginReq1.headers["Integrator-ID"] === "INT-1");
+  // T3: no agreementNumber when empty.
+  const cli2 = makeClient(cfgNoAg, async () => okJson({ sessionToken: "z" }));
+  await cli2.login();
+  check("T3 Login body omits agreementNumber when contractNumber empty", !("agreementNumber" in cli2.captured.find((c) => c.path === "/API/v2/Login").body));
+  // T4: ShiftList carries Session-Token.
+  const cli3 = makeClient(cfgAg, async (url) => url.includes("Login") ? okJson({ sessionToken: "TKN" }) : okJson({ Items: [] }));
+  await cli3.listShifts("FN-1", "2026-07-01", "2026-07-01");
+  const shiftReq = cli3.captured.find((c) => c.path === "/API/v2/ShiftList");
+  check("T4 ShiftList request carries Session-Token header", shiftReq.headers["Session-Token"] === "TKN");
+  // T5/T6: 3103 → kkt_not_found (NOT auth_failed).
+  check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
+  check("T6 3103 is NOT auth_failed; real auth stays auth_failed", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
+  // T5b: end-to-end — ShiftList 404 { apiErrorCode:3103 } → kkt_not_found.
+  const cli4 = makeClient(cfgAg, async (url) => url.includes("Login") ? okJson({ sessionToken: "X" }) : errJson(404, { apiErrorCode: 3103, commonDescription: "ККТ не найдена" }));
+  check("T5b ShiftList 3103 → kkt_not_found end-to-end", (await cli4.listShifts("FN-Z", "d", "d")).safeCode === "kkt_not_found");
+  // T10: kktstat parser reads Infos[].
+  check("T10 kktstat parser reads Infos[]", parseKktList({ Infos: [{ FnFactoryNumber: "9999", KktRegNumber: "RN1", KktName: "Касса 1", OutletName: "Клуб" }] }).length === 1 && parseKktList({ Infos: [{ FnFactoryNumber: "9999" }] })[0].fnNumber === "9999");
+
   await cleanup();
 
   // ===== Static assertions on the real source =====
@@ -155,6 +226,18 @@ async function main() {
   check("23 existing manual Sale model untouched (no OFD writes to Sale)", !importer.includes("prisma.sale.") && !actions.includes("prisma.sale.") && schema.includes("model Sale {"));
   check("health exposes ofd { enabled, configured } (no secret)", health.includes("ofdHealth()") && health.includes("ofd:") && !health.includes("OFD_SECRET"));
   check("importer idempotent + per-KKT error isolation + summary recompute (structure)", importer.includes("existingSet") && importer.includes("recordSyncError") && importer.includes("recomputeDailySummary") && importer.includes("already_running"));
+
+  // --- Agreement-login fixes (real source) ---
+  check("T-S1 Login body: lowercase login/password + agreementNumber from contractNumber", clientSrc.includes("loginBody.login = cfg.login") && clientSrc.includes("loginBody.password = cfg.password") && clientSrc.includes("cfg.contractNumber?.trim()") && clientSrc.includes("loginBody.agreementNumber = agreement"));
+  check("T-S2 Integrator-ID header on requests (never logged)", clientSrc.includes('headers["Integrator-ID"] = cfg.integratorId') && !clientSrc.includes("console."));
+  check("T-S3 token read from sessionToken/token/accessToken", clientSrc.includes("d?.sessionToken ?? d?.SessionToken ?? d?.token ?? d?.accessToken"));
+  check("T-S4 classifyTaxcomError: 3103/ККТ не найдена → kkt_not_found, not auth_failed", clientSrc.includes("apiErrorCode === 3103") && clientSrc.includes('safeCode: "kkt_not_found"') && clientSrc.includes("NEVER an auth failure"));
+  check("T-S5 error body extracts only apiErrorCode/commonDescription (no raw body returned)", clientSrc.includes("extractApiError") && clientSrc.includes("commonDescription") && clientSrc.includes(".slice(0, 200)"));
+  check("7 save login_password with empty contractNumber → validation error", actions.includes('authType === "login_password" && !contractNumber') && actions.includes("Укажите номер договора Такском"));
+  check("8 with a contractNumber the required check passes (only blocks when empty)", actions.includes("&& !contractNumber"));
+  check("9 checkOfdConnection: Login-only via contractNumber, never returns the token", actions.includes("export async function checkOfdConnection") && actions.includes("contractNumber: c.contractNumber") && actions.includes("client.login()") && actions.includes("Подключение успешно. Договор выбран.") && !/return\s*\{[^}]*sessionToken/.test(actions));
+  check("kktstat parser reads Infos + FnFactoryNumber/Outlet fields", clientSrc.includes('asArray(data, "Infos", "infos"') && clientSrc.includes("FnFactoryNumber") && clientSrc.includes("OutletName"));
+  check("UI: contract-number field prominent + help + Проверить подключение", forms.includes("Номер договора Такском") && forms.includes("CD-25/45507") && forms.includes("OfdCheckConnection") && forms.includes("Проверить подключение"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
