@@ -45,6 +45,7 @@ const CONFIDENCE_LABELS: Record<string, string> = {
 const SOURCE_MODE_LABELS: Record<string, string> = {
   image: "Изображение",
   pdf_text: "Текст PDF",
+  pdf_rendered_image: "PDF → изображение",
   pdf_vision: "Страницы PDF",
   unavailable: "Не подготовлено",
 };

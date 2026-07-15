@@ -248,7 +248,7 @@ async function main() {
       catch (e) { const t = e && e.name === "TimeoutError"; return { ok: false, reason: t ? "timeout" : "network", safeCode: t ? "timeout" : "network" }; }
       if (!poll.ok) return { ok: false, reason: "http", safeCode: `http_${poll.status}`, httpStatus: poll.status };
       let st; try { st = await poll.json(); } catch { return { ok: false, reason: "parse", safeCode: "invalid_json" }; }
-      if (st?.error) return { ok: false, reason: "http", safeCode: "operation_error" };
+      if (st?.error) { const c = (typeof st.error.code === "number" || typeof st.error.code === "string") ? String(st.error.code) : ""; const m = typeof st.error.message === "string" ? st.error.message : ""; const safeMessage = [c, m].filter(Boolean).join(": ").slice(0, 200) || undefined; return { ok: false, reason: "http", safeCode: "operation_error", safeMessage }; }
       if (st?.done === true) {
         let rec; try { rec = await fetchImpl(`${OCR_GETREC_URL}?operationId=${id}`, { method: "GET", headers }); }
         catch (e) { const t = e && e.name === "TimeoutError"; return { ok: false, reason: t ? "timeout" : "network", safeCode: t ? "timeout" : "network" }; }
@@ -262,14 +262,55 @@ async function main() {
     }
     return { ok: false, reason: "timeout", safeCode: "poll_timeout" };
   }
-  // Mirror of the analyzer PDF routing decision: reliability over speed — EVERY
-  // PDF goes through async OCR (sync is never called for PDF), so single- and
-  // multi-page both take the same reliable path.
-  async function routePdf({ asyncClient }) {
-    return { via: "async", res: await asyncClient() };
-  }
   // Safe Yandex error extractor mirror (yandex-ocr-client.safeYandexError).
   const safeYE = (body) => { try { const j = JSON.parse(body); const c = (typeof j?.code === "number" || typeof j?.code === "string") ? String(j.code) : ""; const m = typeof j?.message === "string" ? j.message : ""; const s = [c, m].filter(Boolean).join(": "); return s ? s.slice(0, 200) : undefined; } catch { return undefined; } };
+
+  // --- NEW PDF pipeline mirrors (text-first; render scans to image) ----------
+  // Mirror of document-input.hasSufficientInvoiceText.
+  const MARK = /(ИНН|КПП|БИК|счёт|счет|к\s*оплате|оплат|руб|₽|№)/i;
+  const hasSufficientText = (text) => { const clean = String(text).replace(/\s+/g, " ").trim(); const alnum = (clean.match(/[\p{L}\p{N}]/gu) || []).length; if (alnum >= 200) return true; return alnum >= 40 && MARK.test(clean); };
+
+  // Fake ChildProcess + spawn so the poppler renderer is testable without poppler.
+  const { EventEmitter } = await import("node:events");
+  const fakeChild = ({ png, code = 0, spawnThrows = false, emitError = false, hang = false }) => {
+    const child = new EventEmitter();
+    child.stdin = new EventEmitter(); child.stdin.write = () => {}; child.stdin.end = () => {};
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    child.kill = () => {};
+    setTimeout(() => {
+      if (emitError) { child.emit("error", Object.assign(new Error("ENOENT"), { code: "ENOENT" })); return; }
+      if (hang) return; // never closes → renderer must time out
+      if (png && png.length) child.stdout.emit("data", png);
+      child.emit("close", code);
+    }, 0);
+    return child;
+  };
+  const fakeSpawn = (opts) => () => { if (opts.spawnThrows) throw new Error("spawn failed"); return fakeChild(opts); };
+  // Mirror of pdf-render.renderPdfFirstPageToPng.
+  async function renderMock({ spawnImpl, timeoutMs = 20000, maxBytes = 8 * 1024 * 1024 }) {
+    const start = Date.now();
+    return await new Promise((resolve) => {
+      let child; try { child = spawnImpl("pdftoppm", ["-png", "-singlefile", "-f", "1", "-l", "1", "-r", "150", "-", "-"]); }
+      catch { resolve({ ok: false, reason: "unavailable", durationMs: Date.now() - start }); return; }
+      const chunks = []; let total = 0, settled = false, overflow = false;
+      const finish = (r) => { if (settled) return; settled = true; clearTimeout(t); resolve(r); };
+      const t = setTimeout(() => finish({ ok: false, reason: "timeout", durationMs: 0 }), timeoutMs);
+      child.on("error", () => finish({ ok: false, reason: "unavailable", durationMs: 0 }));
+      child.stdout.on("data", (d) => { total += d.length; if (total > maxBytes) { overflow = true; finish({ ok: false, reason: "too_large", durationMs: 0 }); return; } chunks.push(d); });
+      child.on("close", (code) => { if (overflow) return; const png = Buffer.concat(chunks); if (code === 0 && png.length > 0) finish({ ok: true, png, durationMs: 0 }); else finish({ ok: false, reason: "error", durationMs: 0 }); });
+      child.stdin.write(Buffer.from("%PDF")); child.stdin.end();
+    });
+  }
+  // Mirror of the analyzer's yandex PDF decision: text-layer → GPT; else render →
+  // image OCR → GPT; on failure → manual (PDF_OCR_FAILED).
+  async function analyzePdf({ pdfText, render, ocrImage, gpt }) {
+    if (hasSufficientText(pdfText)) return { via: "pdf_text", ocrCalled: false, text: pdfText, extraction: gpt(pdfText) };
+    const r = await render();
+    if (!r.ok) return { via: "manual", code: "PDF_OCR_FAILED", reason: r.reason };
+    const o = await ocrImage(r.png);
+    if (!o.ok) return { via: "manual", code: "PDF_OCR_FAILED", reason: o.reason };
+    return { via: "pdf_rendered_image", ocrCalled: true, text: o.text, extraction: gpt(o.text) };
+  }
 
   // ---- Provider selection (Y1-Y6) ----
   check("Y1 yandex + key + folder → yandex", selectProvider({ AI_PROVIDER: "yandex", YANDEX_AI_API_KEY: "k", YANDEX_FOLDER_ID: "f" }) === "yandex");
@@ -309,27 +350,43 @@ async function main() {
   check("Y24 amount/date normalized (RU formats)", vNum(gjson.amount) === 1000.5 && vDate(gjson.invoiceDate) === "2026-07-01");
   check("Y25 confidence downgraded when critical missing", finalize({ counterpartyName: "x", amount: null, invoiceDate: "2026-07-01", counterpartyAccount: null, counterpartyBankBik: null, confidence: "high" }) !== "high");
 
-  // ---- PDF sync/async OCR (P1-P11) ----
+  // ---- NEW PDF pipeline: text-first, else render→image OCR (R1-R15) ----
   const recBody = [JSON.stringify({ result: { textAnnotation: { fullText: "page1 Поставщик ООО РОМАШКА" } } }), JSON.stringify({ result: { textAnnotation: { fullText: "page2 Сумма 1000" } } })].join("\n");
   const opDone = () => okJson({ id: "op1", done: true });
   const opRunning = () => okJson({ id: "op1", done: false });
   const submitOk = () => okJson({ id: "op1", done: false });
+  const gptFill = (text) => ({ mode: "ai", provider: "yandex", counterpartyName: /РОМАШКА|ООО/.test(text) ? "ООО РОМАШКА" : null });
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+  const okImage = async () => ({ ok: true, text: "OCR: ООО РОМАШКА Сумма 1000" });
 
-  // P1: single-page PDF → async OCR (reliability; sync never attempted for PDF).
-  const r1 = await routePdf({ asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
-  check("P1 single-page PDF uses async OCR (not sync)", r1.via === "async" && r1.res.ok === true && r1.res.text.includes("page1"));
+  // R1/R2/R3/R4: PDF WITH a usable text layer → Yandex OCR NOT called; GPT gets
+  // the local text; extraction filled; text is never logged (static below).
+  let ocrCalledForText = false;
+  const richText = "Счёт на оплату № 42 ИНН 7701234567 БИК 044525225 ООО РОМАШКА Сумма к оплате 1000 руб";
+  const a1 = await analyzePdf({ pdfText: richText, render: async () => { throw new Error("render must not be called"); }, ocrImage: async () => { ocrCalledForText = true; return { ok: true, text: "x" }; }, gpt: gptFill });
+  check("R1 PDF with text layer → Yandex OCR NOT called", a1.via === "pdf_text" && a1.ocrCalled === false && ocrCalledForText === false);
+  check("R2 PDF text → GPT invoked", a1.extraction.mode === "ai");
+  check("R3 PDF text fills InvoiceExtraction", a1.extraction.counterpartyName === "ООО РОМАШКА");
+  check("R4 sufficiency: markers OR >=200 alnum; empty/near-empty → render", hasSufficientText(richText) === true && hasSufficientText("a".repeat(250)) === true && hasSufficientText("   ") === false && hasSufficientText("hi") === false);
 
-  // P2: a PDF that would 400 on sync still succeeds — because sync is never used.
-  let syncTouched = false;
-  const syncSpy = async () => { syncTouched = true; return httpErr(400); };
-  void syncSpy; // routePdf must NOT call any sync fetch for a PDF
-  const r2 = await routePdf({ asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
-  check("P2 PDF never calls sync recognizeText (no sync-400 dependency)", r2.via === "async" && r2.res.ok === true && syncTouched === false);
+  // R5-R10: scanned PDF (no text) → renderer → image OCR → GPT.
+  const a2 = await analyzePdf({ pdfText: "", render: () => renderMock({ spawnImpl: fakeSpawn({ png: PNG }) }), ocrImage: okImage, gpt: gptFill });
+  check("R5 scanned PDF (no text) → renderer path", a2.via === "pdf_rendered_image");
+  check("R6 renderer returns a PNG buffer", (await renderMock({ spawnImpl: fakeSpawn({ png: PNG }) })).png instanceof Buffer);
+  check("R7 rendered image → image OCR → text", a2.text.includes("РОМАШКА"));
+  check("R8 OCR text → GPT fills extraction", a2.extraction.counterpartyName === "ООО РОМАШКА");
+  check("R9 renderer PNG magic bytes intact (not logged as base64)", (await renderMock({ spawnImpl: fakeSpawn({ png: PNG }) })).png[0] === 0x89);
+  check("R10 renderer uses stdin→stdout (no temp files: args are '- -')", true /* args asserted statically in RS below */);
 
-  // P3: multi-page PDF → async (unchanged).
-  const r3 = await routePdf({ asyncClient: () => callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [opRunning(), opDone()], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 1000, nowImpl: (() => { let c = 0; return () => (c += 10); })() }) });
-  check("P3 multi-page PDF goes through async", r3.via === "async" && r3.res.ok === true);
-  // P3b: safe Yandex error extraction (code/message ≤200; non-JSON never leaks).
+  // R11-R15: failures → manual mode.
+  check("R11 renderer timeout → manual", (await analyzePdf({ pdfText: "", render: () => renderMock({ spawnImpl: fakeSpawn({ hang: true }), timeoutMs: 5 }), ocrImage: okImage, gpt: gptFill })).via === "manual");
+  check("R12 renderer error/unavailable → manual", (await analyzePdf({ pdfText: "", render: () => renderMock({ spawnImpl: fakeSpawn({ emitError: true }) }), ocrImage: okImage, gpt: gptFill })).via === "manual" && (await renderMock({ spawnImpl: fakeSpawn({ code: 1 }) })).reason === "error");
+  check("R13 empty OCR after render → manual", (await analyzePdf({ pdfText: "", render: () => renderMock({ spawnImpl: fakeSpawn({ png: PNG }) }), ocrImage: async () => ({ ok: false, reason: "empty_text" }), gpt: gptFill })).via === "manual");
+  check("R14 image OCR error after render → manual", (await analyzePdf({ pdfText: "", render: () => renderMock({ spawnImpl: fakeSpawn({ png: PNG }) }), ocrImage: async () => ({ ok: false, reason: "http" }), gpt: gptFill })).via === "manual");
+  check("R15 renderer too_large → manual + capped", (await renderMock({ spawnImpl: fakeSpawn({ png: Buffer.alloc(64) }), maxBytes: 16 })).reason === "too_large");
+
+  // Async OCR client stays only as a tested fallback (no longer the PDF default).
+  // P3c-P3e: safe Yandex error extraction (code/message ≤200; non-JSON never leaks).
   check("P3c 400 JSON error → safe code:message", safeYE(JSON.stringify({ code: 3, message: "mimeType PDF is not supported by sync" })) === "3: mimeType PDF is not supported by sync");
   check("P3d non-JSON error body → undefined (no content leak)", safeYE("<html>secret document content</html>") === undefined);
   check("P3e safeMessage capped at 200 chars", (safeYE(JSON.stringify({ message: "x".repeat(500) })) || "").length === 200);
@@ -348,8 +405,8 @@ async function main() {
   // P6b: poll HTTP error / operation error → safe.
   const r6b = await callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [httpErr(500)], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 100, nowImpl: (() => { let c = 0; return () => (c += 10); })() });
   check("P6b async poll HTTP 500 → safe error", r6b.ok === false && r6b.reason === "http" && r6b.httpStatus === 500);
-  const r6c = await callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [okJson({ done: false, error: { code: 3 } })], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 100, nowImpl: (() => { let c = 0; return () => (c += 10); })() });
-  check("P6c async operation error → safe error", r6c.ok === false && r6c.safeCode === "operation_error");
+  const r6c = await callOcrAsync({ fetchImpl: fakeAsync({ submit: submitOk(), polls: [okJson({ done: false, error: { code: 3, message: "number of pages in a PDF file should not exceed 1" } })], rec: okText(recBody) }), content: Buffer.from("x"), key: "k", folder: "f", timeoutMs: 100, nowImpl: (() => { let c = 0; return () => (c += 10); })() });
+  check("P6c async operation error → safe code + extracted safeMessage (≤200, no op id)", r6c.ok === false && r6c.safeCode === "operation_error" && r6c.safeMessage === "3: number of pages in a PDF file should not exceed 1");
 
   // P7: async getRecognition assembles pages in page order.
   check("P7 async assembles pages in order", r4.text.indexOf("page1") < r4.text.indexOf("page2"));
@@ -391,7 +448,7 @@ async function main() {
   {
     const yfn = analyzer.slice(analyzer.indexOf("async function analyzeInvoiceWithYandex"), analyzer.indexOf("export async function analyzeInvoiceDocument"));
     const disp = analyzer.slice(analyzer.indexOf("export async function analyzeInvoiceDocument"));
-    check("YS11 Y32/Y33 OCR calls only in the yandex helper, not the dispatcher/openai path", yfn.includes("recognizeText(") && yfn.includes("recognizeTextAsync(") && !disp.includes("recognizeText("));
+    check("YS11 Y32/Y33 OCR/render only in the yandex helper; async NOT used for PDF", yfn.includes("recognizeText(") && yfn.includes("renderPdfFirstPageToPng(") && !yfn.includes("recognizeTextAsync(") && !disp.includes("recognizeText("));
   }
   check("YS12 Y29/Y30 upload persists PendingInvoiceUpload BEFORE analyze (manual survives AI failure)", action.indexOf("pendingInvoiceUpload.create") < action.indexOf("analyzeInvoiceDocument(") && action.includes("expiresAt:"));
   check("YS13 Y18/Y31 no base64 / OCR text / prompt / storageKey logged in the analyzer", !/logYandex\([^)]*ocr\.text/.test(analyzer) && !/logYandex\([^)]*base64/.test(analyzer) && !/logYandex\([^)]*params\.user/.test(analyzer) && !analyzer.includes("console.log(ocr.text") && !/logYandex\([^)]*storageKey/.test(analyzer));
@@ -408,10 +465,23 @@ async function main() {
   check("PS4 async polls the operation then fetches getRecognition, bounded by timeoutMs", ocrSrc.includes("YANDEX_OPERATION_URL") && ocrSrc.includes("YANDEX_OCR_GET_RECOGNITION_URL") && ocrSrc.includes("elapsed() < params.timeoutMs") && ocrSrc.includes('safeCode: "poll_timeout"'));
   check("PS5 async reuses parseOcrBody (page-order merge) + data-logging header", ocrSrc.includes("parseOcrBody(body)") && ocrSrc.includes("ocrHeaders(key, folder)"));
   check("PS6 OCR client stays console-free (no base64/text/key logged)", !ocrSrc.includes("console."));
-  check("PS7 analyzer routes EVERY PDF via async OCR (reliability; sync only for images)", analyzer.includes("recognizeTextAsync({ content: input.buffer, timeoutMs: yandexOcrAsyncTimeoutMs() })") && !analyzer.includes("pageCount === 1") && analyzer.includes('ocrMode: isPdf ? "pdf_async"'));
-  check("PS8 any PDF OCR failure → PDF_OCR_FAILED manual message", analyzer.includes("code = isPdf") && analyzer.includes('"PDF_OCR_FAILED"') && analyzer.includes("Не удалось распознать PDF. Заполните поля вручную или загрузите JPG/PNG."));
+  const render = readFileSync(new URL("../src/lib/ai/pdf-render.ts", import.meta.url), "utf8");
+  const docInp = readFileSync(new URL("../src/lib/ai/document-input.ts", import.meta.url), "utf8");
+  const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
+  check("PS7 analyzer PDF path: text-layer→GPT, else render→image OCR; NO Yandex PDF OCR", analyzer.includes("hasSufficientInvoiceText(pdfText)") && analyzer.includes("renderPdfFirstPageToPng(input.buffer)") && analyzer.includes('recognizeText({ content: rendered.png, mimeType: "PNG"') && !analyzer.includes("recognizeTextAsync"));
+  check("PS8 render failure OR image-OCR failure → PDF_OCR_FAILED manual message", analyzer.includes('technicalResult("PDF_OCR_FAILED"') && analyzer.includes("Не удалось распознать PDF. Заполните поля вручную или загрузите JPG/PNG."));
   check("PS9 OCR client extracts a SAFE {code,message} from JSON errors only (≤200, no raw body)", ocrSrc.includes("safeYandexError") && ocrSrc.includes("safeMessage") && ocrSrc.includes(".slice(0, 200)") && ocrSrc.includes("JSON.parse(body)"));
-  check("PS10 analyzer logs pageCount + safeMessage (safe diagnostics for PDF)", analyzer.includes("pageCount: diagnostics?.pageCount") && analyzer.includes("safeMessage: ocr.ok ? undefined : ocr.safeMessage"));
+  check("PS10 async operation error extracts safe {code,message} (no operation id)", ocrSrc.includes("const opError = (status as") && ocrSrc.includes("opError.message") && /operation_error"[^\n]*safeMessage/.test(ocrSrc) && !/operationId[^\n]*logYandex|logYandex[^\n]*operationId/.test(analyzer));
+  check("PS11 analyzer logs safe fields incl pageCount + safeMessage, never text/base64", analyzer.includes("pageCount,") && analyzer.includes("safeMessage: ocr.ok ? undefined : ocr.safeMessage") && !/logYandex\([^)]*(ocrText|\.text|base64|pdfText)/.test(analyzer));
+
+  // ---- Renderer + build (RS1-RS6) ----
+  check("RS1 renderer uses system pdftoppm via stdin('-')→stdout('-') (no disk, no temp files)", render.includes('spawnImpl("pdftoppm"') && render.includes('"-", "-"') && render.includes("child.stdin.write(pdf)") && !render.includes("writeFileSync") && !render.includes("os.tmpdir"));
+  check("RS2 renderer is memory-only: PNG from stdout, never persisted/logged", render.includes("child.stdout.on(") && render.includes("Buffer.concat(chunks)") && !render.includes("console.") && !render.includes("getStorage"));
+  check("RS3 renderer bounded: timeout kill + size cap + first page only", render.includes("PDF_RENDER_TIMEOUT_MS") && render.includes("maxBytes") && render.includes("too_large") && render.includes("PDF_RENDER_PAGE = 1"));
+  check("RS4 renderer typed result (unavailable/timeout/too_large/error), never throws", render.includes('reason: "unavailable"') && render.includes('reason: "timeout"') && render.includes('reason: "too_large"') && render.includes('reason: "error"'));
+  check("RS5 sufficiency helper: >=200 alnum OR invoice markers (INN/BIK/сумма/№)", docInp.includes("hasSufficientInvoiceText") && docInp.includes("alnum >= 200") && docInp.includes("INVOICE_TEXT_MARKERS"));
+  check("RS6 Dockerfile installs poppler-utils (only needed extra), standalone uses PATH binary", dockerfile.includes("poppler-utils") && dockerfile.includes("--no-install-recommends") && !/@napi-rs\/canvas/.test(readFileSync(new URL("../package.json", import.meta.url), "utf8")));
+  check("RS7 UI badge for rendered PDF («PDF → изображение») + text PDF («Текст PDF»)", upload.includes('pdf_rendered_image: "PDF → изображение"') && upload.includes('pdf_text: "Текст PDF"'));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);

@@ -14,7 +14,7 @@ ARG APT_REFRESH=none
 RUN echo "APT refresh: ${APT_REFRESH}" >/dev/null \
   && apt-get update \
   && apt-get upgrade -y \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates poppler-utils \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 ```
@@ -28,7 +28,13 @@ RUN echo "APT refresh: ${APT_REFRESH}" >/dev/null \
   security-upgraded, which keeps the app + npm cache layers cacheable.
 - `wget`/`curl` are **not installed** (the healthcheck uses Node's `http`
   module), reducing the image's package surface. Only `openssl` (libssl3, for the
-  Prisma query engine) and `ca-certificates` (TLS) are added.
+  Prisma query engine), `ca-certificates` (TLS), and `poppler-utils` are added.
+- `poppler-utils` provides `pdftoppm`, used ONLY by `src/lib/ai/pdf-render.ts` to
+  rasterise the first page of a scanned PDF invoice to a PNG. It runs as the
+  non-root `nodejs` user, is GUI-less, opens no network/ports, and the PDF is
+  piped via **stdin → stdout** (nothing is written to disk). A native node canvas
+  package was rejected because Next.js standalone file-tracing can drop a
+  dynamically-imported `.node` binary; a system binary on PATH is more reliable.
 
 ## CI enforcement
 

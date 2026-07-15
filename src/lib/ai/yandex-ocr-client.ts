@@ -207,8 +207,14 @@ export async function recognizeTextAsync(params: {
     } catch {
       return { ok: false, reason: "parse", safeCode: "invalid_json", durationMs: elapsed() };
     }
-    if ((status as { error?: unknown })?.error) {
-      return { ok: false, reason: "http", safeCode: "operation_error", durationMs: elapsed() };
+    const opError = (status as { error?: { code?: unknown; message?: unknown } })?.error;
+    if (opError) {
+      // Surface the operation's SAFE {code,message} (bounded) — never the
+      // operation id, the full response, or any recognized text.
+      const code = typeof opError.code === "number" || typeof opError.code === "string" ? String(opError.code) : "";
+      const message = typeof opError.message === "string" ? opError.message : "";
+      const safeMessage = [code, message].filter(Boolean).join(": ").slice(0, 200) || undefined;
+      return { ok: false, reason: "http", safeCode: "operation_error", safeMessage, durationMs: elapsed() };
     }
     if ((status as { done?: unknown })?.done === true) {
       return await fetchAsyncResults(operationId, headers, perRequestTimeout, start);

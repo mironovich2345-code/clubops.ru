@@ -62,6 +62,23 @@ export function pdfTextSufficiency(text: string, pageCount: number): { sufficien
   return { sufficient, alnum, perPage: Math.round(perPage), textLength: clean.length };
 }
 
+// Invoice markers used to accept a shorter-but-clearly-an-invoice text layer.
+const INVOICE_TEXT_MARKERS = /(ИНН|КПП|БИК|счёт|счет|к\s*оплате|оплат|руб|₽|№)/i;
+
+/**
+ * Decide whether a PDF's extracted text layer is rich enough to send straight to
+ * the model WITHOUT rasterising the page: either a substantial amount of text
+ * (>= 200 letters/digits) OR a clear invoice signal (INN/BIK/сумма/№…). A scan
+ * with an empty/near-empty text layer fails this and is routed to the renderer.
+ * Pure + testable; the text itself is never logged.
+ */
+export function hasSufficientInvoiceText(text: string): boolean {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const alnum = (clean.match(/[\p{L}\p{N}]/gu) || []).length;
+  if (alnum >= 200) return true;
+  return alnum >= 40 && INVOICE_TEXT_MARKERS.test(clean);
+}
+
 /**
  * Prepare a normalized analysis input + safe diagnostics. Never sends empty
  * content to a model: an image that won't decode → FILE_INVALID; a PDF whose

@@ -56,10 +56,14 @@ ENV APP_GIT_SHA=$APP_GIT_SHA
 # invalidate this layer every production build so `apt-get update && upgrade`
 # never serves stale package lists from the Docker/BuildKit cache.
 ARG APT_REFRESH=none
+# poppler-utils provides `pdftoppm`, used to render the first page of a scanned
+# PDF invoice to a PNG in memory (piped via stdin→stdout, nothing on disk) so it
+# can be OCR'd as an image. GUI-less; no extra runtime services. See
+# src/lib/ai/pdf-render.ts and docs/CONTAINER_SECURITY.md.
 RUN echo "APT refresh: ${APT_REFRESH}" >/dev/null \
   && apt-get update \
   && apt-get upgrade -y \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates poppler-utils \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
