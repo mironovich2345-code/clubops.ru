@@ -7,9 +7,12 @@ import { ofdEnabled, ofdSecretPresent } from "@/lib/ofd/config";
 import { encryptOfdSecret, decryptOfdSecret } from "@/lib/ofd/crypto";
 import { importTaxcomSalesForPeriod, type ImportMode } from "@/lib/ofd/importer";
 import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
+import { normalizeContractNumber, type OfdCheckDiagnostics } from "@/lib/ofd/contract";
 import type { OfdConnectionConfig } from "@/lib/ofd/types";
 
-type State = { ok: boolean; error?: string; notice?: string };
+
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics };
+
 
 // Only owner / general director may administer OFD integrations.
 async function requireOfdAdmin(): Promise<
@@ -144,19 +147,31 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
 
   const want = c.contractNumber?.trim();
   const records = accounts.data.records;
-  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: records.length, contractMatched: want ? records.some((r) => r.agreementNumber === want) : null } });
+  const wantNorm = normalizeContractNumber(want);
+  const match = want ? records.find((r) => normalizeContractNumber(r.agreementNumber) === wantNorm) : undefined;
+  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: records.length, contractMatched: want ? Boolean(match) : null } });
 
-  // Step 3 — verify the expected договор is reachable.
+  // Step 3 — verify the expected договор is reachable (normalized comparison:
+  // dashes / non-breaking spaces / case never cause a false "not found").
   if (!want) {
     return { ok: true, notice: "Подключение успешно. Укажите номер договора, если в логине несколько ЛК." };
   }
-  const match = records.find((r) => r.agreementNumber === want);
   if (match) {
-    const label = [match.agreementNumber, match.companyName, match.inn ? `ИНН ${match.inn}` : null].filter(Boolean).join(" · ");
-    return { ok: true, notice: `Подключение успешно. Договор найден в доступных ЛК: ${label}.` };
+    return { ok: true, notice: "Подключение успешно. Договор найден в доступных ЛК Такском." };
   }
-  // Not found — a WARNING, not a blocking failure. Login itself works.
-  return { ok: false, error: "Подключение выполнено, но номер договора не найден среди доступных ЛК Такском. Проверьте номер договора." };
+  // Not found — a WARNING, not a blocking failure. Login itself works. Return
+  // SAFE diagnostics (никаких секретов / raw AccountList) so the admin can see
+  // which договоры Такском actually returned and pick the right one.
+  return {
+    ok: false,
+    code: "contract_not_found",
+    error: "Подключение выполнено, но номер договора не найден среди доступных ЛК Такском.",
+    diagnostics: {
+      currentSession: accounts.data.currentAgreementNumber,
+      requestedContractNumber: want,
+      availableContracts: records.map((r) => ({ agreementNumber: r.agreementNumber, companyName: r.companyName ?? null, inn: r.inn ?? null, kpp: r.kpp ?? null })),
+    },
+  };
 }
 
 /** Add a KKT (ФН) → club mapping. Blocks a duplicate ACTIVE fn. */

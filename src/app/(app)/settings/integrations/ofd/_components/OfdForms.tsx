@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection } from "../actions";
+import type { OfdCheckDiagnostics } from "@/lib/ofd/contract";
 
-type State = { ok: boolean; error?: string; notice?: string };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics };
 const initial: State = { ok: false };
 
 type ClubOpt = { id: string; name: string };
@@ -100,14 +101,38 @@ export function OfdConnectionForm({
 
 export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
   const [state, action] = useFormState(checkOfdConnection, initial);
+  const diag = state.code === "contract_not_found" ? state.diagnostics : undefined;
   return (
-    <form action={action} className="flex flex-wrap items-center gap-3">
-      <input type="hidden" name="connectionId" value={connectionId} />
-      <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-        Проверить подключение
-      </button>
-      <Msg s={state} />
-    </form>
+    <div>
+      <form action={action} className="flex flex-wrap items-center gap-3">
+        <input type="hidden" name="connectionId" value={connectionId} />
+        <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+          Проверить подключение
+        </button>
+        <Msg s={state} />
+      </form>
+      {diag ? (
+        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <div><span className="font-medium">Искомый договор:</span> <span className="font-mono">{diag.requestedContractNumber}</span></div>
+          <div className="mt-0.5"><span className="font-medium">Текущий ЛК Такском:</span> {diag.currentSession ?? "—"}</div>
+          <div className="mt-2 font-medium">Доступные договоры Такском:</div>
+          {diag.availableContracts.length === 0 ? (
+            <div className="mt-1 text-amber-800">Такском не вернул ни одного договора.</div>
+          ) : (
+            <ul className="mt-1 space-y-1">
+              {diag.availableContracts.map((a, i) => (
+                <li key={i} className="rounded border border-amber-200 bg-white/60 px-2 py-1">
+                  <span className="font-mono">{a.agreementNumber ?? "—"}</span>
+                  {a.companyName ? <> · {a.companyName}</> : null}
+                  {a.inn ? <> · ИНН {a.inn}</> : null}
+                  {a.kpp ? <> · КПП {a.kpp}</> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
