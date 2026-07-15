@@ -34,6 +34,7 @@
     "pilot:invoices": "node scripts/pilot-invoices.mjs",
     "pilot:invites": "node scripts/pilot-invites.mjs",
     "pilot:telegram-notifications": "node scripts/pilot-telegram-notifications.mjs",
+    "pilot:ofd-taxcom": "node scripts/pilot-ofd-taxcom.mjs",
     "pilot:refunds": "node scripts/pilot-refunds.mjs",
     "pilot:manager-visibility": "node scripts/pilot-manager-visibility.mjs",
     "pilot:full": "node scripts/pilot-full.mjs",
