@@ -95,6 +95,17 @@ function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/+$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
+/**
+ * Full LOCAL day range for a Taxcom ShiftList query. Taxcom expects a datetime
+ * window WITHOUT a timezone suffix; a date-only value (or begin===end) yields an
+ * empty records[]. "2026-07-15" → { begin:"2026-07-15T00:00:00", end:"…T23:59:59" }.
+ * Pure string math — never routed through Date, so no UTC/timezone shift.
+ */
+export function toTaxcomDayRange(date: string): { begin: string; end: string } {
+  const d = /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : String(date).slice(0, 10);
+  return { begin: `${d}T00:00:00`, end: `${d}T23:59:59` };
+}
+
 export type TaxcomClient = {
   login(): Promise<OfdResult<string>>;
   listAccounts(): Promise<OfdResult<TaxcomAccountList>>;
@@ -217,8 +228,12 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
     async listShifts(fnNumber, dateFrom, dateTo) {
       const s = await ensureSession();
       if (!s.ok) return s;
-      // Taxcom ShiftList is GET: /API/v2/ShiftList?fn=&begin=&end=&pn=1&ps=100
-      const r = await raw(PATHS.shiftList, { method: "GET", withSession: true, query: { fn: fnNumber, begin: dateFrom, end: dateTo, pn: 1, ps: 100 } });
+      // ShiftList needs a FULL local-day datetime window (no timezone suffix):
+      // begin=YYYY-MM-DDT00:00:00, end=YYYY-MM-DDT23:59:59. A date-only value or
+      // begin===end returns an empty records[] and the day imports as 0 receipts.
+      const begin = toTaxcomDayRange(dateFrom).begin;
+      const end = toTaxcomDayRange(dateTo).end;
+      const r = await raw(PATHS.shiftList, { method: "GET", withSession: true, query: { fn: fnNumber, begin, end, pn: 1, ps: 100 } });
       if (!r.ok) return r;
       return { ok: true, data: parseShiftList(r.data) };
     },

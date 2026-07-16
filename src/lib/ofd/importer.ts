@@ -4,7 +4,7 @@
 // from the imported fingerprints so cards are always consistent.
 import { prisma } from "@/lib/prisma";
 import { decryptOfdSecret } from "@/lib/ofd/crypto";
-import { createTaxcomClient, type FetchImpl, type TaxcomClient } from "@/lib/ofd/taxcom/client";
+import { createTaxcomClient, toTaxcomDayRange, type FetchImpl, type TaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeDocumentsWithStats } from "@/lib/ofd/taxcom/adapter";
 import { isCurrentAccountValid } from "@/lib/ofd/contract";
 import type { NormalizedOfdReceipt, OfdConnectionConfig } from "@/lib/ofd/types";
@@ -134,6 +134,13 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
         kktFailed = true;
         await recordSyncError(run.id, connection.id, connection.companyId, m.clubId, m.fnNumber, "list_shifts", shifts.safeCode, shifts.safeMessage);
         continue; // try other days; do not abandon the whole KKT
+      }
+      if (shifts.data.length === 0) {
+        // Empty day is normal (not an error), but log the SAFE aggregate so a bad
+        // date window is diagnosable (no token / no raw response). This is what
+        // reveals a begin/end problem: the exact range we asked Taxcom for.
+        const range = toTaxcomDayRange(day);
+        console.warn(`[ofd] list_shifts_debug fn=${m.fnNumber} date=${day} begin=${range.begin} end=${range.end} shiftCount=0`);
       }
       for (const shift of shifts.data) {
         stats.shiftCount += 1;

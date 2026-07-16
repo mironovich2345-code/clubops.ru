@@ -219,10 +219,11 @@ async function main() {
       const b = {}; if (cfg.authType === "integration_token") b.integrationToken = cfg.integrationToken ?? ""; else { b.login = cfg.login ?? ""; b.password = cfg.password ?? ""; }
       const r = await raw("/API/v2/Login", { method: "POST", body: b, withSession: false }); if (!r.ok) return r; const t = extractToken(r.data); if (!t) return { ok: false, safeCode: "parse_error" }; token = t; return { ok: true, data: t };
     }
+    const dayRange = (d) => ({ begin: `${String(d).slice(0, 10)}T00:00:00`, end: `${String(d).slice(0, 10)}T23:59:59` });
     return {
       captured, login: ensureSession,
       listAccounts: async () => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/AccountList", { method: "GET", withSession: true }); if (!r.ok) return r; return { ok: true, data: parseAccountList(r.data) }; },
-      listShifts: async (fn, from, to) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/ShiftList", { method: "GET", withSession: true, query: { fn, begin: from, end: to, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseShiftList(r.data) }; },
+      listShifts: async (fn, from, to) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/ShiftList", { method: "GET", withSession: true, query: { fn, begin: dayRange(from).begin, end: dayRange(to).end, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseShiftList(r.data) }; },
       listDocumentsByShift: async (fn, shift) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentList", { method: "GET", withSession: true, query: { fn, shift, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseDocumentList(r.data, { fn, shift }) }; },
     };
   }
@@ -258,7 +259,7 @@ async function main() {
   await cli3.listDocumentsByShift("7381440800719861", 7);
   const shiftReq = cli3.captured.find((c) => c.path === "/API/v2/ShiftList");
   const docReq = cli3.captured.find((c) => c.path === "/API/v2/DocumentList");
-  check("T4 ShiftList is GET (not POST) with fn/begin/end/pn/ps query params, no body", shiftReq.method === "GET" && shiftReq.url.includes("/API/v2/ShiftList?") && shiftReq.url.includes("fn=7381440800719861") && shiftReq.url.includes("begin=2026-07-01") && shiftReq.url.includes("end=2026-07-01") && shiftReq.url.includes("pn=1") && shiftReq.url.includes("ps=100") && shiftReq.hasBody === false && !("body" in shiftInit));
+  check("T4 ShiftList is GET (not POST) with fn + FULL day begin/end + pn/ps, no body", shiftReq.method === "GET" && shiftReq.url.includes("/API/v2/ShiftList?") && shiftReq.url.includes("fn=7381440800719861") && decodeURIComponent(shiftReq.url).includes("begin=2026-07-01T00:00:00") && decodeURIComponent(shiftReq.url).includes("end=2026-07-01T23:59:59") && shiftReq.url.includes("pn=1") && shiftReq.url.includes("ps=100") && shiftReq.hasBody === false && !("body" in shiftInit));
   check("T4b ShiftList carries Session-Token + Integrator-ID + Accept headers", shiftReq.headers["Session-Token"] === "TKN" && shiftReq.headers["Integrator-ID"] === "INT-1" && shiftReq.headers["Accept"] === "application/json" && !shiftReq.headers["Content-Type"]);
   check("T4c DocumentList is GET (not POST) with fn/shift query params, no body", docReq.method === "GET" && docReq.url.includes("/API/v2/DocumentList?") && docReq.url.includes("fn=7381440800719861") && docReq.url.includes("shift=7") && docReq.hasBody === false && !("body" in docInit));
   check("T4d DocumentList carries Session-Token + Integrator-ID headers", docReq.headers["Session-Token"] === "TKN" && docReq.headers["Integrator-ID"] === "INT-1");
@@ -319,23 +320,34 @@ async function main() {
   const prodShiftResponse = { reportDate: "2026-07-15", counts: { total: 1 }, records: [ { fnFactoryNumber: PROD_FN, shiftNumber: PROD_SHIFT, openDateTime: "2026-07-15T10:27:00", closeDateTime: "2026-07-15T21:47:00", receiptCount: 13 } ] };
   const prodShifts = parseShiftList(prodShiftResponse);
   check("TD-SHIFT parseShiftList reads lowercase shiftNumber(463) + receiptCount(13) + open/closeDateTime", prodShifts.length === 1 && prodShifts[0].shiftNumber === 463 && prodShifts[0].receiptCount === 13 && prodShifts[0].dateOpen === "2026-07-15T10:27:00" && prodShifts[0].dateClose === "2026-07-15T21:47:00");
+  // toTaxcomDayRange: FULL local day window, no timezone suffix, no Date round-trip.
+  const toTaxcomDayRange = (date) => { const d = /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : String(date).slice(0, 10); return { begin: `${d}T00:00:00`, end: `${d}T23:59:59` }; };
+  const rng = toTaxcomDayRange("2026-07-15");
+  check("TD-RANGE toTaxcomDayRange('2026-07-15') → begin=…T00:00:00 & end=…T23:59:59 (no Z, no ms, begin≠end)", rng.begin === "2026-07-15T00:00:00" && rng.end === "2026-07-15T23:59:59" && !rng.begin.includes("Z") && !rng.end.includes("Z") && rng.begin !== rng.end && toTaxcomDayRange("2026-07-15T09:00:00.000Z").begin === "2026-07-15T00:00:00");
+  check("TD-RANGE2 period 2026-07-01..2026-07-31 = 31 inclusive days (first 07-01, last 07-31, not exclusive)", (() => { const ds = eachDay("2026-07-01", "2026-07-31"); return ds.length === 31 && ds[0] === "2026-07-01" && ds[30] === "2026-07-31" && toTaxcomDayRange(ds[0]).begin === "2026-07-01T00:00:00" && toTaxcomDayRange(ds[30]).end === "2026-07-31T23:59:59"; })());
 
   // FULL PATH e2e: Login → AccountList → ShiftList → DocumentList → import, through
   // the REAL client (makeClient) + a fake fetch. DocumentList returns the 15 docs
   // ONLY when pn=1&ps=100 are present — proving the pagination fix end-to-end.
   const mapProd = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: PROD_FN, isActive: true, activeMappingKey: `taxcom:${PROD_FN}` } });
   const e2eCfg = { serverBaseUrl: "https://api-lk-ofd.taxcom.ru", authType: "login_password", contractNumber: "CD-25/455507", login: "L", password: "P", integratorId: "INT-1", integrationToken: null };
-  let docListUrl = null;
+  let docListUrl = null, shiftUrl = null;
+  // The fake ShiftList returns the shift ONLY for the EXACT full local-day window
+  // Такском expects — begin=2026-07-15T00:00:00 & end=2026-07-15T23:59:59. Any other
+  // range (date-only, begin===end, UTC/Z suffix) → records:[] → import 0 → test fails.
+  const EXPECT_BEGIN = "2026-07-15T00:00:00", EXPECT_END = "2026-07-15T23:59:59";
   const e2eFetch = async (url) => {
+    const decoded = decodeURIComponent(url);
     if (url.includes("/Login")) return okJson({ sessionToken: "TKN" });
     if (url.includes("/AccountList")) return okJson({ currentSession: "CD-25/455507", records: [{ agreementNumber: "CD-25/455507", companyName: "ООО СПОРТ ТЕХНОЛОГИИ", inn: "6679182168", kpp: "667901001" }] });
-    if (url.includes("/ShiftList")) return okJson(prodShiftResponse);
-    if (url.includes("/DocumentList")) { docListUrl = url; return (url.includes("pn=1") && url.includes("ps=100")) ? okJson(prodDocResponse) : okJson({ reportDate: "2026-07-15", counts: {}, records: [] }); }
+    if (url.includes("/ShiftList")) { shiftUrl = decoded; return (decoded.includes(`begin=${EXPECT_BEGIN}`) && decoded.includes(`end=${EXPECT_END}`)) ? okJson(prodShiftResponse) : okJson({ reportDate: "2026-07-15", counts: {}, records: [] }); }
+    if (url.includes("/DocumentList")) { docListUrl = decoded; return (url.includes("pn=1") && url.includes("ps=100")) ? okJson(prodDocResponse) : okJson({ reportDate: "2026-07-15", counts: {}, records: [] }); }
     return okJson({});
   };
   const e2eClient = makeClient(e2eCfg, e2eFetch);
   const pr1 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: e2eClient, mappings: [mapProd], contractNumber: "CD-25/455507", normalizeContract });
   check("TD5 FULL PATH import (Login→AccountList→ShiftList→DocumentList→normalize): found 13 / imported 13 / skipped 0", pr1.found === 13 && pr1.imported === 13 && pr1.skipped === 0 && pr1.status === "success" && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: PROD_FN } })) === 13);
+  check("TD5a ShiftList called with fn + FULL local day range begin=…T00:00:00 & end=…T23:59:59 + pn=1 & ps=100 (no Z, not date-only)", shiftUrl && shiftUrl.includes(`fn=${PROD_FN}`) && shiftUrl.includes(`begin=${EXPECT_BEGIN}`) && shiftUrl.includes(`end=${EXPECT_END}`) && shiftUrl.includes("pn=1") && shiftUrl.includes("ps=100") && !shiftUrl.includes("Z") && !/begin=2026-07-15&/.test(shiftUrl));
   check("TD5b DocumentList called with fn/shift + pn=1 & ps=100 (the pagination fix)", docListUrl && docListUrl.includes(`fn=${PROD_FN}`) && docListUrl.includes(`shift=${PROD_SHIFT}`) && docListUrl.includes("pn=1") && docListUrl.includes("ps=100"));
   const pr2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: e2eClient, mappings: [mapProd], contractNumber: "CD-25/455507", normalizeContract });
   check("TD6 re-import idempotent: found 13 / imported 0 / skipped 13, no duplicates", pr2.found === 13 && pr2.imported === 0 && pr2.skipped === 13 && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: PROD_FN } })) === 13);
@@ -562,7 +574,7 @@ async function main() {
   // --- GET verb fix for ShiftList / DocumentList (real source) ---
   const shiftCall = clientSrc.slice(clientSrc.indexOf("async listShifts("), clientSrc.indexOf("async listShifts(") + 700);
   const docCall = clientSrc.slice(clientSrc.indexOf("async listDocumentsByShift("), clientSrc.indexOf("async listDocumentsByShift(") + 700);
-  check("T-S7 ShiftList uses GET with fn/begin/end/pn/ps query (NOT POST, no body)", clientSrc.includes('shiftList: "/API/v2/ShiftList"') && /raw\(PATHS\.shiftList,\s*\{\s*method:\s*"GET"/.test(shiftCall) && shiftCall.includes("query: { fn: fnNumber, begin: dateFrom, end: dateTo, pn: 1, ps: 100 }") && !/method:\s*"POST"/.test(shiftCall) && !/\bbody:/.test(shiftCall));
+  check("T-S7 ShiftList uses GET with fn + begin/end (full-day) + pn/ps query (NOT POST, no body)", clientSrc.includes('shiftList: "/API/v2/ShiftList"') && /raw\(PATHS\.shiftList,\s*\{\s*method:\s*"GET"/.test(shiftCall) && shiftCall.includes("query: { fn: fnNumber, begin, end, pn: 1, ps: 100 }") && !/method:\s*"POST"/.test(shiftCall) && !/\bbody:/.test(shiftCall));
   check("T-S7b DocumentList uses GET with fn/shift/pn/ps query (NOT POST, no body)", clientSrc.includes('documentList: "/API/v2/DocumentList"') && /raw\(PATHS\.documentList,\s*\{\s*method:\s*"GET"/.test(docCall) && docCall.includes("query: { fn: fnNumber, shift: shiftNumber, pn: 1, ps: 100 }") && !/method:\s*"POST"/.test(docCall) && !/\bbody:/.test(docCall));
   // Static guard: NO POST anywhere for the shift/document list endpoints.
   check("T-S7c no POST for ShiftList/DocumentList anywhere in client.ts", !/PATHS\.shiftList[\s\S]{0,120}method:\s*"POST"/.test(clientSrc) && !/PATHS\.documentList[\s\S]{0,120}method:\s*"POST"/.test(clientSrc) && !/raw\(PATHS\.shiftList,\s*\{\s*Fn:/.test(clientSrc) && !/raw\(PATHS\.documentList,\s*\{\s*Fn:/.test(clientSrc));
@@ -580,6 +592,13 @@ async function main() {
   check("T-S9c importer uses normalizeDocumentsWithStats + 'documents but no receipts' diagnostic (taxcom_no_receipts_after_filter, stage normalize_documents)", importer.includes("normalizeDocumentsWithStats") && importer.includes('"taxcom_no_receipts_after_filter"') && importer.includes('"normalize_documents"') && importer.includes("stats.normalizedReceiptCount === 0 && (stats.shiftReceiptCount > 0 || stats.documentCount > 0)"));
   check("T-S9d importer diagnostic logs SAFE aggregates only (counts, no raw JSON / no fiscal docs / no secrets / no PII)", importer.includes("console.warn(`[ofd] taxcom_no_receipts_after_filter") && importer.includes("shiftReceiptCount=") && !/console\.(log|warn|error)\([^)]*(JSON\.stringify|docs\.data|records|fpd|sessionToken|password)/i.test(importer));
   check("T-S9e adapter exposes classifyDocument + normalizeDocumentsWithStats (safe skip aggregates, no doc content)", adapter.includes("export function classifyDocument") && adapter.includes("export function normalizeDocumentsWithStats") && adapter.includes("serviceSkipped") && adapter.includes("unsupportedSkipped") && adapter.includes("invalidSkipped") && !/phone|email|buyerName|rawJson/i.test(adapter));
+  // --- Full local-day ShiftList range fix (real source) ---
+  const dayRangeFn = clientSrc.slice(clientSrc.indexOf("export function toTaxcomDayRange"), clientSrc.indexOf("export function toTaxcomDayRange") + 280);
+  check("T-S10 client exports toTaxcomDayRange → begin T00:00:00 / end T23:59:59 (pure string, no Date/UTC round-trip)", dayRangeFn.includes("begin: `${d}T00:00:00`") && dayRangeFn.includes("end: `${d}T23:59:59`") && !dayRangeFn.includes("new Date") && !dayRangeFn.includes("toISOString"));
+  check("T-S10b listShifts sends FULL day range via toTaxcomDayRange (begin from dateFrom, end from dateTo) — not raw date-only", clientSrc.includes("const begin = toTaxcomDayRange(dateFrom).begin") && clientSrc.includes("const end = toTaxcomDayRange(dateTo).end") && clientSrc.includes("query: { fn: fnNumber, begin, end, pn: 1, ps: 100 }") && !clientSrc.includes("begin: dateFrom, end: dateTo"));
+  check("T-S10c importer logs SAFE empty-ShiftList debug aggregate (fn/date/begin/end/shiftCount=0, no token/raw)", importer.includes("list_shifts_debug") && importer.includes("shiftCount=0") && importer.includes("toTaxcomDayRange(day)") && /console\.warn\(`\[ofd\] list_shifts_debug[^`]*begin=\$\{range\.begin\} end=\$\{range\.end\}/.test(importer) && !/list_shifts_debug[\s\S]{0,200}(token|password|integrator|JSON\.stringify)/i.test(importer));
+  check("T-S10d importer eachDay is inclusive of dateTo (<=), max 366 days", importer.includes("cur.getTime() <= end.getTime()") && importer.includes("guard < 366"));
+  check("9-date OfdDailySalesSummary uses 'date' column (not salesDate) in model/importer/page", schema.includes("model OfdDailySalesSummary") && !/salesDate/i.test(schema) && !/salesDate/i.test(importer) && !/salesDate/i.test(pageSrc) && importer.includes("buildSummaryKey"));
   // Static guard: no buyer PII / raw fiscal JSON is parsed, stored or logged.
   check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging of raw data in client.ts/adapter", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console.") && !/phone|email|buyerName|customer|rawJson/i.test(adapter));
   check("7 save NO LONGER blocks on empty contractNumber (contract is non-blocking)", !actions.includes('authType === "login_password" && !contractNumber') && !actions.includes("Укажите номер договора Такском"));
