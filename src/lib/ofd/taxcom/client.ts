@@ -225,8 +225,10 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
     async listDocumentsByShift(fnNumber, shiftNumber) {
       const s = await ensureSession();
       if (!s.ok) return s;
-      // Taxcom DocumentList is GET: /API/v2/DocumentList?fn=&shift=
-      const r = await raw(PATHS.documentList, { method: "GET", withSession: true, query: { fn: fnNumber, shift: shiftNumber } });
+      // Taxcom DocumentList is GET: /API/v2/DocumentList?fn=&shift=&pn=1&ps=100.
+      // pn/ps are REQUIRED — without them Taxcom returns an empty records[] and the
+      // whole shift silently imports as 0 receipts.
+      const r = await raw(PATHS.documentList, { method: "GET", withSession: true, query: { fn: fnNumber, shift: shiftNumber, pn: 1, ps: 100 } });
       if (!r.ok) return r;
       // Production documents omit fn/shift per-record → fill from the request scope.
       return { ok: true, data: parseDocumentList(r.data, { fn: fnNumber, shift: shiftNumber }) };
@@ -319,15 +321,18 @@ export function parseKktList(data: unknown): TaxcomKkt[] {
 }
 
 export function parseShiftList(data: unknown): TaxcomShift[] {
-  // Taxcom may return the shifts under any of these list keys.
+  // Taxcom may return the shifts under any of these list keys. Production uses
+  // lowercase shiftNumber / openDateTime / closeDateTime / receiptCount.
   return asArray(data, "records", "Records", "Items", "items", "Shifts", "shifts", "ShiftList").map((raw) => {
     const o = raw as Record<string, unknown>;
+    const rc = o.receiptCount ?? o.ReceiptCount ?? o.receiptsCount ?? o.documentCount;
     return {
-      shiftNumber: num(o.Shift ?? o.ShiftNumber ?? o.shift ?? o.shiftNumber ?? o.Number ?? o.number),
-      dateOpen: str(o.OpenDate ?? o.openDate ?? o.openedAt ?? o.DateOpen ?? o.dateOpen),
-      dateClose: str(o.CloseDate ?? o.closeDate ?? o.closedAt ?? o.DateClose ?? o.dateClose),
+      shiftNumber: num(o.shiftNumber ?? o.ShiftNumber ?? o.Shift ?? o.shift ?? o.Number ?? o.number),
+      dateOpen: str(o.openDateTime ?? o.OpenDateTime ?? o.OpenDate ?? o.openDate ?? o.openedAt ?? o.DateOpen ?? o.dateOpen),
+      dateClose: str(o.closeDateTime ?? o.CloseDateTime ?? o.CloseDate ?? o.closeDate ?? o.closedAt ?? o.DateClose ?? o.dateClose),
+      receiptCount: rc != null ? num(rc) : null,
     };
-  }).filter((s) => Number.isFinite(s.shiftNumber));
+  }).filter((s) => Number.isFinite(s.shiftNumber) && s.shiftNumber > 0);
 }
 
 /** Parse a DocumentList payload into safe per-receipt summaries.

@@ -64,12 +64,27 @@ async function runImport({ connectionId, companyId, dateFrom, dateTo, client, ma
   let found = 0, imported = 0, skipped = 0, kktFailures = 0; const touched = new Set();
   for (const m of mappings) {
     const legal = m.legalEntityId ?? null; const recs = []; let failed = false;
+    const stats = { shiftCount: 0, shiftReceiptCount: 0, documentCount: 0, normalizedReceiptCount: 0, serviceSkipped: 0, unsupportedSkipped: 0, invalidSkipped: 0 };
     for (const day of days) {
       const shifts = await client.listShifts(m.fnNumber, day, day);
       if (!shifts.ok) { failed = true; await p.ofdSyncError.create({ data: { syncRunId: run.id, connectionId, companyId, clubId: m.clubId, fnNumber: m.fnNumber, stage: "list_shifts", safeCode: shifts.safeCode, safeMessage: (shifts.safeMessage || "").slice(0, 200) || null } }); continue; }
-      for (const s of shifts.data) { const docs = await client.listDocumentsByShift(m.fnNumber, s.shiftNumber); if (!docs.ok) { failed = true; continue; } for (const d of docs.data) { const n = normalize(d); if (n) recs.push(n); } }
+      for (const s of shifts.data) {
+        stats.shiftCount++; stats.shiftReceiptCount += Math.max(0, s.receiptCount ?? 0);
+        const docs = await client.listDocumentsByShift(m.fnNumber, s.shiftNumber); if (!docs.ok) { failed = true; continue; }
+        stats.documentCount += docs.data.length;
+        for (const d of docs.data) {
+          if (isServiceDocumentType(d.documentType)) { stats.serviceSkipped++; continue; }
+          if (!mapOp(d.operationType)) { stats.unsupportedSkipped++; continue; }
+          const n = normalize(d); if (n) { recs.push(n); stats.normalizedReceiptCount++; } else { stats.invalidSkipped++; }
+        }
+      }
     }
-    if (failed) kktFailures++;
+    const noReceiptsProblem = stats.normalizedReceiptCount === 0 && (stats.shiftReceiptCount > 0 || stats.documentCount > 0);
+    if (noReceiptsProblem) {
+      const agg = `shifts=${stats.shiftCount} shiftReceiptCount=${stats.shiftReceiptCount} documents=${stats.documentCount} normalized=0 service=${stats.serviceSkipped} unsupported=${stats.unsupportedSkipped} invalid=${stats.invalidSkipped}`;
+      await p.ofdSyncError.create({ data: { syncRunId: run.id, connectionId, companyId, clubId: m.clubId, fnNumber: m.fnNumber, stage: "normalize_documents", safeCode: "taxcom_no_receipts_after_filter", safeMessage: `Такском вернул смены/документы, но CLUB-OPS не распознал чеки продаж. ${agg}`.slice(0, 200) } });
+    }
+    if (failed || noReceiptsProblem) kktFailures++;
     const byKey = new Map(); for (const r of recs) byKey.set(r.dedupeKey, r); const keys = [...byKey.keys()]; found += keys.length; if (!keys.length) continue;
     const ex = await p.ofdReceiptImport.findMany({ where: { dedupeKey: { in: keys } }, select: { dedupeKey: true } }); const exSet = new Set(ex.map((e) => e.dedupeKey)); const fresh = keys.filter((k) => !exSet.has(k)).map((k) => byKey.get(k)); skipped += keys.length - fresh.length;
     if (fresh.length) await p.ofdReceiptImport.createMany({ data: fresh.map((r) => ({ connectionId, companyId, clubId: m.clubId, legalEntityId: legal, provider: "taxcom", fnNumber: r.fnNumber, shiftNumber: r.shiftNumber, fiscalDocumentNumber: r.fiscalDocumentNumber, fiscalSign: r.fiscalSign, operationType: r.operationType, receiptDate: r.receiptDate, totalKopeks: r.totalKopeks, cashKopeks: r.cashKopeks, electronicKopeks: r.electronicKopeks, dedupeKey: r.dedupeKey, source: "taxcom", syncRunId: run.id })) });
@@ -177,7 +192,7 @@ async function main() {
     const records = (arr || []).map((o) => ({ agreementNumber: s2(o.agreementNumber ?? o.AgreementNumber ?? o.contractNumber), companyName: s2(o.companyName ?? o.CompanyName ?? o.name), inn: s2(o.inn ?? o.Inn ?? o.INN), kpp: s2(o.kpp ?? o.Kpp ?? o.KPP) }));
     return { currentAgreementNumber, records };
   };
-  const parseShiftList = (data) => asArr(data, ["records", "Records", "Items", "items", "Shifts", "shifts", "ShiftList"]).map((o) => ({ shiftNumber: num2(o.Shift ?? o.ShiftNumber ?? o.shift ?? o.shiftNumber ?? o.Number ?? o.number), dateOpen: s2(o.OpenDate ?? o.openDate ?? o.openedAt ?? o.DateOpen ?? o.dateOpen), dateClose: s2(o.CloseDate ?? o.closeDate ?? o.closedAt ?? o.DateClose ?? o.dateClose) })).filter((s) => Number.isFinite(s.shiftNumber));
+  const parseShiftList = (data) => asArr(data, ["records", "Records", "Items", "items", "Shifts", "shifts", "ShiftList"]).map((o) => { const rc = o.receiptCount ?? o.ReceiptCount ?? o.receiptsCount ?? o.documentCount; return { shiftNumber: num2(o.shiftNumber ?? o.ShiftNumber ?? o.Shift ?? o.shift ?? o.Number ?? o.number), dateOpen: s2(o.openDateTime ?? o.OpenDateTime ?? o.OpenDate ?? o.openDate ?? o.openedAt ?? o.DateOpen ?? o.dateOpen), dateClose: s2(o.closeDateTime ?? o.CloseDateTime ?? o.CloseDate ?? o.closeDate ?? o.closedAt ?? o.DateClose ?? o.dateClose), receiptCount: rc != null ? num2(rc) : null }; }).filter((s) => Number.isFinite(s.shiftNumber) && s.shiftNumber > 0);
   const parseDocumentList = (data, ctx) => asArr(data, ["records", "Records", "Items", "items", "Documents", "documents", "DocumentList"]).map((o) => ({ fn: s2(o.FnFactoryNumber ?? o.fnFactoryNumber ?? o.Fn ?? o.fn) ?? (ctx?.fn ?? ""), shift: num2(o.ShiftNumber ?? o.shiftNumber ?? o.Shift ?? o.shift) || (ctx?.shift ?? 0), documentType: s2(o.documentType ?? o.DocumentType ?? o.Type ?? o.type), numberInShift: (o.numberInShift ?? o.NumberInShift) != null ? num2(o.numberInShift ?? o.NumberInShift) : null, dateTime: String(o.DateTime ?? o.dateTime ?? o.Date ?? o.date ?? ""), fd: num2(o.FdNumber ?? o.fdNumber ?? o.Fd ?? o.fd ?? o.FiscalDocumentNumber), fpd: s2(o.Fpd ?? o.fpd ?? o.FiscalSign), operationType: s2(o.accountingType ?? o.AccountingType ?? o.OperationType ?? o.operationType ?? o.Operation), totalKopeks: num2(o.Sum ?? o.sum ?? o.TotalKopeks ?? o.totalKopeks ?? o.Total), cashKopeks: num2(o.Cash ?? o.cash ?? o.CashKopeks ?? o.cashKopeks), electronicKopeks: num2(o.Electronic ?? o.electronic ?? o.ElectronicKopeks ?? o.electronicKopeks) }));
 
   // Client mirror with an INJECTED fetch that captures requests (method + query).
@@ -208,7 +223,7 @@ async function main() {
       captured, login: ensureSession,
       listAccounts: async () => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/AccountList", { method: "GET", withSession: true }); if (!r.ok) return r; return { ok: true, data: parseAccountList(r.data) }; },
       listShifts: async (fn, from, to) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/ShiftList", { method: "GET", withSession: true, query: { fn, begin: from, end: to, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseShiftList(r.data) }; },
-      listDocumentsByShift: async (fn, shift) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentList", { method: "GET", withSession: true, query: { fn, shift } }); if (!r.ok) return r; return { ok: true, data: parseDocumentList(r.data) }; },
+      listDocumentsByShift: async (fn, shift) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentList", { method: "GET", withSession: true, query: { fn, shift, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseDocumentList(r.data, { fn, shift }) }; },
     };
   }
   const okJson = (obj) => ({ ok: true, status: 200, async text() { return JSON.stringify(obj); } });
@@ -260,6 +275,13 @@ async function main() {
   // T4i: DocumentList parser reads records/Records/Items/items/documents/Documents.
   check("T4i DocumentList parser reads records/Records/Items/items/documents/Documents", ["records", "Records", "Items", "items", "documents", "Documents"].every((k) => parseDocumentList({ [k]: [{ Fn: "F", Fd: 1, OperationType: "Income", TotalKopeks: 100 }] }).length === 1));
 
+  // Load the REAL normalizeContractNumber from src/lib/ofd/contract.ts (used by the
+  // importer account guard below and the check-connection tests further down).
+  const contractSource = readFileSync(new URL("../src/lib/ofd/contract.ts", import.meta.url), "utf8");
+  const homoSrc = contractSource.match(/const HOMOGLYPHS[\s\S]*?\};/)[0].replace(": Record<string, string>", "");
+  const normBody = contractSource.match(/export function normalizeContractNumber\(v[^)]*\)\s*:\s*string\s*\{([\s\S]*?)\n\}/)[1];
+  const normalizeContract = new Function("v", homoSrc + "\n" + normBody);
+
   // ===== PRODUCTION DocumentList (records[] + documentType/accountingType) ====
   // Exact production response: top keys reportDate/counts/records, 15 documents:
   // 1× documentType '2' (open shift), 13× '3' Income, 1× '5' (close shift).
@@ -293,17 +315,46 @@ async function main() {
   const tSum = prodNorm.reduce((a, r) => a + r.totalKopeks, 0), tCash = prodNorm.reduce((a, r) => a + r.cashKopeks, 0), tEl = prodNorm.reduce((a, r) => a + r.electronicKopeks, 0);
   check("TD3 totals: income 4629900 / cash 1280000 / electronic 3349900 (sum=cash+electronic)", tSum === 4629900 && tCash === 1280000 && tEl === 3349900 && tCash + tEl === tSum);
   check("TD4 dedupeKey uses taxcom:<fn>:<fd>:<fpd>; empty fpd falls back to fn:fd", prodNorm[0].dedupeKey === `taxcom:${PROD_FN}:4935:767269098` && dedupe(PROD_FN, 4935, "") === `taxcom:${PROD_FN}:4935`);
-  // DB-backed import of the production shift → 13/13/0, then idempotent re-run.
+  // Production ShiftList (lowercase shiftNumber / openDateTime / receiptCount).
+  const prodShiftResponse = { reportDate: "2026-07-15", counts: { total: 1 }, records: [ { fnFactoryNumber: PROD_FN, shiftNumber: PROD_SHIFT, openDateTime: "2026-07-15T10:27:00", closeDateTime: "2026-07-15T21:47:00", receiptCount: 13 } ] };
+  const prodShifts = parseShiftList(prodShiftResponse);
+  check("TD-SHIFT parseShiftList reads lowercase shiftNumber(463) + receiptCount(13) + open/closeDateTime", prodShifts.length === 1 && prodShifts[0].shiftNumber === 463 && prodShifts[0].receiptCount === 13 && prodShifts[0].dateOpen === "2026-07-15T10:27:00" && prodShifts[0].dateClose === "2026-07-15T21:47:00");
+
+  // FULL PATH e2e: Login → AccountList → ShiftList → DocumentList → import, through
+  // the REAL client (makeClient) + a fake fetch. DocumentList returns the 15 docs
+  // ONLY when pn=1&ps=100 are present — proving the pagination fix end-to-end.
   const mapProd = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: PROD_FN, isActive: true, activeMappingKey: `taxcom:${PROD_FN}` } });
-  const prodClient = { listShifts: async () => ({ ok: true, data: [{ shiftNumber: PROD_SHIFT }] }), listDocumentsByShift: async (fn, shift) => ({ ok: true, data: parseDocumentList(prodDocResponse, { fn, shift }) }) };
-  const pr1 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: prodClient, mappings: [mapProd] });
-  check("TD5 first import: found 13 / imported 13 / skipped 0 (13 real receipts, service docs skipped)", pr1.found === 13 && pr1.imported === 13 && pr1.skipped === 0 && pr1.status === "success" && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: PROD_FN } })) === 13);
-  const pr2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: prodClient, mappings: [mapProd] });
+  const e2eCfg = { serverBaseUrl: "https://api-lk-ofd.taxcom.ru", authType: "login_password", contractNumber: "CD-25/455507", login: "L", password: "P", integratorId: "INT-1", integrationToken: null };
+  let docListUrl = null;
+  const e2eFetch = async (url) => {
+    if (url.includes("/Login")) return okJson({ sessionToken: "TKN" });
+    if (url.includes("/AccountList")) return okJson({ currentSession: "CD-25/455507", records: [{ agreementNumber: "CD-25/455507", companyName: "ООО СПОРТ ТЕХНОЛОГИИ", inn: "6679182168", kpp: "667901001" }] });
+    if (url.includes("/ShiftList")) return okJson(prodShiftResponse);
+    if (url.includes("/DocumentList")) { docListUrl = url; return (url.includes("pn=1") && url.includes("ps=100")) ? okJson(prodDocResponse) : okJson({ reportDate: "2026-07-15", counts: {}, records: [] }); }
+    return okJson({});
+  };
+  const e2eClient = makeClient(e2eCfg, e2eFetch);
+  const pr1 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: e2eClient, mappings: [mapProd], contractNumber: "CD-25/455507", normalizeContract });
+  check("TD5 FULL PATH import (Login→AccountList→ShiftList→DocumentList→normalize): found 13 / imported 13 / skipped 0", pr1.found === 13 && pr1.imported === 13 && pr1.skipped === 0 && pr1.status === "success" && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: PROD_FN } })) === 13);
+  check("TD5b DocumentList called with fn/shift + pn=1 & ps=100 (the pagination fix)", docListUrl && docListUrl.includes(`fn=${PROD_FN}`) && docListUrl.includes(`shift=${PROD_SHIFT}`) && docListUrl.includes("pn=1") && docListUrl.includes("ps=100"));
+  const pr2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: e2eClient, mappings: [mapProd], contractNumber: "CD-25/455507", normalizeContract });
   check("TD6 re-import idempotent: found 13 / imported 0 / skipped 13, no duplicates", pr2.found === 13 && pr2.imported === 0 && pr2.skipped === 13 && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: PROD_FN } })) === 13);
   const prodSummary = await p.ofdDailySalesSummary.findUnique({ where: { summaryKey: summaryKeyOf(CO, clubA.id, null, "taxcom", "2026-07-15") } });
   check("TD7 OfdDailySalesSummary recomputed: income 4629900 / cash 1280000 / electronic 3349900 / return 0 / net 4629900 / receiptCount 13", prodSummary.incomeTotalKopeks === 4629900 && prodSummary.incomeCashKopeks === 1280000 && prodSummary.incomeElectronicKopeks === 3349900 && prodSummary.returnTotalKopeks === 0 && prodSummary.netTotalKopeks === 4629900 && prodSummary.receiptCount === 13 && prodSummary.returnReceiptCount === 0);
   const noErr = await p.ofdSyncError.count({ where: { syncRunId: { in: [pr1.runId, pr2.runId] } } });
   check("TD8 no OfdSyncError for production import (service docs are NOT errors)", noErr === 0);
+  // Diagnostic: ShiftList declares receipts but DocumentList yields 0 (e.g. missing
+  // pn/ps → empty records) → NOT success 0/0/0; a safe aggregate error is recorded.
+  const diagClient = { listShifts: async () => ({ ok: true, data: [{ shiftNumber: PROD_SHIFT, receiptCount: 13 }] }), listDocumentsByShift: async () => ({ ok: true, data: [] }) };
+  const diagRun = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-16", dateTo: "2026-07-16", client: diagClient, mappings: [mapProd] });
+  check("TD-DIAG shiftReceiptCount>0 but 0 parsed → NOT success 0/0/0 (status failed, found 0)", diagRun.found === 0 && diagRun.status !== "success");
+  const diagErr = await p.ofdSyncError.findFirst({ where: { syncRunId: diagRun.runId, stage: "normalize_documents" } });
+  check("TD-DIAG2 taxcom_no_receipts_after_filter with SAFE aggregate message (fn ok, no raw JSON/braces/PII/token)", diagErr && diagErr.safeCode === "taxcom_no_receipts_after_filter" && diagErr.fnNumber === PROD_FN && diagErr.safeMessage.includes("shiftReceiptCount=13") && diagErr.safeMessage.includes("normalized=0") && diagErr.safeMessage.length <= 200 && !/[{}]|token|password|integrator|sessionToken|fpd|@/i.test(diagErr.safeMessage));
+  // A truly empty shift (no declared receipts, no documents) stays clean success 0/0/0.
+  const emptyClient = { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 999, receiptCount: 0 }] }), listDocumentsByShift: async () => ({ ok: true, data: [] }) };
+  const emptyRun = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-17", dateTo: "2026-07-17", client: emptyClient, mappings: [mapProd] });
+  const emptyErr = await p.ofdSyncError.count({ where: { syncRunId: emptyRun.runId } });
+  check("TD-DIAG3 truly empty shift (receiptCount 0, 0 docs) = success 0/0/0, no error", emptyRun.status === "success" && emptyRun.found === 0 && emptyErr === 0);
   const storedProd = await p.ofdReceiptImport.findFirst({ where: { companyId: CO, fnNumber: PROD_FN } });
   const storedKeys = Object.keys(storedProd);
   check("TD9 stored receipt has NO raw JSON / PII columns (no phone/email/name/items/rawJson)", !storedKeys.some((k) => /phone|email|name|buyer|customer|items|rawjson|rawresponse|fio/i.test(k)));
@@ -342,13 +393,7 @@ async function main() {
   check("T10 empty / mask secret keeps old ciphertext; a real value replaces it", keptEmpty === oldPw && keptMask === oldPw && decryptOfd(keptMask) === "s3cret-pass" && replaced !== oldPw && decryptOfd(replaced) === "newpass");
 
   // ===== Contract normalization + safe check-connection diagnostics ==========
-  // Load the REAL normalizeContractNumber from src/lib/ofd/contract.ts so these
-  // tests exercise production logic (homoglyph / zero-width folding included),
-  // not a drifting copy. Tricky inputs use \u escapes — never invisible literals.
-  const contractSource = readFileSync(new URL("../src/lib/ofd/contract.ts", import.meta.url), "utf8");
-  const homoSrc = contractSource.match(/const HOMOGLYPHS[\s\S]*?\};/)[0].replace(": Record<string, string>", "");
-  const normBody = contractSource.match(/export function normalizeContractNumber\(v[^)]*\)\s*:\s*string\s*\{([\s\S]*?)\n\}/)[1];
-  const normalizeContract = new Function("v", homoSrc + "\n" + normBody);
+  // normalizeContract was loaded from src/lib/ofd/contract.ts above (real source).
   // Mirror of isCurrentAccountValid (contract.ts): active ЛК must equal contract,
   // with a safe single-record fallback when currentSession is absent.
   const isCurrentAccountValid = (currentSession, contractNumber, available) => {
@@ -515,10 +560,10 @@ async function main() {
   check("T-S6 client exposes listAccounts via GET /API/v2/AccountList + parseAccountList (safe fields)", clientSrc.includes("accountList: \"/API/v2/AccountList\"") && clientSrc.includes("async listAccounts()") && clientSrc.includes('raw(PATHS.accountList, { method: "GET"') && clientSrc.includes("export function parseAccountList") && clientSrc.includes("agreementNumber") && clientSrc.includes("companyName"));
   check("T-S6b parseAccountList reads currentSession as STRING and object variants (currentSession/CurrentSession/current_session/current/currentAccount)", clientSrc.includes("const readSession = (v: unknown): string | null =>") && clientSrc.includes('if (typeof v === "string") return str(v)') && clientSrc.includes("readSession(d.currentSession)") && clientSrc.includes("readSession(d.CurrentSession)") && clientSrc.includes("readSession(d.current_session)") && clientSrc.includes("readSession(d.current)") && clientSrc.includes("readSession(d.currentAccount)"));
   // --- GET verb fix for ShiftList / DocumentList (real source) ---
-  const shiftCall = clientSrc.slice(clientSrc.indexOf("async listShifts("), clientSrc.indexOf("async listShifts(") + 420);
-  const docCall = clientSrc.slice(clientSrc.indexOf("async listDocumentsByShift("), clientSrc.indexOf("async listDocumentsByShift(") + 420);
+  const shiftCall = clientSrc.slice(clientSrc.indexOf("async listShifts("), clientSrc.indexOf("async listShifts(") + 700);
+  const docCall = clientSrc.slice(clientSrc.indexOf("async listDocumentsByShift("), clientSrc.indexOf("async listDocumentsByShift(") + 700);
   check("T-S7 ShiftList uses GET with fn/begin/end/pn/ps query (NOT POST, no body)", clientSrc.includes('shiftList: "/API/v2/ShiftList"') && /raw\(PATHS\.shiftList,\s*\{\s*method:\s*"GET"/.test(shiftCall) && shiftCall.includes("query: { fn: fnNumber, begin: dateFrom, end: dateTo, pn: 1, ps: 100 }") && !/method:\s*"POST"/.test(shiftCall) && !/\bbody:/.test(shiftCall));
-  check("T-S7b DocumentList uses GET with fn/shift query (NOT POST, no body)", clientSrc.includes('documentList: "/API/v2/DocumentList"') && /raw\(PATHS\.documentList,\s*\{\s*method:\s*"GET"/.test(docCall) && docCall.includes("query: { fn: fnNumber, shift: shiftNumber }") && !/method:\s*"POST"/.test(docCall) && !/\bbody:/.test(docCall));
+  check("T-S7b DocumentList uses GET with fn/shift/pn/ps query (NOT POST, no body)", clientSrc.includes('documentList: "/API/v2/DocumentList"') && /raw\(PATHS\.documentList,\s*\{\s*method:\s*"GET"/.test(docCall) && docCall.includes("query: { fn: fnNumber, shift: shiftNumber, pn: 1, ps: 100 }") && !/method:\s*"POST"/.test(docCall) && !/\bbody:/.test(docCall));
   // Static guard: NO POST anywhere for the shift/document list endpoints.
   check("T-S7c no POST for ShiftList/DocumentList anywhere in client.ts", !/PATHS\.shiftList[\s\S]{0,120}method:\s*"POST"/.test(clientSrc) && !/PATHS\.documentList[\s\S]{0,120}method:\s*"POST"/.test(clientSrc) && !/raw\(PATHS\.shiftList,\s*\{\s*Fn:/.test(clientSrc) && !/raw\(PATHS\.documentList,\s*\{\s*Fn:/.test(clientSrc));
   check("T-S7d raw() supports GET query via URLSearchParams, body only on POST", clientSrc.includes("new URLSearchParams()") && clientSrc.includes('method === "POST" ? { body: JSON.stringify(opts.body ?? {}) } : {}') && clientSrc.includes('headers: Record<string, string> = { Accept: "application/json" }'));
@@ -527,10 +572,16 @@ async function main() {
   // --- Production DocumentList parsing (real source) ---
   check("T-S8 parseDocumentList reads production fields (fdNumber/accountingType/sum/cash/electronic/documentType) + fn/shift from ctx", clientSrc.includes("o.FdNumber ?? o.fdNumber") && clientSrc.includes("o.accountingType ?? o.AccountingType") && clientSrc.includes("o.Sum ?? o.sum") && clientSrc.includes("o.Cash ?? o.cash") && clientSrc.includes("o.Electronic ?? o.electronic") && clientSrc.includes("o.documentType ?? o.DocumentType") && clientSrc.includes("o.FnFactoryNumber ?? o.fnFactoryNumber") && clientSrc.includes("ctx?.fn") && clientSrc.includes("ctx?.shift"));
   check("T-S8b listDocumentsByShift passes { fn, shift } context to parseDocumentList", clientSrc.includes("parseDocumentList(r.data, { fn: fnNumber, shift: shiftNumber })"));
-  check("T-S8c adapter skips service documentType 2/5 (isServiceDocumentType) before mapping accountingType", adapter.includes("export function isServiceDocumentType") && adapter.includes('t === "2" || t === "5"') && adapter.includes("if (isServiceDocumentType(doc.documentType)) return null") && adapter.includes("Math.trunc(doc.fd) <= 0"));
+  check("T-S8c adapter classifyDocument skips service documentType 2/5 before mapping accountingType; fd>0 required", adapter.includes("export function isServiceDocumentType") && adapter.includes('t === "2" || t === "5"') && adapter.includes('if (isServiceDocumentType(doc.documentType)) return { kind: "skip", reason: "service" }') && adapter.includes("Math.trunc(doc.fd) <= 0"));
   check("T-S8d dedupe key = taxcom:<fn>:<fd>:<fpd> (fpd optional) — service docs never persisted", adapter.includes("`taxcom:${fnNumber}:${fiscalDocumentNumber}:${fpd}`") && adapter.includes("`taxcom:${fnNumber}:${fiscalDocumentNumber}`"));
+  // --- Production ShiftList + DocumentList pagination fix (real source) ---
+  check("T-S9 DocumentList query sends fn + shift + pn:1 + ps:100 (pagination required to get records)", /query:\s*\{\s*fn:\s*fnNumber,\s*shift:\s*shiftNumber,\s*pn:\s*1,\s*ps:\s*100\s*\}/.test(clientSrc));
+  check("T-S9b parseShiftList reads lowercase shiftNumber first + receiptCount + openDateTime/closeDateTime", /shiftNumber:\s*num\(o\.shiftNumber\s*\?\?/.test(clientSrc) && clientSrc.includes("o.receiptCount ?? o.ReceiptCount") && clientSrc.includes("o.openDateTime ?? o.OpenDateTime") && clientSrc.includes("s.shiftNumber > 0"));
+  check("T-S9c importer uses normalizeDocumentsWithStats + 'documents but no receipts' diagnostic (taxcom_no_receipts_after_filter, stage normalize_documents)", importer.includes("normalizeDocumentsWithStats") && importer.includes('"taxcom_no_receipts_after_filter"') && importer.includes('"normalize_documents"') && importer.includes("stats.normalizedReceiptCount === 0 && (stats.shiftReceiptCount > 0 || stats.documentCount > 0)"));
+  check("T-S9d importer diagnostic logs SAFE aggregates only (counts, no raw JSON / no fiscal docs / no secrets / no PII)", importer.includes("console.warn(`[ofd] taxcom_no_receipts_after_filter") && importer.includes("shiftReceiptCount=") && !/console\.(log|warn|error)\([^)]*(JSON\.stringify|docs\.data|records|fpd|sessionToken|password)/i.test(importer));
+  check("T-S9e adapter exposes classifyDocument + normalizeDocumentsWithStats (safe skip aggregates, no doc content)", adapter.includes("export function classifyDocument") && adapter.includes("export function normalizeDocumentsWithStats") && adapter.includes("serviceSkipped") && adapter.includes("unsupportedSkipped") && adapter.includes("invalidSkipped") && !/phone|email|buyerName|rawJson/i.test(adapter));
   // Static guard: no buyer PII / raw fiscal JSON is parsed, stored or logged.
-  check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging in client.ts", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console.") && !/phone|email|buyerName|customer|rawJson/i.test(adapter));
+  check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging of raw data in client.ts/adapter", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console.") && !/phone|email|buyerName|customer|rawJson/i.test(adapter));
   check("7 save NO LONGER blocks on empty contractNumber (contract is non-blocking)", !actions.includes('authType === "login_password" && !contractNumber') && !actions.includes("Укажите номер договора Такском"));
   check("8 secret masks / empty fields never overwrite stored ciphertext (enc guards mask+empty)", actions.includes("MASK_RE") && actions.includes("!MASK_RE.test(v)") && actions.includes("enc(\"login\") !== undefined"));
   check("9 checkOfdConnection: match availableContracts + require currentSession valid via isCurrentAccountValid; success (+ currentSession) / wrong-account; never token", actions.includes("export async function checkOfdConnection") && actions.includes("client.login()") && actions.includes("client.listAccounts()") && actions.includes("availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)") && actions.includes("isCurrentAccountValid(currentSession, requestedContractNumber, availableContracts.map((cn) => cn.agreementNumber))") && actions.includes("if (currentAccountValid)") && actions.includes("Текущий ЛК Такском соответствует выбранному договору") && actions.includes("matchedContract, currentSession }") && actions.includes('code: "taxcom_wrong_current_account"') && actions.includes("не найден среди доступных ЛК") && !/return\s*\{[^}]*sessionToken/.test(actions));

@@ -5,7 +5,7 @@
 import { prisma } from "@/lib/prisma";
 import { decryptOfdSecret } from "@/lib/ofd/crypto";
 import { createTaxcomClient, type FetchImpl, type TaxcomClient } from "@/lib/ofd/taxcom/client";
-import { normalizeDocuments } from "@/lib/ofd/taxcom/adapter";
+import { normalizeDocumentsWithStats } from "@/lib/ofd/taxcom/adapter";
 import { isCurrentAccountValid } from "@/lib/ofd/contract";
 import type { NormalizedOfdReceipt, OfdConnectionConfig } from "@/lib/ofd/types";
 
@@ -124,6 +124,9 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     const legal = m.legalEntityId ?? connection.legalEntityId ?? null;
     const perKktReceipts: NormalizedOfdReceipt[] = [];
     let kktFailed = false;
+    // SAFE aggregate counters (no document content) for the "documents but no
+    // receipts" diagnostic — catches a broken parser/query silently importing 0.
+    const stats = { shiftCount: 0, shiftReceiptCount: 0, documentCount: 0, normalizedReceiptCount: 0, serviceSkipped: 0, unsupportedSkipped: 0, invalidSkipped: 0 };
 
     for (const day of days) {
       const shifts = await client.listShifts(m.fnNumber, day, day);
@@ -133,16 +136,34 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
         continue; // try other days; do not abandon the whole KKT
       }
       for (const shift of shifts.data) {
+        stats.shiftCount += 1;
+        stats.shiftReceiptCount += Math.max(0, shift.receiptCount ?? 0);
         const docs = await client.listDocumentsByShift(m.fnNumber, shift.shiftNumber);
         if (!docs.ok) {
           kktFailed = true;
           await recordSyncError(run.id, connection.id, connection.companyId, m.clubId, m.fnNumber, "list_documents", docs.safeCode, docs.safeMessage);
           continue;
         }
-        perKktReceipts.push(...normalizeDocuments(docs.data));
+        const norm = normalizeDocumentsWithStats(docs.data);
+        stats.documentCount += norm.documentCount;
+        stats.normalizedReceiptCount += norm.receipts.length;
+        stats.serviceSkipped += norm.serviceSkipped;
+        stats.unsupportedSkipped += norm.unsupportedSkipped;
+        stats.invalidSkipped += norm.invalidSkipped;
+        perKktReceipts.push(...norm.receipts);
       }
     }
-    if (kktFailed) kktFailures += 1;
+    // Diagnostic: Taxcom declared receipts (shift.receiptCount) or returned
+    // documents, but NONE became a sales receipt → a parser/filter problem, not a
+    // truly empty shift. Never blocks other KKTs; surfaces a SAFE aggregate reason.
+    const noReceiptsProblem = stats.normalizedReceiptCount === 0 && (stats.shiftReceiptCount > 0 || stats.documentCount > 0);
+    if (noReceiptsProblem) {
+      const agg = `shifts=${stats.shiftCount} shiftReceiptCount=${stats.shiftReceiptCount} documents=${stats.documentCount} normalized=0 service=${stats.serviceSkipped} unsupported=${stats.unsupportedSkipped} invalid=${stats.invalidSkipped}`;
+      await recordSyncError(run.id, connection.id, connection.companyId, m.clubId, m.fnNumber, "normalize_documents", "taxcom_no_receipts_after_filter", `Такском вернул смены/документы, но CLUB-OPS не распознал чеки продаж. ${agg}`);
+      // Safe, aggregate-only log (no raw JSON / no fiscal docs / no secrets / no PII).
+      console.warn(`[ofd] taxcom_no_receipts_after_filter fn=${m.fnNumber} ${agg}`);
+    }
+    if (kktFailed || noReceiptsProblem) kktFailures += 1;
 
     // Persist this KKT's receipts idempotently (dedupe within batch + vs DB).
     const byKey = new Map<string, NormalizedOfdReceipt>();

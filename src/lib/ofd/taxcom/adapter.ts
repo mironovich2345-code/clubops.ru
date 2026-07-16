@@ -34,40 +34,76 @@ function intKopeks(v: unknown): number {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
+/** Why a document was not turned into a receipt (for safe aggregate diagnostics). */
+export type DocSkipReason = "service" | "unsupported" | "invalid";
+export type DocClassification =
+  | { kind: "receipt"; receipt: NormalizedOfdReceipt }
+  | { kind: "skip"; reason: DocSkipReason };
+
 /**
- * Normalize one summary. Returns null when the doc must be skipped (non-income
- * type or an unparseable date). Never throws.
+ * Classify one summary into a receipt or a typed skip. Never throws.
+ * - service:     shift open/close (documentType 2/5) — not a sale.
+ * - unsupported: accountingType is not приход / возврат прихода.
+ * - invalid:     receipt-like but unparseable date / missing fn / non-positive fd.
  */
-export function normalizeDocument(doc: TaxcomDocumentSummary): NormalizedOfdReceipt | null {
-  // Skip shift open/close and other service documents (documentType 2/5). Not an
-  // error — an empty/service-only shift simply yields no receipts.
-  if (isServiceDocumentType(doc.documentType)) return null;
+export function classifyDocument(doc: TaxcomDocumentSummary): DocClassification {
+  if (isServiceDocumentType(doc.documentType)) return { kind: "skip", reason: "service" };
   const operationType = mapOperationType(doc.operationType);
-  if (!operationType) return null; // no приход/возврат прихода mapping → skip
+  if (!operationType) return { kind: "skip", reason: "unsupported" };
   const receiptDate = new Date(doc.dateTime);
-  if (Number.isNaN(receiptDate.getTime())) return null;
-  if (!doc.fn || !Number.isFinite(doc.fd) || Math.trunc(doc.fd) <= 0) return null;
+  if (Number.isNaN(receiptDate.getTime())) return { kind: "skip", reason: "invalid" };
+  if (!doc.fn || !Number.isFinite(doc.fd) || Math.trunc(doc.fd) <= 0) return { kind: "skip", reason: "invalid" };
 
   return {
-    fnNumber: String(doc.fn),
-    shiftNumber: Number.isFinite(doc.shift) ? Math.trunc(doc.shift) : null,
-    fiscalDocumentNumber: Math.trunc(doc.fd),
-    fiscalSign: doc.fpd && String(doc.fpd).trim() ? String(doc.fpd).trim() : null,
-    operationType,
-    receiptDate,
-    totalKopeks: intKopeks(doc.totalKopeks),
-    cashKopeks: intKopeks(doc.cashKopeks),
-    electronicKopeks: intKopeks(doc.electronicKopeks),
-    dedupeKey: buildDedupeKey(String(doc.fn), Math.trunc(doc.fd), doc.fpd),
+    kind: "receipt",
+    receipt: {
+      fnNumber: String(doc.fn),
+      shiftNumber: Number.isFinite(doc.shift) ? Math.trunc(doc.shift) : null,
+      fiscalDocumentNumber: Math.trunc(doc.fd),
+      fiscalSign: doc.fpd && String(doc.fpd).trim() ? String(doc.fpd).trim() : null,
+      operationType,
+      receiptDate,
+      totalKopeks: intKopeks(doc.totalKopeks),
+      cashKopeks: intKopeks(doc.cashKopeks),
+      electronicKopeks: intKopeks(doc.electronicKopeks),
+      dedupeKey: buildDedupeKey(String(doc.fn), Math.trunc(doc.fd), doc.fpd),
+    },
   };
+}
+
+/**
+ * Normalize one summary. Returns null when the doc must be skipped (service /
+ * unsupported / invalid). Never throws.
+ */
+export function normalizeDocument(doc: TaxcomDocumentSummary): NormalizedOfdReceipt | null {
+  const c = classifyDocument(doc);
+  return c.kind === "receipt" ? c.receipt : null;
+}
+
+/** Aggregate skip counters — SAFE (counts only, never any document content). */
+export type NormalizeStats = {
+  receipts: NormalizedOfdReceipt[];
+  documentCount: number;
+  serviceSkipped: number;
+  unsupportedSkipped: number;
+  invalidSkipped: number;
+};
+
+/** Normalize a whole DocumentList, returning receipts + safe skip aggregates. */
+export function normalizeDocumentsWithStats(docs: TaxcomDocumentSummary[]): NormalizeStats {
+  const receipts: NormalizedOfdReceipt[] = [];
+  let serviceSkipped = 0, unsupportedSkipped = 0, invalidSkipped = 0;
+  for (const d of docs) {
+    const c = classifyDocument(d);
+    if (c.kind === "receipt") receipts.push(c.receipt);
+    else if (c.reason === "service") serviceSkipped += 1;
+    else if (c.reason === "unsupported") unsupportedSkipped += 1;
+    else invalidSkipped += 1;
+  }
+  return { receipts, documentCount: docs.length, serviceSkipped, unsupportedSkipped, invalidSkipped };
 }
 
 /** Normalize a whole DocumentList, dropping skipped docs. */
 export function normalizeDocuments(docs: TaxcomDocumentSummary[]): NormalizedOfdReceipt[] {
-  const out: NormalizedOfdReceipt[] = [];
-  for (const d of docs) {
-    const n = normalizeDocument(d);
-    if (n) out.push(n);
-  }
-  return out;
+  return normalizeDocumentsWithStats(docs).receipts;
 }

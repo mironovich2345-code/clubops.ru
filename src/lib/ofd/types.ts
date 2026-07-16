@@ -53,6 +53,7 @@ export type TaxcomShift = {
   shiftNumber: number;
   dateOpen?: string | null;
   dateClose?: string | null;
+  receiptCount?: number | null; // Taxcom's declared receipts in the shift (diagnostics only)
 };
 
 /** One agreement (договор / ЛК) from AccountList — SAFE fields only. */
