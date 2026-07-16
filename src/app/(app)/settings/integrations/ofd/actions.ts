@@ -7,10 +7,10 @@ import { ofdEnabled, ofdSecretPresent } from "@/lib/ofd/config";
 import { encryptOfdSecret, decryptOfdSecret } from "@/lib/ofd/crypto";
 import { importTaxcomSalesForPeriod, type ImportMode } from "@/lib/ofd/importer";
 import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
-import { normalizeContractNumber, type OfdCheckDiagnostics, type OfdSafeContract } from "@/lib/ofd/contract";
+import { normalizeContractNumber, isCurrentAccountValid, type OfdCheckDiagnostics, type OfdSafeContract } from "@/lib/ofd/contract";
 import type { OfdConnectionConfig } from "@/lib/ofd/types";
 
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null };
 
 
 // Only owner / general director may administer OFD integrations.
@@ -160,10 +160,13 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
   const matchedContract = requestedContractNumber
     ? availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)
     : undefined;
-  const currentAccountMatches = requestedContractNumber ? normalizeContractNumber(accounts.data.currentAgreementNumber) === requestedNormalized : null;
-  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: availableContracts.length, contractMatched: requestedContractNumber ? Boolean(matchedContract) : null, currentAccountMatches } });
-
   const currentSession = accounts.data.currentAgreementNumber;
+  // The договор must be the ACTIVE ЛК (currentSession) — ShiftList/kktstat run on
+  // it. Accepts a string currentSession; safe single-record fallback when absent.
+  const currentAccountValid = requestedContractNumber
+    ? isCurrentAccountValid(currentSession, requestedContractNumber, availableContracts.map((cn) => cn.agreementNumber))
+    : null;
+  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: availableContracts.length, contractMatched: requestedContractNumber ? Boolean(matchedContract) : null, currentAccountValid } });
 
   // Step 3 — verify the expected договор is reachable.
   if (!requestedContractNumber) {
@@ -173,9 +176,8 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
     // The договор is listed, but ShiftList/kktstat operate on the CURRENT ЛК
     // (currentSession). If that differs, the target KKT resolves to 3103 "ККТ не
     // найдена" — so a listed-but-not-current договор is NOT a green success.
-    const currentMatches = normalizeContractNumber(currentSession) === requestedNormalized;
-    if (currentMatches) {
-      return { ok: true, notice: "Подключение успешно. Текущий ЛК Такском соответствует выбранному договору.", matchedContract };
+    if (currentAccountValid) {
+      return { ok: true, notice: "Подключение успешно. Текущий ЛК Такском соответствует выбранному договору.", matchedContract, currentSession };
     }
     return {
       ok: false,

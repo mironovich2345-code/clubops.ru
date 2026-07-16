@@ -255,9 +255,24 @@ export function extractToken(data: unknown): string | null {
  * counts and the raw payload are never surfaced. */
 export function parseAccountList(data: unknown): TaxcomAccountList {
   const d = (data as Record<string, unknown>) ?? {};
-  const session = (d.currentSession ?? d.CurrentSession ?? d.current ?? null) as Record<string, unknown> | null;
+  // currentSession is the ACTIVE ЛК. Taxcom returns it as a plain STRING
+  // ("CD-25/455507") in production, but it may also arrive as an object carrying
+  // agreementNumber. Accept both shapes across common key casings.
+  const readSession = (v: unknown): string | null => {
+    if (typeof v === "string") return str(v);
+    if (v && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      return str(o.agreementNumber ?? o.AgreementNumber ?? o.contractNumber ?? o.ContractNumber);
+    }
+    return null;
+  };
   const currentAgreementNumber =
-    str(session?.agreementNumber ?? session?.AgreementNumber) ??
+    readSession(d.currentSession) ??
+    readSession(d.CurrentSession) ??
+    readSession(d.current_session) ??
+    readSession(d.current) ??
+    readSession(d.currentAccount) ??
+    readSession(d.CurrentAccount) ??
     str(d.currentAgreementNumber ?? d.CurrentAgreementNumber);
   const records = asArray(data, "records", "Records", "Items", "items", "accounts", "Accounts").map((raw) => {
     const o = raw as Record<string, unknown>;

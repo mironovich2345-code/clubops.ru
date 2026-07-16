@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { decryptOfdSecret } from "@/lib/ofd/crypto";
 import { createTaxcomClient, type FetchImpl, type TaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeDocuments } from "@/lib/ofd/taxcom/adapter";
-import { normalizeContractNumber } from "@/lib/ofd/contract";
+import { isCurrentAccountValid } from "@/lib/ofd/contract";
 import type { NormalizedOfdReceipt, OfdConnectionConfig } from "@/lib/ofd/types";
 
 export type ImportMode = "manual_day" | "manual_period" | "backfill_july" | "daily";
@@ -106,7 +106,7 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
   // performs Login lazily.) A failed AccountList here is not conclusive → proceed.
   if (connection.contractNumber?.trim()) {
     const accounts = await client.listAccounts();
-    if (accounts.ok && normalizeContractNumber(accounts.data.currentAgreementNumber) !== normalizeContractNumber(connection.contractNumber)) {
+    if (accounts.ok && !isCurrentAccountValid(accounts.data.currentAgreementNumber, connection.contractNumber, accounts.data.records.map((r) => r.agreementNumber))) {
       await recordSyncError(run.id, connection.id, connection.companyId, null, null, "account_check", "taxcom_wrong_current_account", "Текущий ЛК Такском не соответствует выбранному договору.");
       await prisma.ofdSyncRun.update({
         where: { id: run.id },

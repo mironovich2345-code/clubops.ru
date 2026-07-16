@@ -54,3 +54,25 @@ export function normalizeContractNumber(v: string | null | undefined): string {
     .replace(/[Ѐ-ӿ]/g, (ch) => HOMOGLYPHS[ch] ?? ch)
     .toLowerCase();
 }
+
+/**
+ * Decide whether the ACTIVE Taxcom ЛК (currentSession) is the one the connection
+ * targets (contractNumber). True when they match (normalized). SAFE FALLBACK: if
+ * currentSession is absent but there is exactly ONE available договор and it
+ * matches the target, the current session can only be that ЛК — accept it. A
+ * PRESENT-but-different currentSession is never overridden (real wrong-account).
+ */
+export function isCurrentAccountValid(
+  currentSession: string | null | undefined,
+  contractNumber: string | null | undefined,
+  availableAgreementNumbers: (string | null | undefined)[],
+): boolean {
+  const want = normalizeContractNumber(contractNumber);
+  if (!want) return true; // no target договор → nothing to enforce
+  if (normalizeContractNumber(currentSession) === want) return true;
+  const hasCurrent = Boolean(currentSession && String(currentSession).trim());
+  if (!hasCurrent && availableAgreementNumbers.length === 1 && normalizeContractNumber(availableAgreementNumbers[0]) === want) {
+    return true;
+  }
+  return false;
+}

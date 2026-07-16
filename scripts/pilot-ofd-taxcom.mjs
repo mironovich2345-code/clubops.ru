@@ -48,7 +48,12 @@ async function runImport({ connectionId, companyId, dateFrom, dateTo, client, ma
   // current ЛК differs, fail fast with account_check — never touch ShiftList.
   if (contractNumber && contractNumber.trim() && normalizeContract && client.listAccounts) {
     const accounts = await client.listAccounts();
-    if (accounts.ok && normalizeContract(accounts.data.currentAgreementNumber) !== normalizeContract(contractNumber)) {
+    const want = accounts.ok ? normalizeContract(contractNumber) : null;
+    const cur = accounts.ok ? accounts.data.currentAgreementNumber : null;
+    const available = accounts.ok ? (accounts.data.records || []).map((r) => r.agreementNumber) : [];
+    const hasCurrent = Boolean(cur && String(cur).trim());
+    const valid = accounts.ok && (normalizeContract(cur) === want || (!hasCurrent && available.length === 1 && normalizeContract(available[0]) === want));
+    if (accounts.ok && !valid) {
       await p.ofdSyncError.create({ data: { syncRunId: run.id, connectionId, companyId, clubId: null, fnNumber: null, stage: "account_check", safeCode: "taxcom_wrong_current_account", safeMessage: "Текущий ЛК Такском не соответствует выбранному договору." } });
       await p.ofdSyncRun.update({ where: { id: run.id }, data: { status: "failed", finishedAt: new Date(), safeErrorCode: "taxcom_wrong_current_account", safeErrorMessage: "Текущий ЛК Такском не соответствует выбранному договору." } });
       return { runId: run.id, found: 0, imported: 0, skipped: 0, status: "failed", blocked: true };
@@ -161,10 +166,11 @@ async function main() {
   const num2 = (v) => { const n = typeof v === "number" ? v : Number(v); return Number.isFinite(n) ? n : 0; };
   const asArr = (data, keys) => { if (Array.isArray(data)) return data; const d = data ?? {}; for (const k of keys) if (Array.isArray(d[k])) return d[k]; return []; };
   const parseKktList = (data) => { const arr = Array.isArray(data) ? data : (data?.Infos ?? data?.infos ?? data?.Items ?? data?.Records ?? []); return (arr || []).map((o) => ({ fnNumber: String(o.Fn ?? o.fn ?? o.FnFactoryNumber ?? ""), kktRegNumber: o.KktRegNumber ?? null, kktName: o.KktName ?? null, outletName: o.OutletName ?? null })).filter((k) => k.fnNumber); };
+  const readSession = (v) => { if (typeof v === "string") return s2(v); if (v && typeof v === "object") return s2(v.agreementNumber ?? v.AgreementNumber ?? v.contractNumber ?? v.ContractNumber); return null; };
   const parseAccountList = (data) => {
     const d = data ?? {};
-    const session = d.currentSession ?? d.CurrentSession ?? d.current ?? null;
-    const currentAgreementNumber = s2(session?.agreementNumber ?? session?.AgreementNumber) ?? s2(d.currentAgreementNumber ?? d.CurrentAgreementNumber);
+    // currentSession may be a plain STRING or an object — accept both, all casings.
+    const currentAgreementNumber = readSession(d.currentSession) ?? readSession(d.CurrentSession) ?? readSession(d.current_session) ?? readSession(d.current) ?? readSession(d.currentAccount) ?? readSession(d.CurrentAccount) ?? s2(d.currentAgreementNumber ?? d.CurrentAgreementNumber);
     const arr = Array.isArray(d) ? d : (d.records ?? d.Records ?? d.Items ?? d.items ?? d.accounts ?? []);
     const records = (arr || []).map((o) => ({ agreementNumber: s2(o.agreementNumber ?? o.AgreementNumber ?? o.contractNumber), companyName: s2(o.companyName ?? o.CompanyName ?? o.name), inn: s2(o.inn ?? o.Inn ?? o.INN), kpp: s2(o.kpp ?? o.Kpp ?? o.KPP) }));
     return { currentAgreementNumber, records };
@@ -290,11 +296,21 @@ async function main() {
   const homoSrc = contractSource.match(/const HOMOGLYPHS[\s\S]*?\};/)[0].replace(": Record<string, string>", "");
   const normBody = contractSource.match(/export function normalizeContractNumber\(v[^)]*\)\s*:\s*string\s*\{([\s\S]*?)\n\}/)[1];
   const normalizeContract = new Function("v", homoSrc + "\n" + normBody);
+  // Mirror of isCurrentAccountValid (contract.ts): active ЛК must equal contract,
+  // with a safe single-record fallback when currentSession is absent.
+  const isCurrentAccountValid = (currentSession, contractNumber, available) => {
+    const want = normalizeContract(contractNumber);
+    if (!want) return true;
+    if (normalizeContract(currentSession) === want) return true;
+    const hasCurrent = Boolean(currentSession && String(currentSession).trim());
+    if (!hasCurrent && available.length === 1 && normalizeContract(available[0]) === want) return true;
+    return false;
+  };
 
   // Mirror of checkOfdConnection: build availableContracts ONCE, match the
   // requested договор against THAT SAME array, then require the CURRENT ЛК
-  // (currentSession) to equal the requested договор — a listed-but-not-current
-  // договор is a warning, not a green success (ShiftList runs on currentSession).
+  // (currentSession) to be valid — a listed-but-not-current договор is a warning,
+  // not a green success (ShiftList runs on currentSession).
   function buildCheckResult(cfg, accountData) {
     const availableContracts = accountData.records.map((r) => ({ agreementNumber: r.agreementNumber, companyName: r.companyName ?? null, inn: r.inn ?? null, kpp: r.kpp ?? null }));
     const requestedContractNumber = cfg.contractNumber && cfg.contractNumber.trim();
@@ -303,7 +319,7 @@ async function main() {
     const currentSession = accountData.currentAgreementNumber;
     if (!requestedContractNumber) return { ok: true, notice: "Подключение успешно. Укажите номер договора, если в логине несколько ЛК." };
     if (matchedContract) {
-      if (normalizeContract(currentSession) === requestedNormalized) return { ok: true, notice: "Подключение успешно. Текущий ЛК Такском соответствует выбранному договору.", matchedContract };
+      if (isCurrentAccountValid(currentSession, requestedContractNumber, availableContracts.map((cn) => cn.agreementNumber))) return { ok: true, notice: "Подключение успешно. Текущий ЛК Такском соответствует выбранному договору.", matchedContract, currentSession };
       return { ok: false, code: "taxcom_wrong_current_account", error: "Подключение выполнено, договор доступен, но текущий ЛК Такском отличается от выбранного договора. Импорт будет невозможен, пока API-сессия не будет открыта в нужном ЛК.", matchedContract, diagnostics: { currentSession, requestedContractNumber, matchedContract, availableContracts } };
     }
     return { ok: false, code: "contract_not_found", error: "Подключение выполнено, но номер договора не найден среди доступных ЛК Такском.", diagnostics: { currentSession, requestedContractNumber, availableContracts } };
@@ -375,6 +391,32 @@ async function main() {
   const okRun = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-11", dateTo: "2026-07-11", client: rightClient, mappings: [mapA], contractNumber: "CD-25/45507", normalizeContract });
   check("TW8 importer PROCEEDS to ShiftList when currentSession matches (no account_check block)", okRun.blocked === undefined && okRun.status === "success" && shiftCalledOk === true);
 
+  // ===== currentSession as a STRING — the EXACT production shape (CD-25/455507) =====
+  // Production AccountList returns currentSession: "CD-25/455507" (STRING), records_count=1.
+  const prodStringAcc = { sessionToken: "SECRET-SESSION-TOKEN", currentSession: "CD-25/455507", records: [{ agreementNumber: "CD-25/455507", companyName: "ООО СПОРТ ТЕХНОЛОГИИ", inn: "6679182168", kpp: "667901001", accessRights: "full" }] };
+  const parsedStr = parseAccountList(prodStringAcc);
+  check("TS1 parseAccountList reads currentSession STRING -> CD-25/455507 (not null — the bug)", parsedStr.currentAgreementNumber === "CD-25/455507" && parsedStr.records.length === 1 && parsedStr.records[0].agreementNumber === "CD-25/455507");
+  check("TS2 parseAccountList reads CurrentSession / current_session / current.* / currentAccount.* variants", parseAccountList({ CurrentSession: "CD-25/455507", records: [] }).currentAgreementNumber === "CD-25/455507" && parseAccountList({ current_session: "CD-25/455507", records: [] }).currentAgreementNumber === "CD-25/455507" && parseAccountList({ current: { agreementNumber: "CD-25/455507" }, records: [] }).currentAgreementNumber === "CD-25/455507" && parseAccountList({ current: { AgreementNumber: "CD-25/455507" }, records: [] }).currentAgreementNumber === "CD-25/455507" && parseAccountList({ currentAccount: { agreementNumber: "CD-25/455507" }, records: [] }).currentAgreementNumber === "CD-25/455507");
+  const prodCfg = { contractNumber: "CD-25/455507", login: "myLogin", password: "s3cret-pass", integratorId: "INT-1", integrationToken: null };
+  const prodCheck = buildCheckResult(prodCfg, parsedStr);
+  check("TS3 checkOfdConnection: string currentSession == contract CD-25/455507 -> success (текущий ЛК соответствует)", prodCheck.ok === true && prodCheck.code !== "taxcom_wrong_current_account" && prodCheck.notice.includes("Текущий ЛК Такском соответствует выбранному договору") && prodCheck.currentSession === "CD-25/455507" && prodCheck.matchedContract.agreementNumber === "CD-25/455507");
+  const prodCheckJson = JSON.stringify(prodCheck);
+  check("TS3b success result has NO secrets / SessionToken / accessRights / raw AccountList", !prodCheckJson.includes("myLogin") && !prodCheckJson.includes("s3cret-pass") && !prodCheckJson.includes("INT-1") && !/sessionToken/i.test(prodCheckJson) && !prodCheckJson.includes("SECRET-SESSION-TOKEN") && !prodCheckJson.includes("accessRights"));
+  // Safe fallback: currentSession absent, exactly 1 record matching contract -> valid.
+  const noCurrentAcc = parseAccountList({ records: [{ agreementNumber: "CD-25/455507", companyName: "ООО СПОРТ ТЕХНОЛОГИИ", inn: "6679182168", kpp: "667901001" }] });
+  check("TS4 fallback: no currentSession but exactly 1 matching договор -> valid (success), NOT wrong-account", noCurrentAcc.currentAgreementNumber === null && buildCheckResult(prodCfg, noCurrentAcc).ok === true && buildCheckResult(prodCfg, noCurrentAcc).code !== "taxcom_wrong_current_account");
+  check("TS4b fallback only fires for a SINGLE record; present-but-different currentSession never overridden", isCurrentAccountValid(null, "CD-25/455507", ["CD-25/455507"]) === true && isCurrentAccountValid(null, "CD-25/455507", ["CD-25/455507", "CD-22/000000"]) === false && isCurrentAccountValid("CD-22/368037", "CD-25/455507", ["CD-25/455507"]) === false);
+  // Importer: string currentSession that matches -> proceeds to ShiftList.
+  let shiftCalledStr = false;
+  const strClient = { listAccounts: async () => ({ ok: true, data: parseAccountList({ currentSession: "CD-25/455507", records: [{ agreementNumber: "CD-25/455507" }] }) }), listShifts: async () => { shiftCalledStr = true; return { ok: true, data: [] }; }, listDocumentsByShift: async () => ({ ok: true, data: [] }) };
+  const strRun = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-12", dateTo: "2026-07-12", client: strClient, mappings: [mapA], contractNumber: "CD-25/455507", normalizeContract });
+  check("TS5 importer: string currentSession == contract -> ShiftList CALLED (no account_check block)", strRun.blocked === undefined && strRun.status === "success" && shiftCalledStr === true);
+  // Importer fallback: no currentSession, 1 matching record -> proceeds to ShiftList.
+  let shiftCalledFb = false;
+  const fbClient = { listAccounts: async () => ({ ok: true, data: parseAccountList({ records: [{ agreementNumber: "CD-25/455507" }] }) }), listShifts: async () => { shiftCalledFb = true; return { ok: true, data: [] }; }, listDocumentsByShift: async () => ({ ok: true, data: [] }) };
+  const fbRun = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-13", dateTo: "2026-07-13", client: fbClient, mappings: [mapA], contractNumber: "CD-25/455507", normalizeContract });
+  check("TS6 importer fallback: no currentSession + single matching договор -> ShiftList CALLED", fbRun.blocked === undefined && fbRun.status === "success" && shiftCalledFb === true);
+
   await cleanup();
 
   // ===== Static assertions on the real source =====
@@ -418,6 +460,7 @@ async function main() {
   check("T-S4 classifyTaxcomError: 3103→kkt_not_found, 2108→auth_failed, 3106→no_kkt_found", clientSrc.includes("apiErrorCode === 3103") && clientSrc.includes("apiErrorCode === 2108") && clientSrc.includes("apiErrorCode === 3106") && clientSrc.includes('safeCode: "kkt_not_found"') && clientSrc.includes('safeCode: "no_kkt_found"'));
   check("T-S5 error body extracts only apiErrorCode/commonDescription (no raw body returned)", clientSrc.includes("extractApiError") && clientSrc.includes("commonDescription") && clientSrc.includes(".slice(0, 200)"));
   check("T-S6 client exposes listAccounts via GET /API/v2/AccountList + parseAccountList (safe fields)", clientSrc.includes("accountList: \"/API/v2/AccountList\"") && clientSrc.includes("async listAccounts()") && clientSrc.includes('raw(PATHS.accountList, { method: "GET"') && clientSrc.includes("export function parseAccountList") && clientSrc.includes("agreementNumber") && clientSrc.includes("companyName"));
+  check("T-S6b parseAccountList reads currentSession as STRING and object variants (currentSession/CurrentSession/current_session/current/currentAccount)", clientSrc.includes("const readSession = (v: unknown): string | null =>") && clientSrc.includes('if (typeof v === "string") return str(v)') && clientSrc.includes("readSession(d.currentSession)") && clientSrc.includes("readSession(d.CurrentSession)") && clientSrc.includes("readSession(d.current_session)") && clientSrc.includes("readSession(d.current)") && clientSrc.includes("readSession(d.currentAccount)"));
   // --- GET verb fix for ShiftList / DocumentList (real source) ---
   const shiftCall = clientSrc.slice(clientSrc.indexOf("async listShifts("), clientSrc.indexOf("async listShifts(") + 420);
   const docCall = clientSrc.slice(clientSrc.indexOf("async listDocumentsByShift("), clientSrc.indexOf("async listDocumentsByShift(") + 420);
@@ -432,17 +475,18 @@ async function main() {
   check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging in client.ts", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console."));
   check("7 save NO LONGER blocks on empty contractNumber (contract is non-blocking)", !actions.includes('authType === "login_password" && !contractNumber') && !actions.includes("Укажите номер договора Такском"));
   check("8 secret masks / empty fields never overwrite stored ciphertext (enc guards mask+empty)", actions.includes("MASK_RE") && actions.includes("!MASK_RE.test(v)") && actions.includes("enc(\"login\") !== undefined"));
-  check("9 checkOfdConnection: match availableContracts + require currentSession==contract; success notice / wrong-account warning; never token", actions.includes("export async function checkOfdConnection") && actions.includes("client.login()") && actions.includes("client.listAccounts()") && actions.includes("availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)") && actions.includes("normalizeContractNumber(currentSession) === requestedNormalized") && actions.includes("Текущий ЛК Такском соответствует выбранному договору") && actions.includes('code: "taxcom_wrong_current_account"') && actions.includes("не найден среди доступных ЛК") && !/return\s*\{[^}]*sessionToken/.test(actions));
+  check("9 checkOfdConnection: match availableContracts + require currentSession valid via isCurrentAccountValid; success (+ currentSession) / wrong-account; never token", actions.includes("export async function checkOfdConnection") && actions.includes("client.login()") && actions.includes("client.listAccounts()") && actions.includes("availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)") && actions.includes("isCurrentAccountValid(currentSession, requestedContractNumber, availableContracts.map((cn) => cn.agreementNumber))") && actions.includes("if (currentAccountValid)") && actions.includes("Текущий ЛК Такском соответствует выбранному договору") && actions.includes("matchedContract, currentSession }") && actions.includes('code: "taxcom_wrong_current_account"') && actions.includes("не найден среди доступных ЛК") && !/return\s*\{[^}]*sessionToken/.test(actions));
   check("9a match is by agreementNumber only — companyName/inn/kpp do NOT gate success", actions.includes("normalizeContractNumber(cn.agreementNumber) === requestedNormalized") && !/find\(\(cn\) => [^)]*companyName[^)]*===/.test(actions) && !/find\(\(cn\) => [^)]*inn[^)]*===/.test(actions));
   check("9b normalizeContractNumber (lib/ofd/contract) folds dashes + strips whitespace/zero-width + Cyrillic homoglyphs + NFKC; NOT a server export", contractSrc.includes("export function normalizeContractNumber") && contractSrc.includes("HOMOGLYPHS") && contractSrc.includes('.normalize("NFKC")') && contractSrc.includes(".toLowerCase()") && actions.includes('from "@/lib/ofd/contract"') && !actions.includes("export function normalizeContractNumber"));
   check("9c contract_not_found returns SAFE diagnostics (currentSession/requestedContractNumber/availableContracts, no secret accessors)", actions.includes('code: "contract_not_found"') && actions.includes("requestedContractNumber,") && actions.includes("availableContracts,") && actions.includes("const currentSession = accounts.data.currentAgreementNumber") && actions.includes("agreementNumber: r.agreementNumber") && actions.includes("companyName: r.companyName") && actions.includes("inn: r.inn") && actions.includes("kpp: r.kpp") && !/diagnostics:\s*\{[\s\S]{0,300}(cfg\.login|cfg\.password|c\.login|c\.password|integratorId|sessionToken|decryptOfdSecret|loginEncrypted)/i.test(actions));
   check("9d taxcom_wrong_current_account warning: договор доступен but current ЛК differs; safe diagnostics incl matchedContract; never blocks with token", actions.includes('code: "taxcom_wrong_current_account"') && actions.includes("текущий ЛК Такском отличается от выбранного договора") && /diagnostics:\s*\{\s*currentSession,\s*requestedContractNumber,\s*matchedContract,\s*availableContracts,/.test(actions) && !/taxcom_wrong_current_account[\s\S]{0,400}(login|password|integratorId|sessionToken)/i.test(actions));
-  check("9e importer AccountList guard: blocks before ShiftList on wrong current ЛК (account_check + taxcom_wrong_current_account, status failed)", importer.includes("client.listAccounts()") && importer.includes("normalizeContractNumber(accounts.data.currentAgreementNumber) !== normalizeContractNumber(connection.contractNumber)") && importer.includes('"account_check"') && importer.includes('"taxcom_wrong_current_account"') && importer.includes('status: "failed"') && /account_check[\s\S]*?listShifts\(/.test(importer) && importer.includes('from "@/lib/ofd/contract"'));
+  check("9e importer AccountList guard: blocks before ShiftList when current ЛК invalid (isCurrentAccountValid, account_check + taxcom_wrong_current_account, status failed)", importer.includes("client.listAccounts()") && importer.includes("!isCurrentAccountValid(accounts.data.currentAgreementNumber, connection.contractNumber, accounts.data.records.map((r) => r.agreementNumber))") && importer.includes('"account_check"') && importer.includes('"taxcom_wrong_current_account"') && importer.includes('status: "failed"') && /account_check[\s\S]*?listShifts\(/.test(importer) && importer.includes('from "@/lib/ofd/contract"'));
   check("9f importer account guard runs BEFORE the ShiftList loop (fail fast, no 3103)", importer.indexOf('"account_check"') < importer.indexOf("client.listShifts(") && importer.indexOf("client.listAccounts()") < importer.indexOf("for (const m of mappings)"));
+  check("9g isCurrentAccountValid (lib/ofd/contract): matches OR safe single-record fallback; present-but-different never overridden", contractSrc.includes("export function isCurrentAccountValid") && contractSrc.includes("normalizeContractNumber(currentSession) === want") && contractSrc.includes("availableAgreementNumbers.length === 1") && contractSrc.includes("!hasCurrent") && contractSrc.includes("normalizeContractNumber(availableAgreementNumbers[0]) === want"));
   check("kktstat parser reads Infos + FnFactoryNumber/Outlet fields", clientSrc.includes('asArray(data, "Infos", "infos"') && clientSrc.includes("FnFactoryNumber") && clientSrc.includes("OutletName"));
   check("UI: contract field non-blocking + new help + per-authType secrets + Проверить подключение", forms.includes("Номер договора Такском") && !/name="contractNumber"[^>]*required/.test(forms) && forms.includes("Сам Login Такском выполняется без этого поля") && forms.includes("isTokenAuth") && forms.includes("OfdCheckConnection") && forms.includes("Проверить подключение"));
   check("UI: contract_not_found panel shows Искомый договор / Текущий ЛК / Доступные договоры + availableContracts list", forms.includes('state.code === "contract_not_found"') && forms.includes("notFoundDiag.availableContracts") && forms.includes("items.map((a, i)") && forms.includes("Искомый договор") && forms.includes("Текущий ЛК Такском") && forms.includes("Доступные договоры Такском") && forms.includes("a.agreementNumber") && forms.includes("a.companyName") && forms.includes("a.inn") && forms.includes("a.kpp"));
-  check("UI: success shows green matchedContract line 'Договор найден: …' (agreementNumber/companyName/inn/kpp)", forms.includes("state.matchedContract") && forms.includes("Договор найден:") && forms.includes("contractLabel(matched)") && forms.includes("border-emerald") && forms.includes("a.kpp ? `КПП"));
+  check("UI: success shows green matchedContract line 'Договор найден: …' + 'Текущий ЛК Такском: <currentSession>'", forms.includes("state.matchedContract") && forms.includes("Договор найден:") && forms.includes("contractLabel(matched)") && forms.includes("border-emerald") && forms.includes("a.kpp ? `КПП") && forms.includes("state.currentSession") && /Текущий ЛК Такском[\s\S]{0,80}state\.currentSession/.test(forms));
   check("UI: taxcom_wrong_current_account shows yellow block (текущий ЛК / нужен текущий ЛК / отдельный пользователь + available list)", forms.includes('state.code === "taxcom_wrong_current_account"') && forms.includes("но текущий ЛК Такском:") && forms.includes("Для импорта нужен текущий ЛК:") && forms.includes("Создайте отдельного пользователя Такском") && forms.includes("wrongAccountDiag.availableContracts"));
 
   await cleanup();

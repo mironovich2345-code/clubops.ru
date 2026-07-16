@@ -5,7 +5,7 @@ import { useFormState, useFormStatus } from "react-dom";
 import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection } from "../actions";
 import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
 
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null };
 const initial: State = { ok: false };
 
 type ClubOpt = { id: string; name: string };
@@ -142,7 +142,10 @@ export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
       </form>
       {matched ? (
         <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-          <span className="font-medium">Договор найден:</span> <span className="font-mono">{contractLabel(matched)}</span>
+          <div><span className="font-medium">Договор найден:</span> <span className="font-mono">{contractLabel(matched)}</span></div>
+          {state.currentSession ? (
+            <div className="mt-0.5"><span className="font-medium">Текущий ЛК Такском:</span> <span className="font-mono">{state.currentSession}</span></div>
+          ) : null}
         </div>
       ) : null}
       {wrongAccountDiag ? (
