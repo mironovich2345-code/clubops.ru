@@ -19,12 +19,14 @@ const encryptOfd = (plain) => { const iv = randomBytes(12); const c = createCiph
 const decryptOfd = (payload) => { if (!payload) return null; const i = payload.indexOf(":"); if (i < 0 || payload.slice(0, i) !== "v1") return null; try { const buf = Buffer.from(payload.slice(i + 1), "base64"); const iv = buf.subarray(0, 12), tag = buf.subarray(12, 28), ct = buf.subarray(28); const d = createDecipheriv("aes-256-gcm", aesKey, iv); d.setAuthTag(tag); return Buffer.concat([d.update(ct), d.final()]).toString("utf8"); } catch { return null; } };
 
 // --- Mirror of lib/ofd/taxcom/adapter --------------------------------------
-const mapOp = (raw) => { const s = String(raw ?? "").trim().toLowerCase(); if (s === "income" || s === "приход") return "income"; if (s === "incomereturn" || s === "income_return" || s === "возврат прихода") return "income_return"; return null; };
+const mapOp = (raw) => { const s = String(raw ?? "").trim().toLowerCase(); if (s === "income" || s === "приход") return "income"; if (s === "incomereturn" || s === "income_return" || s === "return" || s === "возврат прихода") return "income_return"; return null; };
+const isServiceDocumentType = (t) => { const s = String(t ?? "").trim(); return s === "2" || s === "5"; };
 const dedupe = (fn, fd, fpd) => { const f = fpd && String(fpd).trim() ? String(fpd).trim() : null; return f ? `taxcom:${fn}:${fd}:${f}` : `taxcom:${fn}:${fd}`; };
 function normalize(doc) {
+  if (isServiceDocumentType(doc.documentType)) return null; // opening/closing shift
   const op = mapOp(doc.operationType); if (!op) return null;
   const date = new Date(doc.dateTime); if (Number.isNaN(date.getTime())) return null;
-  if (!doc.fn || !Number.isFinite(doc.fd)) return null;
+  if (!doc.fn || !Number.isFinite(doc.fd) || Math.trunc(doc.fd) <= 0) return null;
   return { fnNumber: String(doc.fn), shiftNumber: Number.isFinite(doc.shift) ? Math.trunc(doc.shift) : null, fiscalDocumentNumber: Math.trunc(doc.fd), fiscalSign: doc.fpd && String(doc.fpd).trim() ? String(doc.fpd).trim() : null, operationType: op, receiptDate: date, totalKopeks: Math.trunc(doc.totalKopeks || 0), cashKopeks: Math.trunc(doc.cashKopeks || 0), electronicKopeks: Math.trunc(doc.electronicKopeks || 0), dedupeKey: dedupe(String(doc.fn), Math.trunc(doc.fd), doc.fpd) };
 }
 
@@ -176,7 +178,7 @@ async function main() {
     return { currentAgreementNumber, records };
   };
   const parseShiftList = (data) => asArr(data, ["records", "Records", "Items", "items", "Shifts", "shifts", "ShiftList"]).map((o) => ({ shiftNumber: num2(o.Shift ?? o.ShiftNumber ?? o.shift ?? o.shiftNumber ?? o.Number ?? o.number), dateOpen: s2(o.OpenDate ?? o.openDate ?? o.openedAt ?? o.DateOpen ?? o.dateOpen), dateClose: s2(o.CloseDate ?? o.closeDate ?? o.closedAt ?? o.DateClose ?? o.dateClose) })).filter((s) => Number.isFinite(s.shiftNumber));
-  const parseDocumentList = (data) => asArr(data, ["records", "Records", "Items", "items", "Documents", "documents", "DocumentList"]).map((o) => ({ fn: String(o.Fn ?? o.fn ?? ""), shift: num2(o.Shift ?? o.shift), fd: num2(o.Fd ?? o.fd ?? o.FiscalDocumentNumber), fpd: s2(o.Fpd ?? o.fpd ?? o.FiscalSign), operationType: s2(o.OperationType ?? o.operationType ?? o.Operation), totalKopeks: num2(o.TotalKopeks ?? o.totalKopeks ?? o.Sum ?? o.Total) }));
+  const parseDocumentList = (data, ctx) => asArr(data, ["records", "Records", "Items", "items", "Documents", "documents", "DocumentList"]).map((o) => ({ fn: s2(o.FnFactoryNumber ?? o.fnFactoryNumber ?? o.Fn ?? o.fn) ?? (ctx?.fn ?? ""), shift: num2(o.ShiftNumber ?? o.shiftNumber ?? o.Shift ?? o.shift) || (ctx?.shift ?? 0), documentType: s2(o.documentType ?? o.DocumentType ?? o.Type ?? o.type), numberInShift: (o.numberInShift ?? o.NumberInShift) != null ? num2(o.numberInShift ?? o.NumberInShift) : null, dateTime: String(o.DateTime ?? o.dateTime ?? o.Date ?? o.date ?? ""), fd: num2(o.FdNumber ?? o.fdNumber ?? o.Fd ?? o.fd ?? o.FiscalDocumentNumber), fpd: s2(o.Fpd ?? o.fpd ?? o.FiscalSign), operationType: s2(o.accountingType ?? o.AccountingType ?? o.OperationType ?? o.operationType ?? o.Operation), totalKopeks: num2(o.Sum ?? o.sum ?? o.TotalKopeks ?? o.totalKopeks ?? o.Total), cashKopeks: num2(o.Cash ?? o.cash ?? o.CashKopeks ?? o.cashKopeks), electronicKopeks: num2(o.Electronic ?? o.electronic ?? o.ElectronicKopeks ?? o.electronicKopeks) }));
 
   // Client mirror with an INJECTED fetch that captures requests (method + query).
   function makeClient(cfg, fetchImpl) {
@@ -257,6 +259,57 @@ async function main() {
   check("T4h ShiftList parser reads records/Records/Items/items/shifts/Shifts", ["records", "Records", "Items", "items", "shifts", "Shifts"].every((k) => parseShiftList({ [k]: [{ shift: 5, openDate: "d1", closeDate: "d2" }] }).length === 1) && parseShiftList({ Shifts: [{ ShiftNumber: 9, OpenDate: "o", CloseDate: "c" }] })[0].shiftNumber === 9);
   // T4i: DocumentList parser reads records/Records/Items/items/documents/Documents.
   check("T4i DocumentList parser reads records/Records/Items/items/documents/Documents", ["records", "Records", "Items", "items", "documents", "Documents"].every((k) => parseDocumentList({ [k]: [{ Fn: "F", Fd: 1, OperationType: "Income", TotalKopeks: 100 }] }).length === 1));
+
+  // ===== PRODUCTION DocumentList (records[] + documentType/accountingType) ====
+  // Exact production response: top keys reportDate/counts/records, 15 documents:
+  // 1× documentType '2' (open shift), 13× '3' Income, 1× '5' (close shift).
+  const PROD_FN = "7381440800719861", PROD_SHIFT = 463;
+  const prodIncomeDocs = [
+    // 5 cash receipts → cash total 1 280 000 (first two match the real examples)
+    { fdNumber: 4935, fpd: "767269098", dateTime: "2026-07-15T10:27:00", sum: 200000, cash: 200000, electronic: 0 },
+    { fdNumber: 4936, fpd: "3784382549", dateTime: "2026-07-15T14:22:00", sum: 570000, cash: 570000, electronic: 0 },
+    { fdNumber: 4937, fpd: "111", dateTime: "2026-07-15T15:00:00", sum: 150000, cash: 150000, electronic: 0 },
+    { fdNumber: 4938, fpd: "112", dateTime: "2026-07-15T15:10:00", sum: 150000, cash: 150000, electronic: 0 },
+    { fdNumber: 4939, fpd: "113", dateTime: "2026-07-15T15:20:00", sum: 210000, cash: 210000, electronic: 0 },
+    // 8 electronic receipts → electronic total 3 349 900
+    { fdNumber: 4940, fpd: "114", dateTime: "2026-07-15T15:30:00", sum: 400000, cash: 0, electronic: 400000 },
+    { fdNumber: 4941, fpd: "115", dateTime: "2026-07-15T16:00:00", sum: 400000, cash: 0, electronic: 400000 },
+    { fdNumber: 4942, fpd: "116", dateTime: "2026-07-15T16:10:00", sum: 400000, cash: 0, electronic: 400000 },
+    { fdNumber: 4943, fpd: "117", dateTime: "2026-07-15T16:20:00", sum: 400000, cash: 0, electronic: 400000 },
+    { fdNumber: 4944, fpd: "118", dateTime: "2026-07-15T16:30:00", sum: 400000, cash: 0, electronic: 400000 },
+    { fdNumber: 4945, fpd: "119", dateTime: "2026-07-15T17:00:00", sum: 400000, cash: 0, electronic: 400000 },
+    { fdNumber: 4946, fpd: "120", dateTime: "2026-07-15T17:10:00", sum: 400000, cash: 0, electronic: 400000 },
+    { fdNumber: 4947, fpd: "121", dateTime: "2026-07-15T17:20:00", sum: 549900, cash: 0, electronic: 549900 },
+  ].map((d, i) => ({ documentType: "3", accountingType: "Income", numberInShift: i + 1, ...d }));
+  const prodDocResponse = { reportDate: "2026-07-15", counts: { total: 15 }, records: [
+    { documentType: "2", accountingType: null, dateTime: "2026-07-15T10:00:00", fdNumber: 4934, numberInShift: 0, fpd: "1571686074", sum: 0, cash: 0, electronic: 0 },
+    ...prodIncomeDocs,
+    { documentType: "5", accountingType: null, dateTime: "2026-07-15T21:47:00", fdNumber: 4948, numberInShift: 0, fpd: "780047272", sum: 0, cash: 0, electronic: 0 },
+  ] };
+  const prodParsed = parseDocumentList(prodDocResponse, { fn: PROD_FN, shift: PROD_SHIFT });
+  check("TD1 production DocumentList: 15 records parsed, fields fdNumber/fpd/dateTime/sum/cash/electronic read", prodParsed.length === 15 && prodParsed[1].fd === 4935 && prodParsed[1].fpd === "767269098" && prodParsed[1].dateTime === "2026-07-15T10:27:00" && prodParsed[1].totalKopeks === 200000 && prodParsed[1].cashKopeks === 200000 && prodParsed[1].electronicKopeks === 0 && prodParsed[1].operationType === "Income" && prodParsed[1].documentType === "3" && prodParsed[1].fn === PROD_FN && prodParsed[1].shift === PROD_SHIFT);
+  const prodNorm = prodParsed.map(normalize).filter(Boolean);
+  check("TD2 service documentType 2/5 skipped, only 13 Income receipts normalized", prodNorm.length === 13 && prodNorm.every((r) => r.operationType === "income") && normalize(prodParsed[0]) === null && normalize(prodParsed[14]) === null);
+  const tSum = prodNorm.reduce((a, r) => a + r.totalKopeks, 0), tCash = prodNorm.reduce((a, r) => a + r.cashKopeks, 0), tEl = prodNorm.reduce((a, r) => a + r.electronicKopeks, 0);
+  check("TD3 totals: income 4629900 / cash 1280000 / electronic 3349900 (sum=cash+electronic)", tSum === 4629900 && tCash === 1280000 && tEl === 3349900 && tCash + tEl === tSum);
+  check("TD4 dedupeKey uses taxcom:<fn>:<fd>:<fpd>; empty fpd falls back to fn:fd", prodNorm[0].dedupeKey === `taxcom:${PROD_FN}:4935:767269098` && dedupe(PROD_FN, 4935, "") === `taxcom:${PROD_FN}:4935`);
+  // DB-backed import of the production shift → 13/13/0, then idempotent re-run.
+  const mapProd = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: PROD_FN, isActive: true, activeMappingKey: `taxcom:${PROD_FN}` } });
+  const prodClient = { listShifts: async () => ({ ok: true, data: [{ shiftNumber: PROD_SHIFT }] }), listDocumentsByShift: async (fn, shift) => ({ ok: true, data: parseDocumentList(prodDocResponse, { fn, shift }) }) };
+  const pr1 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: prodClient, mappings: [mapProd] });
+  check("TD5 first import: found 13 / imported 13 / skipped 0 (13 real receipts, service docs skipped)", pr1.found === 13 && pr1.imported === 13 && pr1.skipped === 0 && pr1.status === "success" && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: PROD_FN } })) === 13);
+  const pr2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: prodClient, mappings: [mapProd] });
+  check("TD6 re-import idempotent: found 13 / imported 0 / skipped 13, no duplicates", pr2.found === 13 && pr2.imported === 0 && pr2.skipped === 13 && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: PROD_FN } })) === 13);
+  const prodSummary = await p.ofdDailySalesSummary.findUnique({ where: { summaryKey: summaryKeyOf(CO, clubA.id, null, "taxcom", "2026-07-15") } });
+  check("TD7 OfdDailySalesSummary recomputed: income 4629900 / cash 1280000 / electronic 3349900 / return 0 / net 4629900 / receiptCount 13", prodSummary.incomeTotalKopeks === 4629900 && prodSummary.incomeCashKopeks === 1280000 && prodSummary.incomeElectronicKopeks === 3349900 && prodSummary.returnTotalKopeks === 0 && prodSummary.netTotalKopeks === 4629900 && prodSummary.receiptCount === 13 && prodSummary.returnReceiptCount === 0);
+  const noErr = await p.ofdSyncError.count({ where: { syncRunId: { in: [pr1.runId, pr2.runId] } } });
+  check("TD8 no OfdSyncError for production import (service docs are NOT errors)", noErr === 0);
+  const storedProd = await p.ofdReceiptImport.findFirst({ where: { companyId: CO, fnNumber: PROD_FN } });
+  const storedKeys = Object.keys(storedProd);
+  check("TD9 stored receipt has NO raw JSON / PII columns (no phone/email/name/items/rawJson)", !storedKeys.some((k) => /phone|email|name|buyer|customer|items|rawjson|rawresponse|fio/i.test(k)));
+  const oldShapeDoc = { Fn: "FN-X", Shift: 7, Fd: 900, Fpd: "Z", DateTime: "2026-07-15T12:00:00.000Z", OperationType: "Income", Sum: 5000, Cash: 5000 };
+  check("TD10 old DocumentList shapes still parse (Fn/Fd/OperationType/Sum + Items key)", parseDocumentList({ Items: [oldShapeDoc] })[0].fd === 900 && normalize(parseDocumentList({ Items: [oldShapeDoc] })[0]).totalKopeks === 5000 && normalize(parseDocumentList({ Items: [oldShapeDoc] })[0]).operationType === "income");
+  await p.ofdCashRegisterMapping.delete({ where: { id: mapProd.id } });
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
   check("T6 3103 not auth_failed; 401 auth_failed; 403 forbidden", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
@@ -471,8 +524,13 @@ async function main() {
   check("T-S7d raw() supports GET query via URLSearchParams, body only on POST", clientSrc.includes("new URLSearchParams()") && clientSrc.includes('method === "POST" ? { body: JSON.stringify(opts.body ?? {}) } : {}') && clientSrc.includes('headers: Record<string, string> = { Accept: "application/json" }'));
   check("T-S7e classifyTaxcomError maps method-not-supported → taxcom_method_not_allowed", clientSrc.includes('does not support http method') && clientSrc.includes('safeCode: "taxcom_method_not_allowed"'));
   check("T-S7f ShiftList/DocumentList parsers read records/Records/Items/items + shifts/documents keys", /parseShiftList[\s\S]*?asArray\(data, "records", "Records", "Items", "items", "Shifts", "shifts"/.test(clientSrc) && /parseDocumentList[\s\S]*?asArray\(data, "records", "Records", "Items", "items", "Documents", "documents"/.test(clientSrc));
+  // --- Production DocumentList parsing (real source) ---
+  check("T-S8 parseDocumentList reads production fields (fdNumber/accountingType/sum/cash/electronic/documentType) + fn/shift from ctx", clientSrc.includes("o.FdNumber ?? o.fdNumber") && clientSrc.includes("o.accountingType ?? o.AccountingType") && clientSrc.includes("o.Sum ?? o.sum") && clientSrc.includes("o.Cash ?? o.cash") && clientSrc.includes("o.Electronic ?? o.electronic") && clientSrc.includes("o.documentType ?? o.DocumentType") && clientSrc.includes("o.FnFactoryNumber ?? o.fnFactoryNumber") && clientSrc.includes("ctx?.fn") && clientSrc.includes("ctx?.shift"));
+  check("T-S8b listDocumentsByShift passes { fn, shift } context to parseDocumentList", clientSrc.includes("parseDocumentList(r.data, { fn: fnNumber, shift: shiftNumber })"));
+  check("T-S8c adapter skips service documentType 2/5 (isServiceDocumentType) before mapping accountingType", adapter.includes("export function isServiceDocumentType") && adapter.includes('t === "2" || t === "5"') && adapter.includes("if (isServiceDocumentType(doc.documentType)) return null") && adapter.includes("Math.trunc(doc.fd) <= 0"));
+  check("T-S8d dedupe key = taxcom:<fn>:<fd>:<fpd> (fpd optional) — service docs never persisted", adapter.includes("`taxcom:${fnNumber}:${fiscalDocumentNumber}:${fpd}`") && adapter.includes("`taxcom:${fnNumber}:${fiscalDocumentNumber}`"));
   // Static guard: no buyer PII / raw fiscal JSON is parsed, stored or logged.
-  check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging in client.ts", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console."));
+  check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging in client.ts", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console.") && !/phone|email|buyerName|customer|rawJson/i.test(adapter));
   check("7 save NO LONGER blocks on empty contractNumber (contract is non-blocking)", !actions.includes('authType === "login_password" && !contractNumber') && !actions.includes("Укажите номер договора Такском"));
   check("8 secret masks / empty fields never overwrite stored ciphertext (enc guards mask+empty)", actions.includes("MASK_RE") && actions.includes("!MASK_RE.test(v)") && actions.includes("enc(\"login\") !== undefined"));
   check("9 checkOfdConnection: match availableContracts + require currentSession valid via isCurrentAccountValid; success (+ currentSession) / wrong-account; never token", actions.includes("export async function checkOfdConnection") && actions.includes("client.login()") && actions.includes("client.listAccounts()") && actions.includes("availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)") && actions.includes("isCurrentAccountValid(currentSession, requestedContractNumber, availableContracts.map((cn) => cn.agreementNumber))") && actions.includes("if (currentAccountValid)") && actions.includes("Текущий ЛК Такском соответствует выбранному договору") && actions.includes("matchedContract, currentSession }") && actions.includes('code: "taxcom_wrong_current_account"') && actions.includes("не найден среди доступных ЛК") && !/return\s*\{[^}]*sessionToken/.test(actions));

@@ -228,7 +228,8 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
       // Taxcom DocumentList is GET: /API/v2/DocumentList?fn=&shift=
       const r = await raw(PATHS.documentList, { method: "GET", withSession: true, query: { fn: fnNumber, shift: shiftNumber } });
       if (!r.ok) return r;
-      return { ok: true, data: parseDocumentList(r.data) };
+      // Production documents omit fn/shift per-record → fill from the request scope.
+      return { ok: true, data: parseDocumentList(r.data, { fn: fnNumber, shift: shiftNumber }) };
     },
     async getDocumentInfo(fnNumber, fd) {
       const s = await ensureSession();
@@ -329,22 +330,26 @@ export function parseShiftList(data: unknown): TaxcomShift[] {
   }).filter((s) => Number.isFinite(s.shiftNumber));
 }
 
-/** Parse a DocumentList payload into safe per-receipt summaries. */
-export function parseDocumentList(data: unknown): TaxcomDocumentSummary[] {
+/** Parse a DocumentList payload into safe per-receipt summaries.
+ * ctx carries the fn/shift the call was scoped to — Taxcom's production documents
+ * do NOT repeat fnFactoryNumber/shiftNumber in each record, so they are filled in
+ * from the request context when the record omits them. */
+export function parseDocumentList(data: unknown, ctx?: { fn?: string; shift?: number }): TaxcomDocumentSummary[] {
   // Taxcom may return the documents under any of these list keys.
   return asArray(data, "records", "Records", "Items", "items", "Documents", "documents", "DocumentList").map((raw) => {
     const o = raw as Record<string, unknown>;
     return {
-      fn: String(o.Fn ?? o.fn ?? ""),
-      shift: num(o.Shift ?? o.shift),
-      type: str(o.Type ?? o.type),
+      fn: str(o.FnFactoryNumber ?? o.fnFactoryNumber ?? o.Fn ?? o.fn) ?? ctx?.fn ?? "",
+      shift: num(o.ShiftNumber ?? o.shiftNumber ?? o.Shift ?? o.shift) || (ctx?.shift ?? 0),
+      documentType: str(o.documentType ?? o.DocumentType ?? o.Type ?? o.type),
+      numberInShift: (o.numberInShift ?? o.NumberInShift) != null ? num(o.numberInShift ?? o.NumberInShift) : null,
       dateTime: String(o.DateTime ?? o.dateTime ?? o.Date ?? o.date ?? ""),
-      fd: num(o.Fd ?? o.fd ?? o.FiscalDocumentNumber),
+      fd: num(o.FdNumber ?? o.fdNumber ?? o.Fd ?? o.fd ?? o.FiscalDocumentNumber),
       fpd: str(o.Fpd ?? o.fpd ?? o.FiscalSign),
-      operationType: str(o.OperationType ?? o.operationType ?? o.Operation),
-      totalKopeks: num(o.TotalKopeks ?? o.totalKopeks ?? o.Sum ?? o.Total),
-      cashKopeks: num(o.CashKopeks ?? o.cashKopeks ?? o.Cash),
-      electronicKopeks: num(o.ElectronicKopeks ?? o.electronicKopeks ?? o.Electronic),
+      operationType: str(o.accountingType ?? o.AccountingType ?? o.OperationType ?? o.operationType ?? o.Operation),
+      totalKopeks: num(o.Sum ?? o.sum ?? o.TotalKopeks ?? o.totalKopeks ?? o.Total),
+      cashKopeks: num(o.Cash ?? o.cash ?? o.CashKopeks ?? o.cashKopeks),
+      electronicKopeks: num(o.Electronic ?? o.electronic ?? o.ElectronicKopeks ?? o.electronicKopeks),
     };
   });
 }

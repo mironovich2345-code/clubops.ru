@@ -3,12 +3,22 @@
 // other document type (expense, correction, …) is skipped in the MVP.
 import type { NormalizedOfdReceipt, OfdOperationType, TaxcomDocumentSummary } from "@/lib/ofd/types";
 
-/** Map a Taxcom operation-type string to our enum, or null to SKIP the doc. */
+/** Map a Taxcom accountingType string to our enum, or null to SKIP the doc.
+ * Only приход / возврат прихода are sales; expense / correction are skipped. */
 export function mapOperationType(raw: string | null | undefined): OfdOperationType | null {
   const s = String(raw ?? "").trim().toLowerCase();
   if (s === "income" || s === "приход") return "income";
-  if (s === "incomereturn" || s === "income_return" || s === "возврат прихода") return "income_return";
-  return null; // expense / expenseReturn / correction / unknown → skipped
+  if (s === "incomereturn" || s === "income_return" || s === "return" || s === "возврат прихода") return "income_return";
+  return null; // expense / expenseReturn / correction / none / unknown → skipped
+}
+
+/** Taxcom ФФД documentType: "2" opening shift, "5" closing shift and other
+ * non-receipt service docs are NOT sales — skipped (never an import error). Only
+ * "3" (receipt) can carry a sale; when documentType is absent we fall back to the
+ * accountingType mapping alone. */
+export function isServiceDocumentType(documentType: string | null | undefined): boolean {
+  const t = String(documentType ?? "").trim();
+  return t === "2" || t === "5";
 }
 
 /** Stable dedupe key. Prefer the fiscal sign (ФПД); fall back to fn+fd. */
@@ -29,11 +39,14 @@ function intKopeks(v: unknown): number {
  * type or an unparseable date). Never throws.
  */
 export function normalizeDocument(doc: TaxcomDocumentSummary): NormalizedOfdReceipt | null {
+  // Skip shift open/close and other service documents (documentType 2/5). Not an
+  // error — an empty/service-only shift simply yields no receipts.
+  if (isServiceDocumentType(doc.documentType)) return null;
   const operationType = mapOperationType(doc.operationType);
-  if (!operationType) return null;
+  if (!operationType) return null; // no приход/возврат прихода mapping → skip
   const receiptDate = new Date(doc.dateTime);
   if (Number.isNaN(receiptDate.getTime())) return null;
-  if (!doc.fn || !Number.isFinite(doc.fd)) return null;
+  if (!doc.fn || !Number.isFinite(doc.fd) || Math.trunc(doc.fd) <= 0) return null;
 
   return {
     fnNumber: String(doc.fn),

@@ -74,10 +74,12 @@ export type TaxcomDocumentSummary = {
   fn: string;
   shift: number;
   type?: string | null;
+  documentType?: string | null; // Taxcom ФФД тип: "2" open shift, "3" receipt, "5" close shift
+  numberInShift?: number | null;
   dateTime: string; // ISO or Taxcom date string
-  fd: number; // fiscal document number
+  fd: number; // fiscal document number (fdNumber)
   fpd?: string | null; // fiscal sign (ФПД)
-  operationType?: string | null; // "Income" | "IncomeReturn" | …
+  operationType?: string | null; // accountingType: "Income" | "IncomeReturn" | …
   totalKopeks: number;
   cashKopeks: number;
   electronicKopeks: number;
