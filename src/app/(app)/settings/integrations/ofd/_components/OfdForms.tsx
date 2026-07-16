@@ -103,10 +103,34 @@ function contractLabel(a: OfdSafeContract): string {
   return [a.agreementNumber ?? "—", a.companyName, a.inn ? `ИНН ${a.inn}` : null, a.kpp ? `КПП ${a.kpp}` : null].filter(Boolean).join(" · ");
 }
 
+function ContractList({ items }: { items: OfdSafeContract[] }) {
+  return (
+    <>
+      <div className="mt-2 font-medium">Доступные договоры Такском:</div>
+      {items.length === 0 ? (
+        <div className="mt-1 text-amber-800">Такском не вернул ни одного договора.</div>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {items.map((a, i) => (
+            <li key={i} className="rounded border border-amber-200 bg-white/60 px-2 py-1">
+              <span className="font-mono">{a.agreementNumber ?? "—"}</span>
+              {a.companyName ? <> · {a.companyName}</> : null}
+              {a.inn ? <> · ИНН {a.inn}</> : null}
+              {a.kpp ? <> · КПП {a.kpp}</> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
   const [state, action] = useFormState(checkOfdConnection, initial);
-  const diag = state.code === "contract_not_found" ? state.diagnostics : undefined;
+  const notFoundDiag = state.code === "contract_not_found" ? state.diagnostics : undefined;
+  const wrongAccountDiag = state.code === "taxcom_wrong_current_account" ? state.diagnostics : undefined;
   const matched = state.ok ? state.matchedContract : undefined;
+  const wantedName = wrongAccountDiag?.matchedContract?.companyName;
   return (
     <div>
       <form action={action} className="flex flex-wrap items-center gap-3">
@@ -121,25 +145,22 @@ export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
           <span className="font-medium">Договор найден:</span> <span className="font-mono">{contractLabel(matched)}</span>
         </div>
       ) : null}
-      {diag ? (
+      {wrongAccountDiag ? (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <div>
+            Договор доступен, но текущий ЛК Такском: <span className="font-mono">{wrongAccountDiag.currentSession ?? "—"}</span>. Для импорта нужен текущий ЛК: <span className="font-mono">{wrongAccountDiag.requestedContractNumber}</span>.
+          </div>
+          <div className="mt-1">
+            Создайте отдельного пользователя Такском для {wantedName ? `«${wantedName}»` : "нужного договора"} или уточните у Такском, как выбрать ЛК для API.
+          </div>
+          <ContractList items={wrongAccountDiag.availableContracts} />
+        </div>
+      ) : null}
+      {notFoundDiag ? (
         <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <div><span className="font-medium">Искомый договор:</span> <span className="font-mono">{diag.requestedContractNumber}</span></div>
-          <div className="mt-0.5"><span className="font-medium">Текущий ЛК Такском:</span> {diag.currentSession ?? "—"}</div>
-          <div className="mt-2 font-medium">Доступные договоры Такском:</div>
-          {diag.availableContracts.length === 0 ? (
-            <div className="mt-1 text-amber-800">Такском не вернул ни одного договора.</div>
-          ) : (
-            <ul className="mt-1 space-y-1">
-              {diag.availableContracts.map((a, i) => (
-                <li key={i} className="rounded border border-amber-200 bg-white/60 px-2 py-1">
-                  <span className="font-mono">{a.agreementNumber ?? "—"}</span>
-                  {a.companyName ? <> · {a.companyName}</> : null}
-                  {a.inn ? <> · ИНН {a.inn}</> : null}
-                  {a.kpp ? <> · КПП {a.kpp}</> : null}
-                </li>
-              ))}
-            </ul>
-          )}
+          <div><span className="font-medium">Искомый договор:</span> <span className="font-mono">{notFoundDiag.requestedContractNumber}</span></div>
+          <div className="mt-0.5"><span className="font-medium">Текущий ЛК Такском:</span> {notFoundDiag.currentSession ?? "—"}</div>
+          <ContractList items={notFoundDiag.availableContracts} />
         </div>
       ) : null}
     </div>

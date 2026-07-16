@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { decryptOfdSecret } from "@/lib/ofd/crypto";
 import { createTaxcomClient, type FetchImpl, type TaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeDocuments } from "@/lib/ofd/taxcom/adapter";
+import { normalizeContractNumber } from "@/lib/ofd/contract";
 import type { NormalizedOfdReceipt, OfdConnectionConfig } from "@/lib/ofd/types";
 
 export type ImportMode = "manual_day" | "manual_period" | "backfill_july" | "daily";
@@ -97,6 +98,23 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
 
   const client = (params.clientFactory ?? createTaxcomClient)(cfg, { fetchImpl: params.fetchImpl });
   const days = eachDay(dateFrom, dateTo);
+
+  // Account guard: ShiftList/kktstat operate on the CURRENT ЛК (currentSession).
+  // If the connection targets a specific договор but the API session is open in a
+  // DIFFERENT ЛК, the target KKT resolves to 3103 "ККТ не найдена". Fail fast with
+  // a clear reason instead of misreporting a per-KKT "not found". (AccountList also
+  // performs Login lazily.) A failed AccountList here is not conclusive → proceed.
+  if (connection.contractNumber?.trim()) {
+    const accounts = await client.listAccounts();
+    if (accounts.ok && normalizeContractNumber(accounts.data.currentAgreementNumber) !== normalizeContractNumber(connection.contractNumber)) {
+      await recordSyncError(run.id, connection.id, connection.companyId, null, null, "account_check", "taxcom_wrong_current_account", "Текущий ЛК Такском не соответствует выбранному договору.");
+      await prisma.ofdSyncRun.update({
+        where: { id: run.id },
+        data: { status: "failed", finishedAt: new Date(), safeErrorCode: "taxcom_wrong_current_account", safeErrorMessage: "Текущий ЛК Такском не соответствует выбранному договору." },
+      });
+      return { ok: false, safeCode: "taxcom_wrong_current_account", safeMessage: "Текущий ЛК Такском не соответствует выбранному договору.", syncRunId: run.id };
+    }
+  }
 
   let found = 0, imported = 0, skipped = 0, kktFailures = 0;
   let incomeTotal = 0, returnTotal = 0;

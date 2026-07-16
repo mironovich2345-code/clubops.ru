@@ -11,6 +11,7 @@ export type OfdSafeCode =
   | "shift_not_found"
   | "contract_not_found"
   | "taxcom_method_not_allowed"
+  | "taxcom_wrong_current_account"
   | "network"
   | "timeout"
   | "parse_error"

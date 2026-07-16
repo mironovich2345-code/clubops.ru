@@ -160,14 +160,35 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
   const matchedContract = requestedContractNumber
     ? availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)
     : undefined;
-  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: availableContracts.length, contractMatched: requestedContractNumber ? Boolean(matchedContract) : null } });
+  const currentAccountMatches = requestedContractNumber ? normalizeContractNumber(accounts.data.currentAgreementNumber) === requestedNormalized : null;
+  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: availableContracts.length, contractMatched: requestedContractNumber ? Boolean(matchedContract) : null, currentAccountMatches } });
+
+  const currentSession = accounts.data.currentAgreementNumber;
 
   // Step 3 — verify the expected договор is reachable.
   if (!requestedContractNumber) {
     return { ok: true, notice: "Подключение успешно. Укажите номер договора, если в логине несколько ЛК." };
   }
   if (matchedContract) {
-    return { ok: true, notice: "Подключение успешно. Договор найден в доступных ЛК Такском.", matchedContract };
+    // The договор is listed, but ShiftList/kktstat operate on the CURRENT ЛК
+    // (currentSession). If that differs, the target KKT resolves to 3103 "ККТ не
+    // найдена" — so a listed-but-not-current договор is NOT a green success.
+    const currentMatches = normalizeContractNumber(currentSession) === requestedNormalized;
+    if (currentMatches) {
+      return { ok: true, notice: "Подключение успешно. Текущий ЛК Такском соответствует выбранному договору.", matchedContract };
+    }
+    return {
+      ok: false,
+      code: "taxcom_wrong_current_account",
+      error: "Подключение выполнено, договор доступен, но текущий ЛК Такском отличается от выбранного договора. Импорт будет невозможен, пока API-сессия не будет открыта в нужном ЛК.",
+      matchedContract,
+      diagnostics: {
+        currentSession,
+        requestedContractNumber,
+        matchedContract,
+        availableContracts,
+      },
+    };
   }
   // Not found — a WARNING, not a blocking failure. Login itself works. Return
   // SAFE diagnostics (никаких секретов / raw AccountList) so the admin can see
@@ -177,7 +198,7 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
     code: "contract_not_found",
     error: "Подключение выполнено, но номер договора не найден среди доступных ЛК Такском.",
     diagnostics: {
-      currentSession: accounts.data.currentAgreementNumber,
+      currentSession,
       requestedContractNumber,
       availableContracts,
     },

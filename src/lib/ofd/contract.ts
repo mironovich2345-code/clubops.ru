@@ -18,6 +18,7 @@ export type OfdCheckDiagnostics = {
   currentSession: string | null;
   requestedContractNumber: string;
   availableContracts: OfdSafeContract[];
+  matchedContract?: OfdSafeContract | null;
 };
 
 // Cyrillic letters that are visually identical to Latin ones. A договор number
