@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection } from "../actions";
-import type { OfdCheckDiagnostics } from "@/lib/ofd/contract";
+import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
 
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract };
 const initial: State = { ok: false };
 
 type ClubOpt = { id: string; name: string };
@@ -99,9 +99,14 @@ export function OfdConnectionForm({
   );
 }
 
+function contractLabel(a: OfdSafeContract): string {
+  return [a.agreementNumber ?? "—", a.companyName, a.inn ? `ИНН ${a.inn}` : null, a.kpp ? `КПП ${a.kpp}` : null].filter(Boolean).join(" · ");
+}
+
 export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
   const [state, action] = useFormState(checkOfdConnection, initial);
   const diag = state.code === "contract_not_found" ? state.diagnostics : undefined;
+  const matched = state.ok ? state.matchedContract : undefined;
   return (
     <div>
       <form action={action} className="flex flex-wrap items-center gap-3">
@@ -111,6 +116,11 @@ export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
         </button>
         <Msg s={state} />
       </form>
+      {matched ? (
+        <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          <span className="font-medium">Договор найден:</span> <span className="font-mono">{contractLabel(matched)}</span>
+        </div>
+      ) : null}
       {diag ? (
         <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <div><span className="font-medium">Искомый договор:</span> <span className="font-mono">{diag.requestedContractNumber}</span></div>

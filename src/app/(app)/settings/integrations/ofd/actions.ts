@@ -7,11 +7,10 @@ import { ofdEnabled, ofdSecretPresent } from "@/lib/ofd/config";
 import { encryptOfdSecret, decryptOfdSecret } from "@/lib/ofd/crypto";
 import { importTaxcomSalesForPeriod, type ImportMode } from "@/lib/ofd/importer";
 import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
-import { normalizeContractNumber, type OfdCheckDiagnostics } from "@/lib/ofd/contract";
+import { normalizeContractNumber, type OfdCheckDiagnostics, type OfdSafeContract } from "@/lib/ofd/contract";
 import type { OfdConnectionConfig } from "@/lib/ofd/types";
 
-
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract };
 
 
 // Only owner / general director may administer OFD integrations.
@@ -145,19 +144,30 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
     return { ok: true, notice: "Вход выполнен, но список ЛК получить не удалось. Проверьте права доступа пользователя в Такском." };
   }
 
-  const want = c.contractNumber?.trim();
-  const records = accounts.data.records;
-  const wantNorm = normalizeContractNumber(want);
-  const match = want ? records.find((r) => normalizeContractNumber(r.agreementNumber) === wantNorm) : undefined;
-  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: records.length, contractMatched: want ? Boolean(match) : null } });
+  // Build the SINGLE safe availableContracts array ONCE — this is exactly what
+  // the UI lists AND what the match runs against, so the two can never diverge.
+  const availableContracts = accounts.data.records.map((r) => ({
+    agreementNumber: r.agreementNumber,
+    companyName: r.companyName ?? null,
+    inn: r.inn ?? null,
+    kpp: r.kpp ?? null,
+  }));
 
-  // Step 3 — verify the expected договор is reachable (normalized comparison:
-  // dashes / non-breaking spaces / case never cause a false "not found").
-  if (!want) {
+  const requestedContractNumber = c.contractNumber?.trim();
+  const requestedNormalized = normalizeContractNumber(requestedContractNumber);
+  // Match ONLY by agreementNumber, normalized on both sides (dashes / spaces /
+  // case / zero-width / homoglyphs). companyName/inn/kpp never gate success.
+  const matchedContract = requestedContractNumber
+    ? availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)
+    : undefined;
+  await recordAudit({ action: "ofd.connection_checked", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, stage: "account_list", recordsCount: availableContracts.length, contractMatched: requestedContractNumber ? Boolean(matchedContract) : null } });
+
+  // Step 3 — verify the expected договор is reachable.
+  if (!requestedContractNumber) {
     return { ok: true, notice: "Подключение успешно. Укажите номер договора, если в логине несколько ЛК." };
   }
-  if (match) {
-    return { ok: true, notice: "Подключение успешно. Договор найден в доступных ЛК Такском." };
+  if (matchedContract) {
+    return { ok: true, notice: "Подключение успешно. Договор найден в доступных ЛК Такском.", matchedContract };
   }
   // Not found — a WARNING, not a blocking failure. Login itself works. Return
   // SAFE diagnostics (никаких секретов / raw AccountList) so the admin can see
@@ -168,8 +178,8 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
     error: "Подключение выполнено, но номер договора не найден среди доступных ЛК Такском.",
     diagnostics: {
       currentSession: accounts.data.currentAgreementNumber,
-      requestedContractNumber: want,
-      availableContracts: records.map((r) => ({ agreementNumber: r.agreementNumber, companyName: r.companyName ?? null, inn: r.inn ?? null, kpp: r.kpp ?? null })),
+      requestedContractNumber,
+      availableContracts,
     },
   };
 }

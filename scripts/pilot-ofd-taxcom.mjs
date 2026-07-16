@@ -245,36 +245,50 @@ async function main() {
   check("T10 empty / mask secret keeps old ciphertext; a real value replaces it", keptEmpty === oldPw && keptMask === oldPw && decryptOfd(keptMask) === "s3cret-pass" && replaced !== oldPw && decryptOfd(replaced) === "newpass");
 
   // ===== Contract normalization + safe check-connection diagnostics ==========
-  // Mirror of actions.normalizeContractNumber + checkOfdConnection matching.
-  const normalizeContract = (v) => (v ?? "").replace(/[‐-―−－]/g, "-").replace(/[\s  ﻿]/g, "").toLowerCase();
+  // Load the REAL normalizeContractNumber from src/lib/ofd/contract.ts so these
+  // tests exercise production logic (homoglyph / zero-width folding included),
+  // not a drifting copy. Tricky inputs use \u escapes — never invisible literals.
+  const contractSource = readFileSync(new URL("../src/lib/ofd/contract.ts", import.meta.url), "utf8");
+  const homoSrc = contractSource.match(/const HOMOGLYPHS[\s\S]*?\};/)[0].replace(": Record<string, string>", "");
+  const normBody = contractSource.match(/export function normalizeContractNumber\(v[^)]*\)\s*:\s*string\s*\{([\s\S]*?)\n\}/)[1];
+  const normalizeContract = new Function("v", homoSrc + "\n" + normBody);
+
+  // Mirror of checkOfdConnection: build availableContracts ONCE, then match the
+  // requested договор against THAT SAME array (never the raw records).
   function buildCheckResult(cfg, accountData) {
-    const want = cfg.contractNumber && cfg.contractNumber.trim();
-    const records = accountData.records;
-    const wantNorm = normalizeContract(want);
-    const match = want ? records.find((r) => normalizeContract(r.agreementNumber) === wantNorm) : undefined;
-    if (!want) return { ok: true, notice: "Подключение успешно. Укажите номер договора, если в логине несколько ЛК." };
-    if (match) return { ok: true, notice: "Подключение успешно. Договор найден в доступных ЛК Такском." };
-    return { ok: false, code: "contract_not_found", error: "Подключение выполнено, но номер договора не найден среди доступных ЛК Такском.", diagnostics: { currentSession: accountData.currentAgreementNumber, requestedContractNumber: want, availableContracts: records.map((r) => ({ agreementNumber: r.agreementNumber, companyName: r.companyName ?? null, inn: r.inn ?? null, kpp: r.kpp ?? null })) } };
+    const availableContracts = accountData.records.map((r) => ({ agreementNumber: r.agreementNumber, companyName: r.companyName ?? null, inn: r.inn ?? null, kpp: r.kpp ?? null }));
+    const requestedContractNumber = cfg.contractNumber && cfg.contractNumber.trim();
+    const requestedNormalized = normalizeContract(requestedContractNumber);
+    const matchedContract = requestedContractNumber ? availableContracts.find((cn) => normalizeContract(cn.agreementNumber) === requestedNormalized) : undefined;
+    if (!requestedContractNumber) return { ok: true, notice: "Подключение успешно. Укажите номер договора, если в логине несколько ЛК." };
+    if (matchedContract) return { ok: true, notice: "Подключение успешно. Договор найден в доступных ЛК Такском.", matchedContract };
+    return { ok: false, code: "contract_not_found", error: "Подключение выполнено, но номер договора не найден среди доступных ЛК Такском.", diagnostics: { currentSession: accountData.currentAgreementNumber, requestedContractNumber, availableContracts } };
   }
-  // The real Такском AccountList (records_count=3, target as record 3) + secret-laden cfg + extras.
+  // The real production AccountList (records_count=3, target as record 3) + secret-laden cfg + extras.
   const rawAccountList = { sessionToken: "SECRET-SESSION-TOKEN", currentSession: { agreementNumber: "CD-24/00001", accessRights: "full" }, records: [
-    { agreementNumber: "CD-24/00001", companyName: "ООО Первое", inn: "1", kpp: "11", accessRights: "full" },
-    { agreementNumber: "CD-24/99999", companyName: "ООО Второе", inn: "2", kpp: "22", accessRights: "read" },
-    { agreementNumber: "CD-25/45507", companyName: 'ООО "СПОРТ ТЕХНОЛОГИИ"', inn: "6679182168", kpp: "667901001", accessRights: "full" },
+    { agreementNumber: "CD-22/380310", companyName: "ИП АЛМАКАЕВ", inn: "744605538886", accessRights: "full" },
+    { agreementNumber: "CD-22/368037", companyName: "ООО ФИТНЕС", inn: "6678088885", kpp: "661701001", accessRights: "read" },
+    { agreementNumber: "CD-25/45507", companyName: "ООО СПОРТ ТЕХНОЛОГИИ", inn: "6679182168", kpp: "667901001", accessRights: "full" },
   ] };
   const parsedAcc = parseAccountList(rawAccountList);
   const secretCfg = { contractNumber: "CD-25/45507", login: "myLogin", password: "s3cret-pass", integratorId: "INT-1", integrationToken: null };
-  check("T11 exact match CD-25/45507 found", buildCheckResult(secretCfg, parsedAcc).ok === true);
+  // T11 — the EXACT production scenario: requested CD-25/45507, present among ЛК → success, NOT contract_not_found.
+  const prodOk = buildCheckResult(secretCfg, parsedAcc);
+  check("T11 PRODUCTION: requested CD-25/45507 present in availableContracts -> success (NOT contract_not_found)", prodOk.ok === true && prodOk.code !== "contract_not_found" && prodOk.matchedContract && prodOk.matchedContract.agreementNumber === "CD-25/45507" && prodOk.matchedContract.inn === "6679182168" && prodOk.matchedContract.kpp === "667901001");
+  check("T11b match runs against the SAME availableContracts the UI shows (matchedContract in availableContracts)", notFoundList(secretCfg).some((a) => a.agreementNumber === prodOk.matchedContract.agreementNumber));
+  function notFoundList(cfg) { return buildCheckResult({ ...cfg, contractNumber: "CD-00/00000" }, parsedAcc).diagnostics.availableContracts; }
   check("T12 match with spaces around ('  CD-25/45507  ')", buildCheckResult({ ...secretCfg, contractNumber: "  CD-25/45507  " }, parsedAcc).ok === true);
-  check("T13 match with non-breaking space (CD-25/\\u00A045507)", buildCheckResult({ ...secretCfg, contractNumber: "CD-25/ 45507" }, parsedAcc).ok === true && normalizeContract("CD-25/ 45507") === "cd-25/45507");
-  check("T14 match with long dash (en-dash / em-dash / minus)", buildCheckResult({ ...secretCfg, contractNumber: "CD–25/45507" }, parsedAcc).ok === true && buildCheckResult({ ...secretCfg, contractNumber: "CD—25/45507" }, parsedAcc).ok === true && normalizeContract("CD‒25/45507") === "cd-25/45507" && normalizeContract("CD−25/45507") === "cd-25/45507");
-  check("T15 parser reads data.records[] (3 records, target is record 3)", parsedAcc.records.length === 3 && parsedAcc.records[2].agreementNumber === "CD-25/45507" && parsedAcc.records[2].companyName === 'ООО "СПОРТ ТЕХНОЛОГИИ"' && parsedAcc.records[2].inn === "6679182168" && parsedAcc.records[2].kpp === "667901001");
-  // contract_not_found → safe diagnostics with availableContracts.
+  check("T13 match with non-breaking space (U+00A0) + zero-width space (U+200B) folded", buildCheckResult({ ...secretCfg, contractNumber: "CD-25/ 45507" }, parsedAcc).ok === true && buildCheckResult({ ...secretCfg, contractNumber: "CD-25/​45507" }, parsedAcc).ok === true && normalizeContract("CD-25/ 45507") === "cd-25/45507");
+  check("T14 match with long dash (en-dash U+2013 / em-dash U+2014 / minus U+2212 / NB-hyphen U+2011)", buildCheckResult({ ...secretCfg, contractNumber: "CD–25/45507" }, parsedAcc).ok === true && buildCheckResult({ ...secretCfg, contractNumber: "CD—25/45507" }, parsedAcc).ok === true && normalizeContract("CD−25/45507") === "cd-25/45507" && normalizeContract("CD‑25/45507") === "cd-25/45507");
+  check("T14b PRODUCTION-likely cause: Cyrillic homoglyph C (U+0421) in stored value still matches", buildCheckResult({ ...secretCfg, contractNumber: "СD-25/45507" }, parsedAcc).ok === true && normalizeContract("СD-25/45507") === "cd-25/45507");
+  check("T15 parser reads data.records[] (3 records, target is record 3)", parsedAcc.records.length === 3 && parsedAcc.records[2].agreementNumber === "CD-25/45507" && parsedAcc.records[2].inn === "6679182168" && parsedAcc.records[2].kpp === "667901001");
+  // contract_not_found -> safe diagnostics with availableContracts.
   const notFound = buildCheckResult({ ...secretCfg, contractNumber: "CD-00/00000" }, parsedAcc);
   check("T16 contract_not_found returns availableContracts (agreementNumber/companyName/inn/kpp)", notFound.ok === false && notFound.code === "contract_not_found" && notFound.diagnostics.requestedContractNumber === "CD-00/00000" && notFound.diagnostics.availableContracts.length === 3 && notFound.diagnostics.availableContracts[2].agreementNumber === "CD-25/45507" && notFound.diagnostics.availableContracts[2].inn === "6679182168" && notFound.diagnostics.currentSession === "CD-24/00001");
+  const successJson = JSON.stringify(prodOk);
   const notFoundJson = JSON.stringify(notFound);
-  check("T17 no secrets / raw AccountList in the result (no login/password/Integrator-ID/SessionToken/accessRights)", !notFoundJson.includes("myLogin") && !notFoundJson.includes("s3cret-pass") && !notFoundJson.includes("INT-1") && !/sessionToken/i.test(notFoundJson) && !notFoundJson.includes("SECRET-SESSION-TOKEN") && !notFoundJson.includes("accessRights"));
-  check("T18 availableContracts carry ONLY safe fields (no accessRights key survives parser)", notFound.diagnostics.availableContracts.every((a) => Object.keys(a).sort().join(",") === "agreementNumber,companyName,inn,kpp"));
+  check("T17 no secrets / raw AccountList in EITHER result (no login/password/Integrator-ID/SessionToken/accessRights)", [successJson, notFoundJson].every((j) => !j.includes("myLogin") && !j.includes("s3cret-pass") && !j.includes("INT-1") && !/sessionToken/i.test(j) && !j.includes("SECRET-SESSION-TOKEN") && !j.includes("accessRights")));
+  check("T18 matchedContract + availableContracts carry ONLY safe fields (no accessRights key survives parser)", Object.keys(prodOk.matchedContract).sort().join(",") === "agreementNumber,companyName,inn,kpp" && notFound.diagnostics.availableContracts.every((a) => Object.keys(a).sort().join(",") === "agreementNumber,companyName,inn,kpp"));
 
   await cleanup();
 
@@ -321,12 +335,14 @@ async function main() {
   check("T-S6 client exposes listAccounts via GET /API/v2/AccountList + parseAccountList (safe fields)", clientSrc.includes("accountList: \"/API/v2/AccountList\"") && clientSrc.includes("async listAccounts()") && clientSrc.includes('raw(PATHS.accountList, null, true, "GET")') && clientSrc.includes("export function parseAccountList") && clientSrc.includes("agreementNumber") && clientSrc.includes("companyName"));
   check("7 save NO LONGER blocks on empty contractNumber (contract is non-blocking)", !actions.includes('authType === "login_password" && !contractNumber') && !actions.includes("Укажите номер договора Такском"));
   check("8 secret masks / empty fields never overwrite stored ciphertext (enc guards mask+empty)", actions.includes("MASK_RE") && actions.includes("!MASK_RE.test(v)") && actions.includes("enc(\"login\") !== undefined"));
-  check("9 checkOfdConnection: Login (no agreement) → listAccounts → NORMALIZED contract check; never returns token", actions.includes("export async function checkOfdConnection") && actions.includes("client.login()") && actions.includes("client.listAccounts()") && actions.includes("normalizeContractNumber(r.agreementNumber) === wantNorm") && actions.includes("Договор найден в доступных ЛК Такском") && actions.includes("не найден среди доступных ЛК") && !/return\s*\{[^}]*sessionToken/.test(actions));
-  check("9b normalizeContractNumber (lib/ofd/contract) folds dashes + strips whitespace + case-insensitive; NOT a server export", contractSrc.includes("export function normalizeContractNumber") && contractSrc.includes(".replace(") && contractSrc.includes(".toLowerCase()") && actions.includes('from "@/lib/ofd/contract"') && !actions.includes("export function normalizeContractNumber"));
-  check("9c contract_not_found returns SAFE diagnostics (currentSession/requestedContractNumber/availableContracts, no secrets)", actions.includes('code: "contract_not_found"') && actions.includes("availableContracts:") && actions.includes("requestedContractNumber: want") && actions.includes("currentSession: accounts.data.currentAgreementNumber") && actions.includes("agreementNumber: r.agreementNumber") && actions.includes("companyName: r.companyName") && actions.includes("inn: r.inn") && actions.includes("kpp: r.kpp") && !/availableContracts[\s\S]{0,200}(login|password|integratorId|sessionToken)/i.test(actions));
+  check("9 checkOfdConnection: match requestedNormalized against the SAME availableContracts array (agreementNumber only), returns matchedContract; never token", actions.includes("export async function checkOfdConnection") && actions.includes("client.login()") && actions.includes("client.listAccounts()") && actions.includes("const availableContracts = accounts.data.records.map") && actions.includes("const requestedNormalized = normalizeContractNumber(requestedContractNumber)") && actions.includes("availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)") && actions.includes("notice: \"Подключение успешно. Договор найден в доступных ЛК Такском.\", matchedContract") && actions.includes("не найден среди доступных ЛК") && !/return\s*\{[^}]*sessionToken/.test(actions));
+  check("9a match is by agreementNumber only — companyName/inn/kpp do NOT gate success", actions.includes("normalizeContractNumber(cn.agreementNumber) === requestedNormalized") && !/find\(\(cn\) => [^)]*companyName[^)]*===/.test(actions) && !/find\(\(cn\) => [^)]*inn[^)]*===/.test(actions));
+  check("9b normalizeContractNumber (lib/ofd/contract) folds dashes + strips whitespace/zero-width + Cyrillic homoglyphs + NFKC; NOT a server export", contractSrc.includes("export function normalizeContractNumber") && contractSrc.includes("HOMOGLYPHS") && contractSrc.includes('.normalize("NFKC")') && contractSrc.includes(".toLowerCase()") && actions.includes('from "@/lib/ofd/contract"') && !actions.includes("export function normalizeContractNumber"));
+  check("9c contract_not_found returns SAFE diagnostics (currentSession/requestedContractNumber/availableContracts, no secrets)", actions.includes('code: "contract_not_found"') && actions.includes("requestedContractNumber,") && actions.includes("availableContracts,") && actions.includes("currentSession: accounts.data.currentAgreementNumber") && actions.includes("agreementNumber: r.agreementNumber") && actions.includes("companyName: r.companyName") && actions.includes("inn: r.inn") && actions.includes("kpp: r.kpp") && !/availableContracts[\s\S]{0,200}(login|password|integratorId|sessionToken)/i.test(actions));
   check("kktstat parser reads Infos + FnFactoryNumber/Outlet fields", clientSrc.includes('asArray(data, "Infos", "infos"') && clientSrc.includes("FnFactoryNumber") && clientSrc.includes("OutletName"));
   check("UI: contract field non-blocking + new help + per-authType secrets + Проверить подключение", forms.includes("Номер договора Такском") && !/name="contractNumber"[^>]*required/.test(forms) && forms.includes("Сам Login Такском выполняется без этого поля") && forms.includes("isTokenAuth") && forms.includes("OfdCheckConnection") && forms.includes("Проверить подключение"));
   check("UI: contract_not_found panel shows Искомый договор / Текущий ЛК / Доступные договоры + availableContracts list", forms.includes('state.code === "contract_not_found"') && forms.includes("diag.availableContracts.map") && forms.includes("Искомый договор") && forms.includes("Текущий ЛК Такском") && forms.includes("Доступные договоры Такском") && forms.includes("a.agreementNumber") && forms.includes("a.companyName") && forms.includes("a.inn") && forms.includes("a.kpp"));
+  check("UI: success shows green matchedContract line 'Договор найден: …' (agreementNumber/companyName/inn/kpp)", forms.includes("state.matchedContract") && forms.includes("Договор найден:") && forms.includes("contractLabel(matched)") && forms.includes("border-emerald") && forms.includes("a.kpp ? `КПП"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
