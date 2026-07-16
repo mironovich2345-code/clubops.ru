@@ -137,6 +137,7 @@ async function main() {
   const extractApiError = (d) => { const rc = d?.apiErrorCode ?? d?.ApiErrorCode ?? d?.errorCode; const apiErrorCode = typeof rc === "number" ? rc : (typeof rc === "string" && rc.trim() !== "" && Number.isFinite(Number(rc)) ? Number(rc) : null); const rd = d?.commonDescription ?? d?.CommonDescription ?? d?.description ?? d?.message; return { apiErrorCode, description: typeof rd === "string" && rd.trim() ? rd.trim() : null }; };
   function classifyErr(status, apiErrorCode, description) {
     const desc = (description ?? "").toLowerCase();
+    if (status === 405 || desc.includes("does not support http method") || desc.includes("method not allowed") || desc.includes("method not supported") || desc.includes("http method")) return { safeCode: "taxcom_method_not_allowed" };
     if (apiErrorCode === 2108) return { safeCode: "auth_failed" };
     if (apiErrorCode === 3103 || desc.includes("ккт не найдена") || desc.includes("kkt not found")) return { safeCode: "kkt_not_found" };
     if (apiErrorCode === 3106) return { safeCode: "no_kkt_found" };
@@ -147,6 +148,8 @@ async function main() {
     return { safeCode: "unknown" };
   }
   const s2 = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const num2 = (v) => { const n = typeof v === "number" ? v : Number(v); return Number.isFinite(n) ? n : 0; };
+  const asArr = (data, keys) => { if (Array.isArray(data)) return data; const d = data ?? {}; for (const k of keys) if (Array.isArray(d[k])) return d[k]; return []; };
   const parseKktList = (data) => { const arr = Array.isArray(data) ? data : (data?.Infos ?? data?.infos ?? data?.Items ?? data?.Records ?? []); return (arr || []).map((o) => ({ fnNumber: String(o.Fn ?? o.fn ?? o.FnFactoryNumber ?? ""), kktRegNumber: o.KktRegNumber ?? null, kktName: o.KktName ?? null, outletName: o.OutletName ?? null })).filter((k) => k.fnNumber); };
   const parseAccountList = (data) => {
     const d = data ?? {};
@@ -156,16 +159,22 @@ async function main() {
     const records = (arr || []).map((o) => ({ agreementNumber: s2(o.agreementNumber ?? o.AgreementNumber ?? o.contractNumber), companyName: s2(o.companyName ?? o.CompanyName ?? o.name), inn: s2(o.inn ?? o.Inn ?? o.INN), kpp: s2(o.kpp ?? o.Kpp ?? o.KPP) }));
     return { currentAgreementNumber, records };
   };
+  const parseShiftList = (data) => asArr(data, ["records", "Records", "Items", "items", "Shifts", "shifts", "ShiftList"]).map((o) => ({ shiftNumber: num2(o.Shift ?? o.ShiftNumber ?? o.shift ?? o.shiftNumber ?? o.Number ?? o.number), dateOpen: s2(o.OpenDate ?? o.openDate ?? o.openedAt ?? o.DateOpen ?? o.dateOpen), dateClose: s2(o.CloseDate ?? o.closeDate ?? o.closedAt ?? o.DateClose ?? o.dateClose) })).filter((s) => Number.isFinite(s.shiftNumber));
+  const parseDocumentList = (data) => asArr(data, ["records", "Records", "Items", "items", "Documents", "documents", "DocumentList"]).map((o) => ({ fn: String(o.Fn ?? o.fn ?? ""), shift: num2(o.Shift ?? o.shift), fd: num2(o.Fd ?? o.fd ?? o.FiscalDocumentNumber), fpd: s2(o.Fpd ?? o.fpd ?? o.FiscalSign), operationType: s2(o.OperationType ?? o.operationType ?? o.Operation), totalKopeks: num2(o.TotalKopeks ?? o.totalKopeks ?? o.Sum ?? o.Total) }));
 
-  // Client mirror with an INJECTED fetch that captures requests (incl. method).
+  // Client mirror with an INJECTED fetch that captures requests (method + query).
   function makeClient(cfg, fetchImpl) {
     let token = null; const captured = [];
-    async function raw(path, body, withSession, method = "POST") {
-      const headers = {}; if (method === "POST") headers["Content-Type"] = "application/json";
+    async function raw(path, opts = {}) {
+      const method = opts.method ?? "POST"; const withSession = opts.withSession ?? false;
+      const headers = { Accept: "application/json" }; if (method === "POST") headers["Content-Type"] = "application/json";
       if (cfg.integratorId) headers["Integrator-ID"] = cfg.integratorId;
       if (withSession && token) headers["Session-Token"] = token;
-      captured.push({ path, method, headers, body });
-      let res; try { res = await fetchImpl(cfg.serverBaseUrl + path, { method, headers, ...(method === "POST" ? { body: JSON.stringify(body ?? {}) } : {}) }); } catch (e) { return { ok: false, safeCode: e && e.name === "TimeoutError" ? "timeout" : "network" }; }
+      let url = cfg.serverBaseUrl + path;
+      if (opts.query) { const qs = new URLSearchParams(); for (const [k, v] of Object.entries(opts.query)) if (v !== undefined && v !== null && String(v) !== "") qs.set(k, String(v)); const s = qs.toString(); if (s) url += (url.includes("?") ? "&" : "?") + s; }
+      const init = { method, headers, ...(method === "POST" ? { body: JSON.stringify(opts.body ?? {}) } : {}) };
+      captured.push({ path, method, headers, query: opts.query, body: opts.body, url, hasBody: "body" in init });
+      let res; try { res = await fetchImpl(url, init); } catch (e) { return { ok: false, safeCode: e && e.name === "TimeoutError" ? "timeout" : "network" }; }
       const text = await res.text().catch(() => ""); let parsed = null; try { parsed = text ? JSON.parse(text) : {}; } catch { parsed = null; }
       const { apiErrorCode, description } = extractApiError(parsed);
       if (!res.ok || (apiErrorCode != null && apiErrorCode !== 0)) { const c = classifyErr(res.status, apiErrorCode, description); return { ok: false, safeCode: c.safeCode, httpStatus: res.status }; }
@@ -175,12 +184,13 @@ async function main() {
     async function ensureSession() {
       if (token) return { ok: true, data: token };
       const b = {}; if (cfg.authType === "integration_token") b.integrationToken = cfg.integrationToken ?? ""; else { b.login = cfg.login ?? ""; b.password = cfg.password ?? ""; }
-      const r = await raw("/API/v2/Login", b, false); if (!r.ok) return r; const t = extractToken(r.data); if (!t) return { ok: false, safeCode: "parse_error" }; token = t; return { ok: true, data: t };
+      const r = await raw("/API/v2/Login", { method: "POST", body: b, withSession: false }); if (!r.ok) return r; const t = extractToken(r.data); if (!t) return { ok: false, safeCode: "parse_error" }; token = t; return { ok: true, data: t };
     }
     return {
       captured, login: ensureSession,
-      listAccounts: async () => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/AccountList", null, true, "GET"); if (!r.ok) return r; return { ok: true, data: parseAccountList(r.data) }; },
-      listShifts: async (fn, from, to) => { const s = await ensureSession(); if (!s.ok) return s; return raw("/API/v2/ShiftList", { Fn: fn, DateFrom: from, DateTo: to }, true); },
+      listAccounts: async () => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/AccountList", { method: "GET", withSession: true }); if (!r.ok) return r; return { ok: true, data: parseAccountList(r.data) }; },
+      listShifts: async (fn, from, to) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/ShiftList", { method: "GET", withSession: true, query: { fn, begin: from, end: to, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseShiftList(r.data) }; },
+      listDocumentsByShift: async (fn, shift) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentList", { method: "GET", withSession: true, query: { fn, shift } }); if (!r.ok) return r; return { ok: true, data: parseDocumentList(r.data) }; },
     };
   }
   const okJson = (obj) => ({ ok: true, status: 200, async text() { return JSON.stringify(obj); } });
@@ -208,11 +218,29 @@ async function main() {
   await cliT.login();
   const loginReqT = cliT.captured.find((c) => c.path === "/API/v2/Login");
   check("T3c integration_token Login body has integrationToken, no agreementNumber/login", loginReqT.body.integrationToken === "ITOK" && !("agreementNumber" in loginReqT.body) && !("login" in loginReqT.body));
-  // T4: ShiftList carries Session-Token.
-  const cli3 = makeClient(cfgAg, async (url) => url.includes("Login") ? okJson({ sessionToken: "TKN" }) : okJson({ Items: [] }));
-  await cli3.listShifts("FN-1", "2026-07-01", "2026-07-01");
+  // T4: ShiftList + DocumentList are GET with query params, no body, Session-Token + Integrator-ID.
+  let shiftInit = null, docInit = null;
+  const cli3 = makeClient(cfgAg, async (url, init) => { if (url.includes("Login")) return okJson({ sessionToken: "TKN" }); if (url.includes("ShiftList")) { shiftInit = init; return okJson({ records: [{ shift: 7, openDate: "2026-07-01T08:00:00" }] }); } docInit = init; return okJson({ records: [] }); });
+  await cli3.listShifts("7381440800719861", "2026-07-01", "2026-07-01");
+  await cli3.listDocumentsByShift("7381440800719861", 7);
   const shiftReq = cli3.captured.find((c) => c.path === "/API/v2/ShiftList");
-  check("T4 ShiftList request carries Session-Token header", shiftReq.headers["Session-Token"] === "TKN");
+  const docReq = cli3.captured.find((c) => c.path === "/API/v2/DocumentList");
+  check("T4 ShiftList is GET (not POST) with fn/begin/end/pn/ps query params, no body", shiftReq.method === "GET" && shiftReq.url.includes("/API/v2/ShiftList?") && shiftReq.url.includes("fn=7381440800719861") && shiftReq.url.includes("begin=2026-07-01") && shiftReq.url.includes("end=2026-07-01") && shiftReq.url.includes("pn=1") && shiftReq.url.includes("ps=100") && shiftReq.hasBody === false && !("body" in shiftInit));
+  check("T4b ShiftList carries Session-Token + Integrator-ID + Accept headers", shiftReq.headers["Session-Token"] === "TKN" && shiftReq.headers["Integrator-ID"] === "INT-1" && shiftReq.headers["Accept"] === "application/json" && !shiftReq.headers["Content-Type"]);
+  check("T4c DocumentList is GET (not POST) with fn/shift query params, no body", docReq.method === "GET" && docReq.url.includes("/API/v2/DocumentList?") && docReq.url.includes("fn=7381440800719861") && docReq.url.includes("shift=7") && docReq.hasBody === false && !("body" in docInit));
+  check("T4d DocumentList carries Session-Token + Integrator-ID headers", docReq.headers["Session-Token"] === "TKN" && docReq.headers["Integrator-ID"] === "INT-1");
+  check("T4e ShiftList/DocumentList requests never send a JSON body", shiftReq.body === undefined && docReq.body === undefined);
+  // T4f: method-not-supported error is classified taxcom_method_not_allowed.
+  const cliMethod = makeClient(cfgAg, async (url) => url.includes("Login") ? okJson({ sessionToken: "X" }) : errJson(405, { commonDescription: "The requested resource does not support http method 'POST'" }));
+  check("T4f method-not-supported → taxcom_method_not_allowed", (await cliMethod.listShifts("FN", "d", "d")).safeCode === "taxcom_method_not_allowed" && classifyErr(200, null, "The requested resource does not support http method 'POST'").safeCode === "taxcom_method_not_allowed" && classifyErr(405, null, "").safeCode === "taxcom_method_not_allowed");
+  // T4g: empty ShiftList is NOT an error — success with 0 shifts.
+  const cliEmpty = makeClient(cfgAg, async (url) => url.includes("Login") ? okJson({ sessionToken: "X" }) : okJson({ records: [] }));
+  const emptyShifts = await cliEmpty.listShifts("FN", "d", "d");
+  check("T4g empty ShiftList = success with 0 shifts (NOT an error)", emptyShifts.ok === true && Array.isArray(emptyShifts.data) && emptyShifts.data.length === 0);
+  // T4h: ShiftList parser reads records/Records/Items/items/shifts/Shifts.
+  check("T4h ShiftList parser reads records/Records/Items/items/shifts/Shifts", ["records", "Records", "Items", "items", "shifts", "Shifts"].every((k) => parseShiftList({ [k]: [{ shift: 5, openDate: "d1", closeDate: "d2" }] }).length === 1) && parseShiftList({ Shifts: [{ ShiftNumber: 9, OpenDate: "o", CloseDate: "c" }] })[0].shiftNumber === 9);
+  // T4i: DocumentList parser reads records/Records/Items/items/documents/Documents.
+  check("T4i DocumentList parser reads records/Records/Items/items/documents/Documents", ["records", "Records", "Items", "items", "documents", "Documents"].every((k) => parseDocumentList({ [k]: [{ Fn: "F", Fd: 1, OperationType: "Income", TotalKopeks: 100 }] }).length === 1));
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
   check("T6 3103 not auth_failed; 401 auth_failed; 403 forbidden", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
@@ -332,7 +360,19 @@ async function main() {
   check("T-S3 token read from sessionToken/token/accessToken", clientSrc.includes("d?.sessionToken ?? d?.SessionToken ?? d?.token ?? d?.accessToken"));
   check("T-S4 classifyTaxcomError: 3103→kkt_not_found, 2108→auth_failed, 3106→no_kkt_found", clientSrc.includes("apiErrorCode === 3103") && clientSrc.includes("apiErrorCode === 2108") && clientSrc.includes("apiErrorCode === 3106") && clientSrc.includes('safeCode: "kkt_not_found"') && clientSrc.includes('safeCode: "no_kkt_found"'));
   check("T-S5 error body extracts only apiErrorCode/commonDescription (no raw body returned)", clientSrc.includes("extractApiError") && clientSrc.includes("commonDescription") && clientSrc.includes(".slice(0, 200)"));
-  check("T-S6 client exposes listAccounts via GET /API/v2/AccountList + parseAccountList (safe fields)", clientSrc.includes("accountList: \"/API/v2/AccountList\"") && clientSrc.includes("async listAccounts()") && clientSrc.includes('raw(PATHS.accountList, null, true, "GET")') && clientSrc.includes("export function parseAccountList") && clientSrc.includes("agreementNumber") && clientSrc.includes("companyName"));
+  check("T-S6 client exposes listAccounts via GET /API/v2/AccountList + parseAccountList (safe fields)", clientSrc.includes("accountList: \"/API/v2/AccountList\"") && clientSrc.includes("async listAccounts()") && clientSrc.includes('raw(PATHS.accountList, { method: "GET"') && clientSrc.includes("export function parseAccountList") && clientSrc.includes("agreementNumber") && clientSrc.includes("companyName"));
+  // --- GET verb fix for ShiftList / DocumentList (real source) ---
+  const shiftCall = clientSrc.slice(clientSrc.indexOf("async listShifts("), clientSrc.indexOf("async listShifts(") + 420);
+  const docCall = clientSrc.slice(clientSrc.indexOf("async listDocumentsByShift("), clientSrc.indexOf("async listDocumentsByShift(") + 420);
+  check("T-S7 ShiftList uses GET with fn/begin/end/pn/ps query (NOT POST, no body)", clientSrc.includes('shiftList: "/API/v2/ShiftList"') && /raw\(PATHS\.shiftList,\s*\{\s*method:\s*"GET"/.test(shiftCall) && shiftCall.includes("query: { fn: fnNumber, begin: dateFrom, end: dateTo, pn: 1, ps: 100 }") && !/method:\s*"POST"/.test(shiftCall) && !/\bbody:/.test(shiftCall));
+  check("T-S7b DocumentList uses GET with fn/shift query (NOT POST, no body)", clientSrc.includes('documentList: "/API/v2/DocumentList"') && /raw\(PATHS\.documentList,\s*\{\s*method:\s*"GET"/.test(docCall) && docCall.includes("query: { fn: fnNumber, shift: shiftNumber }") && !/method:\s*"POST"/.test(docCall) && !/\bbody:/.test(docCall));
+  // Static guard: NO POST anywhere for the shift/document list endpoints.
+  check("T-S7c no POST for ShiftList/DocumentList anywhere in client.ts", !/PATHS\.shiftList[\s\S]{0,120}method:\s*"POST"/.test(clientSrc) && !/PATHS\.documentList[\s\S]{0,120}method:\s*"POST"/.test(clientSrc) && !/raw\(PATHS\.shiftList,\s*\{\s*Fn:/.test(clientSrc) && !/raw\(PATHS\.documentList,\s*\{\s*Fn:/.test(clientSrc));
+  check("T-S7d raw() supports GET query via URLSearchParams, body only on POST", clientSrc.includes("new URLSearchParams()") && clientSrc.includes('method === "POST" ? { body: JSON.stringify(opts.body ?? {}) } : {}') && clientSrc.includes('headers: Record<string, string> = { Accept: "application/json" }'));
+  check("T-S7e classifyTaxcomError maps method-not-supported → taxcom_method_not_allowed", clientSrc.includes('does not support http method') && clientSrc.includes('safeCode: "taxcom_method_not_allowed"'));
+  check("T-S7f ShiftList/DocumentList parsers read records/Records/Items/items + shifts/documents keys", /parseShiftList[\s\S]*?asArray\(data, "records", "Records", "Items", "items", "Shifts", "shifts"/.test(clientSrc) && /parseDocumentList[\s\S]*?asArray\(data, "records", "Records", "Items", "items", "Documents", "documents"/.test(clientSrc));
+  // Static guard: no buyer PII / raw fiscal JSON is parsed, stored or logged.
+  check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging in client.ts", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console."));
   check("7 save NO LONGER blocks on empty contractNumber (contract is non-blocking)", !actions.includes('authType === "login_password" && !contractNumber') && !actions.includes("Укажите номер договора Такском"));
   check("8 secret masks / empty fields never overwrite stored ciphertext (enc guards mask+empty)", actions.includes("MASK_RE") && actions.includes("!MASK_RE.test(v)") && actions.includes("enc(\"login\") !== undefined"));
   check("9 checkOfdConnection: match requestedNormalized against the SAME availableContracts array (agreementNumber only), returns matchedContract; never token", actions.includes("export async function checkOfdConnection") && actions.includes("client.login()") && actions.includes("client.listAccounts()") && actions.includes("const availableContracts = accounts.data.records.map") && actions.includes("const requestedNormalized = normalizeContractNumber(requestedContractNumber)") && actions.includes("availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized)") && actions.includes("notice: \"Подключение успешно. Договор найден в доступных ЛК Такском.\", matchedContract") && actions.includes("не найден среди доступных ЛК") && !/return\s*\{[^}]*sessionToken/.test(actions));

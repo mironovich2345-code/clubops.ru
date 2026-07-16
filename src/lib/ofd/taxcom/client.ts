@@ -57,6 +57,12 @@ function safeErrorMessage(apiErrorCode: number | null, description: string | nul
 export function classifyTaxcomError(status: number, apiErrorCode: number | null, description: string | null): { safeCode: OfdSafeCode; safeMessage?: string } {
   const desc = (description ?? "").toLowerCase();
   const safeMessage = safeErrorMessage(apiErrorCode, description);
+  // HTTP method not supported (e.g. "The requested resource does not support http
+  // method 'POST'") — Taxcom's list endpoints are GET-only. Classified distinctly
+  // so a wrong verb is never mistaken for an auth/KKT problem.
+  if (status === 405 || desc.includes("does not support http method") || desc.includes("method not allowed") || desc.includes("method not supported") || desc.includes("http method")) {
+    return { safeCode: "taxcom_method_not_allowed", safeMessage };
+  }
   // 2108 "Ошибка авторизации" — invalid login/password pair. A real auth failure
   // (this is the code Taxcom returned when agreementNumber was wrongly sent).
   if (apiErrorCode === 2108) {
@@ -108,18 +114,38 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let sessionToken: string | null = null;
 
-  async function raw(path: string, body: unknown, withSession: boolean, method: "POST" | "GET" = "POST"): Promise<OfdResult<unknown>> {
-    const headers: Record<string, string> = {};
+  type RawOpts = {
+    method?: "GET" | "POST";
+    query?: Record<string, string | number | undefined | null>;
+    body?: unknown;
+    withSession?: boolean;
+  };
+  async function raw(path: string, opts: RawOpts = {}): Promise<OfdResult<unknown>> {
+    const method = opts.method ?? "POST";
+    const withSession = opts.withSession ?? false;
+    const headers: Record<string, string> = { Accept: "application/json" };
+    // Content-Type only matters for a request that carries a JSON body (POST).
     if (method === "POST") headers["Content-Type"] = "application/json";
     // Integrator-ID is required by Taxcom on Login and accepted on later calls.
     if (cfg.integratorId) headers["Integrator-ID"] = cfg.integratorId;
     if (withSession && sessionToken) headers["Session-Token"] = sessionToken;
+    // GET params go in the query string (Taxcom list endpoints are GET-only).
+    let url = joinUrl(cfg.serverBaseUrl, path);
+    if (opts.query) {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(opts.query)) {
+        if (v !== undefined && v !== null && String(v) !== "") qs.set(k, String(v));
+      }
+      const s = qs.toString();
+      if (s) url += (url.includes("?") ? "&" : "?") + s;
+    }
     let res: Response;
     try {
-      res = await fetchImpl(joinUrl(cfg.serverBaseUrl, path), {
+      res = await fetchImpl(url, {
         method,
         headers,
-        ...(method === "POST" ? { body: JSON.stringify(body ?? {}) } : {}),
+        // Never send a body on GET; Taxcom rejects it and it is unnecessary.
+        ...(method === "POST" ? { body: JSON.stringify(opts.body ?? {}) } : {}),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
@@ -162,7 +188,7 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
       loginBody.password = cfg.password ?? "";
     }
 
-    const r = await raw(PATHS.login, loginBody, false);
+    const r = await raw(PATHS.login, { method: "POST", body: loginBody, withSession: false });
     if (!r.ok) return r;
     const token = extractToken(r.data);
     if (!token) return { ok: false, safeCode: "parse_error" }; // 200 but no token
@@ -177,35 +203,38 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
     async listAccounts() {
       const s = await ensureSession();
       if (!s.ok) return s;
-      const r = await raw(PATHS.accountList, null, true, "GET");
+      const r = await raw(PATHS.accountList, { method: "GET", withSession: true });
       if (!r.ok) return r;
       return { ok: true, data: parseAccountList(r.data) };
     },
     async listKkt() {
       const s = await ensureSession();
       if (!s.ok) return s;
-      const r = await raw(PATHS.kktList, {}, true);
+      const r = await raw(PATHS.kktList, { method: "GET", withSession: true });
       if (!r.ok) return r;
       return { ok: true, data: parseKktList(r.data) };
     },
     async listShifts(fnNumber, dateFrom, dateTo) {
       const s = await ensureSession();
       if (!s.ok) return s;
-      const r = await raw(PATHS.shiftList, { Fn: fnNumber, DateFrom: dateFrom, DateTo: dateTo }, true);
+      // Taxcom ShiftList is GET: /API/v2/ShiftList?fn=&begin=&end=&pn=1&ps=100
+      const r = await raw(PATHS.shiftList, { method: "GET", withSession: true, query: { fn: fnNumber, begin: dateFrom, end: dateTo, pn: 1, ps: 100 } });
       if (!r.ok) return r;
       return { ok: true, data: parseShiftList(r.data) };
     },
     async listDocumentsByShift(fnNumber, shiftNumber) {
       const s = await ensureSession();
       if (!s.ok) return s;
-      const r = await raw(PATHS.documentList, { Fn: fnNumber, Shift: shiftNumber }, true);
+      // Taxcom DocumentList is GET: /API/v2/DocumentList?fn=&shift=
+      const r = await raw(PATHS.documentList, { method: "GET", withSession: true, query: { fn: fnNumber, shift: shiftNumber } });
       if (!r.ok) return r;
       return { ok: true, data: parseDocumentList(r.data) };
     },
     async getDocumentInfo(fnNumber, fd) {
       const s = await ensureSession();
       if (!s.ok) return s;
-      const r = await raw(PATHS.documentInfo, { Fn: fnNumber, Fd: fd }, true);
+      // DocumentInfo is GET: /API/v2/DocumentInfo?fn=&fd=
+      const r = await raw(PATHS.documentInfo, { method: "GET", withSession: true, query: { fn: fnNumber, fd } });
       if (!r.ok) return r;
       return { ok: true, data: parseDocumentInfo(r.data) };
     },
@@ -274,19 +303,21 @@ export function parseKktList(data: unknown): TaxcomKkt[] {
 }
 
 export function parseShiftList(data: unknown): TaxcomShift[] {
-  return asArray(data, "Items", "Shifts", "shifts").map((raw) => {
+  // Taxcom may return the shifts under any of these list keys.
+  return asArray(data, "records", "Records", "Items", "items", "Shifts", "shifts", "ShiftList").map((raw) => {
     const o = raw as Record<string, unknown>;
     return {
-      shiftNumber: num(o.Shift ?? o.ShiftNumber ?? o.shift ?? o.number),
-      dateOpen: str(o.DateOpen ?? o.dateOpen),
-      dateClose: str(o.DateClose ?? o.dateClose),
+      shiftNumber: num(o.Shift ?? o.ShiftNumber ?? o.shift ?? o.shiftNumber ?? o.Number ?? o.number),
+      dateOpen: str(o.OpenDate ?? o.openDate ?? o.openedAt ?? o.DateOpen ?? o.dateOpen),
+      dateClose: str(o.CloseDate ?? o.closeDate ?? o.closedAt ?? o.DateClose ?? o.dateClose),
     };
   }).filter((s) => Number.isFinite(s.shiftNumber));
 }
 
 /** Parse a DocumentList payload into safe per-receipt summaries. */
 export function parseDocumentList(data: unknown): TaxcomDocumentSummary[] {
-  return asArray(data, "Items", "Documents", "documents").map((raw) => {
+  // Taxcom may return the documents under any of these list keys.
+  return asArray(data, "records", "Records", "Items", "items", "Documents", "documents", "DocumentList").map((raw) => {
     const o = raw as Record<string, unknown>;
     return {
       fn: String(o.Fn ?? o.fn ?? ""),

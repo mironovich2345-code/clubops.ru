@@ -10,6 +10,7 @@ export type OfdSafeCode =
   | "no_kkt_found"
   | "shift_not_found"
   | "contract_not_found"
+  | "taxcom_method_not_allowed"
   | "network"
   | "timeout"
   | "parse_error"
