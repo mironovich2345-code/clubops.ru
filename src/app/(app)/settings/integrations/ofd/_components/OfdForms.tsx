@@ -51,6 +51,7 @@ export function OfdConnectionForm({
   const isTokenAuth = authType === "integration_token";
   return (
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <input type="hidden" name="connectionId" value={connection?.id ?? ""} />
       <Field label="Название">
         <input name="displayName" required defaultValue={connection?.displayName ?? "Такском"} className="input" />
       </Field>
@@ -173,11 +174,18 @@ export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
   );
 }
 
-export function OfdMappingForm({ connectionId, clubs, entities }: { connectionId: string; clubs: ClubOpt[]; entities: EntityOpt[] }) {
+type ConnOpt = { id: string; label: string };
+export function OfdMappingForm({ connections, clubs }: { connections: ConnOpt[]; clubs: ClubOpt[] }) {
   const [state, action] = useFormState(addOfdMapping, initial);
+  const [kind, setKind] = useState("club_cashbox");
   return (
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-3">
-      <input type="hidden" name="connectionId" value={connectionId} />
+      <Field label="Подключение Такском">
+        <select name="connectionId" required defaultValue={connections[0]?.id ?? ""} className="input">
+          {connections.length === 0 ? <option value="" disabled>Нет подключений</option> : null}
+          {connections.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      </Field>
       <Field label="ФН"><input name="fnNumber" required placeholder="номер ФН" className="input" /></Field>
       <Field label="РНМ ККТ (необязательно)"><input name="kktRegNumber" className="input" /></Field>
       <Field label="Название кассы (необязательно)"><input name="kktName" className="input" /></Field>
@@ -187,12 +195,17 @@ export function OfdMappingForm({ connectionId, clubs, entities }: { connectionId
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </Field>
-      <Field label="Юрлицо">
-        <select name="legalEntityId" defaultValue="" className="input">
-          <option value="">— по подключению —</option>
-          {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+      <Field label="Тип кассы">
+        <select name="registerKind" value={kind} onChange={(e) => setKind(e.target.value)} className="input">
+          <option value="club_cashbox">Касса клуба</option>
+          <option value="online_cashbox">Онлайн-касса</option>
         </select>
       </Field>
+      <p className="text-xs text-slate-500 md:col-span-3">
+        {kind === "online_cashbox"
+          ? "Используется для чеков онлайн-оплат. Продажи будут попадать в ОФД-продажи выбранного клуба, но источник будет отмечен как онлайн-касса."
+          : "Обычная касса клуба/ресепшена. Юрлицо берётся из выбранного подключения."}
+      </p>
       <div className="flex items-end justify-between gap-3 md:col-span-3">
         <Msg s={state} />
         <Submit idle="Добавить кассу" busy="Добавление..." />
@@ -201,11 +214,16 @@ export function OfdMappingForm({ connectionId, clubs, entities }: { connectionId
   );
 }
 
-export function OfdImportForm({ connectionId }: { connectionId: string }) {
+export function OfdImportForm({ connections }: { connections: ConnOpt[] }) {
   const [state, action] = useFormState(runOfdImport, initial);
   return (
     <form action={action} className="flex flex-wrap items-end gap-3">
-      <input type="hidden" name="connectionId" value={connectionId} />
+      <Field label="Подключение">
+        <select name="connectionId" required defaultValue={connections[0]?.id ?? ""} className="input">
+          {connections.length === 0 ? <option value="" disabled>Нет подключений</option> : null}
+          {connections.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      </Field>
       <Field label="Дата от"><input type="date" name="dateFrom" required defaultValue="2026-07-01" className="input" /></Field>
       <Field label="Дата до"><input type="date" name="dateTo" required defaultValue="2026-07-31" className="input" /></Field>
       <Submit idle="Импортировать" busy="Импорт..." />

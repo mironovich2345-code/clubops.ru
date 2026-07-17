@@ -1455,6 +1455,10 @@ model OfdCashRegisterMapping {
   kktRegNumber     String?
   kktFactoryNumber String?
   kktName          String?
+  // Source of receipts: "club_cashbox" (ordinary club/reception KKT) or
+  // "online_cashbox" (records online-payment receipts). NOT a legal entity —
+  // ИП/ООО live on legalEntityId. Existing rows fall back to club_cashbox.
+  registerKind     String    @default("club_cashbox")
   isActive         Boolean   @default(true)
   // "<provider>:<fnNumber>" while active; null when disabled → many disabled
   // rows allowed, at most one ACTIVE mapping per (provider, fn).

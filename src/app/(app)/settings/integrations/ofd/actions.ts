@@ -57,7 +57,13 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
   }
 
   const legalEntityId = str(formData, "legalEntityId");
-  const existing = await prisma.ofdConnection.findFirst({ where: { companyId: g.companyId, provider: "taxcom" } });
+  // Multi-connection: an explicit connectionId edits that connection; otherwise a
+  // new Taxcom connection is created (a company may have several — ООО, ИП, …).
+  const editId = str(formData, "connectionId");
+  const existing = editId
+    ? await prisma.ofdConnection.findFirst({ where: { id: editId, companyId: g.companyId, provider: "taxcom" } })
+    : null;
+  if (editId && !existing) return { ok: false, error: "Подключение не найдено." };
 
   // A blank field — or the "••••••" placeholder mask if it is ever submitted —
   // means "leave the stored secret unchanged"; only a real new value is encrypted.
@@ -224,13 +230,17 @@ export async function addOfdMapping(_p: State | undefined, formData: FormData): 
   const club = await prisma.club.findFirst({ where: { id: clubId, companyId: g.companyId }, select: { id: true } });
   if (!club) return { ok: false, error: "Клуб не найден в этой компании." };
 
+  // Receipt source, NOT a legal entity. Legal entity is inherited from the chosen
+  // connection so a касса ИП can never be attached to an ООО connection by mistake.
+  const registerKind = str(formData, "registerKind") === "online_cashbox" ? "online_cashbox" : "club_cashbox";
+
   const activeMappingKey = `taxcom:${fnNumber}`;
   try {
     await prisma.ofdCashRegisterMapping.create({
       data: {
-        connectionId, companyId: g.companyId, clubId, legalEntityId: str(formData, "legalEntityId") ?? connection.legalEntityId,
+        connectionId, companyId: g.companyId, clubId, legalEntityId: connection.legalEntityId,
         provider: "taxcom", fnNumber, kktRegNumber: str(formData, "kktRegNumber"), kktName: str(formData, "kktName"),
-        isActive: true, activeMappingKey,
+        registerKind, isActive: true, activeMappingKey,
       },
     });
   } catch (error) {
@@ -241,9 +251,22 @@ export async function addOfdMapping(_p: State | undefined, formData: FormData): 
     console.error("addOfdMapping failed", error instanceof Error ? error.message : error);
     return { ok: false, error: "Не удалось добавить кассу. Повторите попытку." };
   }
-  await recordAudit({ action: "ofd.mapping_created", entityType: "OfdCashRegisterMapping", companyId: g.companyId, clubId, userId: g.userId, metadata: { provider: "taxcom" } });
+  await recordAudit({ action: "ofd.mapping_created", entityType: "OfdCashRegisterMapping", companyId: g.companyId, clubId, userId: g.userId, metadata: { provider: "taxcom", registerKind } });
   revalidatePath("/settings/integrations/ofd");
   return { ok: true, notice: "Касса сопоставлена." };
+}
+
+/** Enable / disable a whole Taxcom connection. A disabled connection is skipped by
+ * every import (sync_now / auto_daily / batch). Owner / general_director only. */
+export async function toggleOfdConnection(formData: FormData): Promise<void> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return;
+  const id = String(formData.get("connectionId") ?? "").trim();
+  const c = await prisma.ofdConnection.findFirst({ where: { id, companyId: g.companyId }, select: { id: true, isActive: true } });
+  if (!c) return;
+  await prisma.ofdConnection.update({ where: { id }, data: { isActive: !c.isActive } });
+  await recordAudit({ action: c.isActive ? "ofd.connection_disabled" : "ofd.connection_enabled", entityType: "OfdConnection", entityId: id, companyId: g.companyId, userId: g.userId, metadata: {} });
+  revalidatePath("/settings/integrations/ofd");
 }
 
 /** Enable / disable a mapping. Disabling frees its active fn key. */

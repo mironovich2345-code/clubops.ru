@@ -4,13 +4,39 @@ import { prisma } from "@/lib/prisma";
 import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
-import { toggleOfdMapping } from "./actions";
+import { toggleOfdMapping, toggleOfdConnection } from "./actions";
 import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdRecalcCategories, OfdRevenueTable, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
 
 export const dynamic = "force-dynamic";
 
 const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
+
+// Human-readable sync-run modes for the history table.
+const MODE_LABELS: Record<string, string> = {
+  manual_day: "Ручной импорт",
+  manual_period: "Ручной импорт",
+  sync_now: "Синхронизация сейчас",
+  auto_daily: "Автоимпорт",
+  daily: "Автоимпорт",
+  backfill_july: "Загрузка периода",
+};
+const modeLabel = (mode: string) => MODE_LABELS[mode] ?? mode;
+
+// Cash-register source labels (NOT a legal entity).
+const REGISTER_KIND_LABELS: Record<string, string> = { club_cashbox: "Касса клуба", online_cashbox: "Онлайн-касса" };
+const registerKindLabel = (kind: string | null | undefined) => REGISTER_KIND_LABELS[kind ?? "club_cashbox"] ?? "Касса клуба";
+
+type ConnCard = { id: string; displayName: string; serverBaseUrl: string; contractNumber: string | null; authType: string; legalEntityId: string | null; isActive: boolean; hasLogin: boolean; hasPassword: boolean; hasToken: boolean };
+// Static connection status derived from stored config (a live ЛК check is done by
+// the "Проверить подключение" button, which can additionally surface a wrong-ЛК warning).
+function connectionStatus(c: ConnCard): { label: string; tone: "ok" | "warn" | "muted" } {
+  if (!c.isActive) return { label: "Отключено", tone: "muted" };
+  const configured = c.authType === "integration_token" ? c.hasToken : c.hasLogin && c.hasPassword;
+  if (!configured) return { label: "Не настроено", tone: "warn" };
+  if (!c.contractNumber) return { label: "Требует проверки", tone: "warn" };
+  return { label: "Готово к проверке", tone: "ok" };
+}
 
 export default async function OfdIntegrationPage() {
   const ctx = await getCurrentAccessContext();
@@ -19,32 +45,42 @@ export default async function OfdIntegrationPage() {
   const isAdmin = await userHasCompanyRole(ctx.user.id, companyId, ["owner", "general_director"]);
   if (!isAdmin) redirect("/settings");
 
-  const [connectionRow, clubs, entities] = await Promise.all([
-    prisma.ofdConnection.findFirst({ where: { companyId, provider: "taxcom" } }),
+  const [connectionRows, clubs, entities] = await Promise.all([
+    prisma.ofdConnection.findMany({ where: { companyId, provider: "taxcom" }, orderBy: { createdAt: "asc" } }),
     prisma.club.findMany({ where: { companyId, isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.legalEntity.findMany({ where: { companyId, isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   const clubName = new Map(clubs.map((c) => [c.id, c.name]));
+  const legalName = new Map(entities.map((e) => [e.id, e.name]));
+  const connectionIds = connectionRows.map((c) => c.id);
+  const hasConnections = connectionRows.length > 0;
 
-  const connection = connectionRow
-    ? {
-        id: connectionRow.id, displayName: connectionRow.displayName, serverBaseUrl: connectionRow.serverBaseUrl,
-        contractNumber: connectionRow.contractNumber, authType: connectionRow.authType, legalEntityId: connectionRow.legalEntityId,
-        hasLogin: Boolean(connectionRow.loginEncrypted), hasPassword: Boolean(connectionRow.passwordEncrypted), hasToken: Boolean(connectionRow.integrationTokenEncrypted),
-      }
-    : null;
+  // SAFE view models for the connection cards — never expose secrets, only presence.
+  const connections: ConnCard[] = connectionRows.map((c) => ({
+    id: c.id, displayName: c.displayName, serverBaseUrl: c.serverBaseUrl, contractNumber: c.contractNumber,
+    authType: c.authType, legalEntityId: c.legalEntityId, isActive: c.isActive,
+    hasLogin: Boolean(c.loginEncrypted), hasPassword: Boolean(c.passwordEncrypted), hasToken: Boolean(c.integrationTokenEncrypted),
+  }));
+  const connDisplay = new Map(connections.map((c) => [c.id, c.displayName]));
+  const connLegal = new Map(connections.map((c) => [c.id, c.legalEntityId]));
+  const legalLabelOf = (legalEntityId: string | null) => (legalEntityId ? legalName.get(legalEntityId) ?? "—" : "не указано");
+  const connOptions = connections.map((c) => ({ id: c.id, label: `${c.displayName}${c.legalEntityId ? ` · ${legalName.get(c.legalEntityId) ?? ""}` : ""}` }));
 
   const month = new Date().toISOString().slice(0, 7); // "YYYY-MM"
 
-  const [mappings, runs, summaries, lastAutoRun, categorySummaries] = connectionRow
+  const [mappings, runs, summaries, lastAutoRun, categorySummaries] = hasConnections
     ? await Promise.all([
-        prisma.ofdCashRegisterMapping.findMany({ where: { connectionId: connectionRow.id }, orderBy: { createdAt: "desc" } }),
-        prisma.ofdSyncRun.findMany({ where: { connectionId: connectionRow.id }, orderBy: { createdAt: "desc" }, take: 10 }),
+        prisma.ofdCashRegisterMapping.findMany({ where: { connectionId: { in: connectionIds } }, orderBy: { createdAt: "desc" } }),
+        prisma.ofdSyncRun.findMany({ where: { connectionId: { in: connectionIds } }, orderBy: { createdAt: "desc" }, take: 12 }),
         prisma.ofdDailySalesSummary.findMany({ where: { companyId, provider: "taxcom" } }),
-        prisma.ofdSyncRun.findFirst({ where: { connectionId: connectionRow.id, mode: "auto_daily" }, orderBy: { createdAt: "desc" } }),
+        prisma.ofdSyncRun.findFirst({ where: { connectionId: { in: connectionIds }, mode: "auto_daily" }, orderBy: { createdAt: "desc" } }),
         prisma.ofdRevenueCategoryDailySummary.findMany({ where: { companyId, provider: "taxcom", date: { startsWith: month } } }),
       ])
     : [[], [], [], null, []] as const;
+
+  // Active kassa count per connection (for the connection cards).
+  const activeMappingCount = new Map<string, number>();
+  for (const m of mappings) if (m.isActive) activeMappingCount.set(m.connectionId, (activeMappingCount.get(m.connectionId) ?? 0) + 1);
 
   const lastAutoErrorCount = lastAutoRun ? await prisma.ofdSyncError.count({ where: { syncRunId: lastAutoRun.id } }) : 0;
 
@@ -63,7 +99,7 @@ export default async function OfdIntegrationPage() {
   const monthHasSales = summaries.some((s) => s.date.startsWith(month) && (s.incomeTotalKopeks > 0 || s.returnTotalKopeks > 0));
 
   // Top-20 unrecognized nomenclature (category=other) for the current month.
-  const unrecognized = connectionRow
+  const unrecognized = hasConnections
     ? await prisma.ofdReceiptItem.groupBy({
         by: ["normalizedItemName"],
         where: { companyId, provider: "taxcom", revenueCategoryCode: "other", date: { startsWith: month } },
@@ -79,7 +115,7 @@ export default async function OfdIntegrationPage() {
   // raw JSON / PII). Same scope as the category summary above (company + taxcom + month).
   type DetailRow = { normalizedName: string; net: number; income: number; itemCount: number; receiptCount: number; examples: string[] };
   const categoryDetails: Record<string, DetailRow[]> = {};
-  if (connectionRow) {
+  if (hasConnections) {
     const detailItems = await prisma.ofdReceiptItem.findMany({
       where: { companyId, provider: "taxcom", date: { startsWith: month } },
       select: { revenueCategoryCode: true, normalizedItemName: true, itemName: true, totalKopeks: true, operationType: true, receiptImportId: true },
@@ -144,29 +180,70 @@ export default async function OfdIntegrationPage() {
             </div>
           ) : null}
 
-          <Section title="Подключение">
-            <OfdConnectionForm connection={connection} clubs={clubs} entities={entities} />
-            {connectionRow ? (
-              <div className="mt-4 border-t border-slate-200 pt-4">
-                <OfdCheckConnection connectionId={connectionRow.id} />
+          {/* 1) Подключения Такском */}
+          <Section title="Подключения Такском">
+            {connections.length === 0 ? (
+              <p className="mb-4 text-sm text-slate-500">Пока нет ни одного подключения Такском. Добавьте первое ниже. У сети может быть несколько подключений — например, ООО и ИП.</p>
+            ) : (
+              <div className="space-y-3">
+                {connections.map((c) => {
+                  const st = connectionStatus(c);
+                  const tone = st.tone === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : st.tone === "warn" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-500";
+                  return (
+                    <div key={c.id} className="rounded-lg border border-slate-200 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium text-slate-900">{c.displayName}</div>
+                          <div className="mt-0.5 text-sm text-slate-600">Юрлицо: {legalLabelOf(c.legalEntityId)}{" · "}Договор: <span className="font-mono">{c.contractNumber ?? "—"}</span></div>
+                          <div className="mt-1 text-xs text-slate-500">Активных касс: {activeMappingCount.get(c.id) ?? 0}</div>
+                        </div>
+                        <span className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${tone}`}>{st.label}</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
+                        <OfdCheckConnection connectionId={c.id} />
+                        <form action={toggleOfdConnection}>
+                          <input type="hidden" name="connectionId" value={c.id} />
+                          <button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">{c.isActive ? "Отключить" : "Включить"}</button>
+                        </form>
+                      </div>
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-sm font-medium text-brand-700">Изменить подключение</summary>
+                        <div className="mt-3 border-t border-slate-100 pt-3">
+                          <OfdConnectionForm connection={c} clubs={clubs} entities={entities} />
+                        </div>
+                      </details>
+                    </div>
+                  );
+                })}
               </div>
-            ) : null}
+            )}
+            <details className="mt-4">
+              <summary className="cursor-pointer text-sm font-medium text-brand-700">Добавить подключение Такском</summary>
+              <div className="mt-3 border-t border-slate-200 pt-4">
+                <OfdConnectionForm connection={null} clubs={clubs} entities={entities} />
+              </div>
+            </details>
           </Section>
 
-          {connectionRow ? (
+          {hasConnections ? (
             <>
-              <Section title="Кассы (ККТ → клуб)">
-                <OfdMappingForm connectionId={connectionRow.id} clubs={clubs} entities={entities} />
+              {/* 2) Кассы ККТ */}
+              <Section title="Кассы ККТ">
+                <OfdMappingForm connections={connOptions} clubs={clubs} />
                 <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50"><tr><Th>ФН</Th><Th>Касса</Th><Th>Клуб</Th><Th>Статус</Th><Th>Действия</Th></tr></thead>
+                    <thead className="bg-slate-50"><tr><Th>ФН</Th><Th>РНМ ККТ</Th><Th>Название</Th><Th>Подключение</Th><Th>Юрлицо</Th><Th>Клуб</Th><Th>Тип кассы</Th><Th>Статус</Th><Th>Действия</Th></tr></thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {mappings.length === 0 ? <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">Кассы не сопоставлены.</td></tr> :
+                      {mappings.length === 0 ? <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500">Кассы не сопоставлены.</td></tr> :
                         mappings.map((m) => (
                           <tr key={m.id}>
                             <Td>{m.fnNumber}</Td>
-                            <Td>{m.kktName ?? m.kktRegNumber ?? "—"}</Td>
+                            <Td>{m.kktRegNumber ?? "—"}</Td>
+                            <Td>{m.kktName ?? "—"}</Td>
+                            <Td>{connDisplay.get(m.connectionId) ?? "—"}</Td>
+                            <Td>{legalLabelOf(m.legalEntityId ?? connLegal.get(m.connectionId) ?? null)}</Td>
                             <Td>{clubName.get(m.clubId) ?? "—"}</Td>
+                            <Td>{registerKindLabel(m.registerKind)}</Td>
                             <Td>{m.isActive ? <span className="text-emerald-700">активна</span> : <span className="text-slate-500">выключена</span>}</Td>
                             <Td>
                               <form action={toggleOfdMapping}>
@@ -181,51 +258,56 @@ export default async function OfdIntegrationPage() {
                 </div>
               </Section>
 
-              <Section title="Импорт продаж">
-                <OfdImportForm connectionId={connectionRow.id} />
-              </Section>
-
-              <Section title="Автоимпорт">
-                <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
-                  <div>
-                    <div className="text-slate-500">Статус</div>
-                    <div className="font-medium">{ofdEnabled() ? <span className="text-emerald-700">включён</span> : <span className="text-slate-500">выключен</span>} (OFD_INTEGRATIONS_ENABLED)</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-500">Cron endpoint</div>
-                    <div className="font-mono text-slate-800">POST /api/cron/ofd/daily</div>
-                  </div>
+              {/* 3) Синхронизация продаж */}
+              <Section title="Синхронизация продаж">
+                <OfdSyncNow />
+                <div className="mt-5 border-t border-slate-200 pt-4">
+                  <div className="mb-2 text-sm font-medium text-slate-700">Импорт за период</div>
+                  <OfdImportForm connections={connOptions} />
                 </div>
-                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Последняя автоматическая синхронизация</div>
-                  {lastAutoRun ? (
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
-                      <div><span className="text-slate-500">Когда:</span> {dateFmt.format(lastAutoRun.createdAt)}</div>
-                      <div><span className="text-slate-500">Период:</span> {lastAutoRun.dateFrom} — {lastAutoRun.dateTo}</div>
-                      <div><span className="text-slate-500">Статус:</span> {lastAutoRun.status}</div>
-                      <div><span className="text-slate-500">Найдено/Добавлено/Пропущено:</span> {lastAutoRun.foundReceipts}/{lastAutoRun.importedReceipts}/{lastAutoRun.skippedReceipts}</div>
-                      <div><span className="text-slate-500">Приход:</span> {formatKopeks(lastAutoRun.totalIncomeKopeks)}</div>
-                      <div><span className="text-slate-500">Ошибки:</span> {lastAutoErrorCount}{lastAutoRun.safeErrorCode ? ` (${lastAutoRun.safeErrorCode})` : ""}</div>
+                <div className="mt-5 border-t border-slate-200 pt-4">
+                  <div className="mb-2 text-sm font-medium text-slate-700">Автоимпорт</div>
+                  <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+                    <div>
+                      <div className="text-slate-500">Статус</div>
+                      <div className="font-medium">{ofdEnabled() ? <span className="text-emerald-700">включён</span> : <span className="text-slate-500">выключен</span>} (OFD_INTEGRATIONS_ENABLED)</div>
                     </div>
-                  ) : (
-                    <div className="text-sm text-slate-500">Автоматических синхронизаций ещё не было.</div>
-                  )}
+                    <div>
+                      <div className="text-slate-500">Cron endpoint</div>
+                      <div className="font-mono text-slate-800">POST /api/cron/ofd/daily</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Последняя автоматическая синхронизация</div>
+                    {lastAutoRun ? (
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
+                        <div><span className="text-slate-500">Когда:</span> {dateFmt.format(lastAutoRun.createdAt)}</div>
+                        <div><span className="text-slate-500">Период:</span> {lastAutoRun.dateFrom} — {lastAutoRun.dateTo}</div>
+                        <div><span className="text-slate-500">Статус:</span> {lastAutoRun.status}</div>
+                        <div><span className="text-slate-500">Найдено/Добавлено/Пропущено:</span> {lastAutoRun.foundReceipts}/{lastAutoRun.importedReceipts}/{lastAutoRun.skippedReceipts}</div>
+                        <div><span className="text-slate-500">Приход:</span> {formatKopeks(lastAutoRun.totalIncomeKopeks)}</div>
+                        <div><span className="text-slate-500">Ошибки:</span> {lastAutoErrorCount}{lastAutoRun.safeErrorCode ? ` (${lastAutoRun.safeErrorCode})` : ""}</div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-500">Автоматических синхронизаций ещё не было.</div>
+                    )}
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500">
+                    Автоимпорт подтягивает продажи за вчера по всем активным подключениям. Запуск выполняется внешним cron / systemd timer,
+                    который отправляет <span className="font-mono">POST /api/cron/ofd/daily</span> с секретным заголовком. Секрет в интерфейсе не отображается.
+                  </p>
                 </div>
-                <p className="mt-3 text-xs text-slate-500">
-                  Автоимпорт подтягивает продажи за вчера. Запуск выполняется внешним cron / systemd timer / scheduler,
-                  который отправляет <span className="font-mono">POST /api/cron/ofd/daily</span> с секретным заголовком. Секрет в интерфейсе не отображается.
-                </p>
               </Section>
 
+              {/* 4) ОФД продажи */}
               <Section title="ОФД продажи">
-                <div className="mb-4 border-b border-slate-200 pb-4">
-                  <OfdSyncNow />
-                </div>
                 <SalesBlock title="Сегодня" agg={aggFor(today, today)} clubName={clubName} />
                 <SalesBlock title="Вчера" agg={aggFor(yesterday, yesterday)} clubName={clubName} />
                 <SalesBlock title="Июль 2026" agg={aggFor("2026-07-01", "2026-07-31")} clubName={clubName} />
+                <p className="mt-1 text-xs text-slate-500">Источник чеков задаётся в настройках кассы: «Касса клуба» или «Онлайн-касса». Онлайн-оплаты попадают в продажи выбранного клуба, но отмечены как онлайн-касса.</p>
               </Section>
 
+              {/* 5) Статьи доходов ОФД */}
               <Section title="Статьи доходов ОФД">
                 <div className="mb-2 text-sm font-medium text-slate-600">Текущий месяц ({month})</div>
                 {!hasNomenclature ? (
@@ -260,18 +342,7 @@ export default async function OfdIntegrationPage() {
                 <OfdRecalcCategories />
               </Section>
 
-              <Section title="Диагностика номенклатуры Такском">
-                <p className="mb-3 text-xs text-slate-500">
-                  Временный инструмент: проверяет, отдаёт ли метод Такском <span className="font-mono">GET /API/v2/NewDocuments</span> позиции чеков
-                  (номенклатуру). Возвращает только структуру ответа — без содержимого и без сохранения сырого JSON.
-                </p>
-                <OfdNewDocsDiagnostics connectionId={connectionRow.id} />
-                <div className="mt-5 border-t border-slate-200 pt-4">
-                  <div className="mb-2 text-sm font-medium text-slate-700">Диагностика конкретного чека DocumentInfo</div>
-                  <OfdDocInfoDiagnostics connectionId={connectionRow.id} />
-                </div>
-              </Section>
-
+              {/* 6) История синхронизаций */}
               <Section title="История синхронизаций">
                 <div className="overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -281,7 +352,7 @@ export default async function OfdIntegrationPage() {
                         runs.map((r) => (
                           <tr key={r.id}>
                             <Td>{dateFmt.format(r.createdAt)}</Td>
-                            <Td>{r.mode}</Td>
+                            <Td>{modeLabel(r.mode)}</Td>
                             <Td>{r.dateFrom} — {r.dateTo}</Td>
                             <Td>{r.status}</Td>
                             <Td>{r.foundReceipts}/{r.importedReceipts}/{r.skippedReceipts}</Td>
@@ -294,6 +365,26 @@ export default async function OfdIntegrationPage() {
                   </table>
                 </div>
               </Section>
+
+              {/* 7) Расширенная диагностика (свёрнута по умолчанию) */}
+              <div className="mb-8">
+                <details className="rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-slate-700">Расширенная диагностика</summary>
+                  <div className="border-t border-slate-200 p-5">
+                    <p className="mb-4 text-xs text-slate-500">Технический блок для проверки ответов Такском. Не нужен для ежедневной работы.</p>
+                    <div className="mb-2 text-sm font-medium text-slate-700">Проверить структуру NewDocuments</div>
+                    <p className="mb-3 text-xs text-slate-500">
+                      Проверяет, отдаёт ли метод Такском <span className="font-mono">GET /API/v2/NewDocuments</span> позиции чеков (номенклатуру).
+                      Возвращает только структуру ответа — без содержимого и без сохранения сырого JSON.
+                    </p>
+                    <OfdNewDocsDiagnostics connectionId={connections[0].id} />
+                    <div className="mt-5 border-t border-slate-200 pt-4">
+                      <div className="mb-2 text-sm font-medium text-slate-700">Диагностика конкретного чека DocumentInfo</div>
+                      <OfdDocInfoDiagnostics connectionId={connections[0].id} />
+                    </div>
+                  </div>
+                </details>
+              </div>
             </>
           ) : (
             <p className="mt-4 text-sm text-slate-500">Сначала сохраните подключение, затем добавьте кассы и запустите импорт.</p>
