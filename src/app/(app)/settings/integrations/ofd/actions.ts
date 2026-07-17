@@ -9,10 +9,10 @@ import { importTaxcomSalesForPeriod, type ImportMode } from "@/lib/ofd/importer"
 import { runSyncNowForCompany } from "@/lib/ofd/daily";
 import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeContractNumber, isCurrentAccountValid, type OfdCheckDiagnostics, type OfdSafeContract } from "@/lib/ofd/contract";
-import type { OfdConnectionConfig } from "@/lib/ofd/types";
+import type { NewDocumentsShape, OfdConnectionConfig } from "@/lib/ofd/types";
 
 export type OfdSyncSummary = { found: number; imported: number; skipped: number; incomeKopeks: number; returnKopeks: number; succeeded: number; failed: number };
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; newDocsShape?: NewDocumentsShape };
 
 
 // Only owner / general director may administer OFD integrations.
@@ -304,4 +304,46 @@ export async function syncOfdNowAction(_p: State | undefined, _formData: FormDat
     notice: `Синхронизация завершена: найдено ${t.foundReceipts}, добавлено ${t.importedReceipts}, пропущено ${t.skippedReceipts}.`,
     sync: { found: t.foundReceipts, imported: t.importedReceipts, skipped: t.skippedReceipts, incomeKopeks: t.totalIncomeKopeks, returnKopeks: t.totalReturnKopeks, succeeded: result.succeeded, failed: result.failed },
   };
+}
+
+/** DIAGNOSTIC ONLY — never touches the money import. Owner / general_director only.
+ * Calls GET /API/v2/NewDocuments and returns the SAFE structural shape (key names +
+ * counts, whether nomenclature is present). Never stores/returns/logs the raw
+ * response, ФПД, secrets or buyer PII. */
+export async function inspectOfdNewDocumentsAction(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const connectionId = str(formData, "connectionId");
+  if (!connectionId) return { ok: false, error: "Подключение не найдено." };
+  const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });
+  if (!c) return { ok: false, error: "Подключение не найдено." };
+
+  const cfg: OfdConnectionConfig = {
+    id: c.id, companyId: c.companyId, legalEntityId: c.legalEntityId, provider: c.provider,
+    serverBaseUrl: c.serverBaseUrl, authType: c.authType, contractNumber: c.contractNumber,
+    login: decryptOfdSecret(c.loginEncrypted), password: decryptOfdSecret(c.passwordEncrypted),
+    integrationToken: decryptOfdSecret(c.integrationTokenEncrypted), integratorId: decryptOfdSecret(c.integratorIdEncrypted),
+  };
+  const res = await createTaxcomClient(cfg).inspectNewDocuments();
+  await recordAudit({ action: "ofd.newdocuments_inspected", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: res.ok, code: res.ok ? "ok" : res.safeCode, documentCount: res.ok ? res.data.documentCount : null, hasItemsLikeData: res.ok ? res.data.hasItemsLikeData : null } });
+
+  if (!res.ok) {
+    const map: Record<string, string> = {
+      auth_failed: "Ошибка авторизации. Проверьте логин, пароль и Integrator-ID.",
+      no_kkt_found: "Такском: нет доступных ККТ для текущего ЛК (3106).",
+      forbidden: "Доступ запрещён. Проверьте права пользователя в Такском.",
+      rate_limited: "Слишком много запросов к Такском. Повторите позже.",
+      network: "Сеть недоступна. Повторите позже.",
+      timeout: "Сервер Такском не ответил вовремя. Повторите позже.",
+      parse_error: "Неожиданный ответ от Такском.",
+    };
+    return { ok: false, error: map[res.safeCode] ?? "Не удалось получить структуру NewDocuments." };
+  }
+  const s = res.data;
+  const notice = s.documentCount === 0
+    ? "NewDocuments: за последние 10 суток документов нет (documentCount = 0)."
+    : s.hasItemsLikeData
+      ? `NewDocuments вернул ${s.documentCount} документ(ов) и содержит позиции чеков — номенклатуру можно будет подключить.`
+      : `NewDocuments вернул ${s.documentCount} документ(ов), но позиции чеков в ответе отсутствуют.`;
+  return { ok: true, notice, newDocsShape: s };
 }

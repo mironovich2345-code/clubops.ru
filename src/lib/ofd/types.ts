@@ -127,6 +127,18 @@ export type NormalizedOfdReceipt = {
   itemsPresent?: boolean;
 };
 
+/** SAFE structural diagnostics for GET /API/v2/NewDocuments — key names + counts
+ * ONLY. Never carries document values, raw JSON, ФПД or buyer PII. Used to detect
+ * whether Taxcom's NewDocuments endpoint can yield receipt nomenclature. */
+export type NewDocumentsShape = {
+  topLevelKeys: string[]; // key names of the response envelope
+  documentCount: number;
+  firstDocumentKeys: string[]; // key names of the first document (names, not values)
+  detectedItemLikeKeys: string[]; // item-like paths that hold an array (e.g. "items")
+  hasItemsLikeData: boolean;
+  documentTypeCounts: Record<string, number>; // safe counts by documentType value
+};
+
 export type OfdResult<T> =
   | { ok: true; data: T }
   | { ok: false; safeCode: OfdSafeCode; safeMessage?: string; httpStatus?: number };

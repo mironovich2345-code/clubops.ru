@@ -7,8 +7,9 @@
 // NOTE: the exact Taxcom v2.17 REST paths must be confirmed against the account's
 // API section. They are declared here as adjustable constants; the request shape,
 // auth header and parsing are correct regardless of the final paths.
-import { parseReceiptItems } from "@/lib/ofd/taxcom/adapter";
+import { parseReceiptItems, inspectNewDocumentsShape } from "@/lib/ofd/taxcom/adapter";
 import type {
+  NewDocumentsShape,
   OfdConnectionConfig,
   OfdResult,
   OfdSafeCode,
@@ -31,6 +32,7 @@ const PATHS = {
   shiftList: "/API/v2/ShiftList",
   documentList: "/API/v2/DocumentList",
   documentInfo: "/API/v2/DocumentInfo",
+  newDocuments: "/API/v2/NewDocuments",
 };
 
 /** Extract ONLY the safe Taxcom error descriptor (apiErrorCode + commonDescription)
@@ -114,6 +116,7 @@ export type TaxcomClient = {
   listShifts(fnNumber: string, dateFrom: string, dateTo: string): Promise<OfdResult<TaxcomShift[]>>;
   listDocumentsByShift(fnNumber: string, shiftNumber: number): Promise<OfdResult<TaxcomDocumentSummary[]>>;
   getDocumentInfo(fnNumber: string, fd: number): Promise<OfdResult<TaxcomDocumentInfo>>;
+  inspectNewDocuments(): Promise<OfdResult<NewDocumentsShape>>;
 };
 
 /**
@@ -256,6 +259,17 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
       const r = await raw(PATHS.documentInfo, { method: "GET", withSession: true, query: { fn: fnNumber, fd } });
       if (!r.ok) return r;
       return { ok: true, data: parseDocumentInfo(r.data) };
+    },
+    // DIAGNOSTIC ONLY — never used by the money importer. GET /API/v2/NewDocuments
+    // (optional `an` = договор). Returns the SAFE structural shape of the response;
+    // the raw body is inspected in memory and NEVER stored / returned / logged.
+    async inspectNewDocuments() {
+      const s = await ensureSession();
+      if (!s.ok) return s;
+      const an = cfg.contractNumber?.trim();
+      const r = await raw(PATHS.newDocuments, { method: "GET", withSession: true, query: an ? { an } : {} });
+      if (!r.ok) return r;
+      return { ok: true, data: inspectNewDocumentsShape(r.data) };
     },
   };
 }

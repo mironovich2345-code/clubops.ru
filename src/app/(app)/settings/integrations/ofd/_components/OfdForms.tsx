@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction } from "../actions";
+import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, inspectOfdNewDocumentsAction } from "../actions";
 import type { OfdSyncSummary } from "../actions";
 import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
+import type { NewDocumentsShape } from "@/lib/ofd/types";
 import { formatKopeks } from "@/lib/money";
 
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; newDocsShape?: NewDocumentsShape };
 const initial: State = { ok: false };
 
 type ClubOpt = { id: string; name: string };
@@ -235,5 +236,39 @@ export function OfdSyncNow() {
         <Msg s={state} />
       )}
     </form>
+  );
+}
+
+export function OfdNewDocsDiagnostics({ connectionId }: { connectionId: string }) {
+  const [state, action] = useFormState(inspectOfdNewDocumentsAction, initial);
+  const shape = state.ok ? state.newDocsShape : undefined;
+  return (
+    <div>
+      <form action={action} className="flex flex-wrap items-center gap-3">
+        <input type="hidden" name="connectionId" value={connectionId} />
+        <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+          Проверить структуру NewDocuments
+        </button>
+        <span className="text-xs text-slate-500">Диагностика: показывает только структуру ответа (ключи и счётчики), без содержимого чеков.</span>
+      </form>
+      {state.error ? <p className="mt-2 text-sm text-rose-600">{state.error}</p> : null}
+      {shape ? (
+        <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+          <div className="mb-1">{state.notice}</div>
+          <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
+            <div><span className="text-slate-500">Документов:</span> {shape.documentCount}</div>
+            <div><span className="text-slate-500">Позиции чеков:</span> {shape.hasItemsLikeData ? <span className="text-emerald-700 font-medium">найдены</span> : <span className="text-slate-500">не найдены</span>}</div>
+            <div className="md:col-span-2"><span className="text-slate-500">Ключи первого документа:</span> {shape.firstDocumentKeys.length ? <span className="font-mono">{shape.firstDocumentKeys.join(", ")}</span> : "—"}</div>
+            {shape.detectedItemLikeKeys.length ? (
+              <div className="md:col-span-2"><span className="text-slate-500">Поля позиций:</span> <span className="font-mono">{shape.detectedItemLikeKeys.join(", ")}</span></div>
+            ) : null}
+            {Object.keys(shape.documentTypeCounts).length ? (
+              <div className="md:col-span-2"><span className="text-slate-500">Типы документов:</span> <span className="font-mono">{Object.entries(shape.documentTypeCounts).map(([t, n]) => `${t}:${n}`).join(", ")}</span></div>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Сырой ответ Такском не отображается и не сохраняется.</p>
+        </div>
+      ) : null}
+    </div>
   );
 }

@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
 import { toggleOfdMapping } from "./actions";
-import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow } from "./_components/OfdForms";
+import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdNewDocsDiagnostics } from "./_components/OfdForms";
 
 export const dynamic = "force-dynamic";
 
@@ -244,6 +244,14 @@ export default async function OfdIntegrationPage() {
                     <p className="mt-2 text-xs text-slate-500">Эти позиции попали в «Иное». Позже для них можно настроить правила статей доходов.</p>
                   </div>
                 ) : null}
+              </Section>
+
+              <Section title="Диагностика номенклатуры Такском">
+                <p className="mb-3 text-xs text-slate-500">
+                  Временный инструмент: проверяет, отдаёт ли метод Такском <span className="font-mono">GET /API/v2/NewDocuments</span> позиции чеков
+                  (номенклатуру). Возвращает только структуру ответа — без содержимого и без сохранения сырого JSON.
+                </p>
+                <OfdNewDocsDiagnostics connectionId={connectionRow.id} />
               </Section>
 
               <Section title="История синхронизаций">

@@ -1,7 +1,7 @@
 // Pure normalization of Taxcom DocumentList summaries → NormalizedOfdReceipt.
 // No I/O, no logging, fully testable. Only Income / IncomeReturn are kept; every
 // other document type (expense, correction, …) is skipped in the MVP.
-import type { NormalizedOfdReceipt, OfdOperationType, TaxcomDocumentSummary, TaxcomReceiptItem } from "@/lib/ofd/types";
+import type { NewDocumentsShape, NormalizedOfdReceipt, OfdOperationType, TaxcomDocumentSummary, TaxcomReceiptItem } from "@/lib/ofd/types";
 import { cleanItemName, normalizeItemName } from "@/lib/ofd/revenue";
 
 /** Map a Taxcom accountingType string to our enum, or null to SKIP the doc.
@@ -73,6 +73,60 @@ export function parseReceiptItems(raw: unknown): { items: TaxcomReceiptItem[]; i
     items.push({ name, normalizedName: normalizeItemName(name), quantityMilli, priceKopeks, totalKopeks });
   }
   return { items, itemsPresent: present };
+}
+
+// Item-like array paths probed by the NewDocuments shape diagnostic — direct keys
+// plus common nested containers. Nested paths use "parent.child".
+const ITEM_LIKE_PATHS = [
+  "items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows",
+  "fiscalData.items", "document.items", "receipt.items",
+];
+
+function arrayAtPath(o: Record<string, unknown>, path: string): unknown[] | null {
+  const parts = path.split(".");
+  let cur: unknown = o;
+  for (const p of parts) {
+    if (!cur || typeof cur !== "object") return null;
+    cur = (cur as Record<string, unknown>)[p];
+  }
+  return Array.isArray(cur) ? cur : null;
+}
+
+/**
+ * Inspect a raw GET /API/v2/NewDocuments response and return ONLY its SAFE shape —
+ * key names + counts, never any value, raw JSON, ФПД or personal data. Detects
+ * whether the response carries receipt nomenclature (item-like arrays). Never throws.
+ */
+export function inspectNewDocumentsShape(raw: unknown): NewDocumentsShape {
+  const o = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const topLevelKeys = Object.keys(o).sort();
+  const { arr } = firstArray(o, ["records", "Records", "Items", "items", "Documents", "documents", "NewDocuments", "DocumentList"]);
+  const documents = arr as Record<string, unknown>[];
+  const first = documents[0] && typeof documents[0] === "object" ? documents[0] : {};
+  const firstDocumentKeys = Object.keys(first).sort();
+
+  const detectedItemLikeKeys: string[] = [];
+  for (const path of ITEM_LIKE_PATHS) {
+    if (arrayAtPath(first, path)) detectedItemLikeKeys.push(path);
+  }
+
+  // Safe counts by documentType value ("2" | "3" | "5" | …) — a fiscal type code,
+  // not personal data.
+  const documentTypeCounts: Record<string, number> = {};
+  for (const d of documents) {
+    const dt = d && typeof d === "object" ? (d.documentType ?? d.DocumentType ?? d.type ?? d.Type) : undefined;
+    const key = dt == null || String(dt).trim() === "" ? "unknown" : String(dt).trim().slice(0, 16);
+    documentTypeCounts[key] = (documentTypeCounts[key] ?? 0) + 1;
+  }
+
+  return {
+    topLevelKeys,
+    documentCount: documents.length,
+    firstDocumentKeys,
+    detectedItemLikeKeys,
+    hasItemsLikeData: detectedItemLikeKeys.length > 0,
+    documentTypeCounts,
+  };
 }
 
 /** Why a document was not turned into a receipt (for safe aggregate diagnostics). */
