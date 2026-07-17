@@ -1,7 +1,7 @@
 // Pure normalization of Taxcom DocumentList summaries → NormalizedOfdReceipt.
 // No I/O, no logging, fully testable. Only Income / IncomeReturn are kept; every
 // other document type (expense, correction, …) is skipped in the MVP.
-import type { NewDocumentsShape, NormalizedOfdReceipt, OfdOperationType, TaxcomDocumentSummary, TaxcomReceiptItem } from "@/lib/ofd/types";
+import type { DocumentInfoShape, NewDocumentsShape, NormalizedOfdReceipt, OfdOperationType, TaxcomDocumentSummary, TaxcomReceiptItem } from "@/lib/ofd/types";
 import { cleanItemName, normalizeItemName } from "@/lib/ofd/revenue";
 
 /** Map a Taxcom accountingType string to our enum, or null to SKIP the doc.
@@ -127,6 +127,41 @@ export function inspectNewDocumentsShape(raw: unknown): NewDocumentsShape {
     hasItemsLikeData: detectedItemLikeKeys.length > 0,
     documentTypeCounts,
   };
+}
+
+// Item-like array paths probed by the DocumentInfo shape diagnostic — direct keys
+// plus nested containers (adds ticket.items / content.items vs NewDocuments).
+const DOC_ITEM_LIKE_PATHS = [
+  "items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows",
+  "fiscalData.items", "document.items", "receipt.items", "ticket.items", "content.items",
+];
+
+/**
+ * Inspect a raw GET /API/v2/DocumentInfo response (one fiscal document) and return
+ * ONLY its SAFE shape — key names + counts, never any value, raw JSON, ФПД or
+ * personal data. Detects whether the document carries receipt nomenclature. Never
+ * throws.
+ */
+export function inspectDocumentInfoShape(raw: unknown): DocumentInfoShape {
+  const o = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const topLevelKeys = Object.keys(o).sort();
+  // The "document" may be the response root or a nested wrapper.
+  const docObj = (["document", "Document", "ticket", "Ticket", "content", "Content", "receipt", "Receipt", "fiscalData", "FiscalData"]
+    .map((k) => o[k])
+    .find((v) => v && typeof v === "object") ?? o) as Record<string, unknown>;
+  const documentKeys = Object.keys(docObj).sort();
+
+  const detectedItemLikeKeys: string[] = [];
+  let itemLikeCount = 0;
+  for (const path of DOC_ITEM_LIKE_PATHS) {
+    const arr = arrayAtPath(o, path);
+    if (arr) { detectedItemLikeKeys.push(path); itemLikeCount += arr.length; }
+  }
+
+  const dt = o.documentType ?? o.DocumentType ?? o.type ?? o.Type ?? docObj.documentType ?? docObj.DocumentType;
+  const safeDocumentType = dt == null || String(dt).trim() === "" ? null : String(dt).trim().slice(0, 16);
+
+  return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, safeDocumentType };
 }
 
 /** Why a document was not turned into a receipt (for safe aggregate diagnostics). */

@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, inspectOfdNewDocumentsAction } from "../actions";
+import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, inspectOfdNewDocumentsAction, inspectOfdDocumentInfoAction } from "../actions";
 import type { OfdSyncSummary } from "../actions";
 import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
-import type { NewDocumentsShape } from "@/lib/ofd/types";
+import type { NewDocumentsShape, DocumentInfoShape } from "@/lib/ofd/types";
 import { formatKopeks } from "@/lib/money";
 
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; newDocsShape?: NewDocumentsShape };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; newDocsShape?: NewDocumentsShape; docInfoShape?: DocumentInfoShape };
 const initial: State = { ok: false };
 
 type ClubOpt = { id: string; name: string };
@@ -264,6 +264,40 @@ export function OfdNewDocsDiagnostics({ connectionId }: { connectionId: string }
             ) : null}
             {Object.keys(shape.documentTypeCounts).length ? (
               <div className="md:col-span-2"><span className="text-slate-500">Типы документов:</span> <span className="font-mono">{Object.entries(shape.documentTypeCounts).map(([t, n]) => `${t}:${n}`).join(", ")}</span></div>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Сырой ответ Такском не отображается и не сохраняется.</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function OfdDocInfoDiagnostics({ connectionId }: { connectionId: string }) {
+  const [state, action] = useFormState(inspectOfdDocumentInfoAction, initial);
+  const shape = state.ok ? state.docInfoShape : undefined;
+  return (
+    <div>
+      <form action={action} className="flex flex-wrap items-end gap-3">
+        <input type="hidden" name="connectionId" value={connectionId} />
+        <Field label="ФН"><input name="fnNumber" required placeholder="номер ФН" className="input" /></Field>
+        <Field label="ФД"><input name="fdNumber" required inputMode="numeric" placeholder="номер ФД" className="input" /></Field>
+        <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+          Проверить DocumentInfo
+        </button>
+      </form>
+      <p className="mt-1 text-xs text-slate-500">ФН и ФД можно взять из истории импорта / DocumentList. Показывается только структура ответа, без содержимого чека.</p>
+      {state.error ? <p className="mt-2 text-sm text-rose-600">{state.error}</p> : null}
+      {shape ? (
+        <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+          <div className="mb-1">{state.notice}</div>
+          <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
+            <div><span className="text-slate-500">Позиции чека:</span> {shape.hasItemsLikeData ? <span className="text-emerald-700 font-medium">найдены ({shape.itemLikeCount})</span> : <span className="text-slate-500">не найдены</span>}</div>
+            {shape.safeDocumentType ? <div><span className="text-slate-500">Тип документа:</span> <span className="font-mono">{shape.safeDocumentType}</span></div> : null}
+            <div className="md:col-span-2"><span className="text-slate-500">Ключи верхнего уровня:</span> {shape.topLevelKeys.length ? <span className="font-mono">{shape.topLevelKeys.join(", ")}</span> : "—"}</div>
+            <div className="md:col-span-2"><span className="text-slate-500">Ключи документа:</span> {shape.documentKeys.length ? <span className="font-mono">{shape.documentKeys.join(", ")}</span> : "—"}</div>
+            {shape.detectedItemLikeKeys.length ? (
+              <div className="md:col-span-2"><span className="text-slate-500">Поля позиций:</span> <span className="font-mono">{shape.detectedItemLikeKeys.join(", ")}</span></div>
             ) : null}
           </div>
           <p className="mt-2 text-xs text-slate-500">Сырой ответ Такском не отображается и не сохраняется.</p>

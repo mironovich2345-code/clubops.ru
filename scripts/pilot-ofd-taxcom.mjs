@@ -285,6 +285,19 @@ async function main() {
     for (const d of docs) { const dt = d && typeof d === "object" ? (d.documentType ?? d.DocumentType ?? d.type ?? d.Type) : undefined; const key = dt == null || String(dt).trim() === "" ? "unknown" : String(dt).trim().slice(0, 16); documentTypeCounts[key] = (documentTypeCounts[key] ?? 0) + 1; }
     return { topLevelKeys, documentCount: docs.length, firstDocumentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, documentTypeCounts };
   };
+  // Mirror of adapter.inspectDocumentInfoShape — SAFE structure only (keys + counts).
+  const DOC_ITEM_PATHS = ["items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows", "fiscalData.items", "document.items", "receipt.items", "ticket.items", "content.items"];
+  const inspectDIShape = (raw) => {
+    const o = raw && typeof raw === "object" ? raw : {};
+    const topLevelKeys = Object.keys(o).sort();
+    const docObj = (["document", "Document", "ticket", "Ticket", "content", "Content", "receipt", "Receipt", "fiscalData", "FiscalData"].map((k) => o[k]).find((v) => v && typeof v === "object")) ?? o;
+    const documentKeys = Object.keys(docObj).sort();
+    const detectedItemLikeKeys = []; let itemLikeCount = 0;
+    for (const path of DOC_ITEM_PATHS) { const arr = arrAtPath(o, path); if (arr) { detectedItemLikeKeys.push(path); itemLikeCount += arr.length; } }
+    const dt = o.documentType ?? o.DocumentType ?? o.type ?? o.Type ?? docObj.documentType ?? docObj.DocumentType;
+    const safeDocumentType = dt == null || String(dt).trim() === "" ? null : String(dt).trim().slice(0, 16);
+    return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, safeDocumentType };
+  };
 
   // Client mirror with an INJECTED fetch that captures requests (method + query).
   function makeClient(cfg, fetchImpl) {
@@ -317,6 +330,7 @@ async function main() {
       listShifts: async (fn, from, to) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/ShiftList", { method: "GET", withSession: true, query: { fn, begin: dayRange(from).begin, end: dayRange(to).end, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseShiftList(r.data) }; },
       listDocumentsByShift: async (fn, shift) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentList", { method: "GET", withSession: true, query: { fn, shift, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseDocumentList(r.data, { fn, shift }) }; },
       inspectNewDocuments: async () => { const s = await ensureSession(); if (!s.ok) return s; const an = cfg.contractNumber && cfg.contractNumber.trim(); const r = await raw("/API/v2/NewDocuments", { method: "GET", withSession: true, query: an ? { an } : {} }); if (!r.ok) return r; return { ok: true, data: inspectNDShape(r.data) }; },
+      inspectDocumentInfo: async (fn, fd) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentInfo", { method: "GET", withSession: true, query: { fn, fd } }); if (!r.ok) return r; return { ok: true, data: inspectDIShape(r.data) }; },
     };
   }
   const okJson = (obj) => ({ ok: true, status: 200, async text() { return JSON.stringify(obj); } });
@@ -668,6 +682,36 @@ async function main() {
   check("ND11 auth error → auth_failed", (await cliNDauth.inspectNewDocuments()).safeCode === "auth_failed");
   check("ND12 NewDocuments request carries token as a HEADER, never in a body (body absent on GET)", cliND.captured.find((c) => c.path === "/API/v2/NewDocuments").body === undefined && cliND.captured.find((c) => c.path === "/API/v2/NewDocuments").headers["Session-Token"] === "TKN");
 
+  // ===== DocumentInfo shape diagnostics (DIAGNOSTIC ONLY) =====================
+  // A. inspectDocumentInfoShape parser — SAFE structure only.
+  const diWithItems = { documentType: "3", fdNumber: 4935, fiscalSign: "1571686074", clientInfo: "+79990000000 ivan@mail.ru Иванов", document: { items: [{ name: "Абонемент", sum: 200000 }, { name: "ПТ", sum: 100000 }] } };
+  const di = inspectDIShape(diWithItems);
+  check("DI1 shape: topLevelKeys + documentKeys + item-like detection + itemLikeCount + safeDocumentType", di.topLevelKeys.includes("document") && di.documentKeys.includes("items") && di.detectedItemLikeKeys.includes("document.items") && di.hasItemsLikeData === true && di.itemLikeCount === 2 && di.safeDocumentType === "3");
+  check("DI2 detects items/positions/goods/products/services/rows (direct)", ["items", "positions", "goods", "products", "services", "rows"].every((k) => inspectDIShape({ [k]: [{}] }).detectedItemLikeKeys.includes(k)) && ["Items", "Positions", "Goods", "Products", "Services", "Rows"].every((k) => inspectDIShape({ [k]: [{}] }).detectedItemLikeKeys.includes(k)));
+  check("DI3 detects nested fiscalData.items/document.items/receipt.items/ticket.items/content.items", inspectDIShape({ fiscalData: { items: [{}] } }).detectedItemLikeKeys.includes("fiscalData.items") && inspectDIShape({ document: { items: [{}] } }).detectedItemLikeKeys.includes("document.items") && inspectDIShape({ receipt: { items: [{}] } }).detectedItemLikeKeys.includes("receipt.items") && inspectDIShape({ ticket: { items: [{}, {}] } }).detectedItemLikeKeys.includes("ticket.items") && inspectDIShape({ content: { items: [{}] } }).detectedItemLikeKeys.includes("content.items"));
+  check("DI4 shape returns ONLY key names + counts — no raw values / no PII values leak", (() => { const j = JSON.stringify(di); return !/79990000000|ivan@mail\.ru|Иванов|1571686074|Абонемент|200000|100000/i.test(j) && Object.keys(di).sort().join(",") === "detectedItemLikeKeys,documentKeys,hasItemsLikeData,itemLikeCount,safeDocumentType,topLevelKeys"; })());
+  check("DI5 no items → hasItemsLikeData false, itemLikeCount 0 (not an error)", (() => { const s = inspectDIShape({ documentType: "3", fdNumber: 1, sum: 100 }); return s.hasItemsLikeData === false && s.detectedItemLikeKeys.length === 0 && s.itemLikeCount === 0; })());
+  check("DI6 empty / non-object → safe empty shape", (() => { const s = inspectDIShape({}); return s.topLevelKeys.length === 0 && s.hasItemsLikeData === false && s.itemLikeCount === 0 && s.safeDocumentType === null; })() && inspectDIShape(null).hasItemsLikeData === false && inspectDIShape("garbage").itemLikeCount === 0);
+  // B. Client: GET + fn/fd query + Session-Token + Integrator-ID, no POST/body.
+  const cfgDI = { serverBaseUrl: "https://api-lk-ofd.taxcom.ru", authType: "login_password", contractNumber: "CD-25/455507", login: "L", password: "P", integratorId: "INT-1", integrationToken: null };
+  let diInit = null;
+  const cliDI = makeClient(cfgDI, async (url, init) => { if (url.includes("Login")) return okJson({ sessionToken: "TKN" }); if (url.includes("DocumentInfo")) { diInit = init; return okJson(diWithItems); } return okJson({}); });
+  const diRes = await cliDI.inspectDocumentInfo("7381440800719861", 4935);
+  const diReq = cliDI.captured.find((c) => c.path === "/API/v2/DocumentInfo");
+  check("DI7 DocumentInfo is GET with fn+fd query + Session-Token + Integrator-ID; no body/POST", diReq.method === "GET" && diReq.url.includes("/API/v2/DocumentInfo?") && diReq.url.includes("fn=7381440800719861") && diReq.url.includes("fd=4935") && diReq.headers["Session-Token"] === "TKN" && diReq.headers["Integrator-ID"] === "INT-1" && diReq.hasBody === false && !("body" in diInit) && diInit.method === "GET");
+  check("DI8 inspect result is the safe shape (hasItemsLikeData true, itemLikeCount 2), never raw doc / no PII values", diRes.ok && diRes.data.hasItemsLikeData === true && diRes.data.itemLikeCount === 2 && !/79990000000|ivan@mail\.ru|Иванов|Абонемент|1571686074/i.test(JSON.stringify(diRes)));
+  // C. Errors classified; empty is success.
+  const cliDI0 = makeClient(cfgDI, async (url) => url.includes("Login") ? okJson({ sessionToken: "T" }) : okJson({ documentType: "3", fdNumber: 9 }));
+  const di0 = await cliDI0.inspectDocumentInfo("FN", 9);
+  check("DI9 document without positions → safe success hasItemsLikeData=false", di0.ok === true && di0.data.hasItemsLikeData === false && di0.data.itemLikeCount === 0);
+  const cliDI3103 = makeClient(cfgDI, async (url) => url.includes("Login") ? okJson({ sessionToken: "T" }) : errJson(404, { apiErrorCode: 3103, commonDescription: "ККТ не найдена" }));
+  check("DI10 apiErrorCode 3103 → kkt_not_found", (await cliDI3103.inspectDocumentInfo("FN", 1)).safeCode === "kkt_not_found");
+  const cliDI3106 = makeClient(cfgDI, async (url) => url.includes("Login") ? okJson({ sessionToken: "T" }) : errJson(200, { apiErrorCode: 3106, commonDescription: "Нет доступных ККТ" }));
+  check("DI11 apiErrorCode 3106 → no_kkt_found", (await cliDI3106.inspectDocumentInfo("FN", 1)).safeCode === "no_kkt_found");
+  const cliDIauth = makeClient(cfgDI, async (url) => url.includes("Login") ? okJson({ sessionToken: "T" }) : errJson(401, { commonDescription: "Unauthorized" }));
+  check("DI12 auth error → auth_failed", (await cliDIauth.inspectDocumentInfo("FN", 1)).safeCode === "auth_failed");
+  check("DI13 result never contains secret/PII words OR the raw PII VALUES; no body sent", !/login|password|integrator|sessionToken|Bearer|phone|email|customer|buyer|stack|"raw"/i.test(JSON.stringify(diRes)) && !/79990000000|ivan@mail\.ru|Иванов/i.test(JSON.stringify(diRes)) && diReq.body === undefined);
+
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
   check("T6 3103 not auth_failed; 401 auth_failed; 403 forbidden", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
@@ -931,6 +975,12 @@ async function main() {
   check("T-S17c importer money import is UNCHANGED — never calls NewDocuments (diagnostic stays out of import path)", !importer.includes("NewDocuments") && !importer.includes("inspectNewDocuments"));
   check("T-S17d action inspectOfdNewDocumentsAction: requireOfdAdmin gate → inspectNewDocuments → SAFE result (returns only newDocsShape, no raw/token/stack in result)", actions.includes("export async function inspectOfdNewDocumentsAction") && actions.includes("requireOfdAdmin()") && actions.includes("inspectNewDocuments()") && actions.includes("newDocsShape: s") && !/inspectOfdNewDocumentsAction[\s\S]{0,1400}return\s*\{[^}]*(sessionToken|rawResponse|\.stack)/i.test(actions));
   check("UI: 'Диагностика номенклатуры Такском' block — button + safe shape (документов / позиции / ключи), no raw JSON", pageSrc.includes("Диагностика номенклатуры Такском") && pageSrc.includes("OfdNewDocsDiagnostics") && forms.includes("Проверить структуру NewDocuments") && forms.includes("newDocsShape") && forms.includes("firstDocumentKeys") && forms.includes("hasItemsLikeData") && forms.includes("Сырой ответ Такском не отображается и не сохраняется") && !/newDocsShape[\s\S]{0,400}JSON\.stringify/.test(forms));
+  // --- DocumentInfo shape DIAGNOSTIC (real source) ---
+  check("T-S18 client inspectDocumentInfo: GET /API/v2/DocumentInfo + fn/fd query, DIAGNOSTIC ONLY (never returns raw body)", clientSrc.includes("async inspectDocumentInfo(fnNumber, fd)") && /raw\(PATHS\.documentInfo,\s*\{\s*method:\s*"GET",\s*withSession:\s*true,\s*query:\s*\{\s*fn:\s*fnNumber,\s*fd\s*\}/.test(clientSrc) && clientSrc.includes("inspectDocumentInfoShape(r.data)"));
+  check("T-S18b adapter.inspectDocumentInfoShape returns SAFE structure only (keys+counts, nested ticket.items/content.items), no values/PII", adapter.includes("export function inspectDocumentInfoShape") && adapter.includes("documentKeys") && adapter.includes("itemLikeCount") && adapter.includes("safeDocumentType") && adapter.includes('"ticket.items"') && adapter.includes('"content.items"') && !/inspectDocumentInfoShape[\s\S]*?(itemName|buyer|phone|email|JSON\.stringify)/i.test(adapter));
+  check("T-S18c importer money import UNCHANGED — never calls DocumentInfo inspector", !importer.includes("inspectDocumentInfo"));
+  check("T-S18d action inspectOfdDocumentInfoAction: requireOfdAdmin + fn/fd validation → inspectDocumentInfo → SAFE result (docInfoShape only)", actions.includes("export async function inspectOfdDocumentInfoAction") && actions.includes("requireOfdAdmin()") && actions.includes("inspectDocumentInfo(fnNumber, fd)") && actions.includes("docInfoShape: d") && actions.includes('/^\\d+$/.test(fdRaw)') && !/inspectOfdDocumentInfoAction[\s\S]{0,1400}return\s*\{[^}]*(sessionToken|rawResponse|\.stack)/i.test(actions));
+  check("UI: 'DocumentInfo' diag form — ФН/ФД inputs + button + safe shape (ключи/позиции/itemLikeCount), no raw JSON", pageSrc.includes("Диагностика конкретного чека DocumentInfo") && pageSrc.includes("OfdDocInfoDiagnostics") && forms.includes("Проверить DocumentInfo") && forms.includes('name="fnNumber"') && forms.includes('name="fdNumber"') && forms.includes("docInfoShape") && forms.includes("documentKeys") && forms.includes("itemLikeCount") && !/docInfoShape[\s\S]{0,400}JSON\.stringify/.test(forms));
   check("UI: Автоимпорт block (status by OFD_INTEGRATIONS_ENABLED, endpoint, last auto run, hint; no CRON_SECRET)", pageSrc.includes("Автоимпорт") && pageSrc.includes("POST /api/cron/ofd/daily") && pageSrc.includes('mode: "auto_daily"') && pageSrc.includes("Последняя автоматическая синхронизация") && pageSrc.includes("Автоимпорт подтягивает продажи за вчера") && !/CRON_SECRET/.test(pageSrc));
   check("env examples define CRON_SECRET (+ OFD_INTEGRATIONS_ENABLED) without a real value", /CRON_SECRET=""/.test(envEx) && /OFD_INTEGRATIONS_ENABLED="false"/.test(envEx) && /CRON_SECRET=""/.test(envProd) && /OFD_INTEGRATIONS_ENABLED="false"/.test(envProd));
   check("docs: RU_DEPLOYMENT has cron curl example + endpoint + systemd timer note (no real secret)", deployDoc.includes("/api/cron/ofd/daily") && deployDoc.includes("curl -X POST") && deployDoc.includes("Authorization: Bearer $CRON_SECRET") && deployDoc.includes("systemd") && deployDoc.includes("OnCalendar"));

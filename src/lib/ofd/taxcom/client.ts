@@ -7,8 +7,9 @@
 // NOTE: the exact Taxcom v2.17 REST paths must be confirmed against the account's
 // API section. They are declared here as adjustable constants; the request shape,
 // auth header and parsing are correct regardless of the final paths.
-import { parseReceiptItems, inspectNewDocumentsShape } from "@/lib/ofd/taxcom/adapter";
+import { parseReceiptItems, inspectNewDocumentsShape, inspectDocumentInfoShape } from "@/lib/ofd/taxcom/adapter";
 import type {
+  DocumentInfoShape,
   NewDocumentsShape,
   OfdConnectionConfig,
   OfdResult,
@@ -117,6 +118,7 @@ export type TaxcomClient = {
   listDocumentsByShift(fnNumber: string, shiftNumber: number): Promise<OfdResult<TaxcomDocumentSummary[]>>;
   getDocumentInfo(fnNumber: string, fd: number): Promise<OfdResult<TaxcomDocumentInfo>>;
   inspectNewDocuments(): Promise<OfdResult<NewDocumentsShape>>;
+  inspectDocumentInfo(fnNumber: string, fd: number): Promise<OfdResult<DocumentInfoShape>>;
 };
 
 /**
@@ -270,6 +272,17 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
       const r = await raw(PATHS.newDocuments, { method: "GET", withSession: true, query: an ? { an } : {} });
       if (!r.ok) return r;
       return { ok: true, data: inspectNewDocumentsShape(r.data) };
+    },
+    // DIAGNOSTIC ONLY — never used by the money importer. GET /API/v2/DocumentInfo
+    // ?fn=&fd= (Session-Token + Integrator-ID headers). Returns the SAFE structural
+    // shape of one document; the raw body is inspected in memory and NEVER stored /
+    // returned / logged.
+    async inspectDocumentInfo(fnNumber, fd) {
+      const s = await ensureSession();
+      if (!s.ok) return s;
+      const r = await raw(PATHS.documentInfo, { method: "GET", withSession: true, query: { fn: fnNumber, fd } });
+      if (!r.ok) return r;
+      return { ok: true, data: inspectDocumentInfoShape(r.data) };
     },
   };
 }

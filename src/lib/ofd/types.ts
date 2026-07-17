@@ -139,6 +139,17 @@ export type NewDocumentsShape = {
   documentTypeCounts: Record<string, number>; // safe counts by documentType value
 };
 
+/** SAFE structural diagnostics for GET /API/v2/DocumentInfo (one fiscal document)
+ * — key names + counts ONLY. Never carries document values, raw JSON, ФПД or PII. */
+export type DocumentInfoShape = {
+  topLevelKeys: string[]; // key names of the response envelope
+  documentKeys: string[]; // key names of the document object (names, not values)
+  detectedItemLikeKeys: string[]; // item-like paths that hold an array
+  hasItemsLikeData: boolean;
+  itemLikeCount: number; // total item-like rows across detected arrays (count only)
+  safeDocumentType: string | null; // documentType value ("3" | …), safe code only
+};
+
 export type OfdResult<T> =
   | { ok: true; data: T }
   | { ok: false; safeCode: OfdSafeCode; safeMessage?: string; httpStatus?: number };

@@ -9,10 +9,10 @@ import { importTaxcomSalesForPeriod, type ImportMode } from "@/lib/ofd/importer"
 import { runSyncNowForCompany } from "@/lib/ofd/daily";
 import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeContractNumber, isCurrentAccountValid, type OfdCheckDiagnostics, type OfdSafeContract } from "@/lib/ofd/contract";
-import type { NewDocumentsShape, OfdConnectionConfig } from "@/lib/ofd/types";
+import type { DocumentInfoShape, NewDocumentsShape, OfdConnectionConfig } from "@/lib/ofd/types";
 
 export type OfdSyncSummary = { found: number; imported: number; skipped: number; incomeKopeks: number; returnKopeks: number; succeeded: number; failed: number };
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; newDocsShape?: NewDocumentsShape };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; newDocsShape?: NewDocumentsShape; docInfoShape?: DocumentInfoShape };
 
 
 // Only owner / general director may administer OFD integrations.
@@ -346,4 +346,49 @@ export async function inspectOfdNewDocumentsAction(_p: State | undefined, formDa
       ? `NewDocuments вернул ${s.documentCount} документ(ов) и содержит позиции чеков — номенклатуру можно будет подключить.`
       : `NewDocuments вернул ${s.documentCount} документ(ов), но позиции чеков в ответе отсутствуют.`;
   return { ok: true, notice, newDocsShape: s };
+}
+
+/** DIAGNOSTIC ONLY — never touches the money import. Owner / general_director only.
+ * Calls GET /API/v2/DocumentInfo?fn=&fd= for ONE fiscal document and returns the
+ * SAFE structural shape (key names + counts, whether nomenclature is present).
+ * Never stores/returns/logs the raw response, ФПД, secrets or buyer PII. */
+export async function inspectOfdDocumentInfoAction(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const connectionId = str(formData, "connectionId");
+  const fnNumber = str(formData, "fnNumber");
+  const fdRaw = str(formData, "fdNumber");
+  if (!connectionId) return { ok: false, error: "Подключение не найдено." };
+  if (!fnNumber || !fdRaw || !/^\d+$/.test(fdRaw)) return { ok: false, error: "Укажите ФН и числовой ФД." };
+  const fd = Number(fdRaw);
+  const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });
+  if (!c) return { ok: false, error: "Подключение не найдено." };
+
+  const cfg: OfdConnectionConfig = {
+    id: c.id, companyId: c.companyId, legalEntityId: c.legalEntityId, provider: c.provider,
+    serverBaseUrl: c.serverBaseUrl, authType: c.authType, contractNumber: c.contractNumber,
+    login: decryptOfdSecret(c.loginEncrypted), password: decryptOfdSecret(c.passwordEncrypted),
+    integrationToken: decryptOfdSecret(c.integrationTokenEncrypted), integratorId: decryptOfdSecret(c.integratorIdEncrypted),
+  };
+  const res = await createTaxcomClient(cfg).inspectDocumentInfo(fnNumber, fd);
+  await recordAudit({ action: "ofd.documentinfo_inspected", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: res.ok, code: res.ok ? "ok" : res.safeCode, hasItemsLikeData: res.ok ? res.data.hasItemsLikeData : null, itemLikeCount: res.ok ? res.data.itemLikeCount : null } });
+
+  if (!res.ok) {
+    const map: Record<string, string> = {
+      auth_failed: "Ошибка авторизации. Проверьте логин, пароль и Integrator-ID.",
+      kkt_not_found: "Такском: документ/ККТ не найден (3103).",
+      no_kkt_found: "Такском: нет доступных ККТ для текущего ЛК (3106).",
+      forbidden: "Доступ запрещён. Проверьте права пользователя в Такском.",
+      rate_limited: "Слишком много запросов к Такском. Повторите позже.",
+      network: "Сеть недоступна. Повторите позже.",
+      timeout: "Сервер Такском не ответил вовремя. Повторите позже.",
+      parse_error: "Неожиданный ответ от Такском.",
+    };
+    return { ok: false, error: map[res.safeCode] ?? "Не удалось получить структуру DocumentInfo." };
+  }
+  const d = res.data;
+  const notice = d.hasItemsLikeData
+    ? `DocumentInfo содержит позиции чека (найдено ${d.itemLikeCount}) — номенклатуру можно будет подключить.`
+    : "DocumentInfo: позиции чека в ответе отсутствуют.";
+  return { ok: true, notice, docInfoShape: d };
 }

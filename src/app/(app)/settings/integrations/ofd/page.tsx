@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
 import { toggleOfdMapping } from "./actions";
-import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdNewDocsDiagnostics } from "./_components/OfdForms";
+import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
 
 export const dynamic = "force-dynamic";
 
@@ -252,6 +252,10 @@ export default async function OfdIntegrationPage() {
                   (номенклатуру). Возвращает только структуру ответа — без содержимого и без сохранения сырого JSON.
                 </p>
                 <OfdNewDocsDiagnostics connectionId={connectionRow.id} />
+                <div className="mt-5 border-t border-slate-200 pt-4">
+                  <div className="mb-2 text-sm font-medium text-slate-700">Диагностика конкретного чека DocumentInfo</div>
+                  <OfdDocInfoDiagnostics connectionId={connectionRow.id} />
+                </div>
               </Section>
 
               <Section title="История синхронизаций">
