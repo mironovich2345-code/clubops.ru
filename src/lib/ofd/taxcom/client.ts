@@ -7,11 +7,12 @@
 // NOTE: the exact Taxcom v2.17 REST paths must be confirmed against the account's
 // API section. They are declared here as adjustable constants; the request shape,
 // auth header and parsing are correct regardless of the final paths.
-import { parseReceiptItems, inspectNewDocumentsShape, inspectDocumentInfoShape } from "@/lib/ofd/taxcom/adapter";
+import { parseReceiptItems, inspectNewDocumentsShape, inspectDocumentInfoShape, parseReceiptItemsFromDocumentInfo } from "@/lib/ofd/taxcom/adapter";
 import type {
   DocumentInfoShape,
   NewDocumentsShape,
   OfdConnectionConfig,
+  TaxcomReceiptItem,
   OfdResult,
   OfdSafeCode,
   TaxcomAccountList,
@@ -119,6 +120,7 @@ export type TaxcomClient = {
   getDocumentInfo(fnNumber: string, fd: number): Promise<OfdResult<TaxcomDocumentInfo>>;
   inspectNewDocuments(): Promise<OfdResult<NewDocumentsShape>>;
   inspectDocumentInfo(fnNumber: string, fd: number): Promise<OfdResult<DocumentInfoShape>>;
+  getDocumentInfoForReceipt(fnNumber: string, fd: number): Promise<OfdResult<{ items: TaxcomReceiptItem[]; itemsPresent: boolean }>>;
 };
 
 /**
@@ -283,6 +285,17 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
       const r = await raw(PATHS.documentInfo, { method: "GET", withSession: true, query: { fn: fnNumber, fd } });
       if (!r.ok) return r;
       return { ok: true, data: inspectDocumentInfoShape(r.data) };
+    },
+    // LIVE nomenclature for the money importer. GET /API/v2/DocumentInfo?fn=&fd=
+    // (Session-Token + Integrator-ID headers, no body). The raw response is parsed
+    // to SAFE positions in memory and ONLY the items leave — the raw fiscal JSON is
+    // never returned, stored or logged.
+    async getDocumentInfoForReceipt(fnNumber, fd) {
+      const s = await ensureSession();
+      if (!s.ok) return s;
+      const r = await raw(PATHS.documentInfo, { method: "GET", withSession: true, query: { fn: fnNumber, fd } });
+      if (!r.ok) return r;
+      return { ok: true, data: parseReceiptItemsFromDocumentInfo(r.data) };
     },
   };
 }

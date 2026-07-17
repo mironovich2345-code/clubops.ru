@@ -152,7 +152,7 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
   let found = 0, imported = 0, skipped = 0, kktFailures = 0;
   let incomeTotal = 0, returnTotal = 0;
   // SAFE aggregate item diagnostics (counts only — no names / no raw / no ФПД).
-  const itemStats = { itemDocumentsSeen: 0, itemRowsSeen: 0, itemRowsSaved: 0, itemRowsSkipped: 0, categoryOtherCount: 0 };
+  const itemStats = { itemDocumentsSeen: 0, itemRowsSeen: 0, itemRowsSaved: 0, itemRowsSkipped: 0, categoryOtherCount: 0, documentInfoRequested: 0, documentInfoSucceeded: 0, documentInfoFailed: 0 };
   const touched = new Set<string>(); // `${clubId}|${legalEntityId ?? ""}|${day}`
 
   for (const m of mappings) {
@@ -239,12 +239,40 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
       touched.add(`${m.clubId}|${legal ?? ""}|${dayOf(r.receiptDate)}`);
     }
 
-    // Persist SAFE nomenclature lines (if the response carried any) for ALL of this
-    // KKT's receipts — fresh and already-imported (backfill). Idempotent by itemKey.
-    // Item failures never fail the receipt import (receipts are already saved).
+    // Persist SAFE nomenclature lines for ALL of this KKT's receipts — fresh and
+    // already-imported (backfill). Idempotent by itemKey. Item failures never fail
+    // the receipt import (receipts are already saved).
     try {
       const idRows = await prisma.ofdReceiptImport.findMany({ where: { dedupeKey: { in: keys } }, select: { id: true, dedupeKey: true } });
       const idByKey = new Map(idRows.map((r) => [r.dedupeKey, r.id]));
+
+      // LIVE nomenclature via DocumentInfo — ONLY for receipts that don't already
+      // have positions (fresh receipts + backfill of skipped ones). DocumentList is
+      // still the source of the receipts themselves; DocumentInfo only enriches. To
+      // spare the API this is sequential and skips receipts already carrying items.
+      if (typeof client.getDocumentInfoForReceipt === "function") {
+        const idsWithItems = new Set(
+          (await prisma.ofdReceiptItem.findMany({ where: { receiptImportId: { in: [...idByKey.values()] } }, select: { receiptImportId: true } })).map((x) => x.receiptImportId),
+        );
+        for (const r of byKey.values()) {
+          const rid = idByKey.get(r.dedupeKey);
+          if (!rid) continue;
+          if ((r.items && r.items.length > 0) || idsWithItems.has(rid)) continue; // already have positions
+          itemStats.documentInfoRequested += 1;
+          const di = await client.getDocumentInfoForReceipt(m.fnNumber, r.fiscalDocumentNumber);
+          if (di.ok) {
+            itemStats.documentInfoSucceeded += 1;
+            r.items = di.data.items;
+            r.itemsPresent = di.data.itemsPresent;
+          } else {
+            // A single document's positions being unavailable is NOT an import
+            // failure — the money receipt is already saved. Record a SAFE reason.
+            itemStats.documentInfoFailed += 1;
+            await recordSyncError(run.id, connection.id, connection.companyId, m.clubId, m.fnNumber, "document_info", "taxcom_document_info_unavailable", `fn=${m.fnNumber} fd=${r.fiscalDocumentNumber} code=${di.safeCode}`);
+          }
+        }
+      }
+
       await persistReceiptItems([...byKey.values()], idByKey, { companyId: connection.companyId, clubId: m.clubId, legal, provider: connection.provider }, dbRules, itemStats);
     } catch {
       await recordSyncError(run.id, connection.id, connection.companyId, m.clubId, m.fnNumber, "save_items", "ofd_item_save_failed", "Не удалось сохранить позиции чека (чеки импортированы).");
@@ -260,7 +288,7 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
 
   // SAFE item diagnostics (counts only). "items unavailable" is NOT an error — the
   // production DocumentList often returns receipt sums without positions.
-  console.warn(`[ofd] items_debug itemDocumentsSeen=${itemStats.itemDocumentsSeen} itemRowsSeen=${itemStats.itemRowsSeen} itemRowsSaved=${itemStats.itemRowsSaved} itemRowsSkipped=${itemStats.itemRowsSkipped} categoryOtherCount=${itemStats.categoryOtherCount}`);
+  console.warn(`[ofd] items_debug itemDocumentsSeen=${itemStats.itemDocumentsSeen} receiptItemsFound=${itemStats.itemRowsSeen} receiptItemsImported=${itemStats.itemRowsSaved} receiptItemsSkipped=${itemStats.itemRowsSkipped} categoryOtherCount=${itemStats.categoryOtherCount} documentInfoRequested=${itemStats.documentInfoRequested} documentInfoSucceeded=${itemStats.documentInfoSucceeded} documentInfoFailed=${itemStats.documentInfoFailed}`);
   if (found > 0 && itemStats.itemRowsSeen === 0) {
     console.warn(`[ofd] items_unavailable receipts=${found} — Taxcom returned receipt totals but no positions.`);
   }
@@ -335,7 +363,8 @@ async function persistReceiptItems(
       if (cat.code === "other") itemStats.categoryOtherCount += 1;
       rows.push({
         receiptImportId, companyId: ctx.companyId, clubId: ctx.clubId, legalEntityId: ctx.legal, provider: ctx.provider,
-        date: dayOf(r.receiptDate), fnNumber: r.fnNumber, fdNumber: r.fiscalDocumentNumber, fiscalSign: r.fiscalSign,
+        // ФПД (fiscalSign) is intentionally NOT stored on receipt items — the fpd lives only inside itemKey/dedupeKey.
+        date: dayOf(r.receiptDate), fnNumber: r.fnNumber, fdNumber: r.fiscalDocumentNumber, fiscalSign: null,
         lineIndex, itemName: it.name, normalizedItemName: it.normalizedName, quantityMilli: it.quantityMilli,
         priceKopeks: it.priceKopeks, totalKopeks: it.totalKopeks, operationType: r.operationType,
         revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId,

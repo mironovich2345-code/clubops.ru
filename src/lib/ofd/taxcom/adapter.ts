@@ -167,13 +167,26 @@ function valueAtPath(o: Record<string, unknown>, path: string): unknown {
   return cur;
 }
 
+/** The document object of a DocumentInfo response — a nested wrapper if present,
+ * else the response root (where tag 1059 lives directly). */
+function documentObjectOf(o: Record<string, unknown>): Record<string, unknown> {
+  return (["document", "Document", "ticket", "Ticket", "content", "Content", "receipt", "Receipt", "fiscalData", "FiscalData"]
+    .map((k) => o[k])
+    .find((v) => v && typeof v === "object") ?? o) as Record<string, unknown>;
+}
+
+/** LIVE nomenclature extraction from a raw DocumentInfo response: find the document
+ * object, then parse its SAFE positions (ФФД tag 1059 or string-key arrays). The
+ * raw response is read in memory only — the caller never persists or logs it. */
+export function parseReceiptItemsFromDocumentInfo(raw: unknown): { items: TaxcomReceiptItem[]; itemsPresent: boolean } {
+  const o = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+  return parseReceiptItems(documentObjectOf(o));
+}
+
 export function inspectDocumentInfoShape(raw: unknown): DocumentInfoShape {
   const o = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
   const topLevelKeys = Object.keys(o).sort();
-  // The "document" may be the response root or a nested wrapper.
-  const docObj = (["document", "Document", "ticket", "Ticket", "content", "Content", "receipt", "Receipt", "fiscalData", "FiscalData"]
-    .map((k) => o[k])
-    .find((v) => v && typeof v === "object") ?? o) as Record<string, unknown>;
+  const docObj = documentObjectOf(o);
   const documentKeys = Object.keys(docObj).sort();
 
   const detectedItemLikeKeys: string[] = [];

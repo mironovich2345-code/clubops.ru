@@ -97,7 +97,7 @@ async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dat
   const run = await p.ofdSyncRun.create({ data: { connectionId, companyId, mode: "manual_period", dateFrom, dateTo, status: "running", startedAt: new Date() } });
   const days = eachDay(dateFrom, dateTo);
   const dbRules = await p.ofdRevenueCategoryRule.findMany({ where: { companyId, isActive: true } });
-  const itemStats = { itemDocumentsSeen: 0, itemRowsSeen: 0, itemRowsSaved: 0, itemRowsSkipped: 0, categoryOtherCount: 0 };
+  const itemStats = { itemDocumentsSeen: 0, itemRowsSeen: 0, itemRowsSaved: 0, itemRowsSkipped: 0, categoryOtherCount: 0, documentInfoRequested: 0, documentInfoSucceeded: 0, documentInfoFailed: 0 };
   // Select active mappings by connection SCOPE (company + legalEntity + provider),
   // NOT connectionId — mirror of the importer fix. When mappings are passed in
   // explicitly (unit tests), use them as-is.
@@ -154,13 +154,25 @@ async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dat
     // Persist SAFE nomenclature lines (idempotent by itemKey) — mirror of persistReceiptItems.
     const idRows = await p.ofdReceiptImport.findMany({ where: { dedupeKey: { in: keys } }, select: { id: true, dedupeKey: true } });
     const idByKey = new Map(idRows.map((r) => [r.dedupeKey, r.id]));
+    // LIVE nomenclature via DocumentInfo — only for receipts lacking positions.
+    if (typeof client.getDocumentInfoForReceipt === "function") {
+      const idsWithItems = new Set((await p.ofdReceiptItem.findMany({ where: { receiptImportId: { in: [...idByKey.values()] } }, select: { receiptImportId: true } })).map((x) => x.receiptImportId));
+      for (const r of byKey.values()) {
+        const rid = idByKey.get(r.dedupeKey); if (!rid) continue;
+        if ((r.items && r.items.length > 0) || idsWithItems.has(rid)) continue;
+        itemStats.documentInfoRequested++;
+        const di = await client.getDocumentInfoForReceipt(m.fnNumber, r.fiscalDocumentNumber);
+        if (di.ok) { itemStats.documentInfoSucceeded++; r.items = di.data.items; r.itemsPresent = di.data.itemsPresent; }
+        else { itemStats.documentInfoFailed++; await p.ofdSyncError.create({ data: { syncRunId: run.id, connectionId, companyId, clubId: m.clubId, fnNumber: m.fnNumber, stage: "document_info", safeCode: "taxcom_document_info_unavailable", safeMessage: `fn=${m.fnNumber} fd=${r.fiscalDocumentNumber} code=${di.safeCode}` } }); }
+      }
+    }
     const itemRows = [];
     for (const r of byKey.values()) {
       const rid = idByKey.get(r.dedupeKey); if (!rid) continue;
       itemStats.itemRowsSeen += (r.items || []).length;
       (r.items || []).forEach((it, lineIndex) => {
         const cat = categorize(it.normalizedName, dbRules, legal); if (cat.code === "other") itemStats.categoryOtherCount++;
-        itemRows.push({ receiptImportId: rid, companyId, clubId: m.clubId, legalEntityId: legal, provider: "taxcom", date: r.receiptDate.toISOString().slice(0, 10), fnNumber: r.fnNumber, fdNumber: r.fiscalDocumentNumber, fiscalSign: r.fiscalSign, lineIndex, itemName: it.name, normalizedItemName: it.normalizedName, quantityMilli: it.quantityMilli, priceKopeks: it.priceKopeks, totalKopeks: it.totalKopeks, operationType: r.operationType, revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId, itemKey: `${r.dedupeKey}:${lineIndex}` });
+        itemRows.push({ receiptImportId: rid, companyId, clubId: m.clubId, legalEntityId: legal, provider: "taxcom", date: r.receiptDate.toISOString().slice(0, 10), fnNumber: r.fnNumber, fdNumber: r.fiscalDocumentNumber, fiscalSign: null, lineIndex, itemName: it.name, normalizedItemName: it.normalizedName, quantityMilli: it.quantityMilli, priceKopeks: it.priceKopeks, totalKopeks: it.totalKopeks, operationType: r.operationType, revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId, itemKey: `${r.dedupeKey}:${lineIndex}` });
       });
     }
     if (itemRows.length) { const exi = await p.ofdReceiptItem.findMany({ where: { itemKey: { in: itemRows.map((x) => x.itemKey) } }, select: { itemKey: true } }); const exiSet = new Set(exi.map((e) => e.itemKey)); const freshI = itemRows.filter((x) => !exiSet.has(x.itemKey)); itemStats.itemRowsSkipped += itemRows.length - freshI.length; if (freshI.length) { await p.ofdReceiptItem.createMany({ data: freshI }); itemStats.itemRowsSaved += freshI.length; } }
@@ -289,6 +301,8 @@ async function main() {
   // Mirror of adapter.inspectDocumentInfoShape — SAFE structure only (keys + counts).
   const DOC_ITEM_PATHS = ["items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows", "fiscalData.items", "document.items", "receipt.items", "ticket.items", "content.items"];
   const valAtPath = (o, path) => { let cur = o; for (const p of path.split(".")) { if (!cur || typeof cur !== "object") return undefined; cur = cur[p]; } return cur; };
+  const docObjOf = (o) => (["document", "Document", "ticket", "Ticket", "content", "Content", "receipt", "Receipt", "fiscalData", "FiscalData"].map((k) => o && o[k]).find((v) => v && typeof v === "object")) ?? (o ?? {});
+  const parseItemsFromDI = (raw) => parseItems(docObjOf(raw && typeof raw === "object" ? raw : {}));
   const inspectDIShape = (raw) => {
     const o = raw && typeof raw === "object" ? raw : {};
     const topLevelKeys = Object.keys(o).sort();
@@ -336,6 +350,7 @@ async function main() {
       listDocumentsByShift: async (fn, shift) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentList", { method: "GET", withSession: true, query: { fn, shift, pn: 1, ps: 100 } }); if (!r.ok) return r; return { ok: true, data: parseDocumentList(r.data, { fn, shift }) }; },
       inspectNewDocuments: async () => { const s = await ensureSession(); if (!s.ok) return s; const an = cfg.contractNumber && cfg.contractNumber.trim(); const r = await raw("/API/v2/NewDocuments", { method: "GET", withSession: true, query: an ? { an } : {} }); if (!r.ok) return r; return { ok: true, data: inspectNDShape(r.data) }; },
       inspectDocumentInfo: async (fn, fd) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentInfo", { method: "GET", withSession: true, query: { fn, fd } }); if (!r.ok) return r; return { ok: true, data: inspectDIShape(r.data) }; },
+      getDocumentInfoForReceipt: async (fn, fd) => { const s = await ensureSession(); if (!s.ok) return s; const r = await raw("/API/v2/DocumentInfo", { method: "GET", withSession: true, query: { fn, fd } }); if (!r.ok) return r; return { ok: true, data: parseItemsFromDI(r.data) }; },
     };
   }
   const okJson = (obj) => ({ ok: true, status: 200, async text() { return JSON.stringify(obj); } });
@@ -649,7 +664,7 @@ async function main() {
   const bf2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-21", dateTo: "2026-07-21", client: { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 6 }] }), listDocumentsByShift: async () => ({ ok: true, data: [{ ...bfBase, itemsPresent: true, items: [mkItem("Клубная карта", 100000, 100000)] }] }) }, mappings: [mapBf] });
   check("RI18 backfill: skipped receipt gains items on re-import (no dup receipt)", bf2.skipped === 1 && bf2.imported === 0 && bf2.itemStats.itemRowsSaved === 1 && (await p.ofdReceiptItem.count({ where: { fnNumber: BFN } })) === 1 && (await p.ofdReceiptImport.count({ where: { fnNumber: BFN } })) === 1);
   // E. Safety
-  check("RI19 runImport result carries no secrets/raw/PII/stack; itemStats counts only", !/login|password|integrator|sessionToken|Bearer|phone|email|buyer|stack|"raw"/i.test(JSON.stringify(ir1)) && Object.keys(ir1.itemStats).sort().join(",") === "categoryOtherCount,itemDocumentsSeen,itemRowsSaved,itemRowsSeen,itemRowsSkipped");
+  check("RI19 runImport result carries no secrets/raw/PII/stack; itemStats counts only", !/login|password|integrator|sessionToken|Bearer|phone|email|buyer|stack|"raw"/i.test(JSON.stringify(ir1)) && Object.keys(ir1.itemStats).sort().join(",") === "categoryOtherCount,documentInfoFailed,documentInfoRequested,documentInfoSucceeded,itemDocumentsSeen,itemRowsSaved,itemRowsSeen,itemRowsSkipped");
   const storedItem = await p.ofdReceiptItem.findFirst({ where: { fnNumber: IFN } });
   check("RI20 stored item row = safe columns only (no phone/email/buyer/customer/raw/json)", !Object.keys(storedItem).some((k) => /phone|email|buyer|customer|raw|json|fio/i.test(k)) && storedItem.itemName.length <= 200);
   await p.ofdReceiptItem.deleteMany({ where: { companyId: CO, fnNumber: { in: [IFN, BFN] } } });
@@ -735,6 +750,67 @@ async function main() {
   check("RI-FFD4 position without 1030 name is skipped", parseItems({ "1059": [{ "1043": 100, "1023": 1 }] }).items.length === 0);
   check("RI-FFD5 position with total<=0 (1043<=0) is skipped", parseItems({ "1059": [ffdPos("Скидка", 0, 0, 1), ffdPos("Возврат", 0, -50, 1)] }).items.length === 0);
   check("RI-FFD6 FFD safety: parsed items never carry ФПД/phone/email/buyer/raw", (() => { const items = parseItems({ "1059": [ffdPos("Абонемент", 200000, 200000, 1)], "1077": "1571686074", buyerPhone: "+79990000000" }).items; return items.length === 1 && !/1571686074|79990000000|buyerPhone|phone|"raw"/i.test(JSON.stringify(items)); })());
+
+  // ===== LIVE nomenclature import via DocumentInfo (OFD-DI-IMPORT) =============
+  // Money import stays ShiftList+DocumentList; DocumentInfo ONLY enriches receipts lacking positions.
+  const DIFN = "FN-DIIMP";
+  const mapDI = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: DIFN, isActive: true, activeMappingKey: `taxcom:${DIFN}` } });
+  // DocumentList returns receipts WITHOUT positions (production format); DocumentInfo carries FFD 1059.
+  const diDocs = [
+    { fn: DIFN, shift: 8, documentType: "3", operationType: "Income", dateTime: "2026-07-22T10:00:00.000Z", fd: 7001, fpd: "P7001", totalKopeks: 300000, cashKopeks: 300000, electronicKopeks: 0 },
+    { fn: DIFN, shift: 8, documentType: "3", operationType: "Income", dateTime: "2026-07-22T11:00:00.000Z", fd: 7002, fpd: "P7002", totalKopeks: 150000, cashKopeks: 0, electronicKopeks: 150000 },
+  ];
+  // DocumentInfo per fd → real FFD document.1059. The 1077/clientInfo below are DISTINCT secret ФПД/PII that must NEVER be stored.
+  const diInfoByFd = {
+    7001: { documentType: "3", document: { "1059": [ffdPos("Абонемент 6 мес", 200000, 200000, 1), ffdPos("ПТ разовая", 100000, 100000, 1)], "1077": "SECRETFPD7001", clientInfo: "+79990000000 ivan@mail.ru" } },
+    7002: { documentType: "3", document: { "1059": ffdPos("Групповая тренировка", 150000, 150000, 1), "1077": "SECRETFPD7002" } },
+  };
+  const diLiveClient = { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 8 }] }), listDocumentsByShift: async () => ({ ok: true, data: diDocs }), getDocumentInfoForReceipt: async (fn, fd) => { const raw = diInfoByFd[fd]; return raw ? { ok: true, data: parseItemsFromDI(raw) } : { ok: true, data: { items: [], itemsPresent: false } }; } };
+  const di1 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-22", dateTo: "2026-07-22", client: diLiveClient, mappings: [mapDI] });
+  check("OFD-DI-IMPORT1 fresh import: 2 money receipts (ShiftList+DocumentList) + 3 positions via DocumentInfo", di1.imported === 2 && di1.itemStats.documentInfoRequested === 2 && di1.itemStats.documentInfoSucceeded === 2 && di1.itemStats.documentInfoFailed === 0 && di1.itemStats.itemRowsSaved === 3 && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: DIFN } })) === 2 && (await p.ofdReceiptItem.count({ where: { companyId: CO, fnNumber: DIFN } })) === 3);
+  const diItem = await p.ofdReceiptItem.findFirst({ where: { fnNumber: DIFN, normalizedItemName: normItem("Абонемент 6 мес") } });
+  check("OFD-DI-IMPORT2 stored position = safe fields + category; ФПД in itemKey only, fiscalSign null", diItem.itemName === "Абонемент 6 мес" && diItem.quantityMilli === 1000 && diItem.priceKopeks === 200000 && diItem.totalKopeks === 200000 && diItem.revenueCategoryCode === "membership" && diItem.fiscalSign === null && diItem.itemKey === `taxcom:${DIFN}:7001:P7001:0`);
+  const diCat = await p.ofdRevenueCategoryDailySummary.findMany({ where: { companyId: CO, clubId: clubA.id, date: "2026-07-22" } });
+  const diByCode = Object.fromEntries(diCat.map((s) => [s.categoryCode, s]));
+  check("OFD-DI-IMPORT3 revenue category summary built from DocumentInfo positions", diByCode.membership.incomeTotalKopeks === 200000 && diByCode.personal_training.incomeTotalKopeks === 100000 && diByCode.group_training.incomeTotalKopeks === 150000);
+  const gtItem = await p.ofdReceiptItem.findFirst({ where: { fnNumber: DIFN, normalizedItemName: normItem("Групповая тренировка") } });
+  check("OFD-DI-IMPORT9 DocumentInfo 1059 as single object → one position saved", !!gtItem && gtItem.totalKopeks === 150000 && gtItem.revenueCategoryCode === "group_training");
+  const di2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-22", dateTo: "2026-07-22", client: diLiveClient, mappings: [mapDI] });
+  check("OFD-DI-IMPORT4 re-import idempotent: DocumentInfo NOT re-requested (positions exist); no dup receipts/items", di2.itemStats.documentInfoRequested === 0 && di2.itemStats.itemRowsSaved === 0 && (await p.ofdReceiptImport.count({ where: { fnNumber: DIFN } })) === 2 && (await p.ofdReceiptItem.count({ where: { fnNumber: DIFN } })) === 3);
+  const diItemsJson = JSON.stringify(await p.ofdReceiptItem.findMany({ where: { fnNumber: DIFN } }));
+  check("OFD-DI-IMPORT7 stored positions carry NO ФПД(1077 value)/PII/raw JSON; result safe", !/SECRETFPD7001|SECRETFPD7002|79990000000|ivan@mail\.ru|"raw"|"1077"|"1059"/i.test(diItemsJson) && !/login|password|integrator|sessionToken|Bearer|phone|email|buyer|"raw"/i.test(JSON.stringify(di1)));
+  // Backfill: receipt first saved WITHOUT positions (DocumentInfo empty), then re-import once DocumentInfo returns them.
+  const BFDFN = "FN-DIBF";
+  const mapDIbf = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: BFDFN, isActive: true, activeMappingKey: `taxcom:${BFDFN}` } });
+  const bfDoc = { fn: BFDFN, shift: 9, documentType: "3", operationType: "Income", dateTime: "2026-07-23T10:00:00.000Z", fd: 7100, fpd: "P7100", totalKopeks: 100000, cashKopeks: 100000, electronicKopeks: 0 };
+  const dibf1 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-23", dateTo: "2026-07-23", client: { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 9 }] }), listDocumentsByShift: async () => ({ ok: true, data: [bfDoc] }), getDocumentInfoForReceipt: async () => ({ ok: true, data: { items: [], itemsPresent: false } }) }, mappings: [mapDIbf] });
+  check("OFD-DI-IMPORT5a receipt saved; DocumentInfo has no positions yet → 0 item rows", dibf1.imported === 1 && dibf1.itemStats.documentInfoRequested === 1 && dibf1.itemStats.itemRowsSaved === 0 && (await p.ofdReceiptItem.count({ where: { fnNumber: BFDFN } })) === 0);
+  const dibf2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-23", dateTo: "2026-07-23", client: { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 9 }] }), listDocumentsByShift: async () => ({ ok: true, data: [bfDoc] }), getDocumentInfoForReceipt: async () => ({ ok: true, data: parseItemsFromDI({ document: { "1059": ffdPos("Клубная карта", 100000, 100000, 1) } }) }) }, mappings: [mapDIbf] });
+  check("OFD-DI-IMPORT5b backfill: skipped receipt re-requests DocumentInfo and gains positions (no dup receipt)", dibf2.skipped === 1 && dibf2.imported === 0 && dibf2.itemStats.documentInfoRequested === 1 && dibf2.itemStats.itemRowsSaved === 1 && (await p.ofdReceiptItem.count({ where: { fnNumber: BFDFN } })) === 1 && (await p.ofdReceiptImport.count({ where: { fnNumber: BFDFN } })) === 1);
+  // DocumentInfo failure on ONE receipt must not fail the money import.
+  const EFDFN = "FN-DIERR";
+  const mapDIerr = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: EFDFN, isActive: true, activeMappingKey: `taxcom:${EFDFN}` } });
+  const errDocs = [ { fn: EFDFN, shift: 10, documentType: "3", operationType: "Income", dateTime: "2026-07-24T10:00:00.000Z", fd: 7200, fpd: "P7200", totalKopeks: 300000, cashKopeks: 300000, electronicKopeks: 0 }, { fn: EFDFN, shift: 10, documentType: "3", operationType: "Income", dateTime: "2026-07-24T11:00:00.000Z", fd: 7201, fpd: "P7201", totalKopeks: 150000, cashKopeks: 0, electronicKopeks: 150000 } ];
+  const die = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-24", dateTo: "2026-07-24", client: { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 10 }] }), listDocumentsByShift: async () => ({ ok: true, data: errDocs }), getDocumentInfoForReceipt: async (fn, fd) => fd === 7201 ? { ok: false, safeCode: "network_error" } : { ok: true, data: parseItemsFromDI({ document: { "1059": ffdPos("Абонемент", 300000, 300000, 1) } }) } }, mappings: [mapDIerr] });
+  check("OFD-DI-IMPORT6 DocumentInfo failure on one receipt does NOT fail money import (status success, money saved)", die.status === "success" && die.imported === 2 && die.itemStats.documentInfoFailed === 1 && die.itemStats.documentInfoSucceeded === 1 && die.itemStats.itemRowsSaved === 1 && (await p.ofdReceiptImport.count({ where: { fnNumber: EFDFN } })) === 2);
+  const dieErr = await p.ofdSyncError.findFirst({ where: { fnNumber: EFDFN, stage: "document_info" } });
+  check("OFD-DI-IMPORT6b safe OfdSyncError recorded (taxcom_document_info_unavailable; fn/fd/code only, no raw/PII)", !!dieErr && dieErr.safeCode === "taxcom_document_info_unavailable" && dieErr.safeMessage.includes("fd=7201") && !/login|password|integrator|sessionToken|"raw"|phone|email|@/i.test(dieErr.safeMessage));
+  // DocumentInfo without a 1059 tag → receipt saved, no positions, import not failed.
+  const NFDFN = "FN-DINO";
+  const mapDIno = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: NFDFN, isActive: true, activeMappingKey: `taxcom:${NFDFN}` } });
+  const noDoc = { fn: NFDFN, shift: 11, documentType: "3", operationType: "Income", dateTime: "2026-07-25T10:00:00.000Z", fd: 7300, fpd: "P7300", totalKopeks: 50000, cashKopeks: 50000, electronicKopeks: 0 };
+  const dino = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-25", dateTo: "2026-07-25", client: { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 11 }] }), listDocumentsByShift: async () => ({ ok: true, data: [noDoc] }), getDocumentInfoForReceipt: async () => ({ ok: true, data: parseItemsFromDI({ documentType: "3", document: { "1054": 1, "1077": "SECRET7300" } }) }) }, mappings: [mapDIno] });
+  check("OFD-DI-IMPORT10 DocumentInfo without 1059 → receipt saved, no positions, import not failed", dino.status === "success" && dino.imported === 1 && dino.itemStats.documentInfoRequested === 1 && dino.itemStats.documentInfoSucceeded === 1 && dino.itemStats.itemRowsSaved === 0 && (await p.ofdReceiptItem.count({ where: { fnNumber: NFDFN } })) === 0);
+  // Client method wiring: GET fn/fd + Session-Token + Integrator-ID, no body, returns parsed items only.
+  const cliDIlive = makeClient(cfgDI, async (url) => url.includes("Login") ? okJson({ sessionToken: "TKN" }) : url.includes("DocumentInfo") ? okJson({ documentType: "3", document: { "1059": [ffdPos("Абонемент 6 мес", 200000, 200000, 1)], "1077": "SECRETX", clientInfo: "+79990000000" } }) : okJson({}));
+  const diLiveRes = await cliDIlive.getDocumentInfoForReceipt("7381440800719861", 4935);
+  const diLiveReq = cliDIlive.captured.find((c) => c.path === "/API/v2/DocumentInfo");
+  check("OFD-DI-IMPORT8 getDocumentInfoForReceipt: GET fn+fd + Session-Token + Integrator-ID; no body/POST; parsed items only, no raw/1077/PII", diLiveReq.method === "GET" && diLiveReq.url.includes("fn=7381440800719861") && diLiveReq.url.includes("fd=4935") && diLiveReq.headers["Session-Token"] === "TKN" && diLiveReq.headers["Integrator-ID"] === "INT-1" && diLiveReq.hasBody === false && diLiveReq.body === undefined && diLiveRes.ok && diLiveRes.data.itemsPresent === true && diLiveRes.data.items.length === 1 && diLiveRes.data.items[0].name === "Абонемент 6 мес" && !/SECRETX|79990000000|"1077"|"1059"|"raw"/i.test(JSON.stringify(diLiveRes)));
+  await p.ofdReceiptItem.deleteMany({ where: { companyId: CO, fnNumber: { in: [DIFN, BFDFN, EFDFN, NFDFN] } } });
+  await p.ofdRevenueCategoryDailySummary.deleteMany({ where: { companyId: CO } });
+  await p.ofdSyncError.deleteMany({ where: { fnNumber: { in: [DIFN, BFDFN, EFDFN, NFDFN] } } });
+  await p.ofdReceiptImport.deleteMany({ where: { companyId: CO, fnNumber: { in: [DIFN, BFDFN, EFDFN, NFDFN] } } });
+  await p.ofdCashRegisterMapping.deleteMany({ where: { id: { in: [mapDI.id, mapDIbf.id, mapDIerr.id, mapDIno.id] } } });
 
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
@@ -1003,7 +1079,12 @@ async function main() {
   // --- DocumentInfo shape DIAGNOSTIC (real source) ---
   check("T-S18 client inspectDocumentInfo: GET /API/v2/DocumentInfo + fn/fd query, DIAGNOSTIC ONLY (never returns raw body)", clientSrc.includes("async inspectDocumentInfo(fnNumber, fd)") && /raw\(PATHS\.documentInfo,\s*\{\s*method:\s*"GET",\s*withSession:\s*true,\s*query:\s*\{\s*fn:\s*fnNumber,\s*fd\s*\}/.test(clientSrc) && clientSrc.includes("inspectDocumentInfoShape(r.data)"));
   check("T-S18b adapter.inspectDocumentInfoShape returns SAFE structure (keys+counts, nested + FFD 1059, firstItemKeys, numericFfdModeDetected), no values/PII", adapter.includes("export function inspectDocumentInfoShape") && adapter.includes("documentKeys") && adapter.includes("itemLikeCount") && adapter.includes("firstItemKeys") && adapter.includes("numericFfdModeDetected") && adapter.includes('"document.1059"') && adapter.includes("safeDocumentType") && adapter.includes('"ticket.items"') && adapter.includes('"content.items"') && !/inspectDocumentInfoShape[\s\S]*?(itemName|buyer|phone|email|JSON\.stringify)/i.test(adapter));
-  check("T-S18c importer money import UNCHANGED — never mass-calls DocumentInfo inspector; still ShiftList+DocumentList", !importer.includes("inspectDocumentInfo") && !importer.includes("1059") && importer.includes("client.listShifts(") && importer.includes("client.listDocumentsByShift("));
+  check("T-S18c importer receipt SOURCE still ShiftList+DocumentList; never uses the diagnostic inspector; never parses 1059 itself", !importer.includes("inspectDocumentInfo") && !importer.includes("1059") && importer.includes("client.listShifts(") && importer.includes("client.listDocumentsByShift("));
+  // --- LIVE nomenclature import via DocumentInfo (real source) ---
+  check("T-S18e client.getDocumentInfoForReceipt: GET DocumentInfo + fn/fd + Session-Token/Integrator-ID; returns parsed items only, never raw body", clientSrc.includes("async getDocumentInfoForReceipt(fnNumber, fd)") && /getDocumentInfoForReceipt[\s\S]{0,400}raw\(PATHS\.documentInfo,\s*\{\s*method:\s*"GET",\s*withSession:\s*true,\s*query:\s*\{\s*fn:\s*fnNumber,\s*fd\s*\}/.test(clientSrc) && clientSrc.includes("parseReceiptItemsFromDocumentInfo(r.data)") && !/getDocumentInfoForReceipt[\s\S]{0,400}(rawResponse|JSON\.stringify\(r\.data|return\s*\{\s*ok:\s*true,\s*data:\s*r\.data)/.test(clientSrc));
+  check("T-S18f importer enriches ONLY receipts lacking positions via getDocumentInfoForReceipt; DocumentInfo failure records a safe OfdSyncError, never fails the run", importer.includes('typeof client.getDocumentInfoForReceipt === "function"') && importer.includes("documentInfoRequested") && importer.includes("documentInfoSucceeded") && importer.includes("documentInfoFailed") && /if\s*\(\(r\.items && r\.items\.length > 0\) \|\| idsWithItems\.has\(rid\)\) continue/.test(importer) && importer.includes('"document_info", "taxcom_document_info_unavailable"') && !/documentInfoFailed[\s\S]{0,300}status:\s*"failed"/.test(importer));
+  check("T-S18g adapter.parseReceiptItemsFromDocumentInfo unwraps document/ticket/content and delegates to parseReceiptItems (FFD 1059), returns items only", adapter.includes("export function parseReceiptItemsFromDocumentInfo") && adapter.includes("documentObjectOf") && /parseReceiptItemsFromDocumentInfo[\s\S]{0,300}parseReceiptItems\(documentObjectOf/.test(adapter));
+  check("T-S18h OfdReceiptItem persistence never stores ФПД value: fiscalSign set null on item rows (fpd lives only in itemKey)", /fiscalSign:\s*null/.test(importer) && !/receiptImportId,[\s\S]{0,400}fiscalSign:\s*r\.fiscalSign/.test(importer) && importer.includes("itemKey: `${r.dedupeKey}:${lineIndex}`"));
   check("T-S18d action inspectOfdDocumentInfoAction: requireOfdAdmin + fn/fd validation → inspectDocumentInfo → SAFE result (docInfoShape only)", actions.includes("export async function inspectOfdDocumentInfoAction") && actions.includes("requireOfdAdmin()") && actions.includes("inspectDocumentInfo(fnNumber, fd)") && actions.includes("docInfoShape: d") && actions.includes('/^\\d+$/.test(fdRaw)') && !/inspectOfdDocumentInfoAction[\s\S]{0,1400}return\s*\{[^}]*(sessionToken|rawResponse|\.stack)/i.test(actions));
   check("UI: 'DocumentInfo' diag form — ФН/ФД inputs + button + safe shape (ключи/позиции/itemLikeCount), no raw JSON", pageSrc.includes("Диагностика конкретного чека DocumentInfo") && pageSrc.includes("OfdDocInfoDiagnostics") && forms.includes("Проверить DocumentInfo") && forms.includes('name="fnNumber"') && forms.includes('name="fdNumber"') && forms.includes("docInfoShape") && forms.includes("documentKeys") && forms.includes("itemLikeCount") && !/docInfoShape[\s\S]{0,400}JSON\.stringify/.test(forms));
   check("UI: Автоимпорт block (status by OFD_INTEGRATIONS_ENABLED, endpoint, last auto run, hint; no CRON_SECRET)", pageSrc.includes("Автоимпорт") && pageSrc.includes("POST /api/cron/ofd/daily") && pageSrc.includes('mode: "auto_daily"') && pageSrc.includes("Последняя автоматическая синхронизация") && pageSrc.includes("Автоимпорт подтягивает продажи за вчера") && !/CRON_SECRET/.test(pageSrc));
