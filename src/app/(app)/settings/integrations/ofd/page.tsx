@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
 import { toggleOfdMapping } from "./actions";
-import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection } from "./_components/OfdForms";
+import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow } from "./_components/OfdForms";
 
 export const dynamic = "force-dynamic";
 
@@ -160,6 +160,9 @@ export default async function OfdIntegrationPage() {
               </Section>
 
               <Section title="ОФД продажи">
+                <div className="mb-4 border-b border-slate-200 pb-4">
+                  <OfdSyncNow />
+                </div>
                 <SalesBlock title="Сегодня" agg={aggFor(today, today)} clubName={clubName} />
                 <SalesBlock title="Вчера" agg={aggFor(yesterday, yesterday)} clubName={clubName} />
                 <SalesBlock title="Июль 2026" agg={aggFor("2026-07-01", "2026-07-31")} clubName={clubName} />

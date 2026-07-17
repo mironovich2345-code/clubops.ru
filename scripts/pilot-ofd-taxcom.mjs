@@ -434,7 +434,10 @@ async function main() {
   // ===== Daily auto-import cron (POST /api/cron/ofd/daily) =====================
   // Load the REAL authorizeOfdCron + ofdYesterday from src/lib/ofd/daily.ts.
   const dailySrc = readFileSync(new URL("../src/lib/ofd/daily.ts", import.meta.url), "utf8");
-  const ofdYesterday = new Function("now", dailySrc.match(/export function ofdYesterday\(now: Date\): string \{([\s\S]*?)\n\}/)[1]);
+  // Mirror of localYmd / ofdYesterday / ofdToday (verified against real source below).
+  const localYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const ofdYesterday = (now) => localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  const ofdToday = (now) => localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
   const authorizeOfdCron = new Function("p", dailySrc.match(/export function authorizeOfdCron\(p: OfdCronAuthInput\): OfdCronAuthResult \{([\s\S]*?)\n\}/)[1]);
   const SECRET = "cron-secret-xyz";
   const authOk = { method: "POST", authorization: `Bearer ${SECRET}`, cronHeader: null, enabled: true, secret: SECRET };
@@ -445,16 +448,15 @@ async function main() {
   check("CR5 correct Bearer OR X-Cron-Secret → ok", authorizeOfdCron(authOk).ok === true && authorizeOfdCron({ method: "POST", authorization: null, cronHeader: SECRET, enabled: true, secret: SECRET }).ok === true);
   check("CR6 ofdYesterday = server local calendar day − 1", ofdYesterday(new Date(2026, 6, 15, 3, 30)) === "2026-07-14" && ofdYesterday(new Date(2026, 6, 1, 0, 5)) === "2026-06-30");
 
-  // Mirror of runDailyOfdImport (safe aggregates; injectable importer/connections).
-  async function runDailyOfdImport({ now, listConnections, importer }) {
-    const date = ofdYesterday(now);
+  // Mirror of runOfdImportBatch (shared by daily cron + sync-now; safe aggregates).
+  async function runOfdBatch({ date, mode, listConnections, importer }) {
     const connections = await listConnections();
     const runs = []; const totals = { foundReceipts: 0, importedReceipts: 0, skippedReceipts: 0, totalIncomeKopeks: 0, totalReturnKopeks: 0 };
     let succeeded = 0, failed = 0;
     for (const c of connections) {
       let s;
       try {
-        const r = await importer(c.id, date, "auto_daily");
+        const r = await importer(c.id, date, mode);
         s = r.ok ? { connectionId: c.id, status: r.status, foundReceipts: r.found, importedReceipts: r.imported, skippedReceipts: r.skipped, totalIncomeKopeks: r.totalIncomeKopeks, totalReturnKopeks: r.totalReturnKopeks, safeErrorCode: null } : { connectionId: c.id, status: "failed", foundReceipts: 0, importedReceipts: 0, skippedReceipts: 0, totalIncomeKopeks: 0, totalReturnKopeks: 0, safeErrorCode: r.safeCode };
       } catch { s = { connectionId: c.id, status: "failed", foundReceipts: 0, importedReceipts: 0, skippedReceipts: 0, totalIncomeKopeks: 0, totalReturnKopeks: 0, safeErrorCode: "import_exception" }; }
       if (s.safeErrorCode === null && s.status === "success") succeeded++; else failed++;
@@ -463,6 +465,8 @@ async function main() {
     }
     return { ok: true, date, processedConnections: connections.length, succeeded, failed, totals, runs };
   }
+  const runDailyOfdImport = ({ now, listConnections, importer }) => runOfdBatch({ date: ofdYesterday(now), mode: "auto_daily", listConnections, importer });
+  const runSyncNow = ({ now, listConnections, importer }) => runOfdBatch({ date: ofdToday(now), mode: "sync_now", listConnections, importer });
 
   // DB: connection SELECTION — only ACTIVE taxcom connections (mirror of the real query).
   const cronActive = await p.ofdConnection.create({ data: { companyId: MC, provider: "taxcom", displayName: "T-active", serverBaseUrl: "https://api-lk-ofd.taxcom.ru", authType: "login_password", isActive: true, createdByUserId: MU } });
@@ -485,6 +489,23 @@ async function main() {
   check("CR11 a thrown importer error is caught → safe import_exception, others continue", (await (async () => { const rr = await runDailyOfdImport({ now: new Date(2026, 6, 15), listConnections: async () => [{ id: "x1" }, { id: "x2" }], importer: async (id) => { if (id === "x1") throw new Error("boom stack with secret Bearer abc"); return { ok: true, found: 1, imported: 1, skipped: 0, status: "success", totalIncomeKopeks: 1, totalReturnKopeks: 0 }; } }); return rr.runs.find((r) => r.connectionId === "x1").safeErrorCode === "import_exception" && rr.succeeded === 1; })()) === true);
   const resJson = JSON.stringify(res);
   check("CR12 response has ONLY safe fields (no login/password/Integrator-ID/SessionToken/raw/PII/stack)", !/login|password|integrator|sessionToken|serverBaseUrl|loginEncrypted|Bearer|fpd|phone|email|stack/i.test(resJson) && Object.keys(res.runs[0]).sort().join(",") === "connectionId,foundReceipts,importedReceipts,safeErrorCode,skippedReceipts,status,totalIncomeKopeks,totalReturnKopeks");
+
+  // ===== On-demand "Синхронизировать сейчас" (sync_now) ========================
+  check("SN0 ofdToday = server local calendar day (no −1)", ofdToday(new Date(2026, 6, 15, 3, 30)) === "2026-07-15" && ofdToday(new Date(2026, 11, 31, 23, 59)) === "2026-12-31");
+  // Company-scoped selection: only THIS company's active taxcom connections (CO's excluded).
+  const snSelected = await p.ofdConnection.findMany({ where: { companyId: MC, provider: "taxcom", isActive: true }, select: { id: true } });
+  check("SN1 sync selects active taxcom connections of the company only (other company excluded)", snSelected.length === 2 && snSelected.some((c) => c.id === cronActive.id) && !snSelected.some((c) => c.id === CONN));
+  const snCalls = [];
+  const snImporter = async (connectionId, date, mode) => {
+    snCalls.push({ connectionId, date, mode });
+    if (connectionId === "c2") return { ok: false, safeCode: "already_running" }; // one busy
+    return { ok: true, found: 3, imported: 3, skipped: 0, status: "success", totalIncomeKopeks: 50000, totalReturnKopeks: 0 };
+  };
+  const snRes = await runSyncNow({ now: new Date(2026, 6, 15, 10, 0), listConnections: async () => [{ id: "c1" }, { id: "c2" }, { id: "c3" }], importer: snImporter });
+  check("SN2 sync_now imports TODAY per connection with mode sync_now", snCalls.length === 3 && snCalls.every((c) => c.date === "2026-07-15" && c.mode === "sync_now"));
+  check("SN3 totals aggregated across connections (2 ok × 3 = found 6 / imported 6 / income 100000)", snRes.processedConnections === 3 && snRes.totals.foundReceipts === 6 && snRes.totals.importedReceipts === 6 && snRes.totals.totalIncomeKopeks === 100000);
+  check("SN4 one connection failure does NOT abort others (succeeded 2, failed 1, safeErrorCode surfaced)", snRes.succeeded === 2 && snRes.failed === 1 && snRes.runs.find((r) => r.connectionId === "c2").safeErrorCode === "already_running");
+  check("SN5 sync result safe-fields-only (no login/password/Integrator-ID/SessionToken/raw/PII/stack)", !/login|password|integrator|sessionToken|serverBaseUrl|Bearer|fpd|phone|email|stack/i.test(JSON.stringify(snRes)) && Object.keys(snRes.runs[0]).sort().join(",") === "connectionId,foundReceipts,importedReceipts,safeErrorCode,skippedReceipts,status,totalIncomeKopeks,totalReturnKopeks");
 
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
@@ -726,8 +747,14 @@ async function main() {
   check("T-S12b daily lib: auth order method(405)/disabled(503)/no-secret(503)/wrong(401); Bearer or X-Cron-Secret", dailyLib.includes('status: 405, error: "method_not_allowed"') && dailyLib.includes('status: 503, error: "ofd_integrations_disabled"') && dailyLib.includes('status: 503, error: "cron_secret_not_configured"') && dailyLib.includes('status: 401, error: "unauthorized"') && dailyLib.includes("`Bearer ${p.secret}`") && dailyLib.includes("p.cronHeader === p.secret"));
   check("T-S12c daily import selects active taxcom connections + mode auto_daily + safe aggregate result", dailyLib.includes('where: { provider: "taxcom", isActive: true }') && dailyLib.includes('mode: "auto_daily"') && dailyLib.includes("processedConnections") && dailyLib.includes("succeeded") && dailyLib.includes("failed") && dailyLib.includes("safeErrorCode"));
   const dailyCode = dailyLib.split("\n").filter((l) => { const t = l.trim(); return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*"); }).join("\n");
-  check("T-S12d cron CODE handles no secrets/raw (no decrypt/loginEncrypted/sessionToken/.stack); logs are aggregate-only", !/decryptOfdSecret|loginEncrypted|passwordEncrypted|integratorIdEncrypted|sessionToken|serverBaseUrl|\.stack|rawJson/i.test(dailyCode) && dailyLib.includes("[ofd-cron] daily_start") && dailyLib.includes("[ofd-cron] connection_done") && dailyLib.includes("[ofd-cron] daily_done") && !cronRoute.includes("decryptOfdSecret"));
-  check("T-S12e ImportMode includes auto_daily + importer returns totalIncome/Return; ImportResult exposes totals", importer.includes('"auto_daily"') && importer.includes("totalIncomeKopeks: number") && importer.includes("totalIncomeKopeks: incomeTotal, totalReturnKopeks: returnTotal"));
+  check("T-S12d cron CODE handles no secrets/raw (no decrypt/loginEncrypted/sessionToken/.stack); logs are aggregate-only", !/decryptOfdSecret|loginEncrypted|passwordEncrypted|integratorIdEncrypted|sessionToken|serverBaseUrl|\.stack|rawJson/i.test(dailyCode) && dailyLib.includes("] batch_start") && dailyLib.includes("] connection_done") && dailyLib.includes("] batch_done") && dailyLib.includes('logTag: "ofd-cron"') && !cronRoute.includes("decryptOfdSecret"));
+  check("T-S12e ImportMode includes auto_daily + sync_now; importer returns totalIncome/Return; ImportResult exposes totals", importer.includes('"auto_daily"') && importer.includes('"sync_now"') && importer.includes("totalIncomeKopeks: number") && importer.includes("totalIncomeKopeks: incomeTotal, totalReturnKopeks: returnTotal"));
+  // --- On-demand "Синхронизировать сейчас" (sync_now) (real source) ---
+  check("T-S13 daily lib: ofdToday + runSyncNowForCompany (company-scoped active taxcom, TODAY, mode sync_now, ofd-sync log)", dailyLib.includes("export function ofdToday") && dailyLib.includes("export async function runSyncNowForCompany") && dailyLib.includes("date: ofdToday(now)") && dailyLib.includes('mode: "sync_now"') && dailyLib.includes('logTag: "ofd-sync"') && dailyLib.includes("where: { companyId, provider: \"taxcom\", isActive: true }"));
+  check("T-S13b runOfdImportBatch is the shared runner (cron + sync); catches exceptions → import_exception", dailyLib.includes("export async function runOfdImportBatch") && dailyLib.includes('safeErrorCode: "import_exception"') && dailyLib.includes("opts.importer ?? defaultImporter()"));
+  check("T-S13c syncOfdNowAction: requireOfdAdmin gate → runSyncNowForCompany(company) → revalidatePath; safe sync summary; no secrets", actions.includes("export async function syncOfdNowAction") && actions.includes("requireOfdAdmin()") && actions.includes("runSyncNowForCompany(g.companyId)") && actions.includes('revalidatePath("/settings/integrations/ofd")') && actions.includes("Синхронизация завершена") && /syncOfdNowAction[\s\S]*?sync: \{ found:/.test(actions) && !/syncOfdNowAction[\s\S]{0,900}(decryptOfdSecret|loginEncrypted|sessionToken|Integrator-ID)/i.test(actions));
+  check("UI: Синхронизировать сейчас button + safe-rerun hint + приход/возвраты + loading disabled", forms.includes("syncOfdNowAction") && forms.includes("Синхронизировать сейчас") && forms.includes("Повторный запуск безопасен — дубли не создаются") && forms.includes("Синхронизация...") && forms.includes("Приход:") && forms.includes("Возвраты:") && forms.includes("state.sync") && pageSrc.includes("OfdSyncNow"));
+  check("docs: systemd timer OnCalendar 00:00:00 + note про 00:05/00:10", deployDoc.includes("OnCalendar=*-*-* 00:00:00") && deployDoc.includes("00:05") && deployDoc.includes("00:10") && deployDoc.includes("Синхронизировать сейчас"));
   check("UI: Автоимпорт block (status by OFD_INTEGRATIONS_ENABLED, endpoint, last auto run, hint; no CRON_SECRET)", pageSrc.includes("Автоимпорт") && pageSrc.includes("POST /api/cron/ofd/daily") && pageSrc.includes('mode: "auto_daily"') && pageSrc.includes("Последняя автоматическая синхронизация") && pageSrc.includes("Автоимпорт подтягивает продажи за вчера") && !/CRON_SECRET/.test(pageSrc));
   check("env examples define CRON_SECRET (+ OFD_INTEGRATIONS_ENABLED) without a real value", /CRON_SECRET=""/.test(envEx) && /OFD_INTEGRATIONS_ENABLED="false"/.test(envEx) && /CRON_SECRET=""/.test(envProd) && /OFD_INTEGRATIONS_ENABLED="false"/.test(envProd));
   check("docs: RU_DEPLOYMENT has cron curl example + endpoint + systemd timer note (no real secret)", deployDoc.includes("/api/cron/ofd/daily") && deployDoc.includes("curl -X POST") && deployDoc.includes("Authorization: Bearer $CRON_SECRET") && deployDoc.includes("systemd") && deployDoc.includes("OnCalendar"));

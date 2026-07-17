@@ -6,11 +6,13 @@ import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/
 import { ofdEnabled, ofdSecretPresent } from "@/lib/ofd/config";
 import { encryptOfdSecret, decryptOfdSecret } from "@/lib/ofd/crypto";
 import { importTaxcomSalesForPeriod, type ImportMode } from "@/lib/ofd/importer";
+import { runSyncNowForCompany } from "@/lib/ofd/daily";
 import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeContractNumber, isCurrentAccountValid, type OfdCheckDiagnostics, type OfdSafeContract } from "@/lib/ofd/contract";
 import type { OfdConnectionConfig } from "@/lib/ofd/types";
 
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null };
+export type OfdSyncSummary = { found: number; imported: number; skipped: number; incomeKopeks: number; returnKopeks: number; succeeded: number; failed: number };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary };
 
 
 // Only owner / general director may administer OFD integrations.
@@ -279,4 +281,27 @@ export async function runOfdImport(_p: State | undefined, formData: FormData): P
   }
   revalidatePath("/settings/integrations/ofd");
   return { ok: true, notice: `Импорт завершён: найдено ${res.found}, добавлено ${res.imported}, пропущено ${res.skipped}.` };
+}
+
+/** On-demand "Синхронизировать сейчас": import TODAY across the company's active
+ * Taxcom connections. Owner / general_director only. Idempotent — re-running the
+ * same day creates no duplicates. Returns SAFE aggregates only (never secrets /
+ * Session-Token / raw response / fiscal JSON / ФПД / PII / stacks). */
+export async function syncOfdNowAction(_p: State | undefined, _formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+
+  const result = await runSyncNowForCompany(g.companyId);
+  await recordAudit({ action: "ofd.sync_now", entityType: "OfdConnection", companyId: g.companyId, userId: g.userId, metadata: { date: result.date, processedConnections: result.processedConnections, succeeded: result.succeeded, failed: result.failed, found: result.totals.foundReceipts, imported: result.totals.importedReceipts, skipped: result.totals.skippedReceipts } });
+  revalidatePath("/settings/integrations/ofd");
+
+  if (result.processedConnections === 0) {
+    return { ok: true, notice: "Нет активных подключений Такском ОФД для синхронизации." };
+  }
+  const t = result.totals;
+  return {
+    ok: true,
+    notice: `Синхронизация завершена: найдено ${t.foundReceipts}, добавлено ${t.importedReceipts}, пропущено ${t.skippedReceipts}.`,
+    sync: { found: t.foundReceipts, imported: t.importedReceipts, skipped: t.skippedReceipts, incomeKopeks: t.totalIncomeKopeks, returnKopeks: t.totalReturnKopeks, succeeded: result.succeeded, failed: result.failed },
+  };
 }

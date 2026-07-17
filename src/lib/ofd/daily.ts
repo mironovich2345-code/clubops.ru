@@ -14,14 +14,22 @@ export function ofdCronSecret(): string | null {
   return process.env.CRON_SECRET || null;
 }
 
-/** Yesterday by the SERVER's local calendar day, as "YYYY-MM-DD". Pure string
- * build from local Y/M/D — no UTC/timezone drift. */
-export function ofdYesterday(now: Date): string {
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+/** A local date as "YYYY-MM-DD" — pure Y/M/D, no UTC/timezone drift. */
+function localYmd(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** Yesterday by the SERVER's local calendar day, as "YYYY-MM-DD". */
+export function ofdYesterday(now: Date): string {
+  return localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+}
+
+/** Today by the SERVER's local calendar day, as "YYYY-MM-DD". */
+export function ofdToday(now: Date): string {
+  return localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
 }
 
 export type OfdCronAuthInput = {
@@ -69,7 +77,8 @@ export type OfdDailyResult = {
   runs: OfdDailyRunSummary[];
 };
 
-type ImportFn = (connectionId: string, date: string, mode: "auto_daily") => Promise<
+export type OfdImportMode = "auto_daily" | "sync_now";
+type ImportFn = (connectionId: string, date: string, mode: OfdImportMode) => Promise<
   | { ok: true; found: number; imported: number; skipped: number; status: string; totalIncomeKopeks: number; totalReturnKopeks: number }
   | { ok: false; safeCode: string }
 >;
@@ -80,24 +89,32 @@ export type RunDailyOptions = {
   importer?: ImportFn;
 };
 
-/**
- * Run the daily import across all active Taxcom connections for "yesterday".
- * Injectable listConnections/importer so tests never touch the DB or the real
- * Taxcom API. One connection's failure never aborts the others.
- */
-export async function runDailyOfdImport(opts: RunDailyOptions = {}): Promise<OfdDailyResult> {
-  const now = opts.now ?? new Date();
-  const date = ofdYesterday(now);
-  const listConnections = opts.listConnections ?? (() => prisma.ofdConnection.findMany({ where: { provider: "taxcom", isActive: true }, select: { id: true } }));
-  const importer: ImportFn = opts.importer ?? (async (connectionId, d) => {
-    const r = await importTaxcomSalesForPeriod({ connectionId, dateFrom: d, dateTo: d, mode: "auto_daily" });
+/** The real importer bound to a mode — wraps importTaxcomSalesForPeriod for one day. */
+function defaultImporter(): ImportFn {
+  return async (connectionId, date, mode) => {
+    const r = await importTaxcomSalesForPeriod({ connectionId, dateFrom: date, dateTo: date, mode });
     return r.ok
       ? { ok: true, found: r.found, imported: r.imported, skipped: r.skipped, status: r.status, totalIncomeKopeks: r.totalIncomeKopeks, totalReturnKopeks: r.totalReturnKopeks }
       : { ok: false, safeCode: r.safeCode };
-  });
+  };
+}
 
-  const connections = await listConnections();
-  console.warn(`[ofd-cron] daily_start date=${date} connections=${connections.length}`);
+/**
+ * Shared batch runner for a set of connections and a single day. Injectable
+ * listConnections/importer so tests never touch the DB or the real Taxcom API.
+ * One connection's failure never aborts the others (exceptions are caught and
+ * surfaced as a safe code). Returns SAFE aggregates only; logs ids + counts only.
+ */
+export async function runOfdImportBatch(opts: {
+  date: string;
+  mode: OfdImportMode;
+  logTag: string;
+  listConnections: () => Promise<{ id: string }[]>;
+  importer?: ImportFn;
+}): Promise<OfdDailyResult> {
+  const importer = opts.importer ?? defaultImporter();
+  const connections = await opts.listConnections();
+  console.warn(`[${opts.logTag}] batch_start date=${opts.date} mode=${opts.mode} connections=${connections.length}`);
 
   const runs: OfdDailyRunSummary[] = [];
   const totals = { foundReceipts: 0, importedReceipts: 0, skippedReceipts: 0, totalIncomeKopeks: 0, totalReturnKopeks: 0 };
@@ -106,7 +123,7 @@ export async function runDailyOfdImport(opts: RunDailyOptions = {}): Promise<Ofd
   for (const c of connections) {
     let summary: OfdDailyRunSummary;
     try {
-      const r = await importer(c.id, date, "auto_daily");
+      const r = await importer(c.id, opts.date, opts.mode);
       if (r.ok) {
         summary = { connectionId: c.id, status: r.status, foundReceipts: r.found, importedReceipts: r.imported, skippedReceipts: r.skipped, totalIncomeKopeks: r.totalIncomeKopeks, totalReturnKopeks: r.totalReturnKopeks, safeErrorCode: null };
       } else {
@@ -124,9 +141,39 @@ export async function runDailyOfdImport(opts: RunDailyOptions = {}): Promise<Ofd
     totals.totalIncomeKopeks += summary.totalIncomeKopeks;
     totals.totalReturnKopeks += summary.totalReturnKopeks;
     runs.push(summary);
-    console.warn(`[ofd-cron] connection_done connectionId=${c.id} status=${summary.status} found=${summary.foundReceipts} imported=${summary.importedReceipts} skipped=${summary.skippedReceipts}`);
+    console.warn(`[${opts.logTag}] connection_done connectionId=${c.id} status=${summary.status} found=${summary.foundReceipts} imported=${summary.importedReceipts} skipped=${summary.skippedReceipts}`);
   }
 
-  console.warn(`[ofd-cron] daily_done date=${date} succeeded=${succeeded} failed=${failed}`);
-  return { ok: true, date, processedConnections: connections.length, succeeded, failed, totals, runs };
+  console.warn(`[${opts.logTag}] batch_done date=${opts.date} mode=${opts.mode} succeeded=${succeeded} failed=${failed}`);
+  return { ok: true, date: opts.date, processedConnections: connections.length, succeeded, failed, totals, runs };
+}
+
+/**
+ * Daily cron: import YESTERDAY for ALL active Taxcom connections (mode auto_daily).
+ */
+export async function runDailyOfdImport(opts: RunDailyOptions = {}): Promise<OfdDailyResult> {
+  const now = opts.now ?? new Date();
+  return runOfdImportBatch({
+    date: ofdYesterday(now),
+    mode: "auto_daily",
+    logTag: "ofd-cron",
+    listConnections: opts.listConnections ?? (() => prisma.ofdConnection.findMany({ where: { provider: "taxcom", isActive: true }, select: { id: true } })),
+    importer: opts.importer,
+  });
+}
+
+/**
+ * On-demand "Sync now": import TODAY for the active Taxcom connections of ONE
+ * company (mode sync_now). Company-scoped so the button only touches the caller's
+ * own connections. Idempotent — re-running the same day creates no duplicates.
+ */
+export async function runSyncNowForCompany(companyId: string, opts: RunDailyOptions = {}): Promise<OfdDailyResult> {
+  const now = opts.now ?? new Date();
+  return runOfdImportBatch({
+    date: ofdToday(now),
+    mode: "sync_now",
+    logTag: "ofd-sync",
+    listConnections: opts.listConnections ?? (() => prisma.ofdConnection.findMany({ where: { companyId, provider: "taxcom", isActive: true }, select: { id: true } })),
+    importer: opts.importer,
+  });
 }

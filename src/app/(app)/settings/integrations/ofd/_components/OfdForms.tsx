@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection } from "../actions";
+import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction } from "../actions";
+import type { OfdSyncSummary } from "../actions";
 import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
+import { formatKopeks } from "@/lib/money";
 
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary };
 const initial: State = { ok: false };
 
 type ClubOpt = { id: string; name: string };
@@ -208,6 +210,30 @@ export function OfdImportForm({ connectionId }: { connectionId: string }) {
       <Submit idle="Импортировать" busy="Импорт..." />
       <div className="w-full"><Msg s={state} /></div>
       <p className="w-full text-xs text-slate-500">Для истории за июль выберите 2026-07-01 — 2026-07-31.</p>
+    </form>
+  );
+}
+
+export function OfdSyncNow() {
+  const [state, action] = useFormState(syncOfdNowAction, initial);
+  const sync = state.ok ? state.sync : undefined;
+  return (
+    <form action={action}>
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit idle="Синхронизировать сейчас" busy="Синхронизация..." />
+        <span className="text-xs text-slate-500">Подтягивает чеки за текущий день. Повторный запуск безопасен — дубли не создаются.</span>
+      </div>
+      {sync ? (
+        <div className={`mt-3 rounded-md border p-3 text-sm ${sync.failed > 0 ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+          <div>{state.notice}</div>
+          <div className="mt-0.5">Приход: {formatKopeks(sync.incomeKopeks)} · Возвраты: {formatKopeks(sync.returnKopeks)}</div>
+          {sync.failed > 0 ? (
+            <div className="mt-1">Внимание: часть подключений не синхронизировалась ({sync.failed} из {sync.succeeded + sync.failed}). Подробности — в истории синхронизаций.</div>
+          ) : null}
+        </div>
+      ) : (
+        <Msg s={state} />
+      )}
     </form>
   );
 }

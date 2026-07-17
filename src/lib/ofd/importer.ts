@@ -9,7 +9,7 @@ import { normalizeDocumentsWithStats } from "@/lib/ofd/taxcom/adapter";
 import { isCurrentAccountValid } from "@/lib/ofd/contract";
 import type { NormalizedOfdReceipt, OfdConnectionConfig } from "@/lib/ofd/types";
 
-export type ImportMode = "manual_day" | "manual_period" | "backfill_july" | "daily" | "auto_daily";
+export type ImportMode = "manual_day" | "manual_period" | "backfill_july" | "daily" | "auto_daily" | "sync_now";
 
 export type ImportParams = {
   connectionId: string;
