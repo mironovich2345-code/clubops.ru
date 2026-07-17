@@ -9,7 +9,7 @@ import { normalizeDocumentsWithStats } from "@/lib/ofd/taxcom/adapter";
 import { isCurrentAccountValid } from "@/lib/ofd/contract";
 import type { NormalizedOfdReceipt, OfdConnectionConfig } from "@/lib/ofd/types";
 
-export type ImportMode = "manual_day" | "manual_period" | "backfill_july" | "daily";
+export type ImportMode = "manual_day" | "manual_period" | "backfill_july" | "daily" | "auto_daily";
 
 export type ImportParams = {
   connectionId: string;
@@ -23,7 +23,7 @@ export type ImportParams = {
 };
 
 export type ImportResult =
-  | { ok: true; syncRunId: string; found: number; imported: number; skipped: number; status: string }
+  | { ok: true; syncRunId: string; found: number; imported: number; skipped: number; status: string; totalIncomeKopeks: number; totalReturnKopeks: number }
   | { ok: false; safeCode: string; safeMessage?: string; syncRunId?: string };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -243,7 +243,7 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
   });
   await prisma.ofdConnection.update({ where: { id: connection.id }, data: { lastSyncAt: new Date() } });
 
-  return { ok: true, syncRunId: run.id, found, imported, skipped, status };
+  return { ok: true, syncRunId: run.id, found, imported, skipped, status, totalIncomeKopeks: incomeTotal, totalReturnKopeks: returnTotal };
 }
 
 async function recordSyncError(syncRunId: string, connectionId: string, companyId: string, clubId: string | null, fnNumber: string | null, stage: string, safeCode: string, safeMessage?: string): Promise<void> {

@@ -185,6 +185,63 @@ docker run -d --env-file .env.production -p 3000:3000 club-ops:latest
 
 ---
 
+## 9a. Автоимпорт ОФД‑продаж (ежедневный cron)
+
+CLUB-OPS умеет сам подтягивать продажи ОФД Такском за **вчера** по всем активным
+подключениям. Запуск делает внешний планировщик (cron / systemd timer), который
+дёргает защищённый endpoint. Приложение таймер само не запускает.
+
+1. Включите интеграцию и задайте секрет cron:
+
+   ```bash
+   OFD_INTEGRATIONS_ENABLED="true"
+   CRON_SECRET="$(openssl rand -hex 32)"
+   ```
+
+   Без `CRON_SECRET` endpoint возвращает `503` и ничего не запускает. Неверный
+   секрет → `401`. Метод не POST → `405`.
+
+2. Ручная проверка (curl):
+
+   ```bash
+   curl -X POST https://yc-pilot.clubops.ru/api/cron/ofd/daily \
+     -H "Authorization: Bearer $CRON_SECRET"
+   # Ответ — только безопасные агрегаты:
+   # { "ok": true, "date": "2026-07-14", "processedConnections": 1,
+   #   "succeeded": 1, "failed": 0,
+   #   "totals": { "foundReceipts": 116, "importedReceipts": 116, ... }, "runs": [ ... ] }
+   ```
+
+   (Секрет можно передать и заголовком `X-Cron-Secret: $CRON_SECRET`.)
+
+3. Пример ежедневного systemd timer на VM (для справки — **не** входит в код и
+   приложением не создаётся; настраивается администратором сервера):
+
+   ```ini
+   # /etc/systemd/system/clubops-ofd-daily.service
+   [Unit]
+   Description=CLUB-OPS OFD daily import
+   [Service]
+   Type=oneshot
+   Environment=CRON_SECRET=<same-as-app>
+   ExecStart=/usr/bin/curl -fsS -X POST https://yc-pilot.clubops.ru/api/cron/ofd/daily \
+     -H "Authorization: Bearer ${CRON_SECRET}"
+
+   # /etc/systemd/system/clubops-ofd-daily.timer
+   [Unit]
+   Description=Run CLUB-OPS OFD daily import
+   [Timer]
+   OnCalendar=*-*-* 03:30:00
+   Persistent=true
+   [Install]
+   WantedBy=timers.target
+   ```
+
+   Ответ endpoint не содержит логинов/паролей/Integrator‑ID/Session‑Token, сырого
+   ответа Такском, фискального JSON и ПДн покупателей — только агрегаты и статусы.
+
+---
+
 ## 10. Чек‑лист готовности
 
 - [ ] PostgreSQL в РФ, `DATABASE_URL` задан, миграции применяются.
@@ -193,4 +250,5 @@ docker run -d --env-file .env.production -p 3000:3000 club-ops:latest
 - [ ] `AI_PROVIDER` = mock или ru_ai (OpenAI — только dev/test).
 - [ ] `/api/health` отвечает 200.
 - [ ] Резервное копирование БД и хранилища настроено и проверено.
+- [ ] ОФД‑автоимпорт (если используется): `OFD_INTEGRATIONS_ENABLED=true`, `CRON_SECRET` задан, внешний timer шлёт `POST /api/cron/ofd/daily`.
 - [ ] Юридические документы и политика обработки ПДн готовы (`COMPLIANCE_RU.md`).

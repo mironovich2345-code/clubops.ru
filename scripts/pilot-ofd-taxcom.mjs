@@ -50,7 +50,6 @@ async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dat
   // NOT connectionId — mirror of the importer fix. When mappings are passed in
   // explicitly (unit tests), use them as-is.
   const activeMappings = mappings ?? await p.ofdCashRegisterMapping.findMany({ where: { companyId, provider: "taxcom", isActive: true, activeMappingKey: { not: null }, ...(legalEntityId ? { legalEntityId } : {}) } });
-  console.warn(`[ofd] mapping_debug connectionId=${connectionId} companyId=${companyId} legalEntityId=${legalEntityId ?? "null"} provider=taxcom activeMappingCount=${activeMappings.length}`);
   if (activeMappings.length === 0) {
     await p.ofdSyncError.create({ data: { syncRunId: run.id, connectionId, companyId, clubId: null, fnNumber: null, stage: "mapping_check", safeCode: "ofd_no_active_cash_register_mappings", safeMessage: "Нет активных касс ОФД для выбранного подключения/юрлица." } });
     await p.ofdSyncRun.update({ where: { id: run.id }, data: { status: "failed", finishedAt: new Date(), safeErrorCode: "ofd_no_active_cash_register_mappings", safeErrorMessage: "Нет активных касс ОФД для выбранного подключения/юрлица." } });
@@ -76,8 +75,6 @@ async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dat
     const legal = m.legalEntityId ?? null; const recs = []; let failed = false;
     const stats = { shiftCount: 0, shiftReceiptCount: 0, documentCount: 0, normalizedReceiptCount: 0, serviceSkipped: 0, unsupportedSkipped: 0, invalidSkipped: 0 };
     for (const day of days) {
-      const dbg = { begin: `${String(day).slice(0, 10)}T00:00:00`, end: `${String(day).slice(0, 10)}T23:59:59` };
-      console.warn(`[ofd] list_shifts_call fn=${m.fnNumber} date=${day} begin=${dbg.begin} end=${dbg.end}`);
       const shifts = await client.listShifts(m.fnNumber, day, day);
       if (!shifts.ok) { failed = true; await p.ofdSyncError.create({ data: { syncRunId: run.id, connectionId, companyId, clubId: m.clubId, fnNumber: m.fnNumber, stage: "list_shifts", safeCode: shifts.safeCode, safeMessage: (shifts.safeMessage || "").slice(0, 200) || null } }); continue; }
       for (const s of shifts.data) {
@@ -434,6 +431,61 @@ async function main() {
   const mcMapErr = await p.ofdSyncError.findFirst({ where: { syncRunId: mcRun2.runId, stage: "mapping_check" } });
   check("TM7 mapping_check OfdSyncError = ofd_no_active_cash_register_mappings, safe message (no secrets)", mcMapErr && mcMapErr.safeCode === "ofd_no_active_cash_register_mappings" && mcMapErr.safeMessage === "Нет активных касс ОФД для выбранного подключения/юрлица." && !/token|password|login|integrator|@/i.test(mcMapErr.safeMessage) && mcMapErr.clubId === null && mcMapErr.fnNumber === null);
 
+  // ===== Daily auto-import cron (POST /api/cron/ofd/daily) =====================
+  // Load the REAL authorizeOfdCron + ofdYesterday from src/lib/ofd/daily.ts.
+  const dailySrc = readFileSync(new URL("../src/lib/ofd/daily.ts", import.meta.url), "utf8");
+  const ofdYesterday = new Function("now", dailySrc.match(/export function ofdYesterday\(now: Date\): string \{([\s\S]*?)\n\}/)[1]);
+  const authorizeOfdCron = new Function("p", dailySrc.match(/export function authorizeOfdCron\(p: OfdCronAuthInput\): OfdCronAuthResult \{([\s\S]*?)\n\}/)[1]);
+  const SECRET = "cron-secret-xyz";
+  const authOk = { method: "POST", authorization: `Bearer ${SECRET}`, cronHeader: null, enabled: true, secret: SECRET };
+  check("CR1 non-POST → 405 method_not_allowed", authorizeOfdCron({ ...authOk, method: "GET" }).status === 405 && authorizeOfdCron({ ...authOk, method: "PUT" }).status === 405);
+  check("CR2 feature disabled → 503 ofd_integrations_disabled (never runs)", authorizeOfdCron({ ...authOk, enabled: false }).status === 503 && authorizeOfdCron({ ...authOk, enabled: false }).error === "ofd_integrations_disabled");
+  check("CR3 no CRON_SECRET configured → 503 cron_secret_not_configured (never runs)", authorizeOfdCron({ ...authOk, secret: null }).status === 503 && authorizeOfdCron({ ...authOk, secret: null }).error === "cron_secret_not_configured");
+  check("CR4 wrong / missing request secret → 401", authorizeOfdCron({ ...authOk, authorization: "Bearer nope" }).status === 401 && authorizeOfdCron({ ...authOk, authorization: null }).status === 401);
+  check("CR5 correct Bearer OR X-Cron-Secret → ok", authorizeOfdCron(authOk).ok === true && authorizeOfdCron({ method: "POST", authorization: null, cronHeader: SECRET, enabled: true, secret: SECRET }).ok === true);
+  check("CR6 ofdYesterday = server local calendar day − 1", ofdYesterday(new Date(2026, 6, 15, 3, 30)) === "2026-07-14" && ofdYesterday(new Date(2026, 6, 1, 0, 5)) === "2026-06-30");
+
+  // Mirror of runDailyOfdImport (safe aggregates; injectable importer/connections).
+  async function runDailyOfdImport({ now, listConnections, importer }) {
+    const date = ofdYesterday(now);
+    const connections = await listConnections();
+    const runs = []; const totals = { foundReceipts: 0, importedReceipts: 0, skippedReceipts: 0, totalIncomeKopeks: 0, totalReturnKopeks: 0 };
+    let succeeded = 0, failed = 0;
+    for (const c of connections) {
+      let s;
+      try {
+        const r = await importer(c.id, date, "auto_daily");
+        s = r.ok ? { connectionId: c.id, status: r.status, foundReceipts: r.found, importedReceipts: r.imported, skippedReceipts: r.skipped, totalIncomeKopeks: r.totalIncomeKopeks, totalReturnKopeks: r.totalReturnKopeks, safeErrorCode: null } : { connectionId: c.id, status: "failed", foundReceipts: 0, importedReceipts: 0, skippedReceipts: 0, totalIncomeKopeks: 0, totalReturnKopeks: 0, safeErrorCode: r.safeCode };
+      } catch { s = { connectionId: c.id, status: "failed", foundReceipts: 0, importedReceipts: 0, skippedReceipts: 0, totalIncomeKopeks: 0, totalReturnKopeks: 0, safeErrorCode: "import_exception" }; }
+      if (s.safeErrorCode === null && s.status === "success") succeeded++; else failed++;
+      totals.foundReceipts += s.foundReceipts; totals.importedReceipts += s.importedReceipts; totals.skippedReceipts += s.skippedReceipts; totals.totalIncomeKopeks += s.totalIncomeKopeks; totals.totalReturnKopeks += s.totalReturnKopeks;
+      runs.push(s);
+    }
+    return { ok: true, date, processedConnections: connections.length, succeeded, failed, totals, runs };
+  }
+
+  // DB: connection SELECTION — only ACTIVE taxcom connections (mirror of the real query).
+  const cronActive = await p.ofdConnection.create({ data: { companyId: MC, provider: "taxcom", displayName: "T-active", serverBaseUrl: "https://api-lk-ofd.taxcom.ru", authType: "login_password", isActive: true, createdByUserId: MU } });
+  await p.ofdConnection.create({ data: { companyId: MC, provider: "taxcom", displayName: "T-inactive", serverBaseUrl: "https://x", authType: "login_password", isActive: false, createdByUserId: MU } });
+  await p.ofdConnection.create({ data: { companyId: MC, provider: "atol", displayName: "Other", serverBaseUrl: "https://x", authType: "login_password", isActive: true, createdByUserId: MU } });
+  const selected = await p.ofdConnection.findMany({ where: { companyId: MC, provider: "taxcom", isActive: true }, select: { id: true } });
+  check("CR7 selects only ACTIVE taxcom connections (not inactive, not other providers)", selected.some((c) => c.id === cronActive.id) && selected.every((c) => c.id !== undefined) && selected.length === 2 /* mcConn + cronActive */);
+
+  // Importer invoked with yesterday + mode auto_daily; aggregation across connections.
+  const importerCalls = [];
+  const fakeImporter = async (connectionId, date, mode) => {
+    importerCalls.push({ connectionId, date, mode });
+    if (connectionId === "conn-B") return { ok: false, safeCode: "already_running" }; // one fails
+    return { ok: true, found: 5, imported: 5, skipped: 0, status: "success", totalIncomeKopeks: 100000, totalReturnKopeks: 0 };
+  };
+  const res = await runDailyOfdImport({ now: new Date(2026, 6, 15, 4, 0), listConnections: async () => [{ id: "conn-A" }, { id: "conn-B" }, { id: "conn-C" }], importer: fakeImporter });
+  check("CR8 importer called per connection with yesterday date + mode auto_daily", importerCalls.length === 3 && importerCalls.every((c) => c.date === "2026-07-14" && c.mode === "auto_daily") && importerCalls.map((c) => c.connectionId).join(",") === "conn-A,conn-B,conn-C");
+  check("CR9 totals aggregated across connections (2 ok × 5 = found 10 / imported 10 / income 200000)", res.processedConnections === 3 && res.totals.foundReceipts === 10 && res.totals.importedReceipts === 10 && res.totals.totalIncomeKopeks === 200000 && res.totals.totalReturnKopeks === 0);
+  check("CR10 one connection failure does NOT abort others (succeeded 2, failed 1, safeErrorCode surfaced)", res.succeeded === 2 && res.failed === 1 && res.runs.find((r) => r.connectionId === "conn-B").safeErrorCode === "already_running" && res.runs.filter((r) => r.safeErrorCode === null).length === 2);
+  check("CR11 a thrown importer error is caught → safe import_exception, others continue", (await (async () => { const rr = await runDailyOfdImport({ now: new Date(2026, 6, 15), listConnections: async () => [{ id: "x1" }, { id: "x2" }], importer: async (id) => { if (id === "x1") throw new Error("boom stack with secret Bearer abc"); return { ok: true, found: 1, imported: 1, skipped: 0, status: "success", totalIncomeKopeks: 1, totalReturnKopeks: 0 }; } }); return rr.runs.find((r) => r.connectionId === "x1").safeErrorCode === "import_exception" && rr.succeeded === 1; })()) === true);
+  const resJson = JSON.stringify(res);
+  check("CR12 response has ONLY safe fields (no login/password/Integrator-ID/SessionToken/raw/PII/stack)", !/login|password|integrator|sessionToken|serverBaseUrl|loginEncrypted|Bearer|fpd|phone|email|stack/i.test(resJson) && Object.keys(res.runs[0]).sort().join(",") === "connectionId,foundReceipts,importedReceipts,safeErrorCode,skippedReceipts,status,totalIncomeKopeks,totalReturnKopeks");
+
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
   check("T6 3103 not auth_failed; 401 auth_failed; 403 forbidden", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
@@ -601,6 +653,11 @@ async function main() {
   const pageSrc = readFileSync(new URL("../src/app/(app)/settings/integrations/ofd/page.tsx", import.meta.url), "utf8");
   const schema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
   const health = readFileSync(new URL("../src/app/api/health/route.ts", import.meta.url), "utf8");
+  const cronRoute = readFileSync(new URL("../src/app/api/cron/ofd/daily/route.ts", import.meta.url), "utf8");
+  const dailyLib = readFileSync(new URL("../src/lib/ofd/daily.ts", import.meta.url), "utf8");
+  const envEx = readFileSync(new URL("../.env.example", import.meta.url), "utf8");
+  const envProd = readFileSync(new URL("../.env.production.example", import.meta.url), "utf8");
+  const deployDoc = readFileSync(new URL("../docs/RU_DEPLOYMENT.md", import.meta.url), "utf8");
   const receiptModel = schema.slice(schema.indexOf("model OfdReceiptImport"), schema.indexOf("model OfdReceiptImport") + 900);
 
   check("2b UI never renders secret values (only configured/not booleans)", forms.includes("hasLogin") && forms.includes("hasPassword") && !forms.includes("loginEncrypted") && !pageSrc.includes("passwordEncrypted:") && pageSrc.includes("hasPassword: Boolean(connectionRow.passwordEncrypted)"));
@@ -664,6 +721,16 @@ async function main() {
   check("T-S11b importer: 0 active mappings → mapping_check + ofd_no_active_cash_register_mappings, status failed (not silent success)", importer.includes("mappings.length === 0") && importer.includes('"mapping_check"') && importer.includes('"ofd_no_active_cash_register_mappings"') && importer.includes("Нет активных касс ОФД для выбранного подключения") && /mappings\.length === 0[\s\S]{0,400}status: "failed"/.test(importer));
   check("T-S11c importer SAFE debug logs: mapping_debug (ids+counts) + list_shifts_call (fn/date/begin/end), no secrets/raw", importer.includes("console.warn(`[ofd] mapping_debug") && importer.includes("activeMappingCount=") && importer.includes("console.warn(`[ofd] list_shifts_call") && !/mapping_debug[\s\S]{0,200}(login|password|integrator|sessionToken|JSON\.stringify)/i.test(importer) && !/list_shifts_call[\s\S]{0,200}(token|password|JSON\.stringify)/i.test(importer));
   check("T-S11d mapping_check runs BEFORE the ShiftList loop (fail fast)", importer.indexOf('"mapping_check"') < importer.indexOf("client.listShifts(") && importer.indexOf("mappings.length === 0") < importer.indexOf("for (const m of mappings)"));
+  // --- Daily auto-import cron (real source) ---
+  check("T-S12 route POST /api/cron/ofd/daily: authorizeOfdCron + runDailyOfdImport, no-store, only POST exported", cronRoute.includes("export async function POST") && !cronRoute.includes("export async function GET") && cronRoute.includes("authorizeOfdCron") && cronRoute.includes("runDailyOfdImport") && cronRoute.includes('req.headers.get("authorization")') && cronRoute.includes('req.headers.get("x-cron-secret")') && cronRoute.includes("Cache-Control"));
+  check("T-S12b daily lib: auth order method(405)/disabled(503)/no-secret(503)/wrong(401); Bearer or X-Cron-Secret", dailyLib.includes('status: 405, error: "method_not_allowed"') && dailyLib.includes('status: 503, error: "ofd_integrations_disabled"') && dailyLib.includes('status: 503, error: "cron_secret_not_configured"') && dailyLib.includes('status: 401, error: "unauthorized"') && dailyLib.includes("`Bearer ${p.secret}`") && dailyLib.includes("p.cronHeader === p.secret"));
+  check("T-S12c daily import selects active taxcom connections + mode auto_daily + safe aggregate result", dailyLib.includes('where: { provider: "taxcom", isActive: true }') && dailyLib.includes('mode: "auto_daily"') && dailyLib.includes("processedConnections") && dailyLib.includes("succeeded") && dailyLib.includes("failed") && dailyLib.includes("safeErrorCode"));
+  const dailyCode = dailyLib.split("\n").filter((l) => { const t = l.trim(); return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*"); }).join("\n");
+  check("T-S12d cron CODE handles no secrets/raw (no decrypt/loginEncrypted/sessionToken/.stack); logs are aggregate-only", !/decryptOfdSecret|loginEncrypted|passwordEncrypted|integratorIdEncrypted|sessionToken|serverBaseUrl|\.stack|rawJson/i.test(dailyCode) && dailyLib.includes("[ofd-cron] daily_start") && dailyLib.includes("[ofd-cron] connection_done") && dailyLib.includes("[ofd-cron] daily_done") && !cronRoute.includes("decryptOfdSecret"));
+  check("T-S12e ImportMode includes auto_daily + importer returns totalIncome/Return; ImportResult exposes totals", importer.includes('"auto_daily"') && importer.includes("totalIncomeKopeks: number") && importer.includes("totalIncomeKopeks: incomeTotal, totalReturnKopeks: returnTotal"));
+  check("UI: Автоимпорт block (status by OFD_INTEGRATIONS_ENABLED, endpoint, last auto run, hint; no CRON_SECRET)", pageSrc.includes("Автоимпорт") && pageSrc.includes("POST /api/cron/ofd/daily") && pageSrc.includes('mode: "auto_daily"') && pageSrc.includes("Последняя автоматическая синхронизация") && pageSrc.includes("Автоимпорт подтягивает продажи за вчера") && !/CRON_SECRET/.test(pageSrc));
+  check("env examples define CRON_SECRET (+ OFD_INTEGRATIONS_ENABLED) without a real value", /CRON_SECRET=""/.test(envEx) && /OFD_INTEGRATIONS_ENABLED="false"/.test(envEx) && /CRON_SECRET=""/.test(envProd) && /OFD_INTEGRATIONS_ENABLED="false"/.test(envProd));
+  check("docs: RU_DEPLOYMENT has cron curl example + endpoint + systemd timer note (no real secret)", deployDoc.includes("/api/cron/ofd/daily") && deployDoc.includes("curl -X POST") && deployDoc.includes("Authorization: Bearer $CRON_SECRET") && deployDoc.includes("systemd") && deployDoc.includes("OnCalendar"));
   check("9-date OfdDailySalesSummary uses 'date' column (not salesDate) in model/importer/page", schema.includes("model OfdDailySalesSummary") && !/salesDate/i.test(schema) && !/salesDate/i.test(importer) && !/salesDate/i.test(pageSrc) && importer.includes("buildSummaryKey"));
   // Static guard: no buyer PII / raw fiscal JSON is parsed, stored or logged.
   check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging of raw data in client.ts/adapter", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console.") && !/phone|email|buyerName|customer|rawJson/i.test(adapter));
