@@ -31,8 +31,8 @@ function normalize(doc) {
 }
 
 // --- Mirror of lib/ofd/revenue (item name + category logic) ----------------
-const normItem = (v) => (v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200D\u2060\uFEFF]/g, "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
-const cleanItem = (v) => (v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+const normItem = (v) => String(v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200D\u2060\uFEFF]/g, "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+const cleanItem = (v) => String(v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
 const DEFAULT_RULES = [
   ...["групповая тренировка", "групповые тренировки", "групповое занятие", "групповые занятия", "мини-группа", "мини группа"].map((pattern) => ({ code: "group_training", name: "Групповые тренировки", matchType: "contains", pattern })),
   { code: "group_training", name: "Групповые тренировки", matchType: "starts_with", pattern: "гт" },
@@ -57,15 +57,16 @@ const ITEM_KEYS = ["items", "Items", "positions", "Positions", "goods", "Goods",
 function parseItems(raw) {
   const o = raw ?? {}; let arr = [], present = false;
   for (const k of ITEM_KEYS) { if (Array.isArray(o[k])) { arr = o[k]; present = true; break; } }
+  if (!present) { const ffd = o["1059"]; if (Array.isArray(ffd)) { arr = ffd; present = true; } else if (ffd && typeof ffd === "object") { arr = [ffd]; present = true; } }
   const items = [];
   for (const it of arr) {
     const io = it ?? {};
-    const name = cleanItem(io.name ?? io.Name ?? io.itemName ?? io.ItemName ?? io.nomenclature ?? io.Nomenclature ?? io.productName ?? io.ProductName);
+    const name = cleanItem(io["1030"] ?? io.name ?? io.Name ?? io.itemName ?? io.ItemName ?? io.nomenclature ?? io.Nomenclature ?? io.productName ?? io.ProductName);
     if (!name) continue;
-    const totalKopeks = Math.trunc(Number(io.sum ?? io.Sum ?? io.total ?? io.Total ?? io.amount ?? io.Amount) || 0);
+    const totalKopeks = Math.trunc(Number(io["1043"] ?? io.sum ?? io.Sum ?? io.total ?? io.Total ?? io.amount ?? io.Amount) || 0);
     if (totalKopeks <= 0) continue;
-    const priceKopeks = Math.trunc(Number(io.price ?? io.Price ?? io.priceKopeks) || 0);
-    const q = Number(io.quantity ?? io.Quantity ?? io.qty ?? io.Qty); const quantityMilli = Math.max(0, Math.round((Number.isFinite(q) ? q : 1) * 1000));
+    const priceKopeks = Math.trunc(Number(io["1079"] ?? io.price ?? io.Price ?? io.priceKopeks) || 0);
+    const q = Number(io["1023"] ?? io.quantity ?? io.Quantity ?? io.qty ?? io.Qty); const quantityMilli = Math.max(0, Math.round((Number.isFinite(q) ? q : 1) * 1000));
     items.push({ name, normalizedName: normItem(name), quantityMilli, priceKopeks, totalKopeks });
   }
   return { items, itemsPresent: present };
@@ -287,16 +288,20 @@ async function main() {
   };
   // Mirror of adapter.inspectDocumentInfoShape — SAFE structure only (keys + counts).
   const DOC_ITEM_PATHS = ["items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows", "fiscalData.items", "document.items", "receipt.items", "ticket.items", "content.items"];
+  const valAtPath = (o, path) => { let cur = o; for (const p of path.split(".")) { if (!cur || typeof cur !== "object") return undefined; cur = cur[p]; } return cur; };
   const inspectDIShape = (raw) => {
     const o = raw && typeof raw === "object" ? raw : {};
     const topLevelKeys = Object.keys(o).sort();
     const docObj = (["document", "Document", "ticket", "Ticket", "content", "Content", "receipt", "Receipt", "fiscalData", "FiscalData"].map((k) => o[k]).find((v) => v && typeof v === "object")) ?? o;
     const documentKeys = Object.keys(docObj).sort();
-    const detectedItemLikeKeys = []; let itemLikeCount = 0;
-    for (const path of DOC_ITEM_PATHS) { const arr = arrAtPath(o, path); if (arr) { detectedItemLikeKeys.push(path); itemLikeCount += arr.length; } }
+    const detectedItemLikeKeys = []; let itemLikeCount = 0; let firstItemKeys = [];
+    const noteFirst = (v) => { if (firstItemKeys.length === 0 && v && typeof v === "object") firstItemKeys = Object.keys(v).sort(); };
+    for (const path of DOC_ITEM_PATHS) { const arr = arrAtPath(o, path); if (arr) { detectedItemLikeKeys.push(path); itemLikeCount += arr.length; noteFirst(arr[0]); } }
+    let numericFfdModeDetected = false;
+    for (const path of ["document.1059", "Document.1059", "1059"]) { const v = valAtPath(o, path); if (v == null) continue; numericFfdModeDetected = true; if (Array.isArray(v)) { detectedItemLikeKeys.push(path); itemLikeCount += v.length; noteFirst(v[0]); } else if (typeof v === "object") { detectedItemLikeKeys.push(path); itemLikeCount += 1; noteFirst(v); } break; }
     const dt = o.documentType ?? o.DocumentType ?? o.type ?? o.Type ?? docObj.documentType ?? docObj.DocumentType;
     const safeDocumentType = dt == null || String(dt).trim() === "" ? null : String(dt).trim().slice(0, 16);
-    return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, safeDocumentType };
+    return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, firstItemKeys, numericFfdModeDetected, safeDocumentType };
   };
 
   // Client mirror with an INJECTED fetch that captures requests (method + query).
@@ -689,7 +694,7 @@ async function main() {
   check("DI1 shape: topLevelKeys + documentKeys + item-like detection + itemLikeCount + safeDocumentType", di.topLevelKeys.includes("document") && di.documentKeys.includes("items") && di.detectedItemLikeKeys.includes("document.items") && di.hasItemsLikeData === true && di.itemLikeCount === 2 && di.safeDocumentType === "3");
   check("DI2 detects items/positions/goods/products/services/rows (direct)", ["items", "positions", "goods", "products", "services", "rows"].every((k) => inspectDIShape({ [k]: [{}] }).detectedItemLikeKeys.includes(k)) && ["Items", "Positions", "Goods", "Products", "Services", "Rows"].every((k) => inspectDIShape({ [k]: [{}] }).detectedItemLikeKeys.includes(k)));
   check("DI3 detects nested fiscalData.items/document.items/receipt.items/ticket.items/content.items", inspectDIShape({ fiscalData: { items: [{}] } }).detectedItemLikeKeys.includes("fiscalData.items") && inspectDIShape({ document: { items: [{}] } }).detectedItemLikeKeys.includes("document.items") && inspectDIShape({ receipt: { items: [{}] } }).detectedItemLikeKeys.includes("receipt.items") && inspectDIShape({ ticket: { items: [{}, {}] } }).detectedItemLikeKeys.includes("ticket.items") && inspectDIShape({ content: { items: [{}] } }).detectedItemLikeKeys.includes("content.items"));
-  check("DI4 shape returns ONLY key names + counts — no raw values / no PII values leak", (() => { const j = JSON.stringify(di); return !/79990000000|ivan@mail\.ru|Иванов|1571686074|Абонемент|200000|100000/i.test(j) && Object.keys(di).sort().join(",") === "detectedItemLikeKeys,documentKeys,hasItemsLikeData,itemLikeCount,safeDocumentType,topLevelKeys"; })());
+  check("DI4 shape returns ONLY key names + counts — no raw values / no PII values leak", (() => { const j = JSON.stringify(di); return !/79990000000|ivan@mail\.ru|Иванов|1571686074|Абонемент|200000|100000/i.test(j) && Object.keys(di).sort().join(",") === "detectedItemLikeKeys,documentKeys,firstItemKeys,hasItemsLikeData,itemLikeCount,numericFfdModeDetected,safeDocumentType,topLevelKeys"; })());
   check("DI5 no items → hasItemsLikeData false, itemLikeCount 0 (not an error)", (() => { const s = inspectDIShape({ documentType: "3", fdNumber: 1, sum: 100 }); return s.hasItemsLikeData === false && s.detectedItemLikeKeys.length === 0 && s.itemLikeCount === 0; })());
   check("DI6 empty / non-object → safe empty shape", (() => { const s = inspectDIShape({}); return s.topLevelKeys.length === 0 && s.hasItemsLikeData === false && s.itemLikeCount === 0 && s.safeDocumentType === null; })() && inspectDIShape(null).hasItemsLikeData === false && inspectDIShape("garbage").itemLikeCount === 0);
   // B. Client: GET + fn/fd query + Session-Token + Integrator-ID, no POST/body.
@@ -711,6 +716,25 @@ async function main() {
   const cliDIauth = makeClient(cfgDI, async (url) => url.includes("Login") ? okJson({ sessionToken: "T" }) : errJson(401, { commonDescription: "Unauthorized" }));
   check("DI12 auth error → auth_failed", (await cliDIauth.inspectDocumentInfo("FN", 1)).safeCode === "auth_failed");
   check("DI13 result never contains secret/PII words OR the raw PII VALUES; no body sent", !/login|password|integrator|sessionToken|Bearer|phone|email|customer|buyer|stack|"raw"/i.test(JSON.stringify(diRes)) && !/79990000000|ivan@mail\.ru|Иванов/i.test(JSON.stringify(diRes)) && diReq.body === undefined);
+
+  // ===== Taxcom numeric FFD format (tag 1059 = предмет расчёта) ================
+  // A real FFD document: positions under document["1059"] with tags 1030/1023/1079/1043.
+  const ffdPos = (name, price, sum, qty) => ({ "1030": name, "1079": price, "1043": sum, "1023": qty, "1212": 1, "1214": 4, "1199": 1 });
+  const ffdDocArr = { documentType: "3", documentFormatVersion: 4, document: { "1012": "2026-07-15", "1054": 1, "1055": 0, "1059": [ffdPos("Абонемент 6 мес", 200000, 200000, 1), ffdPos("Групповая тренировка", 150000, 150000, 1)], "1077": "1571686074" } };
+  const shFfd = inspectDIShape(ffdDocArr);
+  check("DI-FFD1 document['1059'] array → hasItemsLikeData, detected 'document.1059', itemLikeCount=2, numericFfdModeDetected", shFfd.hasItemsLikeData === true && shFfd.detectedItemLikeKeys.includes("document.1059") && shFfd.itemLikeCount === 2 && shFfd.numericFfdModeDetected === true);
+  check("DI-FFD2 firstItemKeys = key NAMES of first position only (tags), no values", shFfd.firstItemKeys.join(",") === "1023,1030,1043,1079,1199,1212,1214" && !/Абонемент|200000|1571686074/i.test(JSON.stringify(shFfd)));
+  check("DI-FFD3 1059 as object → itemLikeCount=1", (() => { const s = inspectDIShape({ document: { "1059": ffdPos("Абонемент", 100, 100, 1) } }); return s.hasItemsLikeData === true && s.itemLikeCount === 1 && s.detectedItemLikeKeys.includes("document.1059"); })());
+  check("DI-FFD4 1059 scalar → hasItemsLikeData=false but numericFfdModeDetected=true", (() => { const s = inspectDIShape({ document: { "1059": "not-an-object" } }); return s.hasItemsLikeData === false && s.numericFfdModeDetected === true && s.itemLikeCount === 0 && s.firstItemKeys.length === 0; })());
+  check("DI-FFD1b root-level 1059 also detected", inspectDIShape({ "1059": [ffdPos("X", 100, 100, 1)] }).detectedItemLikeKeys.includes("1059"));
+  // B. parseReceiptItems reads FFD positions.
+  const p1 = parseItems({ "1059": [ffdPos("Абонемент 6 мес", 200000, 200000, 2)] });
+  check("RI-FFD1 parseReceiptItems reads 1059 position tags 1030/1023/1079/1043", p1.itemsPresent === true && p1.items.length === 1 && p1.items[0].name === "Абонемент 6 мес" && p1.items[0].totalKopeks === 200000 && p1.items[0].priceKopeks === 200000 && p1.items[0].quantityMilli === 2000 && p1.items[0].normalizedName === "абонемент 6 мес");
+  check("RI-FFD2 1059 array yields multiple positions; 1059 object yields one", parseItems({ "1059": [ffdPos("A", 100, 100, 1), ffdPos("B", 200, 200, 1)] }).items.length === 2 && parseItems({ "1059": ffdPos("Solo", 300, 300, 1) }).items.length === 1);
+  check("RI-FFD3 itemName cleaned; only safe fields; no raw position / no tag values leak", (() => { const it = parseItems({ "1059": [{ "1030": "  Абонемент  ", "1043": 100, "1212": 1, "1199": 1, "raw": { x: 1 } }] }).items[0]; return it.name === "Абонемент" && Object.keys(it).sort().join(",") === "name,normalizedName,priceKopeks,quantityMilli,totalKopeks" && !/"1212"|"1199"|"raw"/.test(JSON.stringify(it)); })());
+  check("RI-FFD4 position without 1030 name is skipped", parseItems({ "1059": [{ "1043": 100, "1023": 1 }] }).items.length === 0);
+  check("RI-FFD5 position with total<=0 (1043<=0) is skipped", parseItems({ "1059": [ffdPos("Скидка", 0, 0, 1), ffdPos("Возврат", 0, -50, 1)] }).items.length === 0);
+  check("RI-FFD6 FFD safety: parsed items never carry ФПД/phone/email/buyer/raw", (() => { const items = parseItems({ "1059": [ffdPos("Абонемент", 200000, 200000, 1)], "1077": "1571686074", buyerPhone: "+79990000000" }).items; return items.length === 1 && !/1571686074|79990000000|buyerPhone|phone|"raw"/i.test(JSON.stringify(items)); })());
 
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
@@ -964,7 +988,8 @@ async function main() {
   // --- OFD nomenclature + revenue categories (real source) ---
   check("T-S14 revenue lib: 5 categories (no bar), fallback rules (freeze/reissue→extra_services), normalize + priority sort", revenueLib.includes('{ code: "membership", name: "Абонементы" }') && revenueLib.includes('{ code: "personal_training"') && revenueLib.includes('{ code: "group_training"') && revenueLib.includes('{ code: "extra_services"') && revenueLib.includes('{ code: "other"') && !/code:\s*"bar"/.test(revenueLib) && !/протеин|энергетик|батончик|шейк/i.test(revenueLib) && revenueLib.includes('"заморозка"') && revenueLib.includes('"переоформление"') && revenueLib.includes('.replace(/ё/g, "е")') && revenueLib.includes("legalEntity-specific first") && revenueLib.includes("priority DESC"));
   check("T-S14b revenue lib normalizeItemName has NO heavy regex (no dynamic RegExp / no unbounded alternation), NFKC + control strip", revenueLib.includes('.normalize("NFKC")') && revenueLib.includes("\\u0000-\\u001F") && !/new RegExp/.test(revenueLib));
-  check("T-S15 adapter parseReceiptItems reads name/qty/price/sum from many keys; cleans name; skips empty/sum<=0; no raw JSON stored", adapter.includes("export function parseReceiptItems") && adapter.includes("io.name ?? io.Name ?? io.itemName") && adapter.includes("io.sum ?? io.Sum ?? io.total") && adapter.includes("if (!name) continue") && adapter.includes("if (totalKopeks <= 0) continue") && adapter.includes("cleanItemName") && !/phone|email|buyer|rawJson/i.test(adapter));
+  check("T-S15 adapter parseReceiptItems reads FFD tags 1030/1023/1079/1043 + string keys; cleans name; skips empty/sum<=0; no raw JSON stored", adapter.includes("export function parseReceiptItems") && adapter.includes('io["1030"] ?? io.name') && adapter.includes('io["1043"] ?? io.sum') && adapter.includes('io["1079"] ?? io.price') && adapter.includes('io["1023"] ?? io.quantity') && adapter.includes("if (!name) continue") && adapter.includes("if (totalKopeks <= 0) continue") && adapter.includes("cleanItemName") && !/phone|email|buyer|rawJson/i.test(adapter));
+  check("T-S15b adapter extractPositions handles string-key arrays AND numeric FFD tag 1059 (array=many, object=one)", adapter.includes('const FFD_ITEMS_TAG = "1059"') && adapter.includes("function extractPositions") && adapter.includes("Array.isArray(ffd)") && adapter.includes("ffd && typeof ffd === \"object\""));
   check("T-S16 importer persists items (idempotent by itemKey) + recomputeRevenueCategorySummaries + SAFE items_debug (counts only)", importer.includes("persistReceiptItems") && importer.includes("itemKey: `${r.dedupeKey}:${lineIndex}`") && importer.includes("ofdReceiptItem.findMany({ where: { itemKey:") && importer.includes("export async function recomputeRevenueCategorySummaries") && importer.includes("console.warn(`[ofd] items_debug") && importer.includes("items_unavailable") && !/items_debug[\s\S]{0,200}(itemName|normalizedItemName|fpd|JSON\.stringify|login|password)/i.test(importer));
   check("T-S16b importer item failure never fails the receipt import (try/catch → save_items safe error, receipts kept)", importer.includes('"save_items"') && importer.includes('"ofd_item_save_failed"') && /try \{[\s\S]*?persistReceiptItems[\s\S]*?\} catch/.test(importer));
   check("UI: 'Статьи доходов ОФД' block — table Статья/Приход/Возвраты/Итог/Позиций/Чеков + Нераспознанная номенклатура + 'Номенклатура пока недоступна'", pageSrc.includes("Статьи доходов ОФД") && pageSrc.includes("<Th>Статья</Th>") && pageSrc.includes("<Th>Позиций</Th>") && pageSrc.includes("<Th>Чеков</Th>") && pageSrc.includes("Нераспознанная номенклатура") && pageSrc.includes("Номенклатура пока недоступна") && pageSrc.includes("ofdRevenueCategoryDailySummary") && pageSrc.includes('revenueCategoryCode: "other"') && !pageSrc.includes("Бар"));
@@ -977,8 +1002,8 @@ async function main() {
   check("UI: 'Диагностика номенклатуры Такском' block — button + safe shape (документов / позиции / ключи), no raw JSON", pageSrc.includes("Диагностика номенклатуры Такском") && pageSrc.includes("OfdNewDocsDiagnostics") && forms.includes("Проверить структуру NewDocuments") && forms.includes("newDocsShape") && forms.includes("firstDocumentKeys") && forms.includes("hasItemsLikeData") && forms.includes("Сырой ответ Такском не отображается и не сохраняется") && !/newDocsShape[\s\S]{0,400}JSON\.stringify/.test(forms));
   // --- DocumentInfo shape DIAGNOSTIC (real source) ---
   check("T-S18 client inspectDocumentInfo: GET /API/v2/DocumentInfo + fn/fd query, DIAGNOSTIC ONLY (never returns raw body)", clientSrc.includes("async inspectDocumentInfo(fnNumber, fd)") && /raw\(PATHS\.documentInfo,\s*\{\s*method:\s*"GET",\s*withSession:\s*true,\s*query:\s*\{\s*fn:\s*fnNumber,\s*fd\s*\}/.test(clientSrc) && clientSrc.includes("inspectDocumentInfoShape(r.data)"));
-  check("T-S18b adapter.inspectDocumentInfoShape returns SAFE structure only (keys+counts, nested ticket.items/content.items), no values/PII", adapter.includes("export function inspectDocumentInfoShape") && adapter.includes("documentKeys") && adapter.includes("itemLikeCount") && adapter.includes("safeDocumentType") && adapter.includes('"ticket.items"') && adapter.includes('"content.items"') && !/inspectDocumentInfoShape[\s\S]*?(itemName|buyer|phone|email|JSON\.stringify)/i.test(adapter));
-  check("T-S18c importer money import UNCHANGED — never calls DocumentInfo inspector", !importer.includes("inspectDocumentInfo"));
+  check("T-S18b adapter.inspectDocumentInfoShape returns SAFE structure (keys+counts, nested + FFD 1059, firstItemKeys, numericFfdModeDetected), no values/PII", adapter.includes("export function inspectDocumentInfoShape") && adapter.includes("documentKeys") && adapter.includes("itemLikeCount") && adapter.includes("firstItemKeys") && adapter.includes("numericFfdModeDetected") && adapter.includes('"document.1059"') && adapter.includes("safeDocumentType") && adapter.includes('"ticket.items"') && adapter.includes('"content.items"') && !/inspectDocumentInfoShape[\s\S]*?(itemName|buyer|phone|email|JSON\.stringify)/i.test(adapter));
+  check("T-S18c importer money import UNCHANGED — never mass-calls DocumentInfo inspector; still ShiftList+DocumentList", !importer.includes("inspectDocumentInfo") && !importer.includes("1059") && importer.includes("client.listShifts(") && importer.includes("client.listDocumentsByShift("));
   check("T-S18d action inspectOfdDocumentInfoAction: requireOfdAdmin + fn/fd validation → inspectDocumentInfo → SAFE result (docInfoShape only)", actions.includes("export async function inspectOfdDocumentInfoAction") && actions.includes("requireOfdAdmin()") && actions.includes("inspectDocumentInfo(fnNumber, fd)") && actions.includes("docInfoShape: d") && actions.includes('/^\\d+$/.test(fdRaw)') && !/inspectOfdDocumentInfoAction[\s\S]{0,1400}return\s*\{[^}]*(sessionToken|rawResponse|\.stack)/i.test(actions));
   check("UI: 'DocumentInfo' diag form — ФН/ФД inputs + button + safe shape (ключи/позиции/itemLikeCount), no raw JSON", pageSrc.includes("Диагностика конкретного чека DocumentInfo") && pageSrc.includes("OfdDocInfoDiagnostics") && forms.includes("Проверить DocumentInfo") && forms.includes('name="fnNumber"') && forms.includes('name="fdNumber"') && forms.includes("docInfoShape") && forms.includes("documentKeys") && forms.includes("itemLikeCount") && !/docInfoShape[\s\S]{0,400}JSON\.stringify/.test(forms));
   check("UI: Автоимпорт block (status by OFD_INTEGRATIONS_ENABLED, endpoint, last auto run, hint; no CRON_SECRET)", pageSrc.includes("Автоимпорт") && pageSrc.includes("POST /api/cron/ofd/daily") && pageSrc.includes('mode: "auto_daily"') && pageSrc.includes("Последняя автоматическая синхронизация") && pageSrc.includes("Автоимпорт подтягивает продажи за вчера") && !/CRON_SECRET/.test(pageSrc));

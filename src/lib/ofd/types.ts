@@ -144,9 +144,11 @@ export type NewDocumentsShape = {
 export type DocumentInfoShape = {
   topLevelKeys: string[]; // key names of the response envelope
   documentKeys: string[]; // key names of the document object (names, not values)
-  detectedItemLikeKeys: string[]; // item-like paths that hold an array
+  detectedItemLikeKeys: string[]; // item-like paths that hold an array/object (incl. FFD "document.1059")
   hasItemsLikeData: boolean;
-  itemLikeCount: number; // total item-like rows across detected arrays (count only)
+  itemLikeCount: number; // total item-like rows across detected sources (count only)
+  firstItemKeys: string[]; // key names of the first position (names, not values)
+  numericFfdModeDetected: boolean; // true if the numeric FFD tag 1059 is present
   safeDocumentType: string | null; // documentType value ("3" | …), safe code only
 };
 

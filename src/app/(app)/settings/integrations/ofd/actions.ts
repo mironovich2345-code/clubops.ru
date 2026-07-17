@@ -388,7 +388,9 @@ export async function inspectOfdDocumentInfoAction(_p: State | undefined, formDa
   }
   const d = res.data;
   const notice = d.hasItemsLikeData
-    ? `DocumentInfo содержит позиции чека (найдено ${d.itemLikeCount}) — номенклатуру можно будет подключить.`
-    : "DocumentInfo: позиции чека в ответе отсутствуют.";
+    ? `DocumentInfo содержит позиции чека (найдено ${d.itemLikeCount}${d.numericFfdModeDetected ? ", формат ФФД тег 1059" : ""}) — номенклатуру можно будет подключить.`
+    : d.numericFfdModeDetected
+      ? "DocumentInfo: тег 1059 (предмет расчёта) найден, но его формат не распознан как позиции."
+      : "DocumentInfo: позиции чека в ответе отсутствуют.";
   return { ok: true, notice, docInfoShape: d };
 }

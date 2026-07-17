@@ -293,11 +293,15 @@ export function OfdDocInfoDiagnostics({ connectionId }: { connectionId: string }
           <div className="mb-1">{state.notice}</div>
           <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
             <div><span className="text-slate-500">Позиции чека:</span> {shape.hasItemsLikeData ? <span className="text-emerald-700 font-medium">найдены ({shape.itemLikeCount})</span> : <span className="text-slate-500">не найдены</span>}</div>
+            <div><span className="text-slate-500">Формат ФФД (тег 1059):</span> {shape.numericFfdModeDetected ? <span className="text-emerald-700 font-medium">обнаружен</span> : <span className="text-slate-500">нет</span>}</div>
             {shape.safeDocumentType ? <div><span className="text-slate-500">Тип документа:</span> <span className="font-mono">{shape.safeDocumentType}</span></div> : null}
             <div className="md:col-span-2"><span className="text-slate-500">Ключи верхнего уровня:</span> {shape.topLevelKeys.length ? <span className="font-mono">{shape.topLevelKeys.join(", ")}</span> : "—"}</div>
             <div className="md:col-span-2"><span className="text-slate-500">Ключи документа:</span> {shape.documentKeys.length ? <span className="font-mono">{shape.documentKeys.join(", ")}</span> : "—"}</div>
             {shape.detectedItemLikeKeys.length ? (
               <div className="md:col-span-2"><span className="text-slate-500">Поля позиций:</span> <span className="font-mono">{shape.detectedItemLikeKeys.join(", ")}</span></div>
+            ) : null}
+            {shape.firstItemKeys.length ? (
+              <div className="md:col-span-2"><span className="text-slate-500">Ключи первой позиции:</span> <span className="font-mono">{shape.firstItemKeys.join(", ")}</span></div>
             ) : null}
           </div>
           <p className="mt-2 text-xs text-slate-500">Сырой ответ Такском не отображается и не сохраняется.</p>

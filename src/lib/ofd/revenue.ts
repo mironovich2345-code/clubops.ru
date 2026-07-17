@@ -22,8 +22,8 @@ export type MatchType = "contains" | "starts_with" | "exact";
 
 /** Normalize a name for matching: NFKC, strip control/invisible chars, ё→е,
  * collapse whitespace, trim, lower-case. Deterministic and cheap. */
-export function normalizeItemName(v: string | null | undefined): string {
-  return (v ?? "")
+export function normalizeItemName(v: unknown): string {
+  return String(v ?? "")
     .normalize("NFKC")
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200D\u2060\uFEFF]/g, "")
@@ -36,8 +36,8 @@ export function normalizeItemName(v: string | null | undefined): string {
 const MAX_ITEM_NAME = 200;
 /** Clean an item name for DISPLAY/storage: NFKC, strip control chars, collapse
  * whitespace, trim, length-limit. Keeps original case. Never stores raw JSON. */
-export function cleanItemName(v: string | null | undefined): string {
-  const s = (v ?? "")
+export function cleanItemName(v: unknown): string {
+  const s = String(v ?? "")
     .normalize("NFKC")
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001F\u007F]/g, "")

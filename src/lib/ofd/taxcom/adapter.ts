@@ -49,27 +49,42 @@ function firstArray(o: Record<string, unknown>, keys: string[]): { present: bool
 
 const ITEM_KEYS = ["items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows"];
 
+/** The Taxcom numeric ФФД "предмет расчёта" tag holding receipt positions. In JS an
+ * object key is always a string, so o["1059"] and o[1059] are the same property. */
+const FFD_ITEMS_TAG = "1059";
+
+/** Extract the positions array from either a string-keyed array (items/positions/…)
+ * or the numeric ФФД tag 1059 (array = many positions, object = one). */
+function extractPositions(o: Record<string, unknown>): { present: boolean; arr: unknown[] } {
+  const strArr = firstArray(o, ITEM_KEYS);
+  if (strArr.present) return strArr;
+  const ffd = o[FFD_ITEMS_TAG];
+  if (Array.isArray(ffd)) return { present: true, arr: ffd };
+  if (ffd && typeof ffd === "object") return { present: true, arr: [ffd] };
+  return { present: false, arr: [] };
+}
+
 /**
  * Parse the SAFE nomenclature lines of one raw receipt document, if present.
- * Reads name/quantity/price/sum from common casings; stores only those safe fields
- * (no raw payload, no purchaser personal data). Skips a line with an empty name or
- * a non-positive sum (service lines). Returns { itemsPresent } so the caller can
- * distinguish "no positions array in the response" from "array present but empty".
+ * Understands BOTH the string-key shape (items/positions/…) and Taxcom's numeric
+ * ФФД shape (tag 1059 with per-position tags 1030 name / 1023 quantity / 1079 price
+ * / 1043 sum). Stores only safe fields (no raw payload, no ФПД, no purchaser
+ * personal data). Skips a line with an empty name or a non-positive sum. Returns
+ * { itemsPresent } so the caller can distinguish "no positions" from "empty array".
  */
 export function parseReceiptItems(raw: unknown): { items: TaxcomReceiptItem[]; itemsPresent: boolean } {
   const o = (raw as Record<string, unknown>) ?? {};
-  const { present, arr } = firstArray(o, ITEM_KEYS);
+  const { present, arr } = extractPositions(o);
   const items: TaxcomReceiptItem[] = [];
   for (const it of arr) {
     const io = (it as Record<string, unknown>) ?? {};
-    const name = cleanItemName(
-      (io.name ?? io.Name ?? io.itemName ?? io.ItemName ?? io.nomenclature ?? io.Nomenclature ?? io.productName ?? io.ProductName) as string,
-    );
+    // 1030 name / 1023 quantity / 1079 price / 1043 sum, plus string-key fallbacks.
+    const name = cleanItemName(io["1030"] ?? io.name ?? io.Name ?? io.itemName ?? io.ItemName ?? io.nomenclature ?? io.Nomenclature ?? io.productName ?? io.ProductName);
     if (!name) continue; // empty name → skip
-    const totalKopeks = intKopeks(io.sum ?? io.Sum ?? io.total ?? io.Total ?? io.amount ?? io.Amount);
-    const priceKopeks = intKopeks(io.price ?? io.Price ?? io.priceKopeks);
+    const totalKopeks = intKopeks(io["1043"] ?? io.sum ?? io.Sum ?? io.total ?? io.Total ?? io.amount ?? io.Amount);
     if (totalKopeks <= 0) continue; // service line with sum <= 0 → skip
-    const quantityMilli = Math.max(0, Math.round(numOr(io.quantity ?? io.Quantity ?? io.qty ?? io.Qty, 1) * 1000));
+    const priceKopeks = intKopeks(io["1079"] ?? io.price ?? io.Price ?? io.priceKopeks);
+    const quantityMilli = Math.max(0, Math.round(numOr(io["1023"] ?? io.quantity ?? io.Quantity ?? io.qty ?? io.Qty, 1) * 1000));
     items.push({ name, normalizedName: normalizeItemName(name), quantityMilli, priceKopeks, totalKopeks });
   }
   return { items, itemsPresent: present };
@@ -142,6 +157,16 @@ const DOC_ITEM_LIKE_PATHS = [
  * personal data. Detects whether the document carries receipt nomenclature. Never
  * throws.
  */
+function valueAtPath(o: Record<string, unknown>, path: string): unknown {
+  const parts = path.split(".");
+  let cur: unknown = o;
+  for (const p of parts) {
+    if (!cur || typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[p];
+  }
+  return cur;
+}
+
 export function inspectDocumentInfoShape(raw: unknown): DocumentInfoShape {
   const o = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
   const topLevelKeys = Object.keys(o).sort();
@@ -153,15 +178,34 @@ export function inspectDocumentInfoShape(raw: unknown): DocumentInfoShape {
 
   const detectedItemLikeKeys: string[] = [];
   let itemLikeCount = 0;
+  let firstItemKeys: string[] = [];
+  const noteFirst = (v: unknown) => {
+    if (firstItemKeys.length === 0 && v && typeof v === "object") firstItemKeys = Object.keys(v as Record<string, unknown>).sort();
+  };
   for (const path of DOC_ITEM_LIKE_PATHS) {
     const arr = arrayAtPath(o, path);
-    if (arr) { detectedItemLikeKeys.push(path); itemLikeCount += arr.length; }
+    if (arr) { detectedItemLikeKeys.push(path); itemLikeCount += arr.length; noteFirst(arr[0]); }
+  }
+
+  // Taxcom numeric ФФД: positions live under tag 1059 (array = many, object = one).
+  // Probe the document wrapper first, then the response root.
+  let numericFfdModeDetected = false;
+  for (const path of ["document.1059", "Document.1059", "1059"]) {
+    const v = valueAtPath(o, path);
+    if (v == null) continue;
+    numericFfdModeDetected = true; // 1059 tag present (even if not item-like)
+    if (Array.isArray(v)) {
+      detectedItemLikeKeys.push(path); itemLikeCount += v.length; noteFirst(v[0]);
+    } else if (typeof v === "object") {
+      detectedItemLikeKeys.push(path); itemLikeCount += 1; noteFirst(v);
+    }
+    break; // first present 1059 wins
   }
 
   const dt = o.documentType ?? o.DocumentType ?? o.type ?? o.Type ?? docObj.documentType ?? docObj.DocumentType;
   const safeDocumentType = dt == null || String(dt).trim() === "" ? null : String(dt).trim().slice(0, 16);
 
-  return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, safeDocumentType };
+  return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, firstItemKeys, numericFfdModeDetected, safeDocumentType };
 }
 
 /** Why a document was not turned into a receipt (for safe aggregate diagnostics). */
