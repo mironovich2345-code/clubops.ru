@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, inspectOfdNewDocumentsAction, inspectOfdDocumentInfoAction } from "../actions";
+import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, reclassifyOfdCategoriesAction, inspectOfdNewDocumentsAction, inspectOfdDocumentInfoAction } from "../actions";
 import type { OfdSyncSummary } from "../actions";
 import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
 import type { NewDocumentsShape, DocumentInfoShape } from "@/lib/ofd/types";
@@ -235,6 +235,19 @@ export function OfdSyncNow() {
       ) : (
         <Msg s={state} />
       )}
+    </form>
+  );
+}
+
+export function OfdRecalcCategories() {
+  const [state, action] = useFormState(reclassifyOfdCategoriesAction, initial);
+  return (
+    <form action={action} className="mt-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit idle="Пересчитать статьи доходов" busy="Пересчёт..." />
+        <span className="text-xs text-slate-500">Используется после изменения правил распознавания номенклатуры. Не запрашивает ОФД повторно.</span>
+      </div>
+      <Msg s={state} />
     </form>
   );
 }

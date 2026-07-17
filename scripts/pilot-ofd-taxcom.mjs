@@ -31,18 +31,20 @@ function normalize(doc) {
 }
 
 // --- Mirror of lib/ofd/revenue (item name + category logic) ----------------
-const normItem = (v) => String(v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200D\u2060\uFEFF]/g, "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+const normItem = (v) => String(v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200D\u2060\uFEFF]/g, "").toLowerCase().replace(/ё/g, "е").replace(/[^\p{L}\p{N}\s]+/gu, " ").replace(/\s+/g, " ").trim();
 const cleanItem = (v) => String(v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+// Grouping normalizer mirror: strip contract/agreement references, then normItem.
+const normGroup = (v) => normItem(String(v ?? "").normalize("NFKC").toLowerCase().replace(/ё/g, "е").replace(/(договор|контракт|соглашение)\s*(?:№|n[o]?|#)?\s*[a-zа-я]*\d[\w/.\-№]*/g, " ").replace(/№\s*\S*\d\S*/g, " "));
 const DEFAULT_RULES = [
   ...["групповая тренировка", "групповые тренировки", "групповое занятие", "групповые занятия", "мини-группа", "мини группа"].map((pattern) => ({ code: "group_training", name: "Групповые тренировки", matchType: "contains", pattern })),
   { code: "group_training", name: "Групповые тренировки", matchType: "starts_with", pattern: "гт" },
   ...["персональная тренировка", "персональные тренировки", "тренировка с тренером", "индивидуальная тренировка", "индивидуальные тренировки"].map((pattern) => ({ code: "personal_training", name: "Персональные тренировки", matchType: "contains", pattern })),
   { code: "personal_training", name: "Персональные тренировки", matchType: "starts_with", pattern: "пт" },
-  ...["заморозка", "продление", "переоформление", "восстановление карты", "аренда", "полотенце", "шкафчик", "солярий", "доп услуга", "дополнительная услуга"].map((pattern) => ({ code: "extra_services", name: "Доп. услуги", matchType: "contains", pattern })),
-  ...["клубная карта", "абонемент", "членство", "карта"].map((pattern) => ({ code: "membership", name: "Абонементы", matchType: "contains", pattern })),
+  ...["заморозка", "продление", "переоформление", "переоформления", "восстановление карты", "аренда", "полотенце", "шкафчик", "солярий", "доп услуга", "доп услуги", "дополнительная услуга", "дополнительные услуги"].map((pattern) => ({ code: "extra_services", name: "Доп. услуги", matchType: "contains", pattern })),
+  ...["физкультурно оздоровительные услуги", "физкультурно оздоровительные", "физ оздоровительные услуги", "клубная карта", "карта клуба", "абонемент", "членство", "карта"].map((pattern) => ({ code: "membership", name: "Абонементы", matchType: "contains", pattern })),
 ];
 const matchR = (t, p, n) => (!p ? false : t === "starts_with" ? n.startsWith(p) : t === "exact" ? n === p : n.includes(p));
-function categorize(norm, dbRules = [], legal = null) {
+function categorize(norm, dbRules = [], legal = null, rawName = null) {
   if (!norm) return { code: "other", name: "Иное", ruleId: null };
   const sorted = [...dbRules.filter((r) => r.isActive !== false && (r.legalEntityId == null || r.legalEntityId === legal))].sort((a, b) => {
     const as = a.legalEntityId ? 1 : 0, bs = b.legalEntityId ? 1 : 0; if (as !== bs) return bs - as;
@@ -51,6 +53,8 @@ function categorize(norm, dbRules = [], legal = null) {
   });
   for (const r of sorted) { const pat = r.normalizedPattern ?? normItem(r.pattern); if (matchR(r.matchType, pat, norm)) return { code: r.categoryCode, name: r.categoryName, ruleId: r.id ?? null }; }
   for (const fb of DEFAULT_RULES) { if (matchR(fb.matchType, normItem(fb.pattern), norm)) return { code: fb.code, name: fb.name, ruleId: null }; }
+  const loose = normItem(rawName ?? norm);
+  if (loose.includes("физкультур") && loose.includes("договор") && loose.includes("контракт")) return { code: "membership", name: "Абонементы", ruleId: null };
   return { code: "other", name: "Иное", ruleId: null };
 }
 const ITEM_KEYS = ["items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows"];
@@ -67,7 +71,7 @@ function parseItems(raw) {
     if (totalKopeks <= 0) continue;
     const priceKopeks = Math.trunc(Number(io["1079"] ?? io.price ?? io.Price ?? io.priceKopeks) || 0);
     const q = Number(io["1023"] ?? io.quantity ?? io.Quantity ?? io.qty ?? io.Qty); const quantityMilli = Math.max(0, Math.round((Number.isFinite(q) ? q : 1) * 1000));
-    items.push({ name, normalizedName: normItem(name), quantityMilli, priceKopeks, totalKopeks });
+    items.push({ name, normalizedName: normGroup(name), quantityMilli, priceKopeks, totalKopeks });
   }
   return { items, itemsPresent: present };
 }
@@ -92,6 +96,21 @@ async function recomputeCategorySummary(companyId, clubId, legal, date) {
   await p.ofdRevenueCategoryDailySummary.deleteMany({ where: { companyId, clubId, provider: "taxcom", legalEntityId: legal ?? null, date } });
   const rows = [...byCat.entries()].map(([code, c]) => ({ companyId, clubId, legalEntityId: legal ?? null, provider: "taxcom", date, categoryCode: code, categoryName: c.name, incomeTotalKopeks: c.income, returnTotalKopeks: c.ret, netTotalKopeks: c.income - c.ret, itemCount: c.itemCount, receiptCount: c.receipts.size, summaryKey: `${companyId}:${clubId}:${legal ?? "none"}:taxcom:${date}:${code}` }));
   if (rows.length) await p.ofdRevenueCategoryDailySummary.createMany({ data: rows });
+}
+// Mirror of reclassifyOfdReceiptItemsForCompany — LOCAL-ONLY, no Taxcom, money untouched.
+async function reclassifyForCompany(companyId) {
+  const dbRules = await p.ofdRevenueCategoryRule.findMany({ where: { companyId, isActive: true } });
+  const items = await p.ofdReceiptItem.findMany({ where: { companyId }, select: { id: true, itemName: true, normalizedItemName: true, revenueCategoryCode: true, revenueCategoryName: true, categoryRuleId: true, legalEntityId: true, clubId: true, date: true } });
+  const touched = new Set(); let updated = 0;
+  for (const it of items) {
+    const normalizedItemName = normGroup(it.itemName);
+    const cat = categorize(normalizedItemName, dbRules, it.legalEntityId ?? null, it.itemName);
+    const changed = normalizedItemName !== it.normalizedItemName || cat.code !== it.revenueCategoryCode || cat.name !== it.revenueCategoryName || (cat.ruleId ?? null) !== (it.categoryRuleId ?? null);
+    if (changed) { await p.ofdReceiptItem.update({ where: { id: it.id }, data: { normalizedItemName, revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId } }); updated++; }
+    touched.add(`${it.clubId}|${it.legalEntityId ?? ""}|${it.date}`);
+  }
+  for (const key of touched) { const [clubId, legalRaw, date] = key.split("|"); await recomputeCategorySummary(companyId, clubId, legalRaw || null, date); }
+  return { scanned: items.length, updated, summariesRecomputed: touched.size };
 }
 async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dateTo, client, mappings, contractNumber, normalizeContract }) {
   const run = await p.ofdSyncRun.create({ data: { connectionId, companyId, mode: "manual_period", dateFrom, dateTo, status: "running", startedAt: new Date() } });
@@ -171,7 +190,7 @@ async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dat
       const rid = idByKey.get(r.dedupeKey); if (!rid) continue;
       itemStats.itemRowsSeen += (r.items || []).length;
       (r.items || []).forEach((it, lineIndex) => {
-        const cat = categorize(it.normalizedName, dbRules, legal); if (cat.code === "other") itemStats.categoryOtherCount++;
+        const cat = categorize(it.normalizedName, dbRules, legal, it.name); if (cat.code === "other") itemStats.categoryOtherCount++;
         itemRows.push({ receiptImportId: rid, companyId, clubId: m.clubId, legalEntityId: legal, provider: "taxcom", date: r.receiptDate.toISOString().slice(0, 10), fnNumber: r.fnNumber, fdNumber: r.fiscalDocumentNumber, fiscalSign: null, lineIndex, itemName: it.name, normalizedItemName: it.normalizedName, quantityMilli: it.quantityMilli, priceKopeks: it.priceKopeks, totalKopeks: it.totalKopeks, operationType: r.operationType, revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId, itemKey: `${r.dedupeKey}:${lineIndex}` });
       });
     }
@@ -812,6 +831,45 @@ async function main() {
   await p.ofdReceiptImport.deleteMany({ where: { companyId: CO, fnNumber: { in: [DIFN, BFDFN, EFDFN, NFDFN] } } });
   await p.ofdCashRegisterMapping.deleteMany({ where: { id: { in: [mapDI.id, mapDIbf.id, mapDIerr.id, mapDIno.id] } } });
 
+  // ===== Category rules + normalization (CAT) + local reclassify (RECALC) ======
+  const FIZ = "физкультурно-оздоровительные услуги: договор по101-12979 контракт по101/19783";
+  check("CAT1 физкультурно-оздоровительные услуги (with contract refs) → membership", categorize(normGroup(FIZ), [], null, FIZ).code === "membership");
+  check("CAT2 normGroup strips договор/контракт numbers → clean groupable name", normGroup(FIZ) === "физкультурно оздоровительные услуги");
+  check("CAT3 'доп. услуги' → extra_services", categorize(normGroup("доп. услуги"), [], null, "доп. услуги").code === "extra_services");
+  check("CAT4 'доп услуги' → extra_services", categorize(normGroup("доп услуги"), [], null, "доп услуги").code === "extra_services");
+  check("CAT5 'персональная тренировка' → personal_training", categorize(normGroup("Персональная тренировка"), [], null, "Персональная тренировка").code === "personal_training");
+  check("CAT6 'групповая тренировка' → group_training", categorize(normGroup("Групповая тренировка"), [], null, "Групповая тренировка").code === "group_training");
+  check("CAT7 unknown → other", categorize(normGroup("Батончик протеиновый"), [], null, "Батончик протеиновый").code === "other");
+  check("CAT8 DB rule still beats fallback (физкультурно routed by DB rule, not membership fallback)", categorize(normGroup(FIZ), [{ id: "db1", legalEntityId: null, categoryCode: "extra_services", categoryName: "Доп. услуги", matchType: "contains", normalizedPattern: "физкультурно", priority: 50, isActive: true, createdAt: "2026-01-01" }], null, FIZ).ruleId === "db1");
+  check("CATc compound físкультур+договор+контракт net → membership even if fallback misses", categorize("нечто", [], null, "физкультурно договор №1 контракт №2").code === "membership");
+  // RECALC: import with the NEW rules, force a STALE 'other' state, then reclassify.
+  const RCFN = "FN-RC";
+  const mapRC = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: RCFN, isActive: true, activeMappingKey: `taxcom:${RCFN}` } });
+  const rcDocs = [
+    { fn: RCFN, shift: 20, documentType: "3", operationType: "Income", dateTime: "2026-07-26T10:00:00.000Z", fd: 9001, fpd: "RC1", totalKopeks: 500000, cashKopeks: 500000, electronicKopeks: 0 },
+    { fn: RCFN, shift: 20, documentType: "3", operationType: "Income", dateTime: "2026-07-26T11:00:00.000Z", fd: 9002, fpd: "RC2", totalKopeks: 100000, cashKopeks: 0, electronicKopeks: 100000 },
+  ];
+  const rcInfo = { 9001: { document: { "1059": [ffdPos(FIZ, 400000, 400000, 1), ffdPos("Батончик протеиновый", 100000, 100000, 1)] } }, 9002: { document: { "1059": ffdPos("доп. услуги", 100000, 100000, 1) } } };
+  const rcClient = { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 20 }] }), listDocumentsByShift: async () => ({ ok: true, data: rcDocs }), getDocumentInfoForReceipt: async (fn, fd) => ({ ok: true, data: parseItemsFromDI(rcInfo[fd]) }) };
+  await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-26", dateTo: "2026-07-26", client: rcClient, mappings: [mapRC] });
+  // Simulate a pre-rules-change state: everything mis-filed as "other", физкультурно name un-grouped.
+  await p.ofdReceiptItem.updateMany({ where: { companyId: CO, fnNumber: RCFN }, data: { revenueCategoryCode: "other", revenueCategoryName: "Иное" } });
+  const fizRow = await p.ofdReceiptItem.findFirst({ where: { fnNumber: RCFN, itemName: { contains: "физкультурно" } } });
+  await p.ofdReceiptItem.update({ where: { id: fizRow.id }, data: { normalizedItemName: "физкультурно оздоровительные услуги договор по101 12979 контракт по101 19783" } });
+  await recomputeCategorySummary(CO, clubA.id, null, "2026-07-26");
+  const rc = await reclassifyForCompany(CO);
+  check("RECALC1 reclassify moves stale 'other' items into membership/extra_services (unknown stays other)", rc.updated >= 2 && (await p.ofdReceiptItem.count({ where: { fnNumber: RCFN, revenueCategoryCode: "membership" } })) === 1 && (await p.ofdReceiptItem.count({ where: { fnNumber: RCFN, revenueCategoryCode: "extra_services" } })) === 1 && (await p.ofdReceiptItem.count({ where: { fnNumber: RCFN, revenueCategoryCode: "other" } })) === 1 && (await p.ofdReceiptItem.findUnique({ where: { id: fizRow.id } })).normalizedItemName === "физкультурно оздоровительные услуги");
+  const rcCat = Object.fromEntries((await p.ofdRevenueCategoryDailySummary.findMany({ where: { companyId: CO, clubId: clubA.id, date: "2026-07-26" } })).map((s) => [s.categoryCode, s]));
+  check("RECALC2 OfdRevenueCategoryDailySummary recomputed after reclassify", !!rcCat.membership && rcCat.membership.incomeTotalKopeks === 400000 && !!rcCat.extra_services && rcCat.extra_services.incomeTotalKopeks === 100000 && !!rcCat.other && rcCat.other.incomeTotalKopeks === 100000);
+  const rcMoney = await p.ofdDailySalesSummary.findUnique({ where: { summaryKey: summaryKeyOf(CO, clubA.id, null, "taxcom", "2026-07-26") } });
+  check("RECALC3 reclassify does NOT touch money (OfdDailySalesSummary + receipt count unchanged)", rcMoney.incomeTotalKopeks === 600000 && (await p.ofdReceiptImport.count({ where: { companyId: CO, fnNumber: RCFN } })) === 2);
+  const rc2 = await reclassifyForCompany(CO);
+  check("RECALC4 reclassify is idempotent + LOCAL-ONLY (2nd run updates 0; signature takes only companyId)", rc2.updated === 0 && reclassifyForCompany.length === 1);
+  await p.ofdReceiptItem.deleteMany({ where: { companyId: CO, fnNumber: RCFN } });
+  await p.ofdRevenueCategoryDailySummary.deleteMany({ where: { companyId: CO } });
+  await p.ofdReceiptImport.deleteMany({ where: { companyId: CO, fnNumber: RCFN } });
+  await p.ofdCashRegisterMapping.deleteMany({ where: { id: mapRC.id } });
+
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
   check("T6 3103 not auth_failed; 401 auth_failed; 403 forbidden", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
@@ -1085,6 +1143,15 @@ async function main() {
   check("T-S18f importer enriches ONLY receipts lacking positions via getDocumentInfoForReceipt; DocumentInfo failure records a safe OfdSyncError, never fails the run", importer.includes('typeof client.getDocumentInfoForReceipt === "function"') && importer.includes("documentInfoRequested") && importer.includes("documentInfoSucceeded") && importer.includes("documentInfoFailed") && /if\s*\(\(r\.items && r\.items\.length > 0\) \|\| idsWithItems\.has\(rid\)\) continue/.test(importer) && importer.includes('"document_info", "taxcom_document_info_unavailable"') && !/documentInfoFailed[\s\S]{0,300}status:\s*"failed"/.test(importer));
   check("T-S18g adapter.parseReceiptItemsFromDocumentInfo unwraps document/ticket/content and delegates to parseReceiptItems (FFD 1059), returns items only", adapter.includes("export function parseReceiptItemsFromDocumentInfo") && adapter.includes("documentObjectOf") && /parseReceiptItemsFromDocumentInfo[\s\S]{0,300}parseReceiptItems\(documentObjectOf/.test(adapter));
   check("T-S18h OfdReceiptItem persistence never stores ФПД value: fiscalSign set null on item rows (fpd lives only in itemKey)", /fiscalSign:\s*null/.test(importer) && !/receiptImportId,[\s\S]{0,400}fiscalSign:\s*r\.fiscalSign/.test(importer) && importer.includes("itemKey: `${r.dedupeKey}:${lineIndex}`"));
+  // --- Revenue category rules + grouping normalization + local reclassify (real source) ---
+  check("CAT-S1 revenue: normalizeItemNameForGrouping strips договор/контракт refs, folds punctuation", revenueLib.includes("export function normalizeItemNameForGrouping") && /договор\|контракт\|соглашение/.test(revenueLib) && revenueLib.includes("\\p{L}\\p{N}") && revenueLib.includes("№"));
+  check("CAT-S2 revenue: fallback adds физкультурно/доп услуги/карта клуба/переоформления", revenueLib.includes("физкультурно оздоровительные услуги") && revenueLib.includes("физ оздоровительные услуги") && revenueLib.includes("доп услуги") && revenueLib.includes("дополнительные услуги") && revenueLib.includes("карта клуба") && revenueLib.includes("переоформления"));
+  check("CAT-S3 revenue: categorizeItem compound физкультур+договор+контракт → membership (uses rawName)", /categorizeItem\([\s\S]{0,120}rawName/.test(revenueLib) && /loose\.includes\("физкультур"\)[\s\S]{0,140}includes\("договор"\)[\s\S]{0,60}includes\("контракт"\)/.test(revenueLib));
+  check("CAT-S4 adapter stores grouping-normalized normalizedName; importer categorize passes rawName", adapter.includes("normalizeItemNameForGrouping(name)") && importer.includes("categorizeItem(it.normalizedName, dbRules, ctx.legal, it.name)"));
+  check("RECALC-S1 importer.reclassifyOfdReceiptItemsForCompany exists, updates only SAFE fields, recomputes summaries", importer.includes("export async function reclassifyOfdReceiptItemsForCompany") && importer.includes("data: { normalizedItemName, revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId }") && /reclassifyOfdReceiptItemsForCompany[\s\S]*recomputeRevenueCategorySummaries\(companyId, clubId/.test(importer));
+  check("RECALC-S2 reclassify is LOCAL-ONLY: its body calls no Taxcom client/fetch/session", (() => { const i = importer.indexOf("export async function reclassifyOfdReceiptItemsForCompany"); const body = importer.slice(i, i + 1600); return i > 0 && !/\bclient\b|\bfetch\b|listShifts|listDocuments|getDocumentInfoForReceipt|createTaxcomClient|Session-Token|ofdReceiptImport\.update|ofdDailySalesSummary/i.test(body); })());
+  check("RECALC-UI 'Пересчитать статьи доходов' button in Статьи доходов block + hint (owner/gd action, no re-fetch of OFD)", forms.includes("Пересчитать статьи доходов") && forms.includes("reclassifyOfdCategoriesAction") && forms.includes("Не запрашивает ОФД повторно") && pageSrc.includes("OfdRecalcCategories"));
+  check("RECALC-SEC reclassifyOfdCategoriesAction: requireOfdAdmin gate, SAFE counts only (no names/raw/PII/token in result)", actions.includes("export async function reclassifyOfdCategoriesAction") && /reclassifyOfdCategoriesAction[\s\S]{0,400}requireOfdAdmin\(\)/.test(actions) && actions.includes("Статьи пересчитаны: обновлено") && !/reclassifyOfdCategoriesAction[\s\S]{0,600}(itemName|normalizedItemName|rawResponse|sessionToken|\bphone\b|\bemail\b)/i.test(actions));
   check("T-S18d action inspectOfdDocumentInfoAction: requireOfdAdmin + fn/fd validation → inspectDocumentInfo → SAFE result (docInfoShape only)", actions.includes("export async function inspectOfdDocumentInfoAction") && actions.includes("requireOfdAdmin()") && actions.includes("inspectDocumentInfo(fnNumber, fd)") && actions.includes("docInfoShape: d") && actions.includes('/^\\d+$/.test(fdRaw)') && !/inspectOfdDocumentInfoAction[\s\S]{0,1400}return\s*\{[^}]*(sessionToken|rawResponse|\.stack)/i.test(actions));
   check("UI: 'DocumentInfo' diag form — ФН/ФД inputs + button + safe shape (ключи/позиции/itemLikeCount), no raw JSON", pageSrc.includes("Диагностика конкретного чека DocumentInfo") && pageSrc.includes("OfdDocInfoDiagnostics") && forms.includes("Проверить DocumentInfo") && forms.includes('name="fnNumber"') && forms.includes('name="fdNumber"') && forms.includes("docInfoShape") && forms.includes("documentKeys") && forms.includes("itemLikeCount") && !/docInfoShape[\s\S]{0,400}JSON\.stringify/.test(forms));
   check("UI: Автоимпорт block (status by OFD_INTEGRATIONS_ENABLED, endpoint, last auto run, hint; no CRON_SECRET)", pageSrc.includes("Автоимпорт") && pageSrc.includes("POST /api/cron/ofd/daily") && pageSrc.includes('mode: "auto_daily"') && pageSrc.includes("Последняя автоматическая синхронизация") && pageSrc.includes("Автоимпорт подтягивает продажи за вчера") && !/CRON_SECRET/.test(pageSrc));

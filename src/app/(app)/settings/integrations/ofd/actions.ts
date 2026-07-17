@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
 import { ofdEnabled, ofdSecretPresent } from "@/lib/ofd/config";
 import { encryptOfdSecret, decryptOfdSecret } from "@/lib/ofd/crypto";
-import { importTaxcomSalesForPeriod, type ImportMode } from "@/lib/ofd/importer";
+import { importTaxcomSalesForPeriod, reclassifyOfdReceiptItemsForCompany, type ImportMode } from "@/lib/ofd/importer";
 import { runSyncNowForCompany } from "@/lib/ofd/daily";
 import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeContractNumber, isCurrentAccountValid, type OfdCheckDiagnostics, type OfdSafeContract } from "@/lib/ofd/contract";
@@ -304,6 +304,21 @@ export async function syncOfdNowAction(_p: State | undefined, _formData: FormDat
     notice: `Синхронизация завершена: найдено ${t.foundReceipts}, добавлено ${t.importedReceipts}, пропущено ${t.skippedReceipts}.`,
     sync: { found: t.foundReceipts, imported: t.importedReceipts, skipped: t.skippedReceipts, incomeKopeks: t.totalIncomeKopeks, returnKopeks: t.totalReturnKopeks, succeeded: result.succeeded, failed: result.failed },
   };
+}
+
+/** Re-run nomenclature normalization + categorization over already-imported OFD
+ * receipt items using the CURRENT rules, then recompute the category summaries.
+ * Owner / general_director only. LOCAL-ONLY — never calls Taxcom, never touches
+ * money. Returns SAFE counts only (no names / raw JSON / PII). */
+export async function reclassifyOfdCategoriesAction(_p: State | undefined, _formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+
+  const res = await reclassifyOfdReceiptItemsForCompany(g.companyId);
+  await recordAudit({ action: "ofd.reclassify_categories", entityType: "OfdReceiptItem", companyId: g.companyId, userId: g.userId, metadata: { scanned: res.scanned, updated: res.updated, summaries: res.summariesRecomputed } });
+  revalidatePath("/settings/integrations/ofd");
+
+  return { ok: true, notice: `Статьи пересчитаны: обновлено ${res.updated} позиций (из ${res.scanned}).` };
 }
 
 /** DIAGNOSTIC ONLY — never touches the money import. Owner / general_director only.

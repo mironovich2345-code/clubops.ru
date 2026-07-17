@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
 import { toggleOfdMapping } from "./actions";
-import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
+import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdRecalcCategories, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
 
 export const dynamic = "force-dynamic";
 
@@ -244,6 +244,7 @@ export default async function OfdIntegrationPage() {
                     <p className="mt-2 text-xs text-slate-500">Эти позиции попали в «Иное». Позже для них можно настроить правила статей доходов.</p>
                   </div>
                 ) : null}
+                <OfdRecalcCategories />
               </Section>
 
               <Section title="Диагностика номенклатуры Такском">

@@ -7,7 +7,7 @@ import { decryptOfdSecret } from "@/lib/ofd/crypto";
 import { createTaxcomClient, toTaxcomDayRange, type FetchImpl, type TaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeDocumentsWithStats } from "@/lib/ofd/taxcom/adapter";
 import { isCurrentAccountValid } from "@/lib/ofd/contract";
-import { categorizeItem, type OfdCategoryRuleLike } from "@/lib/ofd/revenue";
+import { categorizeItem, normalizeItemNameForGrouping, type OfdCategoryRuleLike } from "@/lib/ofd/revenue";
 import type { NormalizedOfdReceipt, OfdConnectionConfig } from "@/lib/ofd/types";
 
 export type ImportMode = "manual_day" | "manual_period" | "backfill_july" | "daily" | "auto_daily" | "sync_now";
@@ -359,7 +359,7 @@ async function persistReceiptItems(
     const items = r.items ?? [];
     itemStats.itemRowsSeen += items.length;
     items.forEach((it, lineIndex) => {
-      const cat = categorizeItem(it.normalizedName, dbRules, ctx.legal);
+      const cat = categorizeItem(it.normalizedName, dbRules, ctx.legal, it.name);
       if (cat.code === "other") itemStats.categoryOtherCount += 1;
       rows.push({
         receiptImportId, companyId: ctx.companyId, clubId: ctx.clubId, legalEntityId: ctx.legal, provider: ctx.provider,
@@ -407,4 +407,47 @@ export async function recomputeRevenueCategorySummaries(companyId: string, clubI
     receiptCount: c.receipts.size, summaryKey: `${companyId}:${clubId}:${legalEntityId ?? "none"}:${provider}:${date}:${code}`,
   }));
   if (rows.length > 0) await prisma.ofdRevenueCategoryDailySummary.createMany({ data: rows });
+}
+
+/**
+ * Re-run normalization + categorization over a company's already-imported
+ * OfdReceiptItem rows using the CURRENT rules, then recompute the affected
+ * OfdRevenueCategoryDailySummary rows. LOCAL-ONLY: never calls Taxcom, never
+ * touches money (OfdReceiptImport / OfdDailySalesSummary) and only updates the
+ * safe fields normalizedItemName / revenueCategoryCode|Name / categoryRuleId.
+ * Idempotent — re-running with unchanged rules updates nothing. Returns counts.
+ */
+export async function reclassifyOfdReceiptItemsForCompany(companyId: string): Promise<{ scanned: number; updated: number; summariesRecomputed: number }> {
+  const dbRules: OfdCategoryRuleLike[] = await prisma.ofdRevenueCategoryRule.findMany({
+    where: { companyId, isActive: true },
+    select: { id: true, legalEntityId: true, categoryCode: true, categoryName: true, matchType: true, pattern: true, normalizedPattern: true, priority: true, isActive: true, createdAt: true },
+  });
+  const items = await prisma.ofdReceiptItem.findMany({
+    where: { companyId },
+    select: { id: true, itemName: true, normalizedItemName: true, revenueCategoryCode: true, revenueCategoryName: true, categoryRuleId: true, legalEntityId: true, clubId: true, provider: true, date: true },
+  });
+  const touched = new Set<string>();
+  let updated = 0;
+  for (const it of items) {
+    const normalizedItemName = normalizeItemNameForGrouping(it.itemName);
+    const cat = categorizeItem(normalizedItemName, dbRules, it.legalEntityId ?? null, it.itemName);
+    const changed =
+      normalizedItemName !== it.normalizedItemName ||
+      cat.code !== it.revenueCategoryCode ||
+      cat.name !== it.revenueCategoryName ||
+      (cat.ruleId ?? null) !== (it.categoryRuleId ?? null);
+    if (changed) {
+      await prisma.ofdReceiptItem.update({
+        where: { id: it.id },
+        data: { normalizedItemName, revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId },
+      });
+      updated += 1;
+    }
+    touched.add(`${it.clubId}|${it.legalEntityId ?? ""}|${it.provider}|${it.date}`);
+  }
+  for (const key of touched) {
+    const [clubId, legalRaw, provider, date] = key.split("|");
+    await recomputeRevenueCategorySummaries(companyId, clubId, legalRaw || null, provider, date);
+  }
+  return { scanned: items.length, updated, summariesRecomputed: touched.size };
 }

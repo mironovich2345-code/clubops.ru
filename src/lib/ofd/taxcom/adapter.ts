@@ -2,7 +2,7 @@
 // No I/O, no logging, fully testable. Only Income / IncomeReturn are kept; every
 // other document type (expense, correction, …) is skipped in the MVP.
 import type { DocumentInfoShape, NewDocumentsShape, NormalizedOfdReceipt, OfdOperationType, TaxcomDocumentSummary, TaxcomReceiptItem } from "@/lib/ofd/types";
-import { cleanItemName, normalizeItemName } from "@/lib/ofd/revenue";
+import { cleanItemName, normalizeItemNameForGrouping } from "@/lib/ofd/revenue";
 
 /** Map a Taxcom accountingType string to our enum, or null to SKIP the doc.
  * Only приход / возврат прихода are sales; expense / correction are skipped. */
@@ -85,7 +85,7 @@ export function parseReceiptItems(raw: unknown): { items: TaxcomReceiptItem[]; i
     if (totalKopeks <= 0) continue; // service line with sum <= 0 → skip
     const priceKopeks = intKopeks(io["1079"] ?? io.price ?? io.Price ?? io.priceKopeks);
     const quantityMilli = Math.max(0, Math.round(numOr(io["1023"] ?? io.quantity ?? io.Quantity ?? io.qty ?? io.Qty, 1) * 1000));
-    items.push({ name, normalizedName: normalizeItemName(name), quantityMilli, priceKopeks, totalKopeks });
+    items.push({ name, normalizedName: normalizeItemNameForGrouping(name), quantityMilli, priceKopeks, totalKopeks });
   }
   return { items, itemsPresent: present };
 }

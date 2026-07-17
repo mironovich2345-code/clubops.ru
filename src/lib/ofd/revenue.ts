@@ -29,6 +29,32 @@ export function normalizeItemName(v: unknown): string {
     .replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200D\u2060\uFEFF]/g, "")
     .toLowerCase()
     .replace(/ё/g, "е")
+    // Fold punctuation (hyphens, dots, colons, slashes, …) to spaces so that
+    // "доп. услуги" / "физкультурно-оздоровительные" match their plain patterns.
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Normalize a name for ANALYTICS GROUPING: like normalizeItemName, but first strips
+ * contract/agreement references ("договор по101-12979", "контракт №…") so that
+ * otherwise-identical memberships don't fragment into one row per contract number.
+ * Used for the stored normalizedItemName. Deterministic, linear-time.
+ */
+export function normalizeItemNameForGrouping(v: unknown): string {
+  const base = String(v ?? "")
+    .normalize("NFKC")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200D\u2060\uFEFF]/g, "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    // Drop "договор|контракт|соглашение [№|no|#] <id-with-a-digit>" clauses.
+    .replace(/(договор|контракт|соглашение)\s*(?:№|n[o]?|#)?\s*[a-zа-я]*\d[\w/.\-№]*/g, " ")
+    // Drop any leftover standalone "№<id>" tokens.
+    .replace(/№\s*\S*\d\S*/g, " ");
+  return base
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -54,8 +80,9 @@ export const DEFAULT_CATEGORY_RULES: { code: string; name: string; matchType: Ma
   { code: "group_training", name: "Групповые тренировки", matchType: "starts_with", pattern: "гт" },
   ...["персональная тренировка", "персональные тренировки", "тренировка с тренером", "индивидуальная тренировка", "индивидуальные тренировки"].map((pattern) => ({ code: "personal_training", name: "Персональные тренировки", matchType: "contains" as MatchType, pattern })),
   { code: "personal_training", name: "Персональные тренировки", matchType: "starts_with", pattern: "пт" },
-  ...["заморозка", "продление", "переоформление", "восстановление карты", "аренда", "полотенце", "шкафчик", "солярий", "доп услуга", "дополнительная услуга"].map((pattern) => ({ code: "extra_services", name: "Доп. услуги", matchType: "contains" as MatchType, pattern })),
-  ...["клубная карта", "абонемент", "членство", "карта"].map((pattern) => ({ code: "membership", name: "Абонементы", matchType: "contains" as MatchType, pattern })),
+  ...["заморозка", "продление", "переоформление", "переоформления", "восстановление карты", "аренда", "полотенце", "шкафчик", "солярий", "доп услуга", "доп услуги", "дополнительная услуга", "дополнительные услуги"].map((pattern) => ({ code: "extra_services", name: "Доп. услуги", matchType: "contains" as MatchType, pattern })),
+  // Physical-culture/health services sold as memberships in CLUB-OPS.
+  ...["физкультурно оздоровительные услуги", "физкультурно оздоровительные", "физ оздоровительные услуги", "клубная карта", "карта клуба", "абонемент", "членство", "карта"].map((pattern) => ({ code: "membership", name: "Абонементы", matchType: "contains" as MatchType, pattern })),
 ];
 
 function matchRule(matchType: string, normalizedPattern: string, normalizedName: string): boolean {
@@ -83,9 +110,11 @@ export type OfdCategoryResult = { code: string; name: string; ruleId: string | n
 /**
  * Categorize one normalized item name. DB rules first (company-wide OR matching the
  * given legalEntity), sorted legalEntity-specific → priority DESC → createdAt ASC;
- * then the in-code fallback; then "other". A matched DB rule returns its ruleId.
+ * then the in-code fallback; then a compound физкультурно+договор+контракт → membership
+ * safety net (checked against the optional raw name, which still carries the contract
+ * words that grouping normalization strips); then "other". A matched DB rule returns its ruleId.
  */
-export function categorizeItem(normalizedName: string, dbRules: OfdCategoryRuleLike[] = [], legalEntityId: string | null = null): OfdCategoryResult {
+export function categorizeItem(normalizedName: string, dbRules: OfdCategoryRuleLike[] = [], legalEntityId: string | null = null, rawName: string | null = null): OfdCategoryResult {
   if (!normalizedName) return { ...OFD_OTHER_CATEGORY, ruleId: null };
   const applicable = dbRules.filter((r) => r.isActive !== false && (r.legalEntityId == null || r.legalEntityId === legalEntityId));
   const sorted = [...applicable].sort((a, b) => {
@@ -101,6 +130,12 @@ export function categorizeItem(normalizedName: string, dbRules: OfdCategoryRuleL
   }
   for (const fb of DEFAULT_CATEGORY_RULES) {
     if (matchRule(fb.matchType, normalizeItemName(fb.pattern), normalizedName)) return { code: fb.code, name: fb.name, ruleId: null };
+  }
+  // Compound safety net: a физкультурно line carrying both договор and контракт (which
+  // grouping normalization removes) is a membership. Uses the raw name for the check.
+  const loose = normalizeItemName(rawName ?? normalizedName);
+  if (loose.includes("физкультур") && loose.includes("договор") && loose.includes("контракт")) {
+    return { code: "membership", name: "Абонементы", ruleId: null };
   }
   return { ...OFD_OTHER_CATEGORY, ruleId: null };
 }
