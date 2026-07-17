@@ -92,9 +92,34 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     },
   });
 
+  // Select ACTIVE cash registers by the connection SCOPE (company + legal entity +
+  // provider), NOT by connectionId. A mapping created against an earlier connection
+  // row (recreated/re-saved → new id) keeps its companyId/legalEntityId but a stale
+  // connectionId; filtering on connectionId then silently found 0 mappings and the
+  // import finished as success 0/0/0 without ever reaching ShiftList.
   const mappings = await prisma.ofdCashRegisterMapping.findMany({
-    where: { connectionId, isActive: true },
+    where: {
+      companyId: connection.companyId,
+      provider: connection.provider,
+      isActive: true,
+      activeMappingKey: { not: null },
+      ...(connection.legalEntityId ? { legalEntityId: connection.legalEntityId } : {}),
+    },
   });
+
+  // SAFE debug: ids + counts only (no login/password/Integrator-ID/SessionToken).
+  console.warn(`[ofd] mapping_debug connectionId=${connection.id} companyId=${connection.companyId} legalEntityId=${connection.legalEntityId ?? "null"} provider=${connection.provider} activeMappingCount=${mappings.length}`);
+
+  // No active cash registers → NOT a silent success. Fail with a safe reason so the
+  // admin knows to (re)map a касса for this подключение/юрлицо.
+  if (mappings.length === 0) {
+    await recordSyncError(run.id, connection.id, connection.companyId, null, null, "mapping_check", "ofd_no_active_cash_register_mappings", "Нет активных касс ОФД для выбранного подключения/юрлица.");
+    await prisma.ofdSyncRun.update({
+      where: { id: run.id },
+      data: { status: "failed", finishedAt: new Date(), safeErrorCode: "ofd_no_active_cash_register_mappings", safeErrorMessage: "Нет активных касс ОФД для выбранного подключения/юрлица." },
+    });
+    return { ok: false, safeCode: "ofd_no_active_cash_register_mappings", safeMessage: "Нет активных касс ОФД для выбранного подключения/юрлица.", syncRunId: run.id };
+  }
 
   const client = (params.clientFactory ?? createTaxcomClient)(cfg, { fetchImpl: params.fetchImpl });
   const days = eachDay(dateFrom, dateTo);
@@ -129,6 +154,9 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     const stats = { shiftCount: 0, shiftReceiptCount: 0, documentCount: 0, normalizedReceiptCount: 0, serviceSkipped: 0, unsupportedSkipped: 0, invalidSkipped: 0 };
 
     for (const day of days) {
+      // SAFE debug: confirms the importer actually reaches Taxcom for this KKT/day.
+      const dbgRange = toTaxcomDayRange(day);
+      console.warn(`[ofd] list_shifts_call fn=${m.fnNumber} date=${day} begin=${dbgRange.begin} end=${dbgRange.end}`);
       const shifts = await client.listShifts(m.fnNumber, day, day);
       if (!shifts.ok) {
         kktFailed = true;

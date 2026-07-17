@@ -43,9 +43,19 @@ async function recomputeSummary(companyId, clubId, legal, date) {
   const summaryKey = summaryKeyOf(companyId, clubId, legal, "taxcom", date);
   await p.ofdDailySalesSummary.upsert({ where: { summaryKey }, create: { companyId, clubId, legalEntityId: legal ?? null, provider: "taxcom", date, summaryKey, ...a, netTotalKopeks }, update: { ...a, netTotalKopeks } });
 }
-async function runImport({ connectionId, companyId, dateFrom, dateTo, client, mappings, contractNumber, normalizeContract }) {
+async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dateTo, client, mappings, contractNumber, normalizeContract }) {
   const run = await p.ofdSyncRun.create({ data: { connectionId, companyId, mode: "manual_period", dateFrom, dateTo, status: "running", startedAt: new Date() } });
   const days = eachDay(dateFrom, dateTo);
+  // Select active mappings by connection SCOPE (company + legalEntity + provider),
+  // NOT connectionId — mirror of the importer fix. When mappings are passed in
+  // explicitly (unit tests), use them as-is.
+  const activeMappings = mappings ?? await p.ofdCashRegisterMapping.findMany({ where: { companyId, provider: "taxcom", isActive: true, activeMappingKey: { not: null }, ...(legalEntityId ? { legalEntityId } : {}) } });
+  console.warn(`[ofd] mapping_debug connectionId=${connectionId} companyId=${companyId} legalEntityId=${legalEntityId ?? "null"} provider=taxcom activeMappingCount=${activeMappings.length}`);
+  if (activeMappings.length === 0) {
+    await p.ofdSyncError.create({ data: { syncRunId: run.id, connectionId, companyId, clubId: null, fnNumber: null, stage: "mapping_check", safeCode: "ofd_no_active_cash_register_mappings", safeMessage: "Нет активных касс ОФД для выбранного подключения/юрлица." } });
+    await p.ofdSyncRun.update({ where: { id: run.id }, data: { status: "failed", finishedAt: new Date(), safeErrorCode: "ofd_no_active_cash_register_mappings", safeErrorMessage: "Нет активных касс ОФД для выбранного подключения/юрлица." } });
+    return { runId: run.id, found: 0, imported: 0, skipped: 0, status: "failed", noMappings: true };
+  }
   // Account guard (mirror of importer): if the connection targets a договор but the
   // current ЛК differs, fail fast with account_check — never touch ShiftList.
   if (contractNumber && contractNumber.trim() && normalizeContract && client.listAccounts) {
@@ -62,10 +72,12 @@ async function runImport({ connectionId, companyId, dateFrom, dateTo, client, ma
     }
   }
   let found = 0, imported = 0, skipped = 0, kktFailures = 0; const touched = new Set();
-  for (const m of mappings) {
+  for (const m of activeMappings) {
     const legal = m.legalEntityId ?? null; const recs = []; let failed = false;
     const stats = { shiftCount: 0, shiftReceiptCount: 0, documentCount: 0, normalizedReceiptCount: 0, serviceSkipped: 0, unsupportedSkipped: 0, invalidSkipped: 0 };
     for (const day of days) {
+      const dbg = { begin: `${String(day).slice(0, 10)}T00:00:00`, end: `${String(day).slice(0, 10)}T23:59:59` };
+      console.warn(`[ofd] list_shifts_call fn=${m.fnNumber} date=${day} begin=${dbg.begin} end=${dbg.end}`);
       const shifts = await client.listShifts(m.fnNumber, day, day);
       if (!shifts.ok) { failed = true; await p.ofdSyncError.create({ data: { syncRunId: run.id, connectionId, companyId, clubId: m.clubId, fnNumber: m.fnNumber, stage: "list_shifts", safeCode: shifts.safeCode, safeMessage: (shifts.safeMessage || "").slice(0, 200) || null } }); continue; }
       for (const s of shifts.data) {
@@ -98,11 +110,15 @@ async function runImport({ connectionId, companyId, dateFrom, dateTo, client, ma
 }
 
 const CO = "pilot-ofd-co", CONN = "pilot-ofd-conn", U = "pilot-ofd-owner";
+const MC = "pilot-ofd-map-co", MU = "pilot-ofd-map-user"; // isolated company for mapping-selection e2e
 async function cleanup() {
-  for (const t of ["ofdSyncError", "ofdSyncRun", "ofdReceiptImport", "ofdDailySalesSummary", "ofdCashRegisterMapping", "ofdConnection"]) await p[t].deleteMany({ where: { companyId: CO } }).catch(() => {});
-  await p.club.deleteMany({ where: { companyId: CO } }).catch(() => {});
-  await p.company.deleteMany({ where: { id: CO } }).catch(() => {});
-  await p.user.deleteMany({ where: { id: U } }).catch(() => {});
+  for (const co of [CO, MC]) {
+    for (const t of ["ofdSyncError", "ofdSyncRun", "ofdReceiptImport", "ofdDailySalesSummary", "ofdCashRegisterMapping", "ofdConnection"]) await p[t].deleteMany({ where: { companyId: co } }).catch(() => {});
+    await p.club.deleteMany({ where: { companyId: co } }).catch(() => {});
+    await p.legalEntity.deleteMany({ where: { companyId: co } }).catch(() => {});
+    await p.company.deleteMany({ where: { id: co } }).catch(() => {});
+  }
+  await p.user.deleteMany({ where: { id: { in: [U, MU] } } }).catch(() => {});
 }
 
 async function main() {
@@ -373,6 +389,51 @@ async function main() {
   const oldShapeDoc = { Fn: "FN-X", Shift: 7, Fd: 900, Fpd: "Z", DateTime: "2026-07-15T12:00:00.000Z", OperationType: "Income", Sum: 5000, Cash: 5000 };
   check("TD10 old DocumentList shapes still parse (Fn/Fd/OperationType/Sum + Items key)", parseDocumentList({ Items: [oldShapeDoc] })[0].fd === 900 && normalize(parseDocumentList({ Items: [oldShapeDoc] })[0]).totalKopeks === 5000 && normalize(parseDocumentList({ Items: [oldShapeDoc] })[0]).operationType === "income");
   await p.ofdCashRegisterMapping.delete({ where: { id: mapProd.id } });
+  // Clear this ФН's receipts (dedupeKey is globally unique) so the isolated
+  // mapping-selection e2e below imports fresh, not as duplicates of the above.
+  await p.ofdReceiptImport.deleteMany({ where: { fnNumber: PROD_FN } });
+
+  // ===== Active-mapping SELECTION e2e (the production bug: mapping not found) ====
+  // Reproduce the production связка in an isolated company: connection scoped to
+  // companyId+legalEntityId, an ACTIVE mapping with a STALE connectionId (as if the
+  // connection was recreated). The importer must still select it by company scope
+  // (NOT connectionId) and reach ShiftList → 13/13/0.
+  await p.company.create({ data: { id: MC, name: "Map Co" } });
+  const mcLegal = await p.legalEntity.create({ data: { companyId: MC, type: "ooo", name: "ООО СПОРТ ТЕХНОЛОГИИ" } });
+  const mcClub = await p.club.create({ data: { name: "Клуб MC", city: "X", companyId: MC } });
+  await p.user.create({ data: { id: MU, email: "map@ofd.test", name: "Map Owner", role: "owner", isActive: true } });
+  const mcConn = await p.ofdConnection.create({ data: { companyId: MC, legalEntityId: mcLegal.id, provider: "taxcom", displayName: "Такском", serverBaseUrl: "https://api-lk-ofd.taxcom.ru", authType: "login_password", contractNumber: "CD-25/455507", loginEncrypted: encryptOfd("L"), passwordEncrypted: encryptOfd("P"), integratorIdEncrypted: encryptOfd("INT-1"), createdByUserId: MU } });
+  // STALE connectionId — different from mcConn.id — proves selection is NOT by connectionId.
+  const mcMapping = await p.ofdCashRegisterMapping.create({ data: { connectionId: "stale-old-connection-id-xyz", companyId: MC, legalEntityId: mcLegal.id, clubId: mcClub.id, provider: "taxcom", fnNumber: PROD_FN, isActive: true, activeMappingKey: `taxcom:${PROD_FN}` } });
+  check("TM0 sanity: mapping's connectionId is STALE (≠ connection.id)", mcMapping.connectionId !== mcConn.id);
+  // The old query { connectionId: connection.id, isActive } would find NOTHING here:
+  check("TM1 old-style query by connectionId finds 0 (reproduces the bug)", (await p.ofdCashRegisterMapping.count({ where: { connectionId: mcConn.id, isActive: true } })) === 0);
+  // The new scope query (company + legalEntity + provider + active + key) finds it:
+  const scoped = await p.ofdCashRegisterMapping.findMany({ where: { companyId: mcConn.companyId, provider: "taxcom", isActive: true, activeMappingKey: { not: null }, legalEntityId: mcConn.legalEntityId } });
+  check("TM2 scope query (company+legalEntity+provider+active+key) selects the production mapping", scoped.length === 1 && scoped[0].fnNumber === PROD_FN && scoped[0].id === mcMapping.id);
+  // Full e2e: runImport WITHOUT explicit mappings → it must query + reach ShiftList.
+  let mcShiftUrl = null;
+  const mcFetch = async (url) => {
+    const decoded = decodeURIComponent(url);
+    if (url.includes("/Login")) return okJson({ sessionToken: "TKN" });
+    if (url.includes("/AccountList")) return okJson({ currentSession: "CD-25/455507", records: [{ agreementNumber: "CD-25/455507" }] });
+    if (url.includes("/ShiftList")) { mcShiftUrl = decoded; return (decoded.includes("begin=2026-07-15T00:00:00") && decoded.includes("end=2026-07-15T23:59:59")) ? okJson(prodShiftResponse) : okJson({ records: [] }); }
+    if (url.includes("/DocumentList")) return (url.includes("pn=1") && url.includes("ps=100")) ? okJson(prodDocResponse) : okJson({ records: [] });
+    return okJson({});
+  };
+  const mcClient = makeClient({ serverBaseUrl: "https://api-lk-ofd.taxcom.ru", authType: "login_password", contractNumber: "CD-25/455507", login: "L", password: "P", integratorId: "INT-1", integrationToken: null }, mcFetch);
+  const mcRun = await runImport({ connectionId: mcConn.id, companyId: mcConn.companyId, legalEntityId: mcConn.legalEntityId, dateFrom: "2026-07-15", dateTo: "2026-07-15", client: mcClient, contractNumber: "CD-25/455507", normalizeContract });
+  check("TM3 import reaches ShiftList for fn=7381440800719861 with full-day range despite stale connectionId", mcShiftUrl && mcShiftUrl.includes(`fn=${PROD_FN}`) && mcShiftUrl.includes("begin=2026-07-15T00:00:00") && mcShiftUrl.includes("end=2026-07-15T23:59:59"));
+  check("TM4 result 13/13/0 (mapping selected, DocumentList shift=463, 13 receipts)", mcRun.found === 13 && mcRun.imported === 13 && mcRun.skipped === 0 && mcRun.status === "success" && mcRun.noMappings === undefined);
+  const mcSummary = await p.ofdDailySalesSummary.findUnique({ where: { summaryKey: summaryKeyOf(MC, mcClub.id, mcLegal.id, "taxcom", "2026-07-15") } });
+  check("TM5 summary 4629900 / 1280000 / 3349900 / net 4629900 / receiptCount 13", mcSummary && mcSummary.incomeTotalKopeks === 4629900 && mcSummary.incomeCashKopeks === 1280000 && mcSummary.incomeElectronicKopeks === 3349900 && mcSummary.returnTotalKopeks === 0 && mcSummary.netTotalKopeks === 4629900 && mcSummary.receiptCount === 13);
+  // No active mappings → NOT silent success 0/0/0: mapping_check error, status failed.
+  await p.ofdCashRegisterMapping.update({ where: { id: mcMapping.id }, data: { isActive: false, activeMappingKey: null } });
+  const mcRun2 = await runImport({ connectionId: mcConn.id, companyId: mcConn.companyId, legalEntityId: mcConn.legalEntityId, dateFrom: "2026-07-16", dateTo: "2026-07-16", client: mcClient, contractNumber: "CD-25/455507", normalizeContract });
+  check("TM6 zero active mappings → status failed, 0/0/0, NOT silent success", mcRun2.status === "failed" && mcRun2.found === 0 && mcRun2.imported === 0 && mcRun2.skipped === 0 && mcRun2.noMappings === true);
+  const mcMapErr = await p.ofdSyncError.findFirst({ where: { syncRunId: mcRun2.runId, stage: "mapping_check" } });
+  check("TM7 mapping_check OfdSyncError = ofd_no_active_cash_register_mappings, safe message (no secrets)", mcMapErr && mcMapErr.safeCode === "ofd_no_active_cash_register_mappings" && mcMapErr.safeMessage === "Нет активных касс ОФД для выбранного подключения/юрлица." && !/token|password|login|integrator|@/i.test(mcMapErr.safeMessage) && mcMapErr.clubId === null && mcMapErr.fnNumber === null);
+
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
   check("T6 3103 not auth_failed; 401 auth_failed; 403 forbidden", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
@@ -598,6 +659,11 @@ async function main() {
   check("T-S10b listShifts sends FULL day range via toTaxcomDayRange (begin from dateFrom, end from dateTo) — not raw date-only", clientSrc.includes("const begin = toTaxcomDayRange(dateFrom).begin") && clientSrc.includes("const end = toTaxcomDayRange(dateTo).end") && clientSrc.includes("query: { fn: fnNumber, begin, end, pn: 1, ps: 100 }") && !clientSrc.includes("begin: dateFrom, end: dateTo"));
   check("T-S10c importer logs SAFE empty-ShiftList debug aggregate (fn/date/begin/end/shiftCount=0, no token/raw)", importer.includes("list_shifts_debug") && importer.includes("shiftCount=0") && importer.includes("toTaxcomDayRange(day)") && /console\.warn\(`\[ofd\] list_shifts_debug[^`]*begin=\$\{range\.begin\} end=\$\{range\.end\}/.test(importer) && !/list_shifts_debug[\s\S]{0,200}(token|password|integrator|JSON\.stringify)/i.test(importer));
   check("T-S10d importer eachDay is inclusive of dateTo (<=), max 366 days", importer.includes("cur.getTime() <= end.getTime()") && importer.includes("guard < 366"));
+  // --- Active mapping selection by connection scope (real source) ---
+  check("T-S11 importer selects mappings by companyId + provider + isActive + activeMappingKey (NOT by connectionId)", importer.includes("companyId: connection.companyId") && importer.includes("provider: connection.provider") && importer.includes("isActive: true") && importer.includes("activeMappingKey: { not: null }") && importer.includes("connection.legalEntityId ? { legalEntityId: connection.legalEntityId }") && !importer.includes("where: { connectionId, isActive: true }"));
+  check("T-S11b importer: 0 active mappings → mapping_check + ofd_no_active_cash_register_mappings, status failed (not silent success)", importer.includes("mappings.length === 0") && importer.includes('"mapping_check"') && importer.includes('"ofd_no_active_cash_register_mappings"') && importer.includes("Нет активных касс ОФД для выбранного подключения") && /mappings\.length === 0[\s\S]{0,400}status: "failed"/.test(importer));
+  check("T-S11c importer SAFE debug logs: mapping_debug (ids+counts) + list_shifts_call (fn/date/begin/end), no secrets/raw", importer.includes("console.warn(`[ofd] mapping_debug") && importer.includes("activeMappingCount=") && importer.includes("console.warn(`[ofd] list_shifts_call") && !/mapping_debug[\s\S]{0,200}(login|password|integrator|sessionToken|JSON\.stringify)/i.test(importer) && !/list_shifts_call[\s\S]{0,200}(token|password|JSON\.stringify)/i.test(importer));
+  check("T-S11d mapping_check runs BEFORE the ShiftList loop (fail fast)", importer.indexOf('"mapping_check"') < importer.indexOf("client.listShifts(") && importer.indexOf("mappings.length === 0") < importer.indexOf("for (const m of mappings)"));
   check("9-date OfdDailySalesSummary uses 'date' column (not salesDate) in model/importer/page", schema.includes("model OfdDailySalesSummary") && !/salesDate/i.test(schema) && !/salesDate/i.test(importer) && !/salesDate/i.test(pageSrc) && importer.includes("buildSummaryKey"));
   // Static guard: no buyer PII / raw fiscal JSON is parsed, stored or logged.
   check("T-S7g no phone/email/buyer/customer/rawJson fields, no console logging of raw data in client.ts/adapter", !/phone|email|buyerName|customer|rawJson|rawResponse/i.test(clientSrc) && !clientSrc.includes("console.") && !/phone|email|buyerName|customer|rawJson/i.test(adapter));
