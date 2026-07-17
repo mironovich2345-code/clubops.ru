@@ -7,6 +7,7 @@
 // NOTE: the exact Taxcom v2.17 REST paths must be confirmed against the account's
 // API section. They are declared here as adjustable constants; the request shape,
 // auth header and parsing are correct regardless of the final paths.
+import { parseReceiptItems } from "@/lib/ofd/taxcom/adapter";
 import type {
   OfdConnectionConfig,
   OfdResult,
@@ -370,6 +371,9 @@ export function parseDocumentList(data: unknown, ctx?: { fn?: string; shift?: nu
       totalKopeks: num(o.Sum ?? o.sum ?? o.TotalKopeks ?? o.totalKopeks ?? o.Total),
       cashKopeks: num(o.Cash ?? o.cash ?? o.CashKopeks ?? o.cashKopeks),
       electronicKopeks: num(o.Electronic ?? o.electronic ?? o.ElectronicKopeks ?? o.electronicKopeks),
+      // Nomenclature lines if the response carried them (production DocumentList
+      // usually does NOT — then items:[] / itemsPresent:false and import proceeds).
+      ...(() => { const { items, itemsPresent } = parseReceiptItems(o); return { items, itemsPresent }; })(),
     };
   });
 }

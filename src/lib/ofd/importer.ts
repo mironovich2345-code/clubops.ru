@@ -7,6 +7,7 @@ import { decryptOfdSecret } from "@/lib/ofd/crypto";
 import { createTaxcomClient, toTaxcomDayRange, type FetchImpl, type TaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeDocumentsWithStats } from "@/lib/ofd/taxcom/adapter";
 import { isCurrentAccountValid } from "@/lib/ofd/contract";
+import { categorizeItem, type OfdCategoryRuleLike } from "@/lib/ofd/revenue";
 import type { NormalizedOfdReceipt, OfdConnectionConfig } from "@/lib/ofd/types";
 
 export type ImportMode = "manual_day" | "manual_period" | "backfill_july" | "daily" | "auto_daily" | "sync_now";
@@ -141,8 +142,17 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     }
   }
 
+  // Load company category rules once — DB rules take priority over the in-code
+  // fallback defaults. Never touched again per KKT.
+  const dbRules: OfdCategoryRuleLike[] = await prisma.ofdRevenueCategoryRule.findMany({
+    where: { companyId: connection.companyId, isActive: true },
+    select: { id: true, legalEntityId: true, categoryCode: true, categoryName: true, matchType: true, pattern: true, normalizedPattern: true, priority: true, isActive: true, createdAt: true },
+  });
+
   let found = 0, imported = 0, skipped = 0, kktFailures = 0;
   let incomeTotal = 0, returnTotal = 0;
+  // SAFE aggregate item diagnostics (counts only — no names / no raw / no ФПД).
+  const itemStats = { itemDocumentsSeen: 0, itemRowsSeen: 0, itemRowsSaved: 0, itemRowsSkipped: 0, categoryOtherCount: 0 };
   const touched = new Set<string>(); // `${clubId}|${legalEntityId ?? ""}|${day}`
 
   for (const m of mappings) {
@@ -228,12 +238,31 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
       if (r.operationType === "income") incomeTotal += r.totalKopeks; else returnTotal += r.totalKopeks;
       touched.add(`${m.clubId}|${legal ?? ""}|${dayOf(r.receiptDate)}`);
     }
+
+    // Persist SAFE nomenclature lines (if the response carried any) for ALL of this
+    // KKT's receipts — fresh and already-imported (backfill). Idempotent by itemKey.
+    // Item failures never fail the receipt import (receipts are already saved).
+    try {
+      const idRows = await prisma.ofdReceiptImport.findMany({ where: { dedupeKey: { in: keys } }, select: { id: true, dedupeKey: true } });
+      const idByKey = new Map(idRows.map((r) => [r.dedupeKey, r.id]));
+      await persistReceiptItems([...byKey.values()], idByKey, { companyId: connection.companyId, clubId: m.clubId, legal, provider: connection.provider }, dbRules, itemStats);
+    } catch {
+      await recordSyncError(run.id, connection.id, connection.companyId, m.clubId, m.fnNumber, "save_items", "ofd_item_save_failed", "Не удалось сохранить позиции чека (чеки импортированы).");
+    }
   }
 
-  // Recompute affected daily summaries from the stored fingerprints (authoritative).
+  // Recompute affected daily + revenue-category summaries from the stored rows.
   for (const key of touched) {
     const [clubId, legalRaw, day] = key.split("|");
     await recomputeDailySummary(connection.companyId, clubId, legalRaw || null, connection.provider, day);
+    await recomputeRevenueCategorySummaries(connection.companyId, clubId, legalRaw || null, connection.provider, day);
+  }
+
+  // SAFE item diagnostics (counts only). "items unavailable" is NOT an error — the
+  // production DocumentList often returns receipt sums without positions.
+  console.warn(`[ofd] items_debug itemDocumentsSeen=${itemStats.itemDocumentsSeen} itemRowsSeen=${itemStats.itemRowsSeen} itemRowsSaved=${itemStats.itemRowsSaved} itemRowsSkipped=${itemStats.itemRowsSkipped} categoryOtherCount=${itemStats.categoryOtherCount}`);
+  if (found > 0 && itemStats.itemRowsSeen === 0) {
+    console.warn(`[ofd] items_unavailable receipts=${found} — Taxcom returned receipt totals but no positions.`);
   }
 
   const status = kktFailures === 0 ? "success" : imported > 0 || mappings.length > kktFailures ? "partial_failed" : "failed";
@@ -279,4 +308,74 @@ export async function recomputeDailySummary(companyId: string, clubId: string, l
     create: { companyId, clubId, legalEntityId: legalEntityId ?? null, provider, date, summaryKey, ...agg, netTotalKopeks },
     update: { ...agg, netTotalKopeks },
   });
+}
+
+type ItemStats = { itemDocumentsSeen: number; itemRowsSeen: number; itemRowsSaved: number; itemRowsSkipped: number; categoryOtherCount: number };
+
+/** Persist SAFE nomenclature lines for a set of receipts. Categorizes each line,
+ * writes only safe fields (name/numbers/category), and is idempotent by itemKey
+ * ("<dedupeKey>:<lineIndex>") so a re-import (or backfill of a skipped receipt)
+ * never creates duplicates. Never stores raw JSON / buyer PII. */
+async function persistReceiptItems(
+  receipts: NormalizedOfdReceipt[],
+  idByDedupeKey: Map<string, string>,
+  ctx: { companyId: string; clubId: string; legal: string | null; provider: string },
+  dbRules: OfdCategoryRuleLike[],
+  itemStats: ItemStats,
+): Promise<void> {
+  const rows: Array<Record<string, unknown>> = [];
+  for (const r of receipts) {
+    const receiptImportId = idByDedupeKey.get(r.dedupeKey);
+    if (!receiptImportId) continue;
+    if (r.itemsPresent) itemStats.itemDocumentsSeen += 1;
+    const items = r.items ?? [];
+    itemStats.itemRowsSeen += items.length;
+    items.forEach((it, lineIndex) => {
+      const cat = categorizeItem(it.normalizedName, dbRules, ctx.legal);
+      if (cat.code === "other") itemStats.categoryOtherCount += 1;
+      rows.push({
+        receiptImportId, companyId: ctx.companyId, clubId: ctx.clubId, legalEntityId: ctx.legal, provider: ctx.provider,
+        date: dayOf(r.receiptDate), fnNumber: r.fnNumber, fdNumber: r.fiscalDocumentNumber, fiscalSign: r.fiscalSign,
+        lineIndex, itemName: it.name, normalizedItemName: it.normalizedName, quantityMilli: it.quantityMilli,
+        priceKopeks: it.priceKopeks, totalKopeks: it.totalKopeks, operationType: r.operationType,
+        revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId,
+        itemKey: `${r.dedupeKey}:${lineIndex}`,
+      });
+    });
+  }
+  if (rows.length === 0) return;
+  const itemKeys = rows.map((r) => r.itemKey as string);
+  const existing = await prisma.ofdReceiptItem.findMany({ where: { itemKey: { in: itemKeys } }, select: { itemKey: true } });
+  const existingSet = new Set(existing.map((e) => e.itemKey));
+  const fresh = rows.filter((r) => !existingSet.has(r.itemKey as string));
+  itemStats.itemRowsSkipped += rows.length - fresh.length;
+  if (fresh.length > 0) {
+    await prisma.ofdReceiptItem.createMany({ data: fresh as never });
+    itemStats.itemRowsSaved += fresh.length;
+  }
+}
+
+/** Recompute the per-category daily summary for one (club, legalEntity, date) from
+ * OfdReceiptItem. Idempotent: clears the day's category rows then recreates the
+ * present categories. receiptCount is unique receipts within the category. */
+export async function recomputeRevenueCategorySummaries(companyId: string, clubId: string, legalEntityId: string | null, provider: string, date: string): Promise<void> {
+  const items = await prisma.ofdReceiptItem.findMany({
+    where: { companyId, clubId, provider, legalEntityId: legalEntityId ?? null, date },
+    select: { revenueCategoryCode: true, revenueCategoryName: true, operationType: true, totalKopeks: true, receiptImportId: true },
+  });
+  const byCat = new Map<string, { name: string; income: number; ret: number; itemCount: number; receipts: Set<string> }>();
+  for (const it of items) {
+    let c = byCat.get(it.revenueCategoryCode);
+    if (!c) { c = { name: it.revenueCategoryName, income: 0, ret: 0, itemCount: 0, receipts: new Set() }; byCat.set(it.revenueCategoryCode, c); }
+    if (it.operationType === "income") c.income += it.totalKopeks; else c.ret += it.totalKopeks;
+    c.itemCount += 1;
+    c.receipts.add(it.receiptImportId);
+  }
+  await prisma.ofdRevenueCategoryDailySummary.deleteMany({ where: { companyId, clubId, provider, legalEntityId: legalEntityId ?? null, date } });
+  const rows = [...byCat.entries()].map(([code, c]) => ({
+    companyId, clubId, legalEntityId: legalEntityId ?? null, provider, date, categoryCode: code, categoryName: c.name,
+    incomeTotalKopeks: c.income, returnTotalKopeks: c.ret, netTotalKopeks: c.income - c.ret, itemCount: c.itemCount,
+    receiptCount: c.receipts.size, summaryKey: `${companyId}:${clubId}:${legalEntityId ?? "none"}:${provider}:${date}:${code}`,
+  }));
+  if (rows.length > 0) await prisma.ofdRevenueCategoryDailySummary.createMany({ data: rows });
 }

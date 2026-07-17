@@ -1572,3 +1572,80 @@ model OfdSyncError {
   @@index([syncRunId])
   @@index([companyId])
 }
+
+// One SAFE nomenclature line of an OFD receipt (no raw JSON, no buyer PII). Linked
+// to OfdReceiptImport by id; idempotent by itemKey ("<dedupeKey>:<lineIndex>").
+model OfdReceiptItem {
+  id                  String   @id @default(cuid())
+  receiptImportId     String
+  companyId           String
+  clubId              String
+  legalEntityId       String?
+  provider            String   @default("taxcom")
+  date                String // "YYYY-MM-DD"
+  fnNumber            String
+  fdNumber            Int
+  fiscalSign          String?
+  lineIndex           Int
+  itemName            String
+  normalizedItemName  String
+  quantityMilli       Int      @default(1000) // quantity * 1000 (3-decimal precision)
+  priceKopeks         Int      @default(0)
+  totalKopeks         Int      @default(0)
+  operationType       String // income | income_return
+  revenueCategoryCode String
+  revenueCategoryName String
+  categoryRuleId      String?
+  itemKey             String   @unique
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([companyId, clubId])
+  @@index([receiptImportId])
+  @@index([date])
+  @@index([revenueCategoryCode])
+}
+
+// Company/legal-entity rule mapping normalized item names to a revenue category.
+// DB rules take priority over the in-code fallback defaults. No regex (safe).
+model OfdRevenueCategoryRule {
+  id                String   @id @default(cuid())
+  companyId         String
+  legalEntityId     String?
+  categoryCode      String
+  categoryName      String
+  matchType         String // contains | starts_with | exact
+  pattern           String
+  normalizedPattern String
+  priority          Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, legalEntityId])
+}
+
+// Per-day revenue split by category, recomputed from OfdReceiptItem after import.
+model OfdRevenueCategoryDailySummary {
+  id                String   @id @default(cuid())
+  companyId         String
+  clubId            String
+  legalEntityId     String?
+  provider          String   @default("taxcom")
+  date              String // "YYYY-MM-DD"
+  categoryCode      String
+  categoryName      String
+  incomeTotalKopeks Int      @default(0)
+  returnTotalKopeks Int      @default(0)
+  netTotalKopeks    Int      @default(0)
+  itemCount         Int      @default(0)
+  receiptCount      Int      @default(0)
+  summaryKey        String   @unique // company:club:legal:provider:date:category
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId, clubId])
+  @@index([date])
+  @@index([categoryCode])
+}

@@ -70,7 +70,18 @@ export type TaxcomAccountList = {
   records: TaxcomAccount[];
 };
 
-/** Craft of Taxcom DocumentList: the SAFE per-receipt summary (no items/buyer). */
+/** One SAFE nomenclature line of a receipt — name + numbers only, never raw JSON
+ * and never buyer PII. Populated only when Taxcom actually returns positions. */
+export type TaxcomReceiptItem = {
+  name: string; // cleaned, length-limited
+  normalizedName: string; // for category matching
+  quantityMilli: number; // quantity * 1000 (3-decimal precision)
+  priceKopeks: number;
+  totalKopeks: number;
+};
+
+/** Craft of Taxcom DocumentList: the SAFE per-receipt summary (no buyer PII / raw
+ * JSON). `items` is present only when the response carried positions. */
 export type TaxcomDocumentSummary = {
   fn: string;
   shift: number;
@@ -84,6 +95,8 @@ export type TaxcomDocumentSummary = {
   totalKopeks: number;
   cashKopeks: number;
   electronicKopeks: number;
+  items?: TaxcomReceiptItem[]; // safe nomenclature lines, if any
+  itemsPresent?: boolean; // true if the source doc carried a positions array (even if empty)
 };
 
 /** Optional full document — NOT used in the MVP unless strictly necessary, and
@@ -110,6 +123,8 @@ export type NormalizedOfdReceipt = {
   cashKopeks: number;
   electronicKopeks: number;
   dedupeKey: string;
+  items?: TaxcomReceiptItem[]; // carried through so the importer can persist them
+  itemsPresent?: boolean;
 };
 
 export type OfdResult<T> =

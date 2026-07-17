@@ -27,7 +27,48 @@ function normalize(doc) {
   const op = mapOp(doc.operationType); if (!op) return null;
   const date = new Date(doc.dateTime); if (Number.isNaN(date.getTime())) return null;
   if (!doc.fn || !Number.isFinite(doc.fd) || Math.trunc(doc.fd) <= 0) return null;
-  return { fnNumber: String(doc.fn), shiftNumber: Number.isFinite(doc.shift) ? Math.trunc(doc.shift) : null, fiscalDocumentNumber: Math.trunc(doc.fd), fiscalSign: doc.fpd && String(doc.fpd).trim() ? String(doc.fpd).trim() : null, operationType: op, receiptDate: date, totalKopeks: Math.trunc(doc.totalKopeks || 0), cashKopeks: Math.trunc(doc.cashKopeks || 0), electronicKopeks: Math.trunc(doc.electronicKopeks || 0), dedupeKey: dedupe(String(doc.fn), Math.trunc(doc.fd), doc.fpd) };
+  return { fnNumber: String(doc.fn), shiftNumber: Number.isFinite(doc.shift) ? Math.trunc(doc.shift) : null, fiscalDocumentNumber: Math.trunc(doc.fd), fiscalSign: doc.fpd && String(doc.fpd).trim() ? String(doc.fpd).trim() : null, operationType: op, receiptDate: date, totalKopeks: Math.trunc(doc.totalKopeks || 0), cashKopeks: Math.trunc(doc.cashKopeks || 0), electronicKopeks: Math.trunc(doc.electronicKopeks || 0), dedupeKey: dedupe(String(doc.fn), Math.trunc(doc.fd), doc.fpd), items: doc.items ?? [], itemsPresent: doc.itemsPresent ?? false };
+}
+
+// --- Mirror of lib/ofd/revenue (item name + category logic) ----------------
+const normItem = (v) => (v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200D\u2060\uFEFF]/g, "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+const cleanItem = (v) => (v ?? "").normalize("NFKC").replace(/[\u0000-\u001F\u007F]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+const DEFAULT_RULES = [
+  ...["групповая тренировка", "групповые тренировки", "групповое занятие", "групповые занятия", "мини-группа", "мини группа"].map((pattern) => ({ code: "group_training", name: "Групповые тренировки", matchType: "contains", pattern })),
+  { code: "group_training", name: "Групповые тренировки", matchType: "starts_with", pattern: "гт" },
+  ...["персональная тренировка", "персональные тренировки", "тренировка с тренером", "индивидуальная тренировка", "индивидуальные тренировки"].map((pattern) => ({ code: "personal_training", name: "Персональные тренировки", matchType: "contains", pattern })),
+  { code: "personal_training", name: "Персональные тренировки", matchType: "starts_with", pattern: "пт" },
+  ...["заморозка", "продление", "переоформление", "восстановление карты", "аренда", "полотенце", "шкафчик", "солярий", "доп услуга", "дополнительная услуга"].map((pattern) => ({ code: "extra_services", name: "Доп. услуги", matchType: "contains", pattern })),
+  ...["клубная карта", "абонемент", "членство", "карта"].map((pattern) => ({ code: "membership", name: "Абонементы", matchType: "contains", pattern })),
+];
+const matchR = (t, p, n) => (!p ? false : t === "starts_with" ? n.startsWith(p) : t === "exact" ? n === p : n.includes(p));
+function categorize(norm, dbRules = [], legal = null) {
+  if (!norm) return { code: "other", name: "Иное", ruleId: null };
+  const sorted = [...dbRules.filter((r) => r.isActive !== false && (r.legalEntityId == null || r.legalEntityId === legal))].sort((a, b) => {
+    const as = a.legalEntityId ? 1 : 0, bs = b.legalEntityId ? 1 : 0; if (as !== bs) return bs - as;
+    const ap = a.priority ?? 0, bp = b.priority ?? 0; if (ap !== bp) return bp - ap;
+    return String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? ""));
+  });
+  for (const r of sorted) { const pat = r.normalizedPattern ?? normItem(r.pattern); if (matchR(r.matchType, pat, norm)) return { code: r.categoryCode, name: r.categoryName, ruleId: r.id ?? null }; }
+  for (const fb of DEFAULT_RULES) { if (matchR(fb.matchType, normItem(fb.pattern), norm)) return { code: fb.code, name: fb.name, ruleId: null }; }
+  return { code: "other", name: "Иное", ruleId: null };
+}
+const ITEM_KEYS = ["items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows"];
+function parseItems(raw) {
+  const o = raw ?? {}; let arr = [], present = false;
+  for (const k of ITEM_KEYS) { if (Array.isArray(o[k])) { arr = o[k]; present = true; break; } }
+  const items = [];
+  for (const it of arr) {
+    const io = it ?? {};
+    const name = cleanItem(io.name ?? io.Name ?? io.itemName ?? io.ItemName ?? io.nomenclature ?? io.Nomenclature ?? io.productName ?? io.ProductName);
+    if (!name) continue;
+    const totalKopeks = Math.trunc(Number(io.sum ?? io.Sum ?? io.total ?? io.Total ?? io.amount ?? io.Amount) || 0);
+    if (totalKopeks <= 0) continue;
+    const priceKopeks = Math.trunc(Number(io.price ?? io.Price ?? io.priceKopeks) || 0);
+    const q = Number(io.quantity ?? io.Quantity ?? io.qty ?? io.Qty); const quantityMilli = Math.max(0, Math.round((Number.isFinite(q) ? q : 1) * 1000));
+    items.push({ name, normalizedName: normItem(name), quantityMilli, priceKopeks, totalKopeks });
+  }
+  return { items, itemsPresent: present };
 }
 
 // --- Mirror of lib/ofd/importer --------------------------------------------
@@ -43,9 +84,19 @@ async function recomputeSummary(companyId, clubId, legal, date) {
   const summaryKey = summaryKeyOf(companyId, clubId, legal, "taxcom", date);
   await p.ofdDailySalesSummary.upsert({ where: { summaryKey }, create: { companyId, clubId, legalEntityId: legal ?? null, provider: "taxcom", date, summaryKey, ...a, netTotalKopeks }, update: { ...a, netTotalKopeks } });
 }
+async function recomputeCategorySummary(companyId, clubId, legal, date) {
+  const items = await p.ofdReceiptItem.findMany({ where: { companyId, clubId, provider: "taxcom", legalEntityId: legal ?? null, date }, select: { revenueCategoryCode: true, revenueCategoryName: true, operationType: true, totalKopeks: true, receiptImportId: true } });
+  const byCat = new Map();
+  for (const it of items) { let c = byCat.get(it.revenueCategoryCode); if (!c) { c = { name: it.revenueCategoryName, income: 0, ret: 0, itemCount: 0, receipts: new Set() }; byCat.set(it.revenueCategoryCode, c); } if (it.operationType === "income") c.income += it.totalKopeks; else c.ret += it.totalKopeks; c.itemCount++; c.receipts.add(it.receiptImportId); }
+  await p.ofdRevenueCategoryDailySummary.deleteMany({ where: { companyId, clubId, provider: "taxcom", legalEntityId: legal ?? null, date } });
+  const rows = [...byCat.entries()].map(([code, c]) => ({ companyId, clubId, legalEntityId: legal ?? null, provider: "taxcom", date, categoryCode: code, categoryName: c.name, incomeTotalKopeks: c.income, returnTotalKopeks: c.ret, netTotalKopeks: c.income - c.ret, itemCount: c.itemCount, receiptCount: c.receipts.size, summaryKey: `${companyId}:${clubId}:${legal ?? "none"}:taxcom:${date}:${code}` }));
+  if (rows.length) await p.ofdRevenueCategoryDailySummary.createMany({ data: rows });
+}
 async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dateTo, client, mappings, contractNumber, normalizeContract }) {
   const run = await p.ofdSyncRun.create({ data: { connectionId, companyId, mode: "manual_period", dateFrom, dateTo, status: "running", startedAt: new Date() } });
   const days = eachDay(dateFrom, dateTo);
+  const dbRules = await p.ofdRevenueCategoryRule.findMany({ where: { companyId, isActive: true } });
+  const itemStats = { itemDocumentsSeen: 0, itemRowsSeen: 0, itemRowsSaved: 0, itemRowsSkipped: 0, categoryOtherCount: 0 };
   // Select active mappings by connection SCOPE (company + legalEntity + provider),
   // NOT connectionId — mirror of the importer fix. When mappings are passed in
   // explicitly (unit tests), use them as-is.
@@ -99,18 +150,31 @@ async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dat
     if (fresh.length) await p.ofdReceiptImport.createMany({ data: fresh.map((r) => ({ connectionId, companyId, clubId: m.clubId, legalEntityId: legal, provider: "taxcom", fnNumber: r.fnNumber, shiftNumber: r.shiftNumber, fiscalDocumentNumber: r.fiscalDocumentNumber, fiscalSign: r.fiscalSign, operationType: r.operationType, receiptDate: r.receiptDate, totalKopeks: r.totalKopeks, cashKopeks: r.cashKopeks, electronicKopeks: r.electronicKopeks, dedupeKey: r.dedupeKey, source: "taxcom", syncRunId: run.id })) });
     imported += fresh.length;
     for (const r of byKey.values()) touched.add(`${m.clubId}|${legal ?? ""}|${r.receiptDate.toISOString().slice(0, 10)}`);
+    // Persist SAFE nomenclature lines (idempotent by itemKey) — mirror of persistReceiptItems.
+    const idRows = await p.ofdReceiptImport.findMany({ where: { dedupeKey: { in: keys } }, select: { id: true, dedupeKey: true } });
+    const idByKey = new Map(idRows.map((r) => [r.dedupeKey, r.id]));
+    const itemRows = [];
+    for (const r of byKey.values()) {
+      const rid = idByKey.get(r.dedupeKey); if (!rid) continue;
+      itemStats.itemRowsSeen += (r.items || []).length;
+      (r.items || []).forEach((it, lineIndex) => {
+        const cat = categorize(it.normalizedName, dbRules, legal); if (cat.code === "other") itemStats.categoryOtherCount++;
+        itemRows.push({ receiptImportId: rid, companyId, clubId: m.clubId, legalEntityId: legal, provider: "taxcom", date: r.receiptDate.toISOString().slice(0, 10), fnNumber: r.fnNumber, fdNumber: r.fiscalDocumentNumber, fiscalSign: r.fiscalSign, lineIndex, itemName: it.name, normalizedItemName: it.normalizedName, quantityMilli: it.quantityMilli, priceKopeks: it.priceKopeks, totalKopeks: it.totalKopeks, operationType: r.operationType, revenueCategoryCode: cat.code, revenueCategoryName: cat.name, categoryRuleId: cat.ruleId, itemKey: `${r.dedupeKey}:${lineIndex}` });
+      });
+    }
+    if (itemRows.length) { const exi = await p.ofdReceiptItem.findMany({ where: { itemKey: { in: itemRows.map((x) => x.itemKey) } }, select: { itemKey: true } }); const exiSet = new Set(exi.map((e) => e.itemKey)); const freshI = itemRows.filter((x) => !exiSet.has(x.itemKey)); itemStats.itemRowsSkipped += itemRows.length - freshI.length; if (freshI.length) { await p.ofdReceiptItem.createMany({ data: freshI }); itemStats.itemRowsSaved += freshI.length; } }
   }
-  for (const key of touched) { const [clubId, legalRaw, day] = key.split("|"); await recomputeSummary(companyId, clubId, legalRaw || null, day); }
+  for (const key of touched) { const [clubId, legalRaw, day] = key.split("|"); await recomputeSummary(companyId, clubId, legalRaw || null, day); await recomputeCategorySummary(companyId, clubId, legalRaw || null, day); }
   const status = kktFailures === 0 ? "success" : (imported > 0 ? "partial_failed" : "failed");
   await p.ofdSyncRun.update({ where: { id: run.id }, data: { status, finishedAt: new Date(), foundReceipts: found, importedReceipts: imported, skippedReceipts: skipped } });
-  return { runId: run.id, found, imported, skipped, status };
+  return { runId: run.id, found, imported, skipped, status, itemStats };
 }
 
 const CO = "pilot-ofd-co", CONN = "pilot-ofd-conn", U = "pilot-ofd-owner";
 const MC = "pilot-ofd-map-co", MU = "pilot-ofd-map-user"; // isolated company for mapping-selection e2e
 async function cleanup() {
   for (const co of [CO, MC]) {
-    for (const t of ["ofdSyncError", "ofdSyncRun", "ofdReceiptImport", "ofdDailySalesSummary", "ofdCashRegisterMapping", "ofdConnection"]) await p[t].deleteMany({ where: { companyId: co } }).catch(() => {});
+    for (const t of ["ofdSyncError", "ofdSyncRun", "ofdReceiptItem", "ofdRevenueCategoryRule", "ofdRevenueCategoryDailySummary", "ofdReceiptImport", "ofdDailySalesSummary", "ofdCashRegisterMapping", "ofdConnection"]) await p[t].deleteMany({ where: { companyId: co } }).catch(() => {});
     await p.club.deleteMany({ where: { companyId: co } }).catch(() => {});
     await p.legalEntity.deleteMany({ where: { companyId: co } }).catch(() => {});
     await p.company.deleteMany({ where: { id: co } }).catch(() => {});
@@ -507,6 +571,58 @@ async function main() {
   check("SN4 one connection failure does NOT abort others (succeeded 2, failed 1, safeErrorCode surfaced)", snRes.succeeded === 2 && snRes.failed === 1 && snRes.runs.find((r) => r.connectionId === "c2").safeErrorCode === "already_running");
   check("SN5 sync result safe-fields-only (no login/password/Integrator-ID/SessionToken/raw/PII/stack)", !/login|password|integrator|sessionToken|serverBaseUrl|Bearer|fpd|phone|email|stack/i.test(JSON.stringify(snRes)) && Object.keys(snRes.runs[0]).sort().join(",") === "connectionId,foundReceipts,importedReceipts,safeErrorCode,skippedReceipts,status,totalIncomeKopeks,totalReturnKopeks");
 
+  // ===== OFD nomenclature: item parser + revenue categories ===================
+  // A. Parser (pure)
+  check("RI1 parseReceiptItems reads items/Items/positions/Goods; itemsPresent flag", parseItems({ items: [{ name: "Абонемент", sum: 100 }] }).items.length === 1 && parseItems({ Items: [{ Name: "Карта", Sum: 100 }] }).items.length === 1 && parseItems({ positions: [{ name: "X", total: 50 }] }).items.length === 1 && parseItems({ Goods: [{ name: "Y", amount: 50 }] }).items.length === 1 && parseItems({}).itemsPresent === false && parseItems({ items: [] }).itemsPresent === true);
+  check("RI2 parseReceiptItems reads name/quantity/price/sum (all casings)", (() => { const r = parseItems({ items: [{ itemName: "ПТ 10", quantity: 2, price: 50000, sum: 100000 }] }).items[0]; return r.name === "ПТ 10" && r.quantityMilli === 2000 && r.priceKopeks === 50000 && r.totalKopeks === 100000; })());
+  check("RI3 parseReceiptItems skips empty name + sum<=0 service lines", parseItems({ items: [{ name: "", sum: 100 }, { name: "   ", sum: 100 }, { name: "Пакет", sum: 0 }, { name: "Скидка", sum: -50 }] }).items.length === 0);
+  check("RI4 parsed item keeps ONLY safe fields — no raw JSON / no buyer PII leak", (() => { const it = parseItems({ items: [{ name: "Абонемент", sum: 100, buyerPhone: "+79990000000", email: "a@b.c", raw: { a: 1 } }] }).items[0]; return Object.keys(it).sort().join(",") === "name,normalizedName,priceKopeks,quantityMilli,totalKopeks" && !/79990000000|buyerPhone|a@b\.c|"raw"/i.test(JSON.stringify(it)); })());
+  check("RI5 cleanItemName trims/limits/strips control; control-only name dropped", cleanItem("  Абонемент  ") === "Абонемент" && cleanItem("A".repeat(500)).length === 200 && parseItems({ items: [{ name: "", sum: 100 }] }).items.length === 0);
+  // B. Categorization (updated CLUB-OPS categories — no bar)
+  check("RI6 Абонемент 12 месяцев → membership", categorize(normItem("Абонемент 12 месяцев")).code === "membership");
+  check("RI7 ПТ 10 занятий → personal_training", categorize(normItem("ПТ 10 занятий")).code === "personal_training" && categorize(normItem("Персональная тренировка")).code === "personal_training");
+  check("RI8 Групповая тренировка → group_training", categorize(normItem("Групповая тренировка")).code === "group_training" && categorize(normItem("ГТ мини-группа")).code === "group_training");
+  check("RI9 Заморозка/Переоформление карты → extra_services", categorize(normItem("Заморозка карты")).code === "extra_services" && categorize(normItem("Переоформление карты")).code === "extra_services" && categorize(normItem("Аренда шкафчика")).code === "extra_services");
+  check("RI10 unknown → other", categorize(normItem("Массаж спины")).code === "other" && categorize(normItem("")).code === "other");
+  check("RI11 DB rule takes priority over fallback", categorize(normItem("Спорт-пакет"), [{ id: "r1", legalEntityId: null, categoryCode: "membership", categoryName: "Абонементы", matchType: "contains", normalizedPattern: "спорт", priority: 10, isActive: true, createdAt: "2026-01-01" }], null).ruleId === "r1" && categorize(normItem("Спорт-пакет"), [], null).code === "other");
+  const dbLegal = [{ id: "cw", legalEntityId: null, categoryCode: "other", categoryName: "Иное", matchType: "contains", normalizedPattern: "услуга", priority: 100, isActive: true, createdAt: "2026-01-01" }, { id: "le", legalEntityId: "L1", categoryCode: "extra_services", categoryName: "Доп. услуги", matchType: "contains", normalizedPattern: "услуга", priority: 1, isActive: true, createdAt: "2026-02-01" }];
+  check("RI12 legalEntity rule beats company-wide (even at lower priority)", categorize(normItem("Некая услуга"), dbLegal, "L1").ruleId === "le" && categorize(normItem("Некая услуга"), dbLegal, null).ruleId === "cw");
+  check("RI13 priority DESC works", categorize(normItem("хму"), [{ id: "lo", legalEntityId: null, categoryCode: "membership", categoryName: "Абонементы", matchType: "contains", normalizedPattern: "х", priority: 1, isActive: true, createdAt: "2026-01-01" }, { id: "hi", legalEntityId: null, categoryCode: "extra_services", categoryName: "Доп. услуги", matchType: "contains", normalizedPattern: "х", priority: 9, isActive: true, createdAt: "2026-01-01" }], null).ruleId === "hi");
+
+  // C/D. DB idempotency + backfill + category summary (via runImport mirror w/ items)
+  const IFN = "FN-ITEMS";
+  const mapItems = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: IFN, isActive: true, activeMappingKey: `taxcom:${IFN}` } });
+  const mkItem = (name, total, price) => ({ name, normalizedName: normItem(name), quantityMilli: 1000, priceKopeks: price, totalKopeks: total });
+  const itemDocs = [
+    { fn: IFN, shift: 5, documentType: "3", operationType: "Income", dateTime: "2026-07-20T10:00:00.000Z", fd: 5001, fpd: "IT1", totalKopeks: 300000, cashKopeks: 300000, electronicKopeks: 0, itemsPresent: true, items: [mkItem("Абонемент 6 мес", 200000, 200000), mkItem("ПТ разовая", 100000, 100000)] },
+    { fn: IFN, shift: 5, documentType: "3", operationType: "Income", dateTime: "2026-07-20T11:00:00.000Z", fd: 5002, fpd: "IT2", totalKopeks: 150000, cashKopeks: 0, electronicKopeks: 150000, itemsPresent: true, items: [mkItem("Групповая тренировка", 150000, 150000)] },
+  ];
+  const itemsClient = { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 5 }] }), listDocumentsByShift: async () => ({ ok: true, data: itemDocs }) };
+  const ir1 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-20", dateTo: "2026-07-20", client: itemsClient, mappings: [mapItems] });
+  check("RI14 first import saves 3 item rows (2 receipts)", ir1.itemStats.itemRowsSaved === 3 && ir1.itemStats.itemRowsSkipped === 0 && (await p.ofdReceiptItem.count({ where: { companyId: CO, fnNumber: IFN } })) === 3);
+  const ir2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-20", dateTo: "2026-07-20", client: itemsClient, mappings: [mapItems] });
+  check("RI15 re-import idempotent: 0 saved / 3 skipped, no duplicate items", ir2.itemStats.itemRowsSaved === 0 && ir2.itemStats.itemRowsSkipped === 3 && (await p.ofdReceiptItem.count({ where: { companyId: CO, fnNumber: IFN } })) === 3);
+  const catSum = await p.ofdRevenueCategoryDailySummary.findMany({ where: { companyId: CO, clubId: clubA.id, date: "2026-07-20" } });
+  const byCode = Object.fromEntries(catSum.map((s) => [s.categoryCode, s]));
+  check("RI16 category summary: income/net + itemCount + unique receiptCount per category", catSum.length === 3 && byCode.membership.incomeTotalKopeks === 200000 && byCode.membership.netTotalKopeks === 200000 && byCode.membership.itemCount === 1 && byCode.membership.receiptCount === 1 && byCode.personal_training.incomeTotalKopeks === 100000 && byCode.group_training.incomeTotalKopeks === 150000 && byCode.group_training.receiptCount === 1);
+  // Backfill: receipt first imported WITHOUT items, then re-import WITH items.
+  const BFN = "FN-BF";
+  const mapBf = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: BFN, isActive: true, activeMappingKey: `taxcom:${BFN}` } });
+  const bfBase = { fn: BFN, shift: 6, documentType: "3", operationType: "Income", dateTime: "2026-07-21T10:00:00.000Z", fd: 6001, fpd: "BF1", totalKopeks: 100000, cashKopeks: 100000, electronicKopeks: 0 };
+  const bf1 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-21", dateTo: "2026-07-21", client: { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 6 }] }), listDocumentsByShift: async () => ({ ok: true, data: [{ ...bfBase, itemsPresent: false, items: [] }] }) }, mappings: [mapBf] });
+  check("RI17 receipt imported but NO items yet (items not present)", bf1.imported === 1 && bf1.itemStats.itemRowsSaved === 0 && (await p.ofdReceiptItem.count({ where: { fnNumber: BFN } })) === 0);
+  check("RI18a no items → OfdDailySalesSummary still computed", (await p.ofdDailySalesSummary.findUnique({ where: { summaryKey: summaryKeyOf(CO, clubA.id, null, "taxcom", "2026-07-21") } })).incomeTotalKopeks === 100000);
+  const bf2 = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-21", dateTo: "2026-07-21", client: { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 6 }] }), listDocumentsByShift: async () => ({ ok: true, data: [{ ...bfBase, itemsPresent: true, items: [mkItem("Клубная карта", 100000, 100000)] }] }) }, mappings: [mapBf] });
+  check("RI18 backfill: skipped receipt gains items on re-import (no dup receipt)", bf2.skipped === 1 && bf2.imported === 0 && bf2.itemStats.itemRowsSaved === 1 && (await p.ofdReceiptItem.count({ where: { fnNumber: BFN } })) === 1 && (await p.ofdReceiptImport.count({ where: { fnNumber: BFN } })) === 1);
+  // E. Safety
+  check("RI19 runImport result carries no secrets/raw/PII/stack; itemStats counts only", !/login|password|integrator|sessionToken|Bearer|phone|email|buyer|stack|"raw"/i.test(JSON.stringify(ir1)) && Object.keys(ir1.itemStats).sort().join(",") === "categoryOtherCount,itemDocumentsSeen,itemRowsSaved,itemRowsSeen,itemRowsSkipped");
+  const storedItem = await p.ofdReceiptItem.findFirst({ where: { fnNumber: IFN } });
+  check("RI20 stored item row = safe columns only (no phone/email/buyer/customer/raw/json)", !Object.keys(storedItem).some((k) => /phone|email|buyer|customer|raw|json|fio/i.test(k)) && storedItem.itemName.length <= 200);
+  await p.ofdReceiptItem.deleteMany({ where: { companyId: CO, fnNumber: { in: [IFN, BFN] } } });
+  await p.ofdRevenueCategoryDailySummary.deleteMany({ where: { companyId: CO } });
+  await p.ofdReceiptImport.deleteMany({ where: { companyId: CO, fnNumber: { in: [IFN, BFN] } } });
+  await p.ofdCashRegisterMapping.deleteMany({ where: { id: { in: [mapItems.id, mapBf.id] } } });
+
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
   check("T6 3103 not auth_failed; 401 auth_failed; 403 forbidden", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
@@ -676,6 +792,7 @@ async function main() {
   const health = readFileSync(new URL("../src/app/api/health/route.ts", import.meta.url), "utf8");
   const cronRoute = readFileSync(new URL("../src/app/api/cron/ofd/daily/route.ts", import.meta.url), "utf8");
   const dailyLib = readFileSync(new URL("../src/lib/ofd/daily.ts", import.meta.url), "utf8");
+  const revenueLib = readFileSync(new URL("../src/lib/ofd/revenue.ts", import.meta.url), "utf8");
   const envEx = readFileSync(new URL("../.env.example", import.meta.url), "utf8");
   const envProd = readFileSync(new URL("../.env.production.example", import.meta.url), "utf8");
   const deployDoc = readFileSync(new URL("../docs/RU_DEPLOYMENT.md", import.meta.url), "utf8");
@@ -755,6 +872,14 @@ async function main() {
   check("T-S13c syncOfdNowAction: requireOfdAdmin gate → runSyncNowForCompany(company) → revalidatePath; safe sync summary; no secrets", actions.includes("export async function syncOfdNowAction") && actions.includes("requireOfdAdmin()") && actions.includes("runSyncNowForCompany(g.companyId)") && actions.includes('revalidatePath("/settings/integrations/ofd")') && actions.includes("Синхронизация завершена") && /syncOfdNowAction[\s\S]*?sync: \{ found:/.test(actions) && !/syncOfdNowAction[\s\S]{0,900}(decryptOfdSecret|loginEncrypted|sessionToken|Integrator-ID)/i.test(actions));
   check("UI: Синхронизировать сейчас button + safe-rerun hint + приход/возвраты + loading disabled", forms.includes("syncOfdNowAction") && forms.includes("Синхронизировать сейчас") && forms.includes("Повторный запуск безопасен — дубли не создаются") && forms.includes("Синхронизация...") && forms.includes("Приход:") && forms.includes("Возвраты:") && forms.includes("state.sync") && pageSrc.includes("OfdSyncNow"));
   check("docs: systemd timer OnCalendar 00:00:00 + note про 00:05/00:10", deployDoc.includes("OnCalendar=*-*-* 00:00:00") && deployDoc.includes("00:05") && deployDoc.includes("00:10") && deployDoc.includes("Синхронизировать сейчас"));
+  // --- OFD nomenclature + revenue categories (real source) ---
+  check("T-S14 revenue lib: 5 categories (no bar), fallback rules (freeze/reissue→extra_services), normalize + priority sort", revenueLib.includes('{ code: "membership", name: "Абонементы" }') && revenueLib.includes('{ code: "personal_training"') && revenueLib.includes('{ code: "group_training"') && revenueLib.includes('{ code: "extra_services"') && revenueLib.includes('{ code: "other"') && !/code:\s*"bar"/.test(revenueLib) && !/протеин|энергетик|батончик|шейк/i.test(revenueLib) && revenueLib.includes('"заморозка"') && revenueLib.includes('"переоформление"') && revenueLib.includes('.replace(/ё/g, "е")') && revenueLib.includes("legalEntity-specific first") && revenueLib.includes("priority DESC"));
+  check("T-S14b revenue lib normalizeItemName has NO heavy regex (no dynamic RegExp / no unbounded alternation), NFKC + control strip", revenueLib.includes('.normalize("NFKC")') && revenueLib.includes("\\u0000-\\u001F") && !/new RegExp/.test(revenueLib));
+  check("T-S15 adapter parseReceiptItems reads name/qty/price/sum from many keys; cleans name; skips empty/sum<=0; no raw JSON stored", adapter.includes("export function parseReceiptItems") && adapter.includes("io.name ?? io.Name ?? io.itemName") && adapter.includes("io.sum ?? io.Sum ?? io.total") && adapter.includes("if (!name) continue") && adapter.includes("if (totalKopeks <= 0) continue") && adapter.includes("cleanItemName") && !/phone|email|buyer|rawJson/i.test(adapter));
+  check("T-S16 importer persists items (idempotent by itemKey) + recomputeRevenueCategorySummaries + SAFE items_debug (counts only)", importer.includes("persistReceiptItems") && importer.includes("itemKey: `${r.dedupeKey}:${lineIndex}`") && importer.includes("ofdReceiptItem.findMany({ where: { itemKey:") && importer.includes("export async function recomputeRevenueCategorySummaries") && importer.includes("console.warn(`[ofd] items_debug") && importer.includes("items_unavailable") && !/items_debug[\s\S]{0,200}(itemName|normalizedItemName|fpd|JSON\.stringify|login|password)/i.test(importer));
+  check("T-S16b importer item failure never fails the receipt import (try/catch → save_items safe error, receipts kept)", importer.includes('"save_items"') && importer.includes('"ofd_item_save_failed"') && /try \{[\s\S]*?persistReceiptItems[\s\S]*?\} catch/.test(importer));
+  check("UI: 'Статьи доходов ОФД' block — table Статья/Приход/Возвраты/Итог/Позиций/Чеков + Нераспознанная номенклатура + 'Номенклатура пока недоступна'", pageSrc.includes("Статьи доходов ОФД") && pageSrc.includes("<Th>Статья</Th>") && pageSrc.includes("<Th>Позиций</Th>") && pageSrc.includes("<Th>Чеков</Th>") && pageSrc.includes("Нераспознанная номенклатура") && pageSrc.includes("Номенклатура пока недоступна") && pageSrc.includes("ofdRevenueCategoryDailySummary") && pageSrc.includes('revenueCategoryCode: "other"') && !pageSrc.includes("Бар"));
+  check("prisma: new models OfdReceiptItem / OfdRevenueCategoryRule / OfdRevenueCategoryDailySummary; itemKey/summaryKey unique; no raw/phone columns", schema.includes("model OfdReceiptItem") && schema.includes("model OfdRevenueCategoryRule") && schema.includes("model OfdRevenueCategoryDailySummary") && schema.includes("itemKey             String   @unique") && /OfdReceiptItem[\s\S]*?normalizedItemName/.test(schema) && !/OfdReceiptItem[\s\S]*?(phone|email|buyer|rawJson|customer)/i.test(schema.slice(schema.indexOf("model OfdReceiptItem"), schema.indexOf("model OfdReceiptItem") + 1200)));
   check("UI: Автоимпорт block (status by OFD_INTEGRATIONS_ENABLED, endpoint, last auto run, hint; no CRON_SECRET)", pageSrc.includes("Автоимпорт") && pageSrc.includes("POST /api/cron/ofd/daily") && pageSrc.includes('mode: "auto_daily"') && pageSrc.includes("Последняя автоматическая синхронизация") && pageSrc.includes("Автоимпорт подтягивает продажи за вчера") && !/CRON_SECRET/.test(pageSrc));
   check("env examples define CRON_SECRET (+ OFD_INTEGRATIONS_ENABLED) without a real value", /CRON_SECRET=""/.test(envEx) && /OFD_INTEGRATIONS_ENABLED="false"/.test(envEx) && /CRON_SECRET=""/.test(envProd) && /OFD_INTEGRATIONS_ENABLED="false"/.test(envProd));
   check("docs: RU_DEPLOYMENT has cron curl example + endpoint + systemd timer note (no real secret)", deployDoc.includes("/api/cron/ofd/daily") && deployDoc.includes("curl -X POST") && deployDoc.includes("Authorization: Bearer $CRON_SECRET") && deployDoc.includes("systemd") && deployDoc.includes("OnCalendar"));

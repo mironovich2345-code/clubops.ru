@@ -1,7 +1,8 @@
 // Pure normalization of Taxcom DocumentList summaries → NormalizedOfdReceipt.
 // No I/O, no logging, fully testable. Only Income / IncomeReturn are kept; every
 // other document type (expense, correction, …) is skipped in the MVP.
-import type { NormalizedOfdReceipt, OfdOperationType, TaxcomDocumentSummary } from "@/lib/ofd/types";
+import type { NormalizedOfdReceipt, OfdOperationType, TaxcomDocumentSummary, TaxcomReceiptItem } from "@/lib/ofd/types";
+import { cleanItemName, normalizeItemName } from "@/lib/ofd/revenue";
 
 /** Map a Taxcom accountingType string to our enum, or null to SKIP the doc.
  * Only приход / возврат прихода are sales; expense / correction are skipped. */
@@ -32,6 +33,46 @@ export function buildDedupeKey(fnNumber: string, fiscalDocumentNumber: number, f
 function intKopeks(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
+function numOr(v: unknown, fallback: number): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function firstArray(o: Record<string, unknown>, keys: string[]): { present: boolean; arr: unknown[] } {
+  for (const k of keys) {
+    if (Array.isArray(o[k])) return { present: true, arr: o[k] as unknown[] };
+  }
+  return { present: false, arr: [] };
+}
+
+const ITEM_KEYS = ["items", "Items", "positions", "Positions", "goods", "Goods", "products", "Products", "services", "Services", "rows", "Rows"];
+
+/**
+ * Parse the SAFE nomenclature lines of one raw receipt document, if present.
+ * Reads name/quantity/price/sum from common casings; stores only those safe fields
+ * (no raw payload, no purchaser personal data). Skips a line with an empty name or
+ * a non-positive sum (service lines). Returns { itemsPresent } so the caller can
+ * distinguish "no positions array in the response" from "array present but empty".
+ */
+export function parseReceiptItems(raw: unknown): { items: TaxcomReceiptItem[]; itemsPresent: boolean } {
+  const o = (raw as Record<string, unknown>) ?? {};
+  const { present, arr } = firstArray(o, ITEM_KEYS);
+  const items: TaxcomReceiptItem[] = [];
+  for (const it of arr) {
+    const io = (it as Record<string, unknown>) ?? {};
+    const name = cleanItemName(
+      (io.name ?? io.Name ?? io.itemName ?? io.ItemName ?? io.nomenclature ?? io.Nomenclature ?? io.productName ?? io.ProductName) as string,
+    );
+    if (!name) continue; // empty name → skip
+    const totalKopeks = intKopeks(io.sum ?? io.Sum ?? io.total ?? io.Total ?? io.amount ?? io.Amount);
+    const priceKopeks = intKopeks(io.price ?? io.Price ?? io.priceKopeks);
+    if (totalKopeks <= 0) continue; // service line with sum <= 0 → skip
+    const quantityMilli = Math.max(0, Math.round(numOr(io.quantity ?? io.Quantity ?? io.qty ?? io.Qty, 1) * 1000));
+    items.push({ name, normalizedName: normalizeItemName(name), quantityMilli, priceKopeks, totalKopeks });
+  }
+  return { items, itemsPresent: present };
 }
 
 /** Why a document was not turned into a receipt (for safe aggregate diagnostics). */
@@ -67,6 +108,8 @@ export function classifyDocument(doc: TaxcomDocumentSummary): DocClassification 
       cashKopeks: intKopeks(doc.cashKopeks),
       electronicKopeks: intKopeks(doc.electronicKopeks),
       dedupeKey: buildDedupeKey(String(doc.fn), Math.trunc(doc.fd), doc.fpd),
+      items: doc.items ?? [],
+      itemsPresent: doc.itemsPresent ?? false,
     },
   };
 }

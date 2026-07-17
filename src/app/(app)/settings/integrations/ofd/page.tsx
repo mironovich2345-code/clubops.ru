@@ -34,16 +34,45 @@ export default async function OfdIntegrationPage() {
       }
     : null;
 
-  const [mappings, runs, summaries, lastAutoRun] = connectionRow
+  const month = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+
+  const [mappings, runs, summaries, lastAutoRun, categorySummaries] = connectionRow
     ? await Promise.all([
         prisma.ofdCashRegisterMapping.findMany({ where: { connectionId: connectionRow.id }, orderBy: { createdAt: "desc" } }),
         prisma.ofdSyncRun.findMany({ where: { connectionId: connectionRow.id }, orderBy: { createdAt: "desc" }, take: 10 }),
         prisma.ofdDailySalesSummary.findMany({ where: { companyId, provider: "taxcom" } }),
         prisma.ofdSyncRun.findFirst({ where: { connectionId: connectionRow.id, mode: "auto_daily" }, orderBy: { createdAt: "desc" } }),
+        prisma.ofdRevenueCategoryDailySummary.findMany({ where: { companyId, provider: "taxcom", date: { startsWith: month } } }),
       ])
-    : [[], [], [], null] as const;
+    : [[], [], [], null, []] as const;
 
   const lastAutoErrorCount = lastAutoRun ? await prisma.ofdSyncError.count({ where: { syncRunId: lastAutoRun.id } }) : 0;
+
+  // Revenue by category for the current month (in the fixed CLUB-OPS order).
+  const CATEGORY_ORDER = ["membership", "personal_training", "group_training", "extra_services", "other"] as const;
+  const CATEGORY_NAMES: Record<string, string> = { membership: "Абонементы", personal_training: "Персональные тренировки", group_training: "Групповые тренировки", extra_services: "Доп. услуги", other: "Иное" };
+  const catAgg = new Map<string, { income: number; ret: number; net: number; items: number; receipts: number }>();
+  for (const s of categorySummaries) {
+    const a = catAgg.get(s.categoryCode) ?? { income: 0, ret: 0, net: 0, items: 0, receipts: 0 };
+    a.income += s.incomeTotalKopeks; a.ret += s.returnTotalKopeks; a.net += s.netTotalKopeks; a.items += s.itemCount; a.receipts += s.receiptCount;
+    catAgg.set(s.categoryCode, a);
+  }
+  const categoryRows = CATEGORY_ORDER.filter((c) => catAgg.has(c)).map((code) => ({ code, name: CATEGORY_NAMES[code], ...catAgg.get(code)! }));
+  const hasNomenclature = categorySummaries.length > 0;
+  // Month has receipts (sales summary) but no nomenclature → items unavailable.
+  const monthHasSales = summaries.some((s) => s.date.startsWith(month) && (s.incomeTotalKopeks > 0 || s.returnTotalKopeks > 0));
+
+  // Top-20 unrecognized nomenclature (category=other) for the current month.
+  const unrecognized = connectionRow
+    ? await prisma.ofdReceiptItem.groupBy({
+        by: ["normalizedItemName"],
+        where: { companyId, provider: "taxcom", revenueCategoryCode: "other", date: { startsWith: month } },
+        _sum: { totalKopeks: true },
+        _count: { _all: true },
+        orderBy: { _sum: { totalKopeks: "desc" } },
+        take: 20,
+      })
+    : [];
 
   const errorCounts = new Map<string, number>();
   if (runs.length) {
@@ -166,6 +195,55 @@ export default async function OfdIntegrationPage() {
                 <SalesBlock title="Сегодня" agg={aggFor(today, today)} clubName={clubName} />
                 <SalesBlock title="Вчера" agg={aggFor(yesterday, yesterday)} clubName={clubName} />
                 <SalesBlock title="Июль 2026" agg={aggFor("2026-07-01", "2026-07-31")} clubName={clubName} />
+              </Section>
+
+              <Section title="Статьи доходов ОФД">
+                <div className="mb-2 text-sm font-medium text-slate-600">Текущий месяц ({month})</div>
+                {!hasNomenclature ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {monthHasSales
+                      ? "Номенклатура пока недоступна: ОФД вернул суммы чеков, но не вернул позиции товаров/услуг."
+                      : "Нет данных по статьям доходов за текущий месяц."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50"><tr><Th>Статья</Th><Th>Приход</Th><Th>Возвраты</Th><Th>Итог</Th><Th>Позиций</Th><Th>Чеков</Th></tr></thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {categoryRows.map((c) => (
+                          <tr key={c.code}>
+                            <Td>{c.name}</Td>
+                            <Td>{formatKopeks(c.income)}</Td>
+                            <Td>{formatKopeks(c.ret)}</Td>
+                            <Td className="font-medium text-slate-900">{formatKopeks(c.net)}</Td>
+                            <Td>{c.items}</Td>
+                            <Td>{c.receipts}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {unrecognized.length > 0 ? (
+                  <div className="mt-6">
+                    <div className="mb-2 text-sm font-medium text-slate-600">Нераспознанная номенклатура (топ-20, «Иное»)</div>
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50"><tr><Th>Позиция</Th><Th>Сумма</Th><Th>Кол-во</Th></tr></thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {unrecognized.map((u, i) => (
+                            <tr key={i}>
+                              <Td>{u.normalizedItemName}</Td>
+                              <Td>{formatKopeks(u._sum.totalKopeks ?? 0)}</Td>
+                              <Td>{u._count._all}</Td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Эти позиции попали в «Иное». Позже для них можно настроить правила статей доходов.</p>
+                  </div>
+                ) : null}
               </Section>
 
               <Section title="История синхронизаций">
