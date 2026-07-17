@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
 import { toggleOfdMapping } from "./actions";
-import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdRecalcCategories, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
+import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdRecalcCategories, OfdRevenueTable, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +73,35 @@ export default async function OfdIntegrationPage() {
         take: 20,
       })
     : [];
+
+  // Drilldown detail for the category table: group the current month's OfdReceiptItem
+  // by (revenueCategoryCode, normalizedItemName) — SAFE columns only (no fiscalSign /
+  // raw JSON / PII). Same scope as the category summary above (company + taxcom + month).
+  type DetailRow = { normalizedName: string; net: number; income: number; itemCount: number; receiptCount: number; examples: string[] };
+  const categoryDetails: Record<string, DetailRow[]> = {};
+  if (connectionRow) {
+    const detailItems = await prisma.ofdReceiptItem.findMany({
+      where: { companyId, provider: "taxcom", date: { startsWith: month } },
+      select: { revenueCategoryCode: true, normalizedItemName: true, itemName: true, totalKopeks: true, operationType: true, receiptImportId: true },
+    });
+    const byCat = new Map<string, Map<string, { income: number; ret: number; itemCount: number; receipts: Set<string>; examples: string[]; seen: Set<string> }>>();
+    for (const it of detailItems) {
+      let cat = byCat.get(it.revenueCategoryCode);
+      if (!cat) { cat = new Map(); byCat.set(it.revenueCategoryCode, cat); }
+      let row = cat.get(it.normalizedItemName);
+      if (!row) { row = { income: 0, ret: 0, itemCount: 0, receipts: new Set(), examples: [], seen: new Set() }; cat.set(it.normalizedItemName, row); }
+      if (it.operationType === "income") row.income += it.totalKopeks; else row.ret += it.totalKopeks;
+      row.itemCount += 1;
+      row.receipts.add(it.receiptImportId);
+      const ex = (it.itemName ?? "").slice(0, 160);
+      if (ex && !row.seen.has(ex) && row.examples.length < 3) { row.examples.push(ex); row.seen.add(ex); }
+    }
+    for (const [code, rows] of byCat) {
+      categoryDetails[code] = [...rows.entries()]
+        .map(([normalizedName, r]) => ({ normalizedName, net: r.income - r.ret, income: r.income, itemCount: r.itemCount, receiptCount: r.receipts.size, examples: r.examples }))
+        .sort((a, b) => b.net - a.net);
+    }
+  }
 
   const errorCounts = new Map<string, number>();
   if (runs.length) {
@@ -206,23 +235,7 @@ export default async function OfdIntegrationPage() {
                       : "Нет данных по статьям доходов за текущий месяц."}
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-slate-200">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm">
-                      <thead className="bg-slate-50"><tr><Th>Статья</Th><Th>Приход</Th><Th>Возвраты</Th><Th>Итог</Th><Th>Позиций</Th><Th>Чеков</Th></tr></thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {categoryRows.map((c) => (
-                          <tr key={c.code}>
-                            <Td>{c.name}</Td>
-                            <Td>{formatKopeks(c.income)}</Td>
-                            <Td>{formatKopeks(c.ret)}</Td>
-                            <Td className="font-medium text-slate-900">{formatKopeks(c.net)}</Td>
-                            <Td>{c.items}</Td>
-                            <Td>{c.receipts}</Td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <OfdRevenueTable rows={categoryRows} details={categoryDetails} />
                 )}
                 {unrecognized.length > 0 ? (
                   <div className="mt-6">

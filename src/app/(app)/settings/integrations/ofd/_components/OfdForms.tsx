@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, reclassifyOfdCategoriesAction, inspectOfdNewDocumentsAction, inspectOfdDocumentInfoAction } from "../actions";
 import type { OfdSyncSummary } from "../actions";
@@ -249,6 +249,88 @@ export function OfdRecalcCategories() {
       </div>
       <Msg s={state} />
     </form>
+  );
+}
+
+type RevRow = { code: string; name: string; income: number; ret: number; net: number; items: number; receipts: number };
+type RevDetail = { normalizedName: string; net: number; income: number; itemCount: number; receiptCount: number; examples: string[] };
+
+export function OfdRevenueTable({ rows, details }: { rows: RevRow[]; details: Record<string, RevDetail[]> }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <thead className="bg-slate-50">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Статья</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Приход</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Возвраты</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Итог</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Позиций</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Чеков</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {rows.map((c) => {
+            const isOpen = !!open[c.code];
+            const d = details[c.code] ?? [];
+            return (
+              <Fragment key={c.code}>
+                <tr className="cursor-pointer hover:bg-slate-50" onClick={() => setOpen((o) => ({ ...o, [c.code]: !o[c.code] }))}>
+                  <td className="px-3 py-2">
+                    <button type="button" className="mr-1.5 inline-block w-3 text-slate-400" aria-expanded={isOpen} aria-label={isOpen ? "Скрыть" : "Раскрыть"}>{isOpen ? "▾" : "▸"}</button>
+                    {c.name}
+                  </td>
+                  <td className="px-3 py-2">{formatKopeks(c.income)}</td>
+                  <td className="px-3 py-2">{formatKopeks(c.ret)}</td>
+                  <td className="px-3 py-2 font-medium text-slate-900">{formatKopeks(c.net)}</td>
+                  <td className="px-3 py-2">{c.items}</td>
+                  <td className="px-3 py-2">{c.receipts}</td>
+                </tr>
+                {isOpen ? (
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={6} className="px-3 py-3">
+                      {d.length === 0 ? (
+                        <div className="text-sm text-slate-500">Нет детализации по позициям</div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+                          <table className="min-w-full divide-y divide-slate-200 text-xs">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium text-slate-500">Название</th>
+                                <th className="px-3 py-2 text-left font-medium text-slate-500">Примеры исходных названий</th>
+                                <th className="px-3 py-2 text-left font-medium text-slate-500">Сумма</th>
+                                <th className="px-3 py-2 text-left font-medium text-slate-500">Позиций</th>
+                                <th className="px-3 py-2 text-left font-medium text-slate-500">Чеков</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {d.map((r, i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-2 font-medium text-slate-800">{r.normalizedName || "—"}</td>
+                                  <td className="px-3 py-2 text-slate-500">
+                                    {r.examples.length ? r.examples.map((e, j) => (
+                                      <div key={j} className="max-w-[24rem] truncate" title={e}>{e}</div>
+                                    )) : "—"}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap">{formatKopeks(r.net)}</td>
+                                  <td className="px-3 py-2">{r.itemCount}</td>
+                                  <td className="px-3 py-2">{r.receiptCount}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

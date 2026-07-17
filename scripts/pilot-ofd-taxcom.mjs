@@ -112,6 +112,22 @@ async function reclassifyForCompany(companyId) {
   for (const key of touched) { const [clubId, legalRaw, date] = key.split("|"); await recomputeCategorySummary(companyId, clubId, legalRaw || null, date); }
   return { scanned: items.length, updated, summariesRecomputed: touched.size };
 }
+// Mirror of the page drilldown: group OfdReceiptItem by revenueCategoryCode + normalizedName.
+async function buildCategoryDetails(companyId, month) {
+  const items = await p.ofdReceiptItem.findMany({ where: { companyId, provider: "taxcom", date: { startsWith: month } }, select: { revenueCategoryCode: true, normalizedItemName: true, itemName: true, totalKopeks: true, operationType: true, receiptImportId: true } });
+  const byCat = new Map();
+  for (const it of items) {
+    let cat = byCat.get(it.revenueCategoryCode); if (!cat) { cat = new Map(); byCat.set(it.revenueCategoryCode, cat); }
+    let row = cat.get(it.normalizedItemName); if (!row) { row = { income: 0, ret: 0, itemCount: 0, receipts: new Set(), examples: [], seen: new Set() }; cat.set(it.normalizedItemName, row); }
+    if (it.operationType === "income") row.income += it.totalKopeks; else row.ret += it.totalKopeks;
+    row.itemCount++; row.receipts.add(it.receiptImportId);
+    const ex = String(it.itemName ?? "").slice(0, 160);
+    if (ex && !row.seen.has(ex) && row.examples.length < 3) { row.examples.push(ex); row.seen.add(ex); }
+  }
+  const out = {};
+  for (const [code, rows] of byCat) out[code] = [...rows.entries()].map(([normalizedName, r]) => ({ normalizedName, net: r.income - r.ret, income: r.income, itemCount: r.itemCount, receiptCount: r.receipts.size, examples: r.examples })).sort((a, b) => b.net - a.net);
+  return out;
+}
 async function runImport({ connectionId, companyId, legalEntityId, dateFrom, dateTo, client, mappings, contractNumber, normalizeContract }) {
   const run = await p.ofdSyncRun.create({ data: { connectionId, companyId, mode: "manual_period", dateFrom, dateTo, status: "running", startedAt: new Date() } });
   const days = eachDay(dateFrom, dateTo);
@@ -870,6 +886,42 @@ async function main() {
   await p.ofdReceiptImport.deleteMany({ where: { companyId: CO, fnNumber: RCFN } });
   await p.ofdCashRegisterMapping.deleteMany({ where: { id: mapRC.id } });
 
+  // ===== Revenue category drilldown detail (REV-DETAIL) ========================
+  const DRFN = "FN-DRILL";
+  const mapDR = await p.ofdCashRegisterMapping.create({ data: { connectionId: CONN, companyId: CO, clubId: clubA.id, provider: "taxcom", fnNumber: DRFN, isActive: true, activeMappingKey: `taxcom:${DRFN}` } });
+  // 4 membership lines from 4 DIFFERENT contract raws → one grouped normalizedName; one long raw (>160) to test the example cap.
+  // >160 (to exercise the example cap) but <200 so cleanItem never truncates mid-clause.
+  const longRaw = "физкультурно-оздоровительные услуги: договор по101-1001 " + Array.from({ length: 6 }, (_, i) => `контракт по101/${2000 + i}`).join(" ");
+  const drRaw = [longRaw, "физкультурно-оздоровительные услуги: договор по101-1002 контракт по101/2102", "физкультурно-оздоровительные услуги: договор по101-1003 контракт по101/2103", "физкультурно-оздоровительные услуги: договор по101-1004 контракт по101/2104"];
+  const drDocs = [
+    { fn: DRFN, shift: 30, documentType: "3", operationType: "Income", dateTime: "2026-07-27T10:00:00.000Z", fd: 8001, fpd: "D1", totalKopeks: 200000, cashKopeks: 200000, electronicKopeks: 0 },
+    { fn: DRFN, shift: 30, documentType: "3", operationType: "Income", dateTime: "2026-07-27T11:00:00.000Z", fd: 8002, fpd: "D2", totalKopeks: 100000, cashKopeks: 100000, electronicKopeks: 0 },
+    { fn: DRFN, shift: 30, documentType: "3", operationType: "Income", dateTime: "2026-07-27T12:00:00.000Z", fd: 8003, fpd: "D3", totalKopeks: 146000, cashKopeks: 146000, electronicKopeks: 0 },
+  ];
+  const drInfo = {
+    8001: { document: { "1059": [ffdPos(drRaw[0], 100000, 100000, 1), ffdPos(drRaw[1], 100000, 100000, 1)] } }, // 2 membership lines, SAME receipt
+    8002: { document: { "1059": ffdPos(drRaw[2], 100000, 100000, 1) } },                                       // 1 membership line
+    8003: { document: { "1059": [ffdPos(drRaw[3], 100000, 100000, 1), ffdPos("доп. услуги", 46000, 46000, 1)] } }, // membership + доп услуги
+  };
+  const drClient = { listShifts: async () => ({ ok: true, data: [{ shiftNumber: 30 }] }), listDocumentsByShift: async () => ({ ok: true, data: drDocs }), getDocumentInfoForReceipt: async (fn, fd) => ({ ok: true, data: parseItemsFromDI(drInfo[fd]) }) };
+  await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-27", dateTo: "2026-07-27", client: drClient, mappings: [mapDR] });
+  const detail = await buildCategoryDetails(CO, "2026-07");
+  check("REV-DETAIL1 detail groups OfdReceiptItem by revenueCategoryCode + normalizedName", Array.isArray(detail.membership) && detail.membership.length === 1 && detail.membership[0].normalizedName === "физкультурно оздоровительные услуги" && Array.isArray(detail.extra_services) && detail.extra_services.length === 1 && detail.extra_services[0].normalizedName === "доп услуги");
+  const drCat = Object.fromEntries((await p.ofdRevenueCategoryDailySummary.findMany({ where: { companyId: CO, clubId: clubA.id, date: "2026-07-27" } })).map((s) => [s.categoryCode, s]));
+  check("REV-DETAIL2 detail sum per category equals category summary net", detail.membership.reduce((n, r) => n + r.net, 0) === drCat.membership.netTotalKopeks && detail.extra_services.reduce((n, r) => n + r.net, 0) === drCat.extra_services.netTotalKopeks);
+  check("REV-DETAIL3 receiptCount counts DISTINCT receiptImportId (4 items across 3 receipts → 3)", detail.membership[0].receiptCount === 3);
+  check("REV-DETAIL4 itemCount counts positions", detail.membership[0].itemCount === 4 && detail.extra_services[0].itemCount === 1);
+  check("REV-DETAIL5 example raw names capped at 3 and truncated to ≤160 chars", detail.membership[0].examples.length === 3 && Math.max(...detail.membership[0].examples.map((e) => e.length)) <= 160 && longRaw.length > 160);
+  check("REV-DETAIL6 4 different contract raws collapse into ONE membership detail row (grouped by normalizedName)", detail.membership.length === 1 && detail.membership[0].itemCount === 4);
+  check("REV-DETAIL-SEC detail carries only safe fields; no rawJson/fiscalSign/fpd/1077/phone/email/buyer/customer/token/password/Integrator-ID", (() => {
+    const keys = new Set(); for (const arr of Object.values(detail)) for (const r of arr) Object.keys(r).forEach((k) => keys.add(k));
+    return [...keys].sort().join(",") === "examples,income,itemCount,net,normalizedName,receiptCount" && !/fiscalSign|"fpd"|1077|phone|email|buyer|customer|sessionToken|password|integrator|"raw"|rawJson/i.test(JSON.stringify(detail));
+  })());
+  await p.ofdReceiptItem.deleteMany({ where: { companyId: CO, fnNumber: DRFN } });
+  await p.ofdRevenueCategoryDailySummary.deleteMany({ where: { companyId: CO } });
+  await p.ofdReceiptImport.deleteMany({ where: { companyId: CO, fnNumber: DRFN } });
+  await p.ofdCashRegisterMapping.deleteMany({ where: { id: mapDR.id } });
+
   // T5/T6: 3103 → kkt_not_found (NOT auth_failed); 2108 → auth_failed; 3106 → no_kkt_found/forbidden.
   check("T5 apiErrorCode 3103 maps to kkt_not_found", classifyErr(404, 3103, "ККТ не найдена").safeCode === "kkt_not_found" && classifyErr(200, 3103, "ККТ не найдена").safeCode === "kkt_not_found");
   check("T6 3103 not auth_failed; 401 auth_failed; 403 forbidden", classifyErr(404, 3103, "ККТ не найдена").safeCode !== "auth_failed" && classifyErr(401, null, "Unauthorized").safeCode === "auth_failed" && classifyErr(403, null, "Доступ запрещён").safeCode === "forbidden");
@@ -1126,7 +1178,7 @@ async function main() {
   check("T-S15b adapter extractPositions handles string-key arrays AND numeric FFD tag 1059 (array=many, object=one)", adapter.includes('const FFD_ITEMS_TAG = "1059"') && adapter.includes("function extractPositions") && adapter.includes("Array.isArray(ffd)") && adapter.includes("ffd && typeof ffd === \"object\""));
   check("T-S16 importer persists items (idempotent by itemKey) + recomputeRevenueCategorySummaries + SAFE items_debug (counts only)", importer.includes("persistReceiptItems") && importer.includes("itemKey: `${r.dedupeKey}:${lineIndex}`") && importer.includes("ofdReceiptItem.findMany({ where: { itemKey:") && importer.includes("export async function recomputeRevenueCategorySummaries") && importer.includes("console.warn(`[ofd] items_debug") && importer.includes("items_unavailable") && !/items_debug[\s\S]{0,200}(itemName|normalizedItemName|fpd|JSON\.stringify|login|password)/i.test(importer));
   check("T-S16b importer item failure never fails the receipt import (try/catch → save_items safe error, receipts kept)", importer.includes('"save_items"') && importer.includes('"ofd_item_save_failed"') && /try \{[\s\S]*?persistReceiptItems[\s\S]*?\} catch/.test(importer));
-  check("UI: 'Статьи доходов ОФД' block — table Статья/Приход/Возвраты/Итог/Позиций/Чеков + Нераспознанная номенклатура + 'Номенклатура пока недоступна'", pageSrc.includes("Статьи доходов ОФД") && pageSrc.includes("<Th>Статья</Th>") && pageSrc.includes("<Th>Позиций</Th>") && pageSrc.includes("<Th>Чеков</Th>") && pageSrc.includes("Нераспознанная номенклатура") && pageSrc.includes("Номенклатура пока недоступна") && pageSrc.includes("ofdRevenueCategoryDailySummary") && pageSrc.includes('revenueCategoryCode: "other"') && !pageSrc.includes("Бар"));
+  check("UI: 'Статьи доходов ОФД' block — category table (Статья/Приход/Возвраты/Итог/Позиций/Чеков via OfdRevenueTable) + Нераспознанная номенклатура + 'Номенклатура пока недоступна'", pageSrc.includes("Статьи доходов ОФД") && pageSrc.includes("OfdRevenueTable") && forms.includes(">Статья</th>") && forms.includes(">Позиций</th>") && forms.includes(">Чеков</th>") && pageSrc.includes("Нераспознанная номенклатура") && pageSrc.includes("Номенклатура пока недоступна") && pageSrc.includes("ofdRevenueCategoryDailySummary") && pageSrc.includes('revenueCategoryCode: "other"') && !pageSrc.includes("Бар"));
   check("prisma: new models OfdReceiptItem / OfdRevenueCategoryRule / OfdRevenueCategoryDailySummary; itemKey/summaryKey unique; no raw/phone columns", schema.includes("model OfdReceiptItem") && schema.includes("model OfdRevenueCategoryRule") && schema.includes("model OfdRevenueCategoryDailySummary") && schema.includes("itemKey             String   @unique") && /OfdReceiptItem[\s\S]*?normalizedItemName/.test(schema) && !/OfdReceiptItem[\s\S]*?(phone|email|buyer|rawJson|customer)/i.test(schema.slice(schema.indexOf("model OfdReceiptItem"), schema.indexOf("model OfdReceiptItem") + 1200)));
   // --- NewDocuments shape DIAGNOSTIC (real source) ---
   check("T-S17 client inspectNewDocuments: GET /API/v2/NewDocuments + an query, DIAGNOSTIC ONLY (never returns raw body)", clientSrc.includes('newDocuments: "/API/v2/NewDocuments"') && clientSrc.includes("async inspectNewDocuments()") && /raw\(PATHS\.newDocuments,\s*\{\s*method:\s*"GET"[\s\S]*?query:\s*an\s*\?\s*\{\s*an\s*\}/.test(clientSrc) && clientSrc.includes("inspectNewDocumentsShape(r.data)") && clientSrc.includes("cfg.contractNumber?.trim()"));
@@ -1152,6 +1204,10 @@ async function main() {
   check("RECALC-S2 reclassify is LOCAL-ONLY: its body calls no Taxcom client/fetch/session", (() => { const i = importer.indexOf("export async function reclassifyOfdReceiptItemsForCompany"); const body = importer.slice(i, i + 1600); return i > 0 && !/\bclient\b|\bfetch\b|listShifts|listDocuments|getDocumentInfoForReceipt|createTaxcomClient|Session-Token|ofdReceiptImport\.update|ofdDailySalesSummary/i.test(body); })());
   check("RECALC-UI 'Пересчитать статьи доходов' button in Статьи доходов block + hint (owner/gd action, no re-fetch of OFD)", forms.includes("Пересчитать статьи доходов") && forms.includes("reclassifyOfdCategoriesAction") && forms.includes("Не запрашивает ОФД повторно") && pageSrc.includes("OfdRecalcCategories"));
   check("RECALC-SEC reclassifyOfdCategoriesAction: requireOfdAdmin gate, SAFE counts only (no names/raw/PII/token in result)", actions.includes("export async function reclassifyOfdCategoriesAction") && /reclassifyOfdCategoriesAction[\s\S]{0,400}requireOfdAdmin\(\)/.test(actions) && actions.includes("Статьи пересчитаны: обновлено") && !/reclassifyOfdCategoriesAction[\s\S]{0,600}(itemName|normalizedItemName|rawResponse|sessionToken|\bphone\b|\bemail\b)/i.test(actions));
+  // --- Revenue category drilldown (real source) ---
+  check("REV-DETAIL-UI 'Статьи доходов ОФД' has an expandable drilldown (OfdRevenueTable + nested Название/Примеры/Сумма/Позиций/Чеков + empty state)", pageSrc.includes("OfdRevenueTable") && pageSrc.includes("details={categoryDetails}") && forms.includes("export function OfdRevenueTable") && forms.includes("Примеры исходных названий") && forms.includes("Нет детализации по позициям") && forms.includes("useState") && forms.includes("colSpan={6}"));
+  check("REV-DETAIL-S1 page builds detail from OfdReceiptItem SAFE columns only (normalizedItemName+itemName; never selects fiscalSign/raw), grouped by category+normalizedName", pageSrc.includes("categoryDetails") && /ofdReceiptItem\.findMany\(\{[\s\S]{0,400}select:\s*\{[^}]*revenueCategoryCode[^}]*normalizedItemName[^}]*itemName[^}]*\}/.test(pageSrc) && !/ofdReceiptItem\.findMany\(\{[\s\S]{0,400}(fiscalSign|fdNumber|fnNumber)/.test(pageSrc) && pageSrc.includes(".slice(0, 160)"));
+  check("REV-DETAIL-S2 drilldown example names capped at 3 per normalizedName (examples.length < 3 guard)", /examples\.length\s*<\s*3/.test(pageSrc));
   check("T-S18d action inspectOfdDocumentInfoAction: requireOfdAdmin + fn/fd validation → inspectDocumentInfo → SAFE result (docInfoShape only)", actions.includes("export async function inspectOfdDocumentInfoAction") && actions.includes("requireOfdAdmin()") && actions.includes("inspectDocumentInfo(fnNumber, fd)") && actions.includes("docInfoShape: d") && actions.includes('/^\\d+$/.test(fdRaw)') && !/inspectOfdDocumentInfoAction[\s\S]{0,1400}return\s*\{[^}]*(sessionToken|rawResponse|\.stack)/i.test(actions));
   check("UI: 'DocumentInfo' diag form — ФН/ФД inputs + button + safe shape (ключи/позиции/itemLikeCount), no raw JSON", pageSrc.includes("Диагностика конкретного чека DocumentInfo") && pageSrc.includes("OfdDocInfoDiagnostics") && forms.includes("Проверить DocumentInfo") && forms.includes('name="fnNumber"') && forms.includes('name="fdNumber"') && forms.includes("docInfoShape") && forms.includes("documentKeys") && forms.includes("itemLikeCount") && !/docInfoShape[\s\S]{0,400}JSON\.stringify/.test(forms));
   check("UI: Автоимпорт block (status by OFD_INTEGRATIONS_ENABLED, endpoint, last auto run, hint; no CRON_SECRET)", pageSrc.includes("Автоимпорт") && pageSrc.includes("POST /api/cron/ofd/daily") && pageSrc.includes('mode: "auto_daily"') && pageSrc.includes("Последняя автоматическая синхронизация") && pageSrc.includes("Автоимпорт подтягивает продажи за вчера") && !/CRON_SECRET/.test(pageSrc));
