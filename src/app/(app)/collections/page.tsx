@@ -59,19 +59,14 @@ export default async function CollectionsPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader title="Инкассация" description="Наличные ООО и ИП, инкассация и изъятия. Остаток считается по фактическому движению денег." />
 
-      <div className="mb-6 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-        <div>Инкассация — сдача наличных ООО.</div>
-        <div>Изъятие — перенос наличных из ООО в ИП. Это не продажа и не доход.</div>
-        <div>Остаток считается по фактическому движению денег, поэтому операции на проверке уже учитываются.</div>
-      </div>
-
+      {/* Always visible: sync + per-club ООО/ИП cards. Everything else is collapsed. */}
       <Section title="Синхронизация наличных из ОФД">
         <CashSyncButtons />
         <p className="mt-3 text-xs text-slate-500">Обновляет ОФД-данные по наличным. После синхронизации пересчитываются вчера, период и фактический остаток.</p>
       </Section>
 
       {perClub.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500 shadow-sm">Нет доступных клубов.</div>
+        <div className="mb-8 rounded-lg border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500 shadow-sm">Нет доступных клубов.</div>
       ) : (
         perClub.map(({ club, res }) => (
           <Section key={club.id} title={`Клуб: ${club.name}`}>
@@ -83,41 +78,41 @@ export default async function CollectionsPage() {
         ))
       )}
 
-      <Section title="Контрольный (начальный) остаток">
-        <p className="mb-3 text-xs text-slate-500">Задайте фактическую сумму наличных в кассе на дату. Фактический остаток считается от последней контрольной точки плюс движения после неё. Прошлая запись не изменяется — создаётся новая контрольная точка.</p>
+      <Collapsible title="Контрольный остаток" subtitle="Задать фактическую сумму наличных на дату">
+        <p className="mb-3 text-xs text-slate-500">Фактический остаток считается от последней контрольной точки плюс движения после неё. Прошлая запись не изменяется — создаётся новая контрольная точка.</p>
         <OpeningBalanceForm clubs={clubs} today={today} />
         {openingHistory.length > 0 ? (
-          <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Юрлицо</Th><Th>Сумма</Th><Th>Комментарий</Th><Th>Кто задал</Th></tr></thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {openingHistory.map((o, i) => (
-                  <tr key={i}>
-                    <Td>{dfmt.format(o.snapshotDate)}</Td>
-                    <Td>{o.entityType ? legalEntityTypeLabel(o.entityType) : "—"}</Td>
-                    <Td>{formatKopeks(o.amountKopeks)}</Td>
-                    <Td>{o.comment ?? "—"}</Td>
-                    <Td>{authorName.get(o.createdById) ?? "—"}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-5">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">История контрольных остатков</div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Юрлицо</Th><Th>Сумма</Th><Th>Комментарий</Th><Th>Кто задал</Th></tr></thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {openingHistory.map((o, i) => (
+                    <tr key={i}>
+                      <Td>{dfmt.format(o.snapshotDate)}</Td>
+                      <Td>{o.entityType ? legalEntityTypeLabel(o.entityType) : "—"}</Td>
+                      <Td>{formatKopeks(o.amountKopeks)}</Td>
+                      <Td>{o.comment ?? "—"}</Td>
+                      <Td>{authorName.get(o.createdById) ?? "—"}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : null}
-      </Section>
+      </Collapsible>
 
       {mayCreate ? (
         <>
-          <Section title="Инкассировать ООО"><CollectionForm clubs={clubs} today={today} /></Section>
-          <Section title="Изъять из ООО в ИП"><WithdrawalForm clubs={clubs} today={today} /></Section>
-          <Section title="Пополнить ИП — приход «Иное»">
-            <p className="mb-3 text-xs text-slate-500">Внутреннее пополнение наличных ИП (передал регионал/собственник/директор). Это не продажа, не выручка, не ОФД и не изъятие — только увеличивает фактический остаток ИП.</p>
-            <OtherIncomeForm clubs={clubs} today={today} />
-          </Section>
+          <Collapsible title="Инкассировать ООО" subtitle="Сдать наличные ООО. Уменьшает остаток ООО"><CollectionForm clubs={clubs} today={today} /></Collapsible>
+          <Collapsible title="Изъять из ООО в ИП" subtitle="Перенос наличных из ООО в ИП. Не продажа и не доход"><WithdrawalForm clubs={clubs} today={today} /></Collapsible>
+          <Collapsible title="Пополнить ИП — приход «Иное»" subtitle="Внесение наличных от регионала, собственника или директора. Не продажа"><OtherIncomeForm clubs={clubs} today={today} /></Collapsible>
         </>
       ) : null}
 
-      <Section title="История операций">
+      <Collapsible title="История операций" subtitle="Инкассации, изъятия и приходы «Иное»">
         {history.length === 0 ? (
           <div className="text-sm text-slate-500">Операций пока нет.</div>
         ) : (
@@ -152,8 +147,26 @@ export default async function CollectionsPage() {
             </table>
           </div>
         )}
-      </Section>
+      </Collapsible>
     </div>
+  );
+}
+
+// Native <details> collapsible — works without client JS, keyboard-accessible, and
+// safe for server-action forms inside. Themed centrally (globals .dark remaps the
+// neutral classes), so it reads correctly in light and dark. Collapsed by default.
+function Collapsible({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <details className="group mb-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+        <div>
+          <div className="text-sm font-semibold text-slate-700">{title}</div>
+          {subtitle ? <div className="mt-0.5 text-xs text-slate-500">{subtitle}</div> : null}
+        </div>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180"><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </summary>
+      <div className="border-t border-slate-200 px-5 pb-5 pt-4">{children}</div>
+    </details>
   );
 }
 
