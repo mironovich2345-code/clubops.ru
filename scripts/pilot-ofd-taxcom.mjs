@@ -287,10 +287,11 @@ async function main() {
   // ===== July backfill day batching (18,19) =====
   check("18 July backfill iterates day-by-day (31 days)", eachDay("2026-07-01", "2026-07-31").length === 31);
 
-  // ===== Taxcom login (NO agreementNumber) + AccountList + error mirrors ======
+  // ===== Taxcom login (+agreementNumber) + AccountList + error mirrors ========
   // Mirror of client.extractToken / classifyTaxcomError / parseKktList /
-  // parseAccountList / raw. Login sends ONLY { login, password } — agreementNumber
-  // is NEVER sent (it triggered Taxcom 2108); the договор is checked via AccountList.
+  // parseAccountList / raw. Login (login_password) sends { login, password,
+  // agreementNumber } when a договор is configured so Taxcom opens the RIGHT ЛК;
+  // the currentSession is STILL verified via AccountList afterwards.
   const extractToken = (d) => { const t = d?.sessionToken ?? d?.SessionToken ?? d?.token ?? d?.accessToken ?? d?.Token; return typeof t === "string" && t.length > 0 ? t : null; };
   const extractApiError = (d) => { const rc = d?.apiErrorCode ?? d?.ApiErrorCode ?? d?.errorCode; const apiErrorCode = typeof rc === "number" ? rc : (typeof rc === "string" && rc.trim() !== "" && Number.isFinite(Number(rc)) ? Number(rc) : null); const rd = d?.commonDescription ?? d?.CommonDescription ?? d?.description ?? d?.message; return { apiErrorCode, description: typeof rd === "string" && rd.trim() ? rd.trim() : null }; };
   function classifyErr(status, apiErrorCode, description) {
@@ -375,7 +376,7 @@ async function main() {
     }
     async function ensureSession() {
       if (token) return { ok: true, data: token };
-      const b = {}; if (cfg.authType === "integration_token") b.integrationToken = cfg.integrationToken ?? ""; else { b.login = cfg.login ?? ""; b.password = cfg.password ?? ""; }
+      const b = {}; if (cfg.authType === "integration_token") b.integrationToken = cfg.integrationToken ?? ""; else { b.login = cfg.login ?? ""; b.password = cfg.password ?? ""; const ag = cfg.contractNumber && cfg.contractNumber.trim(); if (ag) b.agreementNumber = ag; }
       const r = await raw("/API/v2/Login", { method: "POST", body: b, withSession: false }); if (!r.ok) return r; const t = extractToken(r.data); if (!t) return { ok: false, safeCode: "parse_error" }; token = t; return { ok: true, data: t };
     }
     const dayRange = (d) => ({ begin: `${String(d).slice(0, 10)}T00:00:00`, end: `${String(d).slice(0, 10)}T23:59:59` });
@@ -400,10 +401,10 @@ async function main() {
   const cli1 = makeClient(cfgAg, async () => okJson({ sessionToken: "abc" }));
   check("T1 Login response { sessionToken } accepted", (await cli1.login()).data === "abc");
   check("T1b token also read from token/accessToken", extractToken({ token: "t2" }) === "t2" && extractToken({ accessToken: "t3" }) === "t3" && extractToken({}) === null);
-  // T2: Login body must NOT contain agreementNumber even when contractNumber set.
+  // T2: Login body carries agreementNumber (the chosen договор) when contractNumber set.
   await cli1.login();
   const loginReq1 = cli1.captured.find((c) => c.path === "/API/v2/Login");
-  check("T2 Login body is ONLY { login, password } — NO agreementNumber even with contractNumber set", !("agreementNumber" in loginReq1.body) && !("contractNumber" in loginReq1.body) && loginReq1.body.login === "l" && loginReq1.body.password === "p" && Object.keys(loginReq1.body).length === 2);
+  check("T2 Login body carries agreementNumber (= contractNumber) plus login/password when a договор is set", loginReq1.body.agreementNumber === "CD-25/45507" && loginReq1.body.login === "l" && loginReq1.body.password === "p" && !("contractNumber" in loginReq1.body) && Object.keys(loginReq1.body).sort().join(",") === "agreementNumber,login,password");
   check("T2b Integrator-ID sent as a header (not in body, not logged)", loginReq1.headers["Integrator-ID"] === "INT-1" && !("integratorId" in loginReq1.body));
   // T3: empty contractNumber also sends no agreementNumber (unchanged behaviour).
   const cli2 = makeClient(cfgNoAg, async () => okJson({ sessionToken: "z" }));
@@ -1147,6 +1148,51 @@ async function main() {
   check("CONTRACT-PICKER7 checkOfdConnection with currentSession == selected договор → success", cpAfterSelectOk.ok === true && cpAfterSelectOk.code !== "taxcom_wrong_current_account" && cpAfterSelectOk.notice.includes("Текущий ЛК Такском соответствует выбранному договору"));
   check("CONTRACT-PICKER-SECURITY no secrets/accessRights/raw AccountList/token/PII in any picker result", !/accessRights|sessionToken|SECRET-SESSION-TOKEN|password|integrator|Bearer|"raw"|phone|email|stack/i.test(JSON.stringify({ cpLoad, cpAfterSelectWrong, cpAfterSelectOk })));
 
+  // ===== Contract number in Taxcom Login (LOGIN-CONTRACT) =====================
+  // Fake Taxcom opens the API-session in the договор sent at Login (agreementNumber),
+  // otherwise falls back to the login's default ЛК (ИП CD-22/380310).
+  const lcRecords = [{ agreementNumber: "CD-22/380310", companyName: "ИП АЛМАКАЕВ", inn: "744605538886" }, { agreementNumber: "CD-25/455507", companyName: "ООО СПОРТ ТЕХНОЛОГИИ", inn: "6679182168", kpp: "667901001" }];
+  const fakeTaxcom = (defaultSession) => { let opened = defaultSession; return async (url, init) => {
+    if (url.includes("/Login")) { const body = JSON.parse(init.body); if (body.agreementNumber && lcRecords.some((r) => r.agreementNumber === body.agreementNumber)) opened = body.agreementNumber; return okJson({ sessionToken: "TK" }); }
+    if (url.includes("/AccountList")) return okJson({ currentSession: opened, records: lcRecords });
+    if (url.includes("/ShiftList")) return okJson({ records: [] });
+    return okJson({ records: [] });
+  }; };
+  const cfgOOO = { ...cfgAg, contractNumber: "CD-25/455507" };
+  const cfgIP = { ...cfgAg, contractNumber: "CD-22/380310" };
+  const cfgNone = { ...cfgAg, contractNumber: "" };
+  const lc1Cli = makeClient(cfgOOO, fakeTaxcom("CD-22/380310"));
+  await lc1Cli.login();
+  const lc1Login = lc1Cli.captured.find((c) => c.path === "/API/v2/Login");
+  check("LOGIN-CONTRACT1 Taxcom Login carries agreementNumber from OfdConnection.contractNumber", lc1Login.body.agreementNumber === "CD-25/455507" && lc1Login.body.login === "l" && lc1Login.body.password === "p");
+  const lc2Cli = makeClient(cfgOOO, fakeTaxcom("CD-22/380310"));
+  await lc2Cli.login(); const lc2Acc = await lc2Cli.listAccounts();
+  const lc2 = buildCheckResult(cfgOOO, lc2Acc.data);
+  check("LOGIN-CONTRACT2 ООО CD-25/455507: Login sends it → fake opens that ЛК → currentSession matches → success", lc2.ok === true && lc2.currentSession === "CD-25/455507" && lc2.code !== "taxcom_wrong_current_account" && lc2.matchedContract.agreementNumber === "CD-25/455507");
+  check("LOGIN-CONTRACT3 with contractNumber set, Login NEVER omits agreementNumber (no silent fallback to default ЛК)", "agreementNumber" in lc1Login.body && lc1Login.body.agreementNumber === "CD-25/455507");
+  const stubborn = async (url) => url.includes("/Login") ? okJson({ sessionToken: "TK" }) : url.includes("/AccountList") ? okJson({ currentSession: "CD-22/380310", records: lcRecords }) : okJson({ records: [] });
+  const lc4Cli = makeClient(cfgOOO, stubborn);
+  await lc4Cli.login(); const lc4Acc = await lc4Cli.listAccounts();
+  const lc4 = buildCheckResult(cfgOOO, lc4Acc.data);
+  const lc4Login = lc4Cli.captured.find((c) => c.path === "/API/v2/Login");
+  check("LOGIN-CONTRACT4 agreementNumber sent but Taxcom keeps a different currentSession → taxcom_wrong_current_account", lc4Login.body.agreementNumber === "CD-25/455507" && lc4.ok === false && lc4.code === "taxcom_wrong_current_account" && lc4.diagnostics.currentSession === "CD-22/380310");
+  const lc5Cli = makeClient(cfgOOO, fakeTaxcom("CD-22/380310"));
+  const lc5Run = await runImport({ connectionId: CONN, companyId: CO, dateFrom: "2026-07-14", dateTo: "2026-07-14", client: lc5Cli, mappings: [mapA], contractNumber: "CD-25/455507", normalizeContract });
+  const lc5LoginIdx = lc5Cli.captured.findIndex((c) => c.path === "/API/v2/Login");
+  const lc5ShiftIdx = lc5Cli.captured.findIndex((c) => c.path === "/API/v2/ShiftList");
+  check("LOGIN-CONTRACT5 import performs Login WITH agreementNumber BEFORE ShiftList", lc5LoginIdx !== -1 && lc5ShiftIdx !== -1 && lc5Cli.captured[lc5LoginIdx].body.agreementNumber === "CD-25/455507" && lc5LoginIdx < lc5ShiftIdx && lc5Run.status === "success");
+  const lc6Cli = makeClient(cfgIP, fakeTaxcom("CD-22/380310"));
+  await lc6Cli.login(); const lc6Acc = await lc6Cli.listAccounts();
+  const lc6 = buildCheckResult(cfgIP, lc6Acc.data);
+  const lc6Login = lc6Cli.captured.find((c) => c.path === "/API/v2/Login");
+  check("LOGIN-CONTRACT6 ИП CD-22/380310 still passes (Login sends it; currentSession matches → success)", lc6Login.body.agreementNumber === "CD-22/380310" && lc6.ok === true && lc6.currentSession === "CD-22/380310" && lc6.code !== "taxcom_wrong_current_account");
+  const lc7Cli = makeClient(cfgNone, async (url) => url.includes("/Login") ? okJson({ sessionToken: "TK" }) : url.includes("/AccountList") ? okJson({ records: [{ agreementNumber: "CD-25/455507" }] }) : okJson({ records: [] }));
+  await lc7Cli.login(); const lc7Acc = await lc7Cli.listAccounts();
+  const lc7 = buildCheckResult(cfgNone, lc7Acc.data);
+  const lc7Login = lc7Cli.captured.find((c) => c.path === "/API/v2/Login");
+  check("LOGIN-CONTRACT7 no contractNumber → Login omits agreementNumber; check still works via safe path", !("agreementNumber" in lc7Login.body) && lc7Login.body.login === "l" && lc7.ok === true);
+  check("LOGIN-CONTRACT-SECURITY check results expose no token/raw AccountList/accessRights/stack (only safe договор fields)", !/sessionToken|SECRET-SESSION|accessRights|Bearer|stack|"raw"/i.test(JSON.stringify({ lc2, lc4, lc6, lc7 })));
+
   await cleanup();
 
   // ===== Static assertions on the real source =====
@@ -1182,15 +1228,14 @@ async function main() {
   check("importer idempotent + per-KKT error isolation + summary recompute (structure)", importer.includes("existingSet") && importer.includes("recordSyncError") && importer.includes("recomputeDailySummary") && importer.includes("already_running"));
 
   // --- Taxcom login/contract-diagnostics fixes (real source) ---
-  check("T-S1 Login body is ONLY login/password (or integrationToken) — agreementNumber NOT built or sent", clientSrc.includes("loginBody.login = cfg.login") && clientSrc.includes("loginBody.password = cfg.password") && !clientSrc.includes("loginBody.agreementNumber") && !clientSrc.includes("agreementNumber = agreement"));
-  // Static guard: the ensureSession() body (which builds the Login request) must
-  // contain NO "agreementNumber" at all — the word only survives in comments and
-  // in parseAccountList (parsing the AccountList RESPONSE), never in the Login body.
-  const ensureRaw = clientSrc.slice(clientSrc.indexOf("async function ensureSession"), clientSrc.indexOf("async function ensureSession") + 800);
-  // Strip // comment lines (the word survives in the explanatory comment) — the
-  // remaining CODE that builds the Login body must never mention agreementNumber.
+  check("T-S1 Login (login_password) sends agreementNumber from cfg.contractNumber when set; login/password/token unchanged", clientSrc.includes("loginBody.login = cfg.login") && clientSrc.includes("loginBody.password = cfg.password") && clientSrc.includes("loginBody.integrationToken = cfg.integrationToken") && clientSrc.includes("const agreementNumber = cfg.contractNumber?.trim()") && /if \(agreementNumber\) loginBody\.agreementNumber = agreementNumber/.test(clientSrc));
+  // Static guard: the ensureSession() body builds the Login request. agreementNumber
+  // is added ONLY inside the login_password branch (after loginBody.password) and
+  // ONLY when a contractNumber is configured — never unconditionally.
+  const ensureRaw = clientSrc.slice(clientSrc.indexOf("async function ensureSession"), clientSrc.indexOf("async function ensureSession") + 1400);
   const ensureCode = ensureRaw.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
-  check("T-S1b no agreementNumber built or sent in ensureSession()/Login body", !/agreementNumber/i.test(ensureCode) && !clientSrc.includes("loginBody.agreementNumber"));
+  check("T-S1b agreementNumber added ONLY in login_password branch, ONLY when contractNumber set (guarded)", ensureCode.includes("loginBody.agreementNumber = agreementNumber") && ensureCode.indexOf("loginBody.agreementNumber") > ensureCode.indexOf("loginBody.password") && ensureCode.includes("cfg.contractNumber?.trim()") && ensureCode.includes("if (agreementNumber)"));
+  check("LOGIN-CONTRACT-S import client cfg carries contractNumber (Login auto-sends договор) AND currentSession guard is intact", importer.includes("contractNumber: connection.contractNumber") && importer.includes("createTaxcomClient") && importer.includes("isCurrentAccountValid(accounts.data.currentAgreementNumber, connection.contractNumber, accounts.data.records.map((r) => r.agreementNumber))"));
   check("T-S2 Integrator-ID header on requests (never logged)", clientSrc.includes('headers["Integrator-ID"] = cfg.integratorId') && !clientSrc.includes("console."));
   check("T-S3 token read from sessionToken/token/accessToken", clientSrc.includes("d?.sessionToken ?? d?.SessionToken ?? d?.token ?? d?.accessToken"));
   check("T-S4 classifyTaxcomError: 3103→kkt_not_found, 2108→auth_failed, 3106→no_kkt_found", clientSrc.includes("apiErrorCode === 3103") && clientSrc.includes("apiErrorCode === 2108") && clientSrc.includes("apiErrorCode === 3106") && clientSrc.includes('safeCode: "kkt_not_found"') && clientSrc.includes('safeCode: "no_kkt_found"'));

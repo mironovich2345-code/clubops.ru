@@ -195,16 +195,21 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
 
   async function ensureSession(): Promise<OfdResult<string>> {
     if (sessionToken) return { ok: true, data: sessionToken };
-    // Taxcom Login body is ONLY { login, password } (Integrator-ID is a HEADER,
-    // added in raw()). agreementNumber must NOT be sent here — Taxcom rejects it
-    // with apiErrorCode 2108 "Ошибка авторизации". The target agreement/договор is
-    // verified separately via AccountList (see checkOfdConnection), not at Login.
+    // Integrator-ID is a HEADER (added in raw()). Per Taxcom support, the target ЛК
+    // is selected from the tuple login + password + договор + Integrator-ID, so the
+    // chosen договор (agreementNumber) is sent in the Login body — otherwise Taxcom
+    // opens the login's DEFAULT ЛК even though AccountList lists the wanted договор.
+    // It is sent ONLY when a contractNumber is configured. This does NOT trust the
+    // connection: currentSession is STILL verified via AccountList afterwards, and a
+    // wrong ЛК remains taxcom_wrong_current_account.
     const loginBody: Record<string, unknown> = {};
     if (cfg.authType === "integration_token") {
       loginBody.integrationToken = cfg.integrationToken ?? "";
     } else {
       loginBody.login = cfg.login ?? "";
       loginBody.password = cfg.password ?? "";
+      const agreementNumber = cfg.contractNumber?.trim();
+      if (agreementNumber) loginBody.agreementNumber = agreementNumber;
     }
 
     const r = await raw(PATHS.login, { method: "POST", body: loginBody, withSession: false });
