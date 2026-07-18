@@ -1370,6 +1370,62 @@ async function main() {
   check("UI: success shows green matchedContract line 'Договор найден: …' + 'Текущий ЛК Такском: <currentSession>'", forms.includes("state.matchedContract") && forms.includes("Договор найден:") && forms.includes("contractLabel(matched)") && forms.includes("border-emerald") && forms.includes("a.kpp ? `КПП") && forms.includes("state.currentSession") && /Текущий ЛК Такском[\s\S]{0,80}state\.currentSession/.test(forms));
   check("UI: taxcom_wrong_current_account shows yellow block (API-сессия в другом ЛК / нужен текущий ЛК / отдельный пользователь + available list)", forms.includes('state.code === "taxcom_wrong_current_account"') && forms.includes("Такском открыл API-сессию в другом ЛК:") && forms.includes("Для импорта нужен текущий ЛК:") && forms.includes("создайте отдельного пользователя Такском") && forms.includes("wrongAccountDiag.availableContracts"));
 
+  // ===== ОФД-продажи analytics (ANALYTICS-OFD) ================================
+  // Mirror of src/lib/ofd/analytics.ts pure aggregators (no I/O).
+  const anInRange = (d, from, to) => d >= from && d <= to;
+  const anAcc = (a, s) => { a.income += s.incomeTotalKopeks; a.cash += s.incomeCashKopeks; a.electronic += s.incomeElectronicKopeks; a.ret += s.returnTotalKopeks; a.net += s.netTotalKopeks; a.receipts += s.receiptCount; a.returnReceipts += s.returnReceiptCount; };
+  const anEmpty = () => ({ income: 0, cash: 0, electronic: 0, ret: 0, net: 0, receipts: 0, returnReceipts: 0 });
+  const anTotal = (rows, from, to) => { const a = anEmpty(); for (const s of rows) if (anInRange(s.date, from, to)) anAcc(a, s); return a; };
+  const anByClub = (rows, from, to) => { const m = new Map(); for (const s of rows) { if (!anInRange(s.date, from, to)) continue; const a = m.get(s.clubId) ?? anEmpty(); anAcc(a, s); m.set(s.clubId, a); } return m; };
+  const anByLegal = (rows, from, to) => { const m = new Map(); for (const s of rows) { if (!anInRange(s.date, from, to)) continue; const k = s.legalEntityId ?? "none"; const a = m.get(k) ?? anEmpty(); anAcc(a, s); m.set(k, a); } return m; };
+  const AN_ORDER = ["membership", "personal_training", "group_training", "extra_services", "other"]; const AN_NAMES = { membership: "Абонементы", personal_training: "Персональные тренировки", group_training: "Групповые тренировки", extra_services: "Доп. услуги", other: "Иное" };
+  const anCats = (rows) => { const agg = new Map(); for (const s of rows) { const a = agg.get(s.categoryCode) ?? { income: 0, ret: 0, net: 0, items: 0, receipts: 0 }; a.income += s.incomeTotalKopeks; a.ret += s.returnTotalKopeks; a.net += s.netTotalKopeks; a.items += s.itemCount; a.receipts += s.receiptCount; agg.set(s.categoryCode, a); } return AN_ORDER.filter((c) => agg.has(c)).map((code) => ({ code, name: AN_NAMES[code], ...agg.get(code) })); };
+  const anDetails = (items) => { const byCat = new Map(); for (const it of items) { let cat = byCat.get(it.revenueCategoryCode); if (!cat) { cat = new Map(); byCat.set(it.revenueCategoryCode, cat); } let row = cat.get(it.normalizedItemName); if (!row) { row = { income: 0, ret: 0, itemCount: 0, receipts: new Set(), examples: [], seen: new Set() }; cat.set(it.normalizedItemName, row); } if (it.operationType === "income") row.income += it.totalKopeks; else row.ret += it.totalKopeks; row.itemCount += 1; row.receipts.add(it.receiptImportId); const ex = (it.itemName ?? "").slice(0, 160); if (ex && !row.seen.has(ex) && row.examples.length < 3) { row.examples.push(ex); row.seen.add(ex); } } const out = {}; for (const [code, rows] of byCat) out[code] = [...rows.entries()].map(([normalizedName, r]) => ({ normalizedName, net: r.income - r.ret, income: r.income, itemCount: r.itemCount, receiptCount: r.receipts.size, examples: r.examples })).sort((a, b) => b.net - a.net); return out; };
+  const anShiftMonth = (month, delta) => { const [y, m] = month.split("-").map(Number); const d = new Date(y, m - 1 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+  const anClampMonth = (month, current) => (!month || !/^\d{4}-\d{2}$/.test(month)) ? current : (month > current ? current : month);
+  const asum = (clubId, legal, date, income, cash, elec, ret, net, receipts, retReceipts) => ({ clubId, legalEntityId: legal, date, incomeTotalKopeks: income, incomeCashKopeks: cash, incomeElectronicKopeks: elec, returnTotalKopeks: ret, netTotalKopeks: net, receiptCount: receipts, returnReceiptCount: retReceipts });
+  const aRows = [
+    asum("club1", "ooo", "2026-07-18", 300000, 200000, 100000, 0, 300000, 3, 0),
+    asum("club1", "ooo", "2026-07-17", 150000, 150000, 0, 50000, 100000, 2, 1),
+    asum("club2", "ip", "2026-07-05", 500000, 0, 500000, 0, 500000, 5, 0),
+    asum("club1", "ooo", "2026-06-30", 999999, 0, 0, 0, 999999, 9, 0),
+  ];
+  const mToday = anTotal(aRows, "2026-07-18", "2026-07-18"); const mYest = anTotal(aRows, "2026-07-17", "2026-07-17"); const mMonth = anTotal(aRows, "2026-07-01", "2026-07-31");
+  check("ANALYTICS-OFD1 cards Today/Yesterday/Month built from OfdDailySalesSummary rows", mToday.income === 300000 && mToday.cash === 200000 && mToday.electronic === 100000 && mToday.receipts === 3 && mYest.income === 150000 && mYest.ret === 50000 && mYest.receipts === 2 && mMonth.income === 950000 && mMonth.receipts === 10 && mMonth.ret === 50000);
+  const byClub = anByClub(aRows, "2026-07-01", "2026-07-31");
+  check("ANALYTICS-OFD2 by-club aggregates cash/electronic/returns/net/receipts", byClub.get("club1").cash === 350000 && byClub.get("club1").electronic === 100000 && byClub.get("club1").ret === 50000 && byClub.get("club1").net === 400000 && byClub.get("club1").receipts === 5 && byClub.get("club2").electronic === 500000 && byClub.get("club2").net === 500000 && byClub.get("club2").receipts === 5);
+  const byLegal = anByLegal(aRows, "2026-07-01", "2026-07-31");
+  check("ANALYTICS-OFD3 by-legal-entity aggregates ООО and ИП separately", byLegal.size === 2 && byLegal.get("ooo").net === 400000 && byLegal.get("ooo").receipts === 5 && byLegal.get("ip").net === 500000 && byLegal.get("ip").receipts === 5);
+  const catRows = [
+    { categoryCode: "membership", incomeTotalKopeks: 500000, returnTotalKopeks: 0, netTotalKopeks: 500000, itemCount: 5, receiptCount: 5 },
+    { categoryCode: "personal_training", incomeTotalKopeks: 200000, returnTotalKopeks: 0, netTotalKopeks: 200000, itemCount: 2, receiptCount: 2 },
+    { categoryCode: "group_training", incomeTotalKopeks: 150000, returnTotalKopeks: 0, netTotalKopeks: 150000, itemCount: 1, receiptCount: 1 },
+    { categoryCode: "extra_services", incomeTotalKopeks: 100000, returnTotalKopeks: 0, netTotalKopeks: 100000, itemCount: 1, receiptCount: 1 },
+  ];
+  const cats = anCats(catRows);
+  check("ANALYTICS-OFD4 categories from OfdRevenueCategoryDailySummary in fixed order (membership/PT/GT/extra/other)", cats.map((c) => c.code).join(",") === "membership,personal_training,group_training,extra_services" && cats[0].name === "Абонементы" && cats[1].name === "Персональные тренировки" && cats[2].name === "Групповые тренировки" && cats[3].name === "Доп. услуги" && cats[0].income === 500000);
+  check("ANALYTICS-OFD5 sum of category income equals the month OFD income when positions exist", cats.reduce((s, c) => s + c.income, 0) === mMonth.income);
+  check("ANALYTICS-OFD6 no nomenclature → empty category table + empty drilldown (no crash)", anCats([]).length === 0 && Object.keys(anDetails([])).length === 0);
+  check("ANALYTICS-OFD month switcher: shiftMonth ±1 (year rollover) + clamp to current (no future/invalid)", anShiftMonth("2026-07", -1) === "2026-06" && anShiftMonth("2026-01", -1) === "2025-12" && anShiftMonth("2026-12", 1) === "2027-01" && anClampMonth("2026-09", "2026-07") === "2026-07" && anClampMonth("bad", "2026-07") === "2026-07" && anClampMonth("2026-05", "2026-07") === "2026-05");
+  const det = anDetails([
+    { revenueCategoryCode: "membership", normalizedItemName: "абонемент", itemName: "Абонемент 1", totalKopeks: 100000, operationType: "income", receiptImportId: "r1" },
+    { revenueCategoryCode: "membership", normalizedItemName: "абонемент", itemName: "Абонемент 2", totalKopeks: 100000, operationType: "income", receiptImportId: "r2" },
+    { revenueCategoryCode: "membership", normalizedItemName: "абонемент", itemName: "Абонемент 3", totalKopeks: 100000, operationType: "income", receiptImportId: "r2" },
+    { revenueCategoryCode: "membership", normalizedItemName: "абонемент", itemName: "Абонемент 4", totalKopeks: 100000, operationType: "income", receiptImportId: "r3" },
+  ]);
+  check("ANALYTICS-OFD drilldown groups by normalizedName; ≤3 examples; unique receiptCount", det.membership.length === 1 && det.membership[0].normalizedName === "абонемент" && det.membership[0].income === 400000 && det.membership[0].itemCount === 4 && det.membership[0].receiptCount === 3 && det.membership[0].examples.length === 3);
+  // Static guards on the real source.
+  const analyticsLib = readFileSync(new URL("../src/lib/ofd/analytics.ts", import.meta.url), "utf8");
+  const ofdSalesPage = readFileSync(new URL("../src/app/(app)/analytics/ofd-sales/page.tsx", import.meta.url), "utf8");
+  const authSrc = readFileSync(new URL("../src/lib/auth.ts", import.meta.url), "utf8");
+  const navSrc = readFileSync(new URL("../src/lib/navigation.ts", import.meta.url), "utf8");
+  check("ANALYTICS-LIB analytics lib exports pure aggregators + fixed category order", analyticsLib.includes("export function totalForRange") && analyticsLib.includes("export function aggByClub") && analyticsLib.includes("export function aggByLegalEntity") && analyticsLib.includes("export function aggCategories") && analyticsLib.includes("export function buildCategoryDetails") && analyticsLib.includes('"membership", "personal_training", "group_training", "extra_services", "other"'));
+  check("ANALYTICS-OFD7 page scopes OFD queries by ctx.allowedClubIds (regional_director sees only their clubs) + provider taxcom", ofdSalesPage.includes("const clubIds = ctx.allowedClubIds") && ofdSalesPage.includes("clubId: { in: clubIds }") && ofdSalesPage.includes('provider: "taxcom"'));
+  check("ANALYTICS-OFD8 ofd_sales access ONLY owner/general_director/regional_director (NOT manager/accountant/chief_accountant/marketer); page guarded", /owner:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && /general_director:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && /regional_director:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/\bmanager:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/\baccountant:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/chief_accountant:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/marketer:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && ofdSalesPage.includes('requirePageAccess("ofd_sales")'));
+  check("ANALYTICS-OFD9 page has NO technical diagnostics (NewDocuments/DocumentInfo/inspect/ShiftList/DocumentList)", !/NewDocuments|DocumentInfo|inspect|ShiftList|DocumentList/i.test(ofdSalesPage));
+  check("ANALYTICS-OFD reuse: page imports OfdRevenueTable + analytics lib; nav item ofd_sales present", ofdSalesPage.includes("OfdRevenueTable") && ofdSalesPage.includes('from "@/lib/ofd/analytics"') && navSrc.includes('page: "ofd_sales"') && navSrc.includes('href: "/analytics/ofd-sales"') && navSrc.includes('label: "ОФД-продажи"'));
+  check("ANALYTICS-SECURITY page/lib render no secrets/technical fiscal internals (login/password/Integrator/SessionToken/ФПД/fpd/fiscalSign/ФН/PII/stack)", !/login|password|integrator|sessionToken|Bearer|rawJson|fiscalSign|ФПД|fpd|phone|email|buyer|customer|stack|ShiftList|DocumentInfo|NewDocuments/i.test(ofdSalesPage) && !ofdSalesPage.includes("ФН") && !/login|password|sessionToken|fiscalSign|ФПД/i.test(analyticsLib));
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();

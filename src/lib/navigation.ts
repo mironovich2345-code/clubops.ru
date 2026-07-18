@@ -10,6 +10,7 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "workspace", href: "/workspace", label: "Рабочий стол" },
   { page: "dashboard", href: "/dashboard", label: "Дашборд" },
   { page: "analytics", href: "/analytics", label: "Аналитика" },
+  { page: "ofd_sales", href: "/analytics/ofd-sales", label: "ОФД-продажи" },
   { page: "expenses", href: "/expenses", label: "Наличные расходы" },
   { page: "invoices", href: "/invoices", label: "Счета" },
   { page: "payments", href: "/payments", label: "Календарь платежей" },
@@ -38,6 +39,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   { type: "item", page: "workspace" },
   { type: "item", page: "dashboard" },
   { type: "item", page: "analytics" },
+  { type: "item", page: "ofd_sales" },
   { type: "item", page: "sales" },
   { type: "group", id: "finance", label: "Финансы", pages: ["expenses", "invoices", "refunds"] },
   // "mandatory_payments" and "balances" routes stay accessible (ROLE_PAGE_ACCESS)

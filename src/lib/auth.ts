@@ -26,6 +26,7 @@ export type AppPage =
   | "workspace"
   | "dashboard"
   | "analytics"
+  | "ofd_sales"
   | "expenses"
   | "invoices"
   | "payments"
@@ -51,12 +52,12 @@ export type CurrentUser = {
 // ROLE_CAPABILITIES) so an owner/general_director can VIEW invoices/expenses but
 // not create them.
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
-  owner: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "activity", "users", "settings"],
+  owner: ["dashboard", "analytics", "ofd_sales", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "activity", "users", "settings"],
   // GD additionally gets read-only strategic Expense/Invoice analytics (same as
   // owner). Operational mutation stays blocked by capabilities — page access does
   // not grant create/edit/approve (see canCreateOperational / canMutateOperationalRecords).
-  general_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "sales", "budgets", "activity", "users", "settings"],
-  regional_director: ["dashboard", "analytics", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity", "users"],
+  general_director: ["dashboard", "analytics", "ofd_sales", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "sales", "budgets", "activity", "users", "settings"],
+  regional_director: ["dashboard", "analytics", "ofd_sales", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity", "users"],
   // Manager: operational, own-club only. No network analytics financials and no
   // audit/activity log.
   manager: ["dashboard", "analytics", "expenses", "invoices", "employees", "refunds", "budgets", "sales", "documents"],
