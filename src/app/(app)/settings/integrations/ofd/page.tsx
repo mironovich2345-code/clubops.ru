@@ -5,7 +5,7 @@ import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
 import { toggleOfdMapping, toggleOfdConnection } from "./actions";
-import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdSyncNow, OfdRecalcCategories, OfdRevenueTable, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
+import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdContractPicker, OfdSyncNow, OfdRecalcCategories, OfdRevenueTable, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
 
 export const dynamic = "force-dynamic";
 
@@ -206,6 +206,7 @@ export default async function OfdIntegrationPage() {
                           <button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">{c.isActive ? "Отключить" : "Включить"}</button>
                         </form>
                       </div>
+                      <OfdContractPicker connectionId={c.id} />
                       <details className="mt-3">
                         <summary className="cursor-pointer text-sm font-medium text-brand-700">Изменить подключение</summary>
                         <div className="mt-3 border-t border-slate-100 pt-3">

@@ -190,7 +190,7 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
     return {
       ok: false,
       code: "taxcom_wrong_current_account",
-      error: "Подключение выполнено, договор доступен, но текущий ЛК Такском отличается от выбранного договора. Импорт будет невозможен, пока API-сессия не будет открыта в нужном ЛК.",
+      error: `Договор выбран и доступен в AccountList, но Такском открыл API-сессию в другом ЛК: ${currentSession ?? "неизвестен"}. Для импорта нужен текущий ЛК: ${requestedContractNumber}. Уточните у Такском, какой идентификатор/параметр переключает API-сессию на выбранный договор.`,
       matchedContract,
       diagnostics: {
         currentSession,
@@ -213,6 +213,90 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
       availableContracts,
     },
   };
+}
+
+/** Load the SAFE list of договоры from Taxcom AccountList so the admin can pick the
+ * right ЛК for a connection. Login → listAccounts, then returns ONLY safe fields:
+ * currentSession + records (agreementNumber / companyName / inn / kpp) + the match of
+ * the connection's current contractNumber. Never returns the token, secrets, the raw
+ * AccountList, or accessRights. On failure returns a safe error message. */
+export async function loadTaxcomContractsAction(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const connectionId = str(formData, "connectionId");
+  if (!connectionId) return { ok: false, error: "Подключение не найдено." };
+  const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });
+  if (!c) return { ok: false, error: "Подключение не найдено." };
+
+  const cfg: OfdConnectionConfig = {
+    id: c.id, companyId: c.companyId, legalEntityId: c.legalEntityId, provider: c.provider,
+    serverBaseUrl: c.serverBaseUrl, authType: c.authType, contractNumber: c.contractNumber,
+    login: decryptOfdSecret(c.loginEncrypted), password: decryptOfdSecret(c.passwordEncrypted),
+    integrationToken: decryptOfdSecret(c.integrationTokenEncrypted), integratorId: decryptOfdSecret(c.integratorIdEncrypted),
+  };
+  const client = createTaxcomClient(cfg);
+  const errMap: Record<string, string> = {
+    auth_failed: "Ошибка авторизации. Проверьте логин, пароль и Integrator-ID.",
+    forbidden: "Доступ запрещён. Проверьте права пользователя в Такском.",
+    rate_limited: "Слишком много запросов к Такском. Повторите позже.",
+    network: "Сеть недоступна. Повторите позже.",
+    timeout: "Сервер Такском не ответил вовремя. Повторите позже.",
+    parse_error: "Неожиданный ответ от Такском.",
+    not_configured: "Секреты подключения не заполнены.",
+  };
+
+  const login = await client.login();
+  if (!login.ok) {
+    await recordAudit({ action: "ofd.contracts_loaded", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: false, stage: "login", code: login.safeCode } });
+    return { ok: false, error: errMap[login.safeCode] ?? "Не удалось подключиться к Такском." };
+  }
+  const accounts = await client.listAccounts();
+  if (!accounts.ok) {
+    await recordAudit({ action: "ofd.contracts_loaded", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: false, stage: "account_list", code: accounts.safeCode } });
+    return { ok: false, error: errMap[accounts.safeCode] ?? "Не удалось получить список договоров Такском." };
+  }
+
+  // Build the SAFE list ONCE — same fields the UI lists (never accessRights/raw).
+  const availableContracts: OfdSafeContract[] = accounts.data.records.map((r) => ({
+    agreementNumber: r.agreementNumber, companyName: r.companyName ?? null, inn: r.inn ?? null, kpp: r.kpp ?? null,
+  }));
+  const currentSession = accounts.data.currentAgreementNumber;
+  const requestedContractNumber = c.contractNumber?.trim() ?? "";
+  const requestedNormalized = normalizeContractNumber(requestedContractNumber);
+  const matchedContract = requestedContractNumber
+    ? availableContracts.find((cn) => normalizeContractNumber(cn.agreementNumber) === requestedNormalized) ?? null
+    : null;
+
+  await recordAudit({ action: "ofd.contracts_loaded", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: { ok: true, recordsCount: availableContracts.length } });
+  return {
+    ok: true,
+    code: "contracts_loaded",
+    notice: availableContracts.length ? "Договоры загружены. Выберите нужный ЛК." : "Такском не вернул ни одного договора для этого логина.",
+    currentSession,
+    diagnostics: { currentSession, requestedContractNumber, availableContracts, matchedContract },
+  };
+}
+
+/** Save the picked договор as the connection's contractNumber. This alone does NOT
+ * make the connection working — that is confirmed only by "Проверить подключение"
+ * (currentSession == contractNumber, or the safe single-record fallback). */
+export async function selectTaxcomContractAction(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const connectionId = str(formData, "connectionId");
+  const agreementNumber = str(formData, "agreementNumber");
+  if (!connectionId || !agreementNumber) return { ok: false, error: "Договор не выбран." };
+  const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId }, select: { id: true, displayName: true } });
+  if (!c) return { ok: false, error: "Подключение не найдено." };
+
+  await prisma.ofdConnection.update({
+    where: { id: c.id },
+    // Fill an empty displayName from the договор; otherwise keep the user's name.
+    data: { contractNumber: agreementNumber, ...(c.displayName && c.displayName.trim() ? {} : { displayName: `Такском ${agreementNumber}` }) },
+  });
+  await recordAudit({ action: "ofd.contract_selected", entityType: "OfdConnection", entityId: c.id, companyId: g.companyId, userId: g.userId, metadata: {} });
+  revalidatePath("/settings/integrations/ofd");
+  return { ok: true, notice: "Договор выбран. Теперь нажмите «Проверить подключение»." };
 }
 
 /** Add a KKT (ФН) → club mapping. Blocks a duplicate ACTIVE fn. */

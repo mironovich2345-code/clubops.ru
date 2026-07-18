@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, reclassifyOfdCategoriesAction, inspectOfdNewDocumentsAction, inspectOfdDocumentInfoAction } from "../actions";
+import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, reclassifyOfdCategoriesAction, inspectOfdNewDocumentsAction, inspectOfdDocumentInfoAction, loadTaxcomContractsAction, selectTaxcomContractAction } from "../actions";
 import type { OfdSyncSummary } from "../actions";
 import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
 import type { NewDocumentsShape, DocumentInfoShape } from "@/lib/ofd/types";
@@ -155,10 +155,10 @@ export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
       {wrongAccountDiag ? (
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <div>
-            Договор доступен, но текущий ЛК Такском: <span className="font-mono">{wrongAccountDiag.currentSession ?? "—"}</span>. Для импорта нужен текущий ЛК: <span className="font-mono">{wrongAccountDiag.requestedContractNumber}</span>.
+            Договор выбран и доступен в AccountList, но Такском открыл API-сессию в другом ЛК: <span className="font-mono">{wrongAccountDiag.currentSession ?? "—"}</span>. Для импорта нужен текущий ЛК: <span className="font-mono">{wrongAccountDiag.requestedContractNumber}</span>.
           </div>
           <div className="mt-1">
-            Создайте отдельного пользователя Такском для {wantedName ? `«${wantedName}»` : "нужного договора"} или уточните у Такском, как выбрать ЛК для API.
+            Выбор договора в CLUB-OPS не переключает API-сессию на стороне Такском. Уточните у Такском, какой идентификатор/параметр переключает API-сессию на выбранный договор{wantedName ? ` («${wantedName}»)` : ""}, либо создайте отдельного пользователя Такском для нужного ЛК.
           </div>
           <ContractList items={wrongAccountDiag.availableContracts} />
         </div>
@@ -171,6 +171,56 @@ export function OfdCheckConnection({ connectionId }: { connectionId: string }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Contract picker: load the SAFE список договоров from AccountList and pick the ЛК
+ * for this connection. Picking only saves contractNumber — it never marks the
+ * connection working (that needs "Проверить подключение"). Renders no secrets. */
+export function OfdContractPicker({ connectionId }: { connectionId: string }) {
+  const [loadState, loadAction] = useFormState(loadTaxcomContractsAction, initial);
+  const [selectState, selectAction] = useFormState(selectTaxcomContractAction, initial);
+  const loaded = loadState.ok && loadState.code === "contracts_loaded";
+  const contracts = loaded ? loadState.diagnostics?.availableContracts ?? [] : [];
+  const current = loadState.diagnostics?.currentSession ?? null;
+  return (
+    <details className="mt-3">
+      <summary className="cursor-pointer text-sm font-medium text-brand-700">Выбрать договор из Такском</summary>
+      <div className="mt-3 border-t border-slate-100 pt-3">
+        <form action={loadAction} className="flex flex-wrap items-center gap-3">
+          <input type="hidden" name="connectionId" value={connectionId} />
+          <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Загрузить договоры из Такском</button>
+          <Msg s={loadState} />
+        </form>
+        {loaded ? (
+          <div className="mt-3">
+            {current ? <div className="mb-2 text-xs text-slate-500">Текущий ЛК Такском (API-сессия): <span className="font-mono">{current}</span></div> : null}
+            {contracts.length === 0 ? (
+              <div className="text-sm text-slate-500">Такском не вернул договоров для этого логина.</div>
+            ) : (
+              <ul className="space-y-2">
+                {contracts.map((a, i) => (
+                  <li key={i} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1.5">
+                    <span className="text-sm">
+                      <span className="font-mono">{a.agreementNumber ?? "—"}</span>
+                      {a.companyName ? <> · {a.companyName}</> : null}
+                      {a.inn ? <> · ИНН {a.inn}</> : null}
+                      {a.kpp ? <> · КПП {a.kpp}</> : null}
+                    </span>
+                    <form action={selectAction}>
+                      <input type="hidden" name="connectionId" value={connectionId} />
+                      <input type="hidden" name="agreementNumber" value={a.agreementNumber ?? ""} />
+                      <button type="submit" className="rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100">Выбрать</button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+        <div className="mt-2"><Msg s={selectState} /></div>
+      </div>
+    </details>
   );
 }
 
