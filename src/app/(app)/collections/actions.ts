@@ -15,6 +15,11 @@ export type CashState = { ok: boolean; error?: string; notice?: string; sync?: {
 function canReviewCollection(roles: readonly Role[]): boolean {
   return roles.some((r) => r === "accountant" || r === "chief_accountant" || r === "owner" || r === "general_director");
 }
+// A control (opening) balance is the physical club cash count — the manager /
+// regional director who run the till may set it, as may owner / GD / accountant.
+function canSetOpeningBalance(roles: readonly Role[]): boolean {
+  return roles.some((r) => r === "manager" || r === "regional_director" || r === "owner" || r === "general_director" || r === "accountant" || r === "chief_accountant");
+}
 function canReviewWithdrawal(roles: readonly Role[]): boolean {
   return roles.some((r) => r === "accountant" || r === "chief_accountant" || r === "owner" || r === "general_director" || r === "regional_director");
 }
@@ -52,6 +57,39 @@ async function collectDocuments(formData: FormData): Promise<{ ok: true; docs: S
     stored.push(r.doc);
   }
   return { ok: true, docs: stored };
+}
+
+/** Set a control (opening) cash balance for a club's ООО or ИП — a NEW BalanceSnapshot
+ * checkpoint (never edits history). The fact balance is measured from the latest
+ * checkpoint. Comment is required; a document is not required here. */
+export async function setCashOpeningBalance(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const clubId = String(formData.get("clubId") ?? "").trim() || null;
+  const g = await ctxForWrite(clubId);
+  if (!g.ok) return { ok: false, error: g.error };
+  if (!canSetOpeningBalance(g.roles)) return { ok: false, error: "Недостаточно прав для контрольного остатка." };
+  if (!clubId) return { ok: false, error: "Выберите клуб." };
+  const entity = String(formData.get("entity") ?? "").trim();
+  if (entity !== "ooo" && entity !== "ip") return { ok: false, error: "Выберите юрлицо (ООО или ИП)." };
+  const amountRaw = String(formData.get("amount") ?? "").replace(",", ".").replace(/\s/g, "");
+  const amount = Number(amountRaw);
+  if (!Number.isFinite(amount) || amount < 0) return { ok: false, error: "Укажите корректную сумму." };
+  const amountKopeks = rublesToKopeks(amount);
+  const snapshotDate = parseDate(String(formData.get("snapshotDate") ?? ""));
+  if (!snapshotDate) return { ok: false, error: "Укажите дату контрольного остатка." };
+  const comment = String(formData.get("comment") ?? "").trim();
+  if (!comment) return { ok: false, error: "Комментарий обязателен." };
+  const { ooo, ip } = await getActiveClubLegalEntities(clubId);
+  const target = entity === "ooo" ? ooo : ip;
+  if (!target) return { ok: false, error: `У клуба нет активного ${entity === "ooo" ? "ООО" : "ИП"}.` };
+
+  const created = await prisma.balanceSnapshot.create({
+    data: { companyId: g.companyId, clubId, legalEntityId: target.id, snapshotDate, actualBalanceKopeks: amountKopeks, comment: comment.slice(0, 500), createdById: g.userId },
+  });
+  await recordAudit({ action: "cash.opening_balance_set", entityType: "BalanceSnapshot", entityId: created.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { entity, amountKopeks } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: `Контрольный остаток ${entity === "ooo" ? "ООО" : "ИП"} сохранён. Фактический остаток пересчитан от новой контрольной точки.` };
 }
 
 /** Инкассация ООО — reduces the ООО fact balance immediately (pending). */

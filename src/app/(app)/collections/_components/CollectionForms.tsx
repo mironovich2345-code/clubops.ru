@@ -8,6 +8,7 @@ import {
   rejectCashCollection,
   approveCashWithdrawal,
   rejectCashWithdrawal,
+  setCashOpeningBalance,
   syncIpCashAction,
   syncOooCashAction,
   type CashState,
@@ -50,6 +51,37 @@ export function CashSyncButtons() {
       <form action={oooAction}><Submit idle="Синхронизировать наличные ООО" busy="Синхронизация..." /></form>
       <div className="w-full"><Msg s={ipState.ok || ipState.error ? ipState : oooState} /></div>
     </div>
+  );
+}
+
+export function OpeningBalanceForm({ clubs, today, entity }: { clubs: ClubOpt[]; today: string; entity?: "ooo" | "ip" }) {
+  const [state, action] = useFormState(setCashOpeningBalance, initial);
+  return (
+    <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <ClubSelect clubs={clubs} />
+      <label className="block">
+        <span className="mb-1 block text-sm font-medium text-slate-700">Юрлицо</span>
+        {entity ? (
+          <>
+            <input type="hidden" name="entity" value={entity} />
+            <input disabled value={entity === "ooo" ? "ООО" : "ИП"} className="input" />
+          </>
+        ) : (
+          <select name="entity" required defaultValue="" className="input">
+            <option value="" disabled>Выберите юрлицо</option>
+            <option value="ooo">ООО</option>
+            <option value="ip">ИП</option>
+          </select>
+        )}
+      </label>
+      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Дата контрольного остатка</span><input type="date" name="snapshotDate" required defaultValue={today} className="input" /></label>
+      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Сумма в кассе, ₽</span><input name="amount" inputMode="decimal" required placeholder="0" className="input" /></label>
+      <label className="block md:col-span-2"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий (обязательно)</span><input name="comment" required className="input" /></label>
+      <div className="md:col-span-2 flex items-center justify-between gap-3">
+        <Msg s={state} />
+        <Submit idle="Сохранить контрольный остаток" busy="Сохранение..." />
+      </div>
+    </form>
   );
 }
 

@@ -23,9 +23,8 @@ import {
 } from "@/lib/expenses";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { V2_STATUS_LABELS } from "@/lib/expense-simplified";
-import { getClubCashCards, type ClubCashCards } from "@/lib/club-cash-cards";
 import { loadClubCashBalances } from "@/lib/cash-collections";
-import { IpCashSyncButton } from "../collections/_components/CollectionForms";
+import { IpCashSyncButton, OpeningBalanceForm } from "../collections/_components/CollectionForms";
 import { UnsentDrafts } from "./_components/UnsentDrafts";
 
 export const dynamic = "force-dynamic";
@@ -124,13 +123,10 @@ export default async function ExpensesPage({
 
   const now = new Date();
 
-  // Three summary cards for the SELECTED Club (single active ИП). Cards need one
-  // Club; in a multi-Club/strategic view we prompt to pick one.
-  const cardClubId = scope.club?.id ?? (scope.clubIds.length === 1 ? scope.clubIds[0] : null);
-  const cards = !groups && cardClubId ? await getClubCashCards(cardClubId, now) : null;
-  // Strategic/accounting roles see combined Club+regional cash; a plain manager
-  // sees only the Club wallet (never regional wallet details).
-  const allWallets = ctx ? ctx.effectiveRoles.some((r) => ["owner", "general_director", "regional_director", "accountant", "chief_accountant"].includes(r)) : false;
+  // Single ИП cash view for the SELECTED Club (single active ИП), aligned to the
+  // fact-balance logic (src/lib/cash-balances.ts). Needs one Club; a multi-Club /
+  // strategic view prompts to pick one. The wallet ledger stays at /expenses/cash.
+  const cardClubId = !groups ? (scope.club?.id ?? (scope.clubIds.length === 1 ? scope.clubIds[0] : null)) : null;
 
   // Retained "Расходы по статьям" sidebar — realized spend only (legacy confirmed
   // + v2 verified), so v2 expenses appear once they are verified.
@@ -189,9 +185,11 @@ export default async function ExpensesPage({
         </div>
       ) : null}
 
-      <CashCards cards={cards} multiClub={!groups && !cardClubId} allWallets={allWallets} />
-
-      {cardClubId ? <IpCashFactBlock companyId={scope.company.id} clubId={cardClubId} /> : null}
+      {cardClubId ? (
+        <IpCashFactBlock companyId={scope.company.id} club={{ id: cardClubId, name: clubs.find((c) => c.id === cardClubId)?.name ?? "" }} today={iso(now)} />
+      ) : (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">Выберите один клуб, чтобы увидеть фактический остаток наличных ИП.</div>
+      )}
 
       {/* Status filter */}
       <div className="mb-3 flex flex-wrap gap-2">
@@ -293,60 +291,6 @@ export default async function ExpensesPage({
   );
 }
 
-// Three cards for the selected Club: ИП cash balance, yesterday's ИП cash inflow,
-// «Иное» income this month. Responsive: 1 col (mobile) → 2 (sm) → 3 (lg), no
-// horizontal overflow; values use ₽ formatting; safe warnings never shift layout.
-const cardsDayFmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-function CashCards({ cards, multiClub, allWallets }: { cards: ClubCashCards | null; multiClub: boolean; allWallets: boolean }) {
-  if (multiClub) {
-    return (
-      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-        Выберите один клуб, чтобы увидеть остаток наличных ИП и приходы.
-      </div>
-    );
-  }
-  if (!cards) return null;
-
-  // Card 1 differs by role: strategic/accounting see the combined Club+regional
-  // total (with breakdown); a manager sees ONLY the Club wallet.
-  const card1Title = allWallets ? "Всего наличных ИП" : "Остаток наличных ИП в клубе";
-  const card1Sub = allWallets ? "В клубе + у регионалов" : "Фактически находится в клубе";
-  const card1Value = allWallets ? cards.combinedKopeks : cards.clubBalanceKopeks;
-
-  return (
-    <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <Card label={card1Title} sub={card1Sub} accent={card1Value < 0 ? "text-rose-700" : "text-slate-900"}>
-        {cards.ip.multiple ? (
-          <span className="text-sm font-medium text-amber-700">Несколько активных ИП — настройте одно</span>
-        ) : !cards.ip.configured ? (
-          <span className="text-sm font-medium text-amber-700">Нет активного ИП</span>
-        ) : !cards.hasOpeningBalance ? (
-          <span className="text-sm font-medium text-amber-700">Требуется задать начальный остаток</span>
-        ) : (
-          <>
-            {formatKopeks(card1Value)}
-            {allWallets ? (
-              <div className="mt-1 text-xs font-normal text-slate-500">
-                В клубе: {formatKopeks(cards.clubBalanceKopeks)} · У регионалов: {formatKopeks(cards.regionalTotalKopeks)}
-              </div>
-            ) : cards.transferredToRegionalTotalKopeks > 0 ? (
-              <div className="mt-1 text-xs font-normal text-slate-500">
-                Передано региональному директору: {formatKopeks(cards.transferredToRegionalTotalKopeks)}
-              </div>
-            ) : null}
-          </>
-        )}
-      </Card>
-      <Card label="Приход наличных по ИП вчера" sub={cardsDayFmt.format(cards.yesterdayDate)} accent="text-slate-900">
-        {formatKopeks(cards.yesterdayOfdKopeks)}
-      </Card>
-      <Card label="Приход «Иное»" sub="За текущий месяц" accent="text-slate-900">
-        {formatKopeks(cards.otherIncomeMonthKopeks)}
-      </Card>
-    </div>
-  );
-}
-
 function CategoryAnalytics({
   totals,
   totalKopeks,
@@ -406,25 +350,6 @@ function CategoryAnalytics({
   );
 }
 
-function Card({
-  label,
-  sub,
-  accent,
-  children,
-}: {
-  label: string;
-  sub: string;
-  accent: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="text-sm font-medium text-slate-500">{label}</div>
-      <div className={`mt-2 truncate text-2xl font-semibold ${accent}`}>{children}</div>
-      <div className="mt-1 text-xs text-slate-500">{sub}</div>
-    </div>
-  );
-}
 
 function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -476,22 +401,38 @@ function ExpenseStatusBadge({ status }: { status: string }) {
 
 // ИП cash "фактический остаток" — pending operations already counted. Managerial
 // view (separate from the confirmed-only wallet ledger). Links to /collections.
-async function IpCashFactBlock({ companyId, clubId }: { companyId: string; clubId: string }) {
-  const { balances: b, ipName } = await loadClubCashBalances(companyId, clubId);
+// Single, aligned ИП cash view (same src/lib/cash-balances.ts logic as /collections
+// and the dashboard). Fact balance from the latest control checkpoint; «Изъятия из
+// ООО» shown as its own line (not mixed with «Иное»).
+async function IpCashFactBlock({ companyId, club, today }: { companyId: string; club: { id: string; name: string }; today: string }) {
+  const { balances: b, ipName } = await loadClubCashBalances(companyId, club.id);
   return (
-    <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50/40 p-4">
+    <div className="mb-6 rounded-lg border border-brand-200 bg-brand-50/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm font-semibold text-slate-700">Наличные ИП{ipName ? ` — ${ipName}` : ""}</div>
         <IpCashSyncButton />
       </div>
+      <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{formatKopeks(b.cashIpFactBalance)}</div>
+      <div className="text-xs text-slate-500">{b.cashIpOpeningSet ? "Фактический остаток ИП сейчас" : "Расчётный остаток ИП от 0 ₽"}</div>
+      {!b.cashIpOpeningSet ? (
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Начальный остаток не задан. Укажите контрольный остаток кассы ИП, чтобы расчёт был точным.</div>
+      ) : null}
       <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
-        <FactRow label="Фактический остаток ИП" value={formatKopeks(b.cashIpFactBalance)} strong />
+        <FactRow label={`Контрольный остаток${b.cashIpOpeningDate ? ` (${b.cashIpOpeningDate})` : ""}`} value={b.cashIpOpeningSet ? formatKopeks(b.cashIpOpening) : "не задан"} />
         <FactRow label="Приход ИП вчера (ОФД)" value={formatKopeks(b.cashIpOfdYesterday)} />
+        <FactRow label="Приход ИП сегодня (ОФД)" value={formatKopeks(b.cashIpOfdToday)} />
+        <FactRow label="ОФД наличные за месяц" value={formatKopeks(b.cashIpOfdMonth)} />
         <FactRow label="Изъятия из ООО" value={formatKopeks(b.cashIpWithdrawalsFromOoo)} />
+        <FactRow label="Приход «Иное»" value={formatKopeks(b.cashIpOtherIncome)} />
         <FactRow label="Расходы ИП на проверке" value={formatKopeks(b.cashIpPendingExpenses)} />
         <FactRow label="Подтверждённые расходы ИП" value={formatKopeks(b.cashIpApprovedExpenses)} />
-        <FactRow label="Начальный остаток" value={formatKopeks(b.cashIpOpening)} />
       </div>
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs font-medium text-brand-700">Задать контрольный остаток ИП</summary>
+        <div className="mt-3 border-t border-brand-100 pt-3">
+          <OpeningBalanceForm clubs={[club]} today={today} entity="ip" />
+        </div>
+      </details>
       <a href="/collections" className="mt-3 inline-block text-xs font-medium text-brand-700 hover:underline">Инкассация и изъятия →</a>
     </div>
   );
