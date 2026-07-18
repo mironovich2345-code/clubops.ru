@@ -1650,3 +1650,84 @@ model OfdRevenueCategoryDailySummary {
   @@index([date])
   @@index([categoryCode])
 }
+
+// --- Managerial cash contour (fact balance): collections + withdrawals -------
+// SEPARATE from the confirmed-only CashWallet/CashMovement ledger. These feed the
+// "фактический остаток" (physical cash) view where pending operations already
+// count. Relationless scalar FKs (companyId/clubId/legalEntityId) match the OFD
+// models' style. No raw fiscal data, no PII.
+
+// Инкассация ООО — collecting/handing over ООО cash. Reduces the ООО fact balance
+// as soon as it is submitted (pending). NOT an ИП expense, NOT revenue.
+model CashCollection {
+  id               String    @id @default(cuid())
+  companyId        String
+  clubId           String
+  legalEntityId    String // the ООО whose cash is collected
+  amountKopeks     Int
+  operationDate    DateTime
+  comment          String?
+  // draft | pending_accountant_review | approved | rejected | cancelled
+  status           String    @default("pending_accountant_review")
+  createdByUserId  String
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  reviewReason     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([companyId, clubId])
+  @@index([clubId, legalEntityId, status])
+  @@index([status])
+  @@index([operationDate])
+}
+
+// Изъятие ООО → ИП — internal cash move. Reduces ООО and increases ИП fact balance
+// as soon as it is submitted (pending). NOT a sale, NOT revenue, NOT an ИП expense.
+model CashWithdrawal {
+  id                String    @id @default(cuid())
+  companyId         String
+  clubId            String
+  fromLegalEntityId String // ООО
+  toLegalEntityId   String // ИП
+  amountKopeks      Int
+  operationDate     DateTime
+  comment           String?
+  // draft | pending_review | approved | rejected | cancelled
+  status            String    @default("pending_review")
+  createdByUserId   String
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  reviewReason      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([companyId, clubId])
+  @@index([clubId, status])
+  @@index([status])
+  @@index([operationDate])
+}
+
+// Supporting document for a cash collection or withdrawal. Binary stays on disk via
+// the shared storage layer; only safe metadata here. Soft-removed, never PII.
+model CashOperationDocument {
+  id               String    @id @default(cuid())
+  collectionId     String?
+  withdrawalId     String?
+  companyId        String
+  clubId           String
+  storageKey       String    @unique
+  originalFilename String
+  safeFilename     String
+  mimeType         String
+  sizeBytes        Int
+  sha256           String
+  uploadedByUserId String?
+  createdAt        DateTime  @default(now())
+  removedAt        DateTime?
+  removedByUserId  String?
+
+  @@index([collectionId])
+  @@index([withdrawalId])
+  @@index([companyId, clubId])
+}

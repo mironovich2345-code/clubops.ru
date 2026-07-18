@@ -13,6 +13,7 @@ import { loadCompanyClubCards } from "@/lib/dashboard-cards";
 import { getUnconfirmedReportsForScope } from "@/lib/sales-reports";
 import { getPendingReopenRequestsForCompanies } from "@/lib/month-reopen";
 import { StrategicScopeFilter } from "./_components/StrategicScopeFilter";
+import { CashScopeSummary } from "./_components/CashScopeSummary";
 import { openInStrategicScope } from "./strategic-actions";
 import {
   loadAnalyticsData,
@@ -209,6 +210,11 @@ export default async function DashboardPage({
           />
         ) : null}
 
+        {/* Cash fact balances (single company in scope) — ООО/ИП + review counters. */}
+        {strategic.filteredCompanyIds.length === 1 ? (
+          <CashScopeSummary companyId={strategic.filteredCompanyIds[0]} clubIds={filteredClubIds} showPending={financials} />
+        ) : null}
+
         {/* Priority: approvals, then unconfirmed sales, then club cards. */}
         {canApproveReopen ? <OwnerReopenApprovals requests={strategicReopenRows} /> : null}
 
@@ -397,6 +403,10 @@ export default async function DashboardPage({
         <PageHeader title="Дашборд" description="Обзор клубов" />
         <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
       </div>
+
+      {/* Cash fact balances — operational for everyone in scope; review counters
+          only for financial roles (a plain manager sees balances, not counters). */}
+      <CashScopeSummary companyId={companyId} clubIds={clubIds} showPending={financials} />
 
       {/* Priority order: critical approvals, then unconfirmed sales, then forecast + clubs. */}
       {canApproveReopen ? <OwnerReopenApprovals requests={reopenRows} /> : null}

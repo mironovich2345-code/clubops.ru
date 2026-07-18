@@ -39,7 +39,8 @@ export type AppPage =
   | "documents"
   | "activity"
   | "users"
-  | "settings";
+  | "settings"
+  | "collections";
 
 export type CurrentUser = {
   id: string;
@@ -52,22 +53,22 @@ export type CurrentUser = {
 // ROLE_CAPABILITIES) so an owner/general_director can VIEW invoices/expenses but
 // not create them.
 const ROLE_PAGE_ACCESS: Record<Role, ReadonlyArray<AppPage>> = {
-  owner: ["dashboard", "analytics", "ofd_sales", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "activity", "users", "settings"],
+  owner: ["dashboard", "analytics", "ofd_sales", "expenses", "collections", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "activity", "users", "settings"],
   // GD additionally gets read-only strategic Expense/Invoice analytics (same as
   // owner). Operational mutation stays blocked by capabilities — page access does
   // not grant create/edit/approve (see canCreateOperational / canMutateOperationalRecords).
-  general_director: ["dashboard", "analytics", "ofd_sales", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "sales", "budgets", "activity", "users", "settings"],
-  regional_director: ["dashboard", "analytics", "ofd_sales", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity", "users"],
+  general_director: ["dashboard", "analytics", "ofd_sales", "expenses", "collections", "invoices", "payments", "mandatory_payments", "balances", "employees", "sales", "budgets", "activity", "users", "settings"],
+  regional_director: ["dashboard", "analytics", "ofd_sales", "expenses", "collections", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity", "users"],
   // Manager: operational, own-club only. No network analytics financials and no
   // audit/activity log.
-  manager: ["dashboard", "analytics", "expenses", "invoices", "employees", "refunds", "budgets", "sales", "documents"],
+  manager: ["dashboard", "analytics", "expenses", "collections", "invoices", "employees", "refunds", "budgets", "sales", "documents"],
   // Accountant lands on a dedicated workspace (рабочий стол) instead of the owner
   // dashboard / analytics, which are not part of the accountant's job.
-  accountant: ["workspace", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity"],
+  accountant: ["workspace", "expenses", "collections", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity"],
   // Chief accountant: identical page surface to the accountant (workspace-based,
   // no Dashboard / Analytics). The extra month-management controls are gated by
   // capabilities, not by page access.
-  chief_accountant: ["workspace", "expenses", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity"],
+  chief_accountant: ["workspace", "expenses", "collections", "invoices", "payments", "mandatory_payments", "balances", "employees", "refunds", "budgets", "sales", "documents", "activity"],
   // Marketer: limited analytics (sales / plans / advertising only); no other
   // financial pages.
   marketer: ["dashboard", "analytics"],

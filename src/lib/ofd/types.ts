@@ -150,6 +150,7 @@ export type DocumentInfoShape = {
   firstItemKeys: string[]; // key names of the first position (names, not values)
   numericFfdModeDetected: boolean; // true if the numeric FFD tag 1059 is present
   safeDocumentType: string | null; // documentType value ("3" | …), safe code only
+  hasCashierLikeKey: boolean; // DIAGNOSTIC: a cashier/operator KEY exists (name only, never the value)
 };
 
 export type OfdResult<T> =

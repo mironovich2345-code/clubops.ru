@@ -51,6 +51,7 @@ const pilots = [
   ["Expense workflow", "pilot-expense-workflow.mjs"],
   ["Expense page cards", "pilot-expense-cards.mjs"],
   ["Cash wallets / movements", "pilot-cash-wallets.mjs"],
+  ["Cash collections / withdrawals", "pilot-cash-collections.mjs"],
   ["Invoices phase 1", "pilot-invoices.mjs"],
   ["Refunds phase 1", "pilot-refunds.mjs"],
   ["Manager own-only visibility", "pilot-manager-visibility.mjs"],

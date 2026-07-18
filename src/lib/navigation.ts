@@ -12,6 +12,7 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "analytics", href: "/analytics", label: "Аналитика" },
   { page: "ofd_sales", href: "/analytics/ofd-sales", label: "ОФД-продажи" },
   { page: "expenses", href: "/expenses", label: "Наличные расходы" },
+  { page: "collections", href: "/collections", label: "Инкассация" },
   { page: "invoices", href: "/invoices", label: "Счета" },
   { page: "payments", href: "/payments", label: "Календарь платежей" },
   { page: "mandatory_payments", href: "/mandatory-payments", label: "Обязательные платежи" },
@@ -41,7 +42,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   { type: "item", page: "analytics" },
   { type: "item", page: "ofd_sales" },
   { type: "item", page: "sales" },
-  { type: "group", id: "finance", label: "Финансы", pages: ["expenses", "invoices", "refunds"] },
+  { type: "group", id: "finance", label: "Финансы", pages: ["expenses", "collections", "invoices", "refunds"] },
   // "mandatory_payments" and "balances" routes stay accessible (ROLE_PAGE_ACCESS)
   // but are no longer separate menu items — mandatory payments live inside the
   // payment calendar and balances are surfaced in dashboard cards.

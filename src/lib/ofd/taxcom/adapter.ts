@@ -218,7 +218,14 @@ export function inspectDocumentInfoShape(raw: unknown): DocumentInfoShape {
   const dt = o.documentType ?? o.DocumentType ?? o.type ?? o.Type ?? docObj.documentType ?? docObj.DocumentType;
   const safeDocumentType = dt == null || String(dt).trim() === "" ? null : String(dt).trim().slice(0, 16);
 
-  return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, firstItemKeys, numericFfdModeDetected, safeDocumentType };
+  // DIAGNOSTIC ONLY (for a future cashier→payroll link): detect whether the receipt
+  // carries a cashier/operator field. Checks KEY NAMES only (FFD tag 1021 = cashier
+  // name, 1203 = cashier ИНН, or string keys) — never reads or returns the VALUE,
+  // so no ФИО/PII ever leaves this function. Nothing is stored.
+  const cashierKeyNames = new Set(["1021", "1203", "cashier", "cashierName", "operator", "user", "Cashier", "CashierName", "Operator", "User"]);
+  const hasCashierLikeKey = [...topLevelKeys, ...documentKeys, ...firstItemKeys].some((k) => cashierKeyNames.has(k));
+
+  return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, firstItemKeys, numericFfdModeDetected, safeDocumentType, hasCashierLikeKey };
 }
 
 /** Why a document was not turned into a receipt (for safe aggregate diagnostics). */

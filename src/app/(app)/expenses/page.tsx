@@ -24,6 +24,8 @@ import {
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { V2_STATUS_LABELS } from "@/lib/expense-simplified";
 import { getClubCashCards, type ClubCashCards } from "@/lib/club-cash-cards";
+import { loadClubCashBalances } from "@/lib/cash-collections";
+import { IpCashSyncButton } from "../collections/_components/CollectionForms";
 import { UnsentDrafts } from "./_components/UnsentDrafts";
 
 export const dynamic = "force-dynamic";
@@ -188,6 +190,8 @@ export default async function ExpensesPage({
       ) : null}
 
       <CashCards cards={cards} multiClub={!groups && !cardClubId} allWallets={allWallets} />
+
+      {cardClubId ? <IpCashFactBlock companyId={scope.company.id} clubId={cardClubId} /> : null}
 
       {/* Status filter */}
       <div className="mb-3 flex flex-wrap gap-2">
@@ -468,4 +472,35 @@ function ExpenseStatusBadge({ status }: { status: string }) {
     return <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tone}`}>{V2_STATUS_LABELS[status]}</div>;
   }
   return null;
+}
+
+// ИП cash "фактический остаток" — pending operations already counted. Managerial
+// view (separate from the confirmed-only wallet ledger). Links to /collections.
+async function IpCashFactBlock({ companyId, clubId }: { companyId: string; clubId: string }) {
+  const { balances: b, ipName } = await loadClubCashBalances(companyId, clubId);
+  return (
+    <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50/40 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm font-semibold text-slate-700">Наличные ИП{ipName ? ` — ${ipName}` : ""}</div>
+        <IpCashSyncButton />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+        <FactRow label="Фактический остаток ИП" value={formatKopeks(b.cashIpFactBalance)} strong />
+        <FactRow label="Приход ИП вчера (ОФД)" value={formatKopeks(b.cashIpOfdYesterday)} />
+        <FactRow label="Изъятия из ООО" value={formatKopeks(b.cashIpWithdrawalsFromOoo)} />
+        <FactRow label="Расходы ИП на проверке" value={formatKopeks(b.cashIpPendingExpenses)} />
+        <FactRow label="Подтверждённые расходы ИП" value={formatKopeks(b.cashIpApprovedExpenses)} />
+        <FactRow label="Начальный остаток" value={formatKopeks(b.cashIpOpening)} />
+      </div>
+      <a href="/collections" className="mt-3 inline-block text-xs font-medium text-brand-700 hover:underline">Инкассация и изъятия →</a>
+    </div>
+  );
+}
+function FactRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-slate-500">{label}</span>
+      <span className={strong ? "font-semibold text-slate-900" : "font-medium text-slate-800"}>{value}</span>
+    </div>
+  );
 }

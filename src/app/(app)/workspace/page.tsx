@@ -10,6 +10,7 @@ import { getPendingSalesReports } from "@/lib/sales-reports";
 import { APPROVAL_STATUS_LABELS } from "@/lib/approval";
 import { dayStart, addDays, monthKeyOf } from "@/lib/payments";
 import { loadPaymentObligationsForScope, paymentObligationCategoryLabel, type PaymentObligation } from "@/lib/payment-obligations";
+import { loadPendingCashOps } from "@/lib/cash-collections";
 import { getMonthCloseInfo, isValidMonth } from "@/lib/month-close";
 import { getActiveReopenRequest, getLatestReopenRequestView } from "@/lib/month-reopen";
 import { WorkspaceMonthControls } from "./_components/WorkspaceMonthControls";
@@ -78,6 +79,10 @@ export default async function WorkspacePage({
 
   const expensesPending = expenses.filter((e) => e.status === EXPENSE_REVIEW_STATUS);
   const refundsPending = refunds.filter((r) => !FINAL_STATUSES.has(r.status));
+  // Cash operations awaiting review (инкассации + изъятия) across the same scope.
+  const pendingCashOps = await loadPendingCashOps(companyId, scope.clubIds);
+  const pendingCollections = pendingCashOps.filter((p) => p.kind === "collection").length;
+  const pendingWithdrawals = pendingCashOps.filter((p) => p.kind === "withdrawal").length;
 
   // Per-club rollup (Part 4.1). Sales reports expose clubName only, so match by
   // name within the already-scoped set.
@@ -97,6 +102,8 @@ export default async function WorkspacePage({
     { label: "Счета к оплате", count: obligations.length, href: "/invoices" },
     { label: "Возвраты", count: refundsPending.length, href: "/refunds" },
     { label: "Расходы на проверке", count: expensesPending.length, href: "/expenses" },
+    { label: "Инкассации на проверке", count: pendingCollections, href: "/collections" },
+    { label: "Изъятия на проверке", count: pendingWithdrawals, href: "/collections" },
     { label: "Продажи на проверке", count: pendingReports.length, href: "/sales" },
   ];
 
