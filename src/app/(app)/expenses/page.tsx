@@ -433,7 +433,10 @@ async function IpCashFactBlock({ companyId, club, today }: { companyId: string; 
           <OpeningBalanceForm clubs={[club]} today={today} entity="ip" />
         </div>
       </details>
-      <a href="/collections" className="mt-3 inline-block text-xs font-medium text-brand-700 hover:underline">Инкассация и изъятия →</a>
+      <div className="mt-3 flex flex-wrap gap-4">
+        <a href="/collections" className="text-xs font-medium text-brand-700 hover:underline">Добавить приход «Иное» →</a>
+        <a href="/collections" className="text-xs font-medium text-brand-700 hover:underline">Инкассация и изъятия →</a>
+      </div>
     </div>
   );
 }

@@ -1711,12 +1711,42 @@ model CashWithdrawal {
   @@index([operationDate])
 }
 
-// Supporting document for a cash collection or withdrawal. Binary stays on disk via
-// the shared storage layer; only safe metadata here. Soft-removed, never PII.
+// Приход «Иное» — internal top-up of ИП cash (money handed to the club by a regional
+// director / owner / GD / other). NOT a sale, NOT revenue, NOT OFD, NOT инкассация,
+// NOT изъятие, NOT an expense — it ONLY increases the ИП fact balance. Pending counts
+// immediately. Same status machine as изъятие.
+model CashOtherIncome {
+  id               String    @id @default(cuid())
+  companyId        String
+  clubId           String
+  legalEntityId    String // ИП
+  amountKopeks     Int
+  operationDate    DateTime
+  // regional | owner | general_director | other
+  source           String    @default("other")
+  comment          String?
+  // draft | pending_review | approved | rejected | cancelled
+  status           String    @default("pending_review")
+  createdByUserId  String
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  reviewReason     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([companyId, clubId])
+  @@index([clubId, legalEntityId, status])
+  @@index([status])
+  @@index([operationDate])
+}
+
+// Supporting document for a cash collection / withdrawal / other-income. Binary stays
+// on disk via the shared storage layer; only safe metadata here. Soft-removed, never PII.
 model CashOperationDocument {
   id               String    @id @default(cuid())
   collectionId     String?
   withdrawalId     String?
+  otherIncomeId    String?
   companyId        String
   clubId           String
   storageKey       String    @unique
@@ -1732,5 +1762,6 @@ model CashOperationDocument {
 
   @@index([collectionId])
   @@index([withdrawalId])
+  @@index([otherIncomeId])
   @@index([companyId, clubId])
 }

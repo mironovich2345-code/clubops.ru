@@ -41,7 +41,7 @@ export async function loadClubCashBalances(companyId: string, clubId: string, no
       ? prisma.expense.findMany({ where: { clubId, legalEntityId: ipId, paymentMethod: "cash", entryVersion: 2 }, select: { status: true, amountKopeks: true, expenseDate: true } })
       : Promise.resolve([]),
     ipId
-      ? prisma.cashMovement.findMany({ where: { clubId, legalEntityId: ipId, type: "other_cash_income", status: "confirmed" }, select: { amountKopeks: true, occurredAt: true } })
+      ? prisma.cashOtherIncome.findMany({ where: { clubId, legalEntityId: ipId }, select: { status: true, amountKopeks: true, operationDate: true } })
       : Promise.resolve([]),
   ]);
 
@@ -64,7 +64,7 @@ export async function loadClubCashBalances(companyId: string, clubId: string, no
     collections: collections.map((c) => ({ status: c.status, amountKopeks: c.amountKopeks, date: ymdLocal(c.operationDate) })),
     withdrawals: withdrawals.map((w) => ({ status: w.status, amountKopeks: w.amountKopeks, date: ymdLocal(w.operationDate) })),
     ipExpenses: ipExpenses.map((e) => ({ status: e.status, amountKopeks: e.amountKopeks, date: ymdLocal(e.expenseDate) })),
-    ipOtherIncome: otherIncome.map((o) => ({ amountKopeks: o.amountKopeks, date: ymdLocal(o.occurredAt) })),
+    ipOtherIncome: otherIncome.map((o) => ({ status: o.status, amountKopeks: o.amountKopeks, date: ymdLocal(o.operationDate) })),
   });
 
   return { balances, oooId, ipId, oooName: ooo?.name ?? null, ipName: ip?.name ?? null };
@@ -95,7 +95,7 @@ export async function loadPendingCashOps(companyId: string, clubIds: string[]): 
 
 export type CashOpRow = {
   id: string;
-  kind: "collection" | "withdrawal";
+  kind: "collection" | "withdrawal" | "other_income";
   clubId: string;
   amountKopeks: number;
   operationDate: Date;
@@ -103,23 +103,28 @@ export type CashOpRow = {
   comment: string | null;
   createdByUserId: string;
   documents: number;
+  source: string | null; // only for other_income
 };
 
-/** Full history of collections + withdrawals for a scope (all statuses), newest
- * first, with a safe document COUNT (never document contents). */
+/** Full history of collections + withdrawals + other-income for a scope (all
+ * statuses), newest first, with a safe document COUNT (never document contents). */
 export async function loadCashOpsHistory(companyId: string, clubIds: string[], limit = 50): Promise<CashOpRow[]> {
   if (clubIds.length === 0) return [];
-  const [collections, withdrawals, colDocs, wdDocs] = await Promise.all([
+  const [collections, withdrawals, otherIncome, colDocs, wdDocs, oiDocs] = await Promise.all([
     prisma.cashCollection.findMany({ where: { companyId, clubId: { in: clubIds } }, orderBy: { operationDate: "desc" }, take: limit, select: { id: true, clubId: true, amountKopeks: true, operationDate: true, status: true, comment: true, createdByUserId: true } }),
     prisma.cashWithdrawal.findMany({ where: { companyId, clubId: { in: clubIds } }, orderBy: { operationDate: "desc" }, take: limit, select: { id: true, clubId: true, amountKopeks: true, operationDate: true, status: true, comment: true, createdByUserId: true } }),
+    prisma.cashOtherIncome.findMany({ where: { companyId, clubId: { in: clubIds } }, orderBy: { operationDate: "desc" }, take: limit, select: { id: true, clubId: true, amountKopeks: true, operationDate: true, status: true, comment: true, createdByUserId: true, source: true } }),
     prisma.cashOperationDocument.groupBy({ by: ["collectionId"], where: { companyId, clubId: { in: clubIds }, removedAt: null, collectionId: { not: null } }, _count: { _all: true } }),
     prisma.cashOperationDocument.groupBy({ by: ["withdrawalId"], where: { companyId, clubId: { in: clubIds }, removedAt: null, withdrawalId: { not: null } }, _count: { _all: true } }),
+    prisma.cashOperationDocument.groupBy({ by: ["otherIncomeId"], where: { companyId, clubId: { in: clubIds }, removedAt: null, otherIncomeId: { not: null } }, _count: { _all: true } }),
   ]);
   const colDocCount = new Map(colDocs.map((d) => [d.collectionId, d._count._all]));
   const wdDocCount = new Map(wdDocs.map((d) => [d.withdrawalId, d._count._all]));
+  const oiDocCount = new Map(oiDocs.map((d) => [d.otherIncomeId, d._count._all]));
   return [
-    ...collections.map((c) => ({ id: c.id, kind: "collection" as const, clubId: c.clubId, amountKopeks: c.amountKopeks, operationDate: c.operationDate, status: c.status, comment: c.comment, createdByUserId: c.createdByUserId, documents: colDocCount.get(c.id) ?? 0 })),
-    ...withdrawals.map((w) => ({ id: w.id, kind: "withdrawal" as const, clubId: w.clubId, amountKopeks: w.amountKopeks, operationDate: w.operationDate, status: w.status, comment: w.comment, createdByUserId: w.createdByUserId, documents: wdDocCount.get(w.id) ?? 0 })),
+    ...collections.map((c) => ({ id: c.id, kind: "collection" as const, clubId: c.clubId, amountKopeks: c.amountKopeks, operationDate: c.operationDate, status: c.status, comment: c.comment, createdByUserId: c.createdByUserId, documents: colDocCount.get(c.id) ?? 0, source: null })),
+    ...withdrawals.map((w) => ({ id: w.id, kind: "withdrawal" as const, clubId: w.clubId, amountKopeks: w.amountKopeks, operationDate: w.operationDate, status: w.status, comment: w.comment, createdByUserId: w.createdByUserId, documents: wdDocCount.get(w.id) ?? 0, source: null })),
+    ...otherIncome.map((o) => ({ id: o.id, kind: "other_income" as const, clubId: o.clubId, amountKopeks: o.amountKopeks, operationDate: o.operationDate, status: o.status, comment: o.comment, createdByUserId: o.createdByUserId, documents: oiDocCount.get(o.id) ?? 0, source: o.source })),
   ]
     .sort((a, b) => b.operationDate.getTime() - a.operationDate.getTime())
     .slice(0, limit);

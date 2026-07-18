@@ -16,6 +16,7 @@ async function cleanup() {
   await p.cashOperationDocument.deleteMany({ where: { companyId: CO } }).catch(() => {});
   await p.cashCollection.deleteMany({ where: { companyId: CO } }).catch(() => {});
   await p.cashWithdrawal.deleteMany({ where: { companyId: CO } }).catch(() => {});
+  await p.cashOtherIncome.deleteMany({ where: { companyId: CO } }).catch(() => {});
   await p.expense.deleteMany({ where: { companyId: CO } }).catch(() => {});
   await p.ofdDailySalesSummary.deleteMany({ where: { companyId: CO } }).catch(() => {});
   await p.balanceSnapshot.deleteMany({ where: { companyId: CO } }).catch(() => {});
@@ -31,6 +32,7 @@ const COLLECTION_STATUS = { DRAFT: "draft", PENDING: "pending_accountant_review"
 const WITHDRAWAL_STATUS = { DRAFT: "draft", PENDING: "pending_review", APPROVED: "approved", REJECTED: "rejected", CANCELLED: "cancelled" };
 const COLLECTION_FACT = [COLLECTION_STATUS.PENDING, COLLECTION_STATUS.APPROVED];
 const WITHDRAWAL_FACT = [WITHDRAWAL_STATUS.PENDING, WITHDRAWAL_STATUS.APPROVED];
+const OTHER_INCOME_FACT = ["pending_review", "approved"];
 const IP_EXP_PENDING = ["submitted", "pending_regional_budget_approval", "pending_owner_budget_approval", "pending_accountant_verification", "needs_correction", "waiting_budget_approval"];
 const IP_EXP_APPROVED = ["verified", "confirmed"];
 const after = (date, since) => (since === null ? true : date > since);
@@ -46,7 +48,7 @@ function calc(i) {
   const cashIpOfdToday = ofdNet(i.ofdRows, "ip", (d) => d === i.today);
   const cashIpOfdMonth = ofdNet(i.ofdRows, "ip", (d) => d.startsWith(i.monthPrefix));
   const cashIpWithdrawalsFromOoo = sum(pick(i.withdrawals.filter((w) => after(w.date, ipSince)), WITHDRAWAL_FACT));
-  const cashIpOtherIncome = sum(other.filter((o) => after(o.date, ipSince)));
+  const cashIpOtherIncome = sum(pick(other.filter((o) => after(o.date, ipSince)), OTHER_INCOME_FACT));
   const cashIpPendingExpenses = sum(pick(i.ipExpenses.filter((e) => after(e.date, ipSince)), IP_EXP_PENDING));
   const cashIpApprovedExpenses = sum(pick(i.ipExpenses.filter((e) => after(e.date, ipSince)), IP_EXP_APPROVED));
   const cashIpFactBalance = cashIpOpening + cashIpOfdSinceOpening + cashIpWithdrawalsFromOoo + cashIpOtherIncome - cashIpPendingExpenses - cashIpApprovedExpenses;
@@ -76,7 +78,7 @@ async function loadClubCash(companyId, clubId, now) {
     p.cashCollection.findMany({ where: { clubId }, select: { status: true, amountKopeks: true, operationDate: true } }),
     p.cashWithdrawal.findMany({ where: { clubId }, select: { status: true, amountKopeks: true, operationDate: true } }),
     p.expense.findMany({ where: { clubId, legalEntityId: IP, paymentMethod: "cash", entryVersion: 2 }, select: { status: true, amountKopeks: true, expenseDate: true } }),
-    p.cashMovement.findMany({ where: { clubId, legalEntityId: IP, type: "other_cash_income", status: "confirmed" }, select: { amountKopeks: true, occurredAt: true } }).catch(() => []),
+    p.cashOtherIncome.findMany({ where: { clubId, legalEntityId: IP }, select: { status: true, amountKopeks: true, operationDate: true } }).catch(() => []),
   ]);
   const openBy = new Map();
   for (const s of snaps) if (!openBy.has(s.legalEntityId)) openBy.set(s.legalEntityId, { amount: s.actualBalanceKopeks, date: ymd(s.snapshotDate) });
@@ -88,7 +90,7 @@ async function loadClubCash(companyId, clubId, now) {
     collections: collections.map((c) => ({ status: c.status, amountKopeks: c.amountKopeks, date: ymd(c.operationDate) })),
     withdrawals: withdrawals.map((w) => ({ status: w.status, amountKopeks: w.amountKopeks, date: ymd(w.operationDate) })),
     ipExpenses: ipExpenses.map((e) => ({ status: e.status, amountKopeks: e.amountKopeks, date: ymd(e.expenseDate) })),
-    ipOtherIncome: other.map((o) => ({ amountKopeks: o.amountKopeks, date: ymd(o.occurredAt) })),
+    ipOtherIncome: other.map((o) => ({ status: o.status, amountKopeks: o.amountKopeks, date: ymd(o.operationDate) })),
   });
 }
 
@@ -150,7 +152,7 @@ async function main() {
   check("OPENING5 движения ПОСЛЕ даты контрольной точки влияют (инкассация до T игнорируется)", rWinCol.cashOooPendingCollections === 50000 && rWinCol.cashOooFactBalance === 500000 - 50000);
   check("OPENING-flag opening flags reflect whether a checkpoint is set", rWin.cashOooOpeningSet === true && r1.cashOooOpeningSet === false && r1.cashIpOpeningSet === false);
 
-  const rWV = calc({ ...base, oooOpeningKopeks: 500000, ipOpeningKopeks: 100000, oooOpeningDate: "2026-07-15", ipOpeningDate: "2026-07-15", withdrawals: [{ status: "pending_review", amountKopeks: 120000, date: "2026-07-16" }], ipOtherIncome: [{ amountKopeks: 7000, date: "2026-07-16" }] });
+  const rWV = calc({ ...base, oooOpeningKopeks: 500000, ipOpeningKopeks: 100000, oooOpeningDate: "2026-07-15", ipOpeningDate: "2026-07-15", withdrawals: [{ status: "pending_review", amountKopeks: 120000, date: "2026-07-16" }], ipOtherIncome: [{ status: "pending_review", amountKopeks: 7000, date: "2026-07-16" }] });
   check("WITHDRAWAL-VIEW1 «Изъятия из ООО» — отдельный показатель, не смешивается с «Приход Иное»", rWV.cashIpWithdrawalsFromOoo === 120000 && rWV.cashIpOtherIncome === 7000 && rWV.cashIpWithdrawalsFromOoo !== rWV.cashIpOtherIncome);
   check("WITHDRAWAL-VIEW2 изъятие увеличивает ИП и уменьшает ООО в фактическом остатке", rWV.cashIpFactBalance === 100000 + 120000 + 7000 && rWV.cashOooFactBalance === 500000 - 120000);
   check("LABELS1 расчёт различает вчера/сегодня/после-контрольной/за-месяц/факт (отдельные числовые поля)", ["cashIpOfdYesterday", "cashIpOfdToday", "cashIpOfdSinceOpening", "cashIpOfdMonth", "cashIpFactBalance", "cashOooOfdYesterday", "cashOooOfdToday", "cashOooOfdSinceOpening", "cashOooOfdMonth", "cashOooFactBalance"].every((k) => typeof rWV[k] === "number"));
@@ -225,6 +227,28 @@ async function main() {
   const l1 = await loadClubCash(CO, CLUB, now), l2 = await loadClubCash(CO, CLUB, now);
   check("DASHBOARD-CANCEL1 после отмены остатки детерминированы (единый источник loadClubCashBalances для /collections, /expenses, dashboard)", JSON.stringify(l1) === JSON.stringify(l2));
 
+  // ===== Приход «Иное» (top-up ИП) ===========================================
+  const summariesBefore = await p.ofdDailySalesSummary.count({ where: { companyId: CO } });
+  const beforeOI = await loadClubCash(CO, CLUB, now);
+  const oi = await p.cashOtherIncome.create({ data: { companyId: CO, clubId: CLUB, legalEntityId: IP, amountKopeks: 70000, operationDate: now, source: "regional", comment: "передал регионал", status: "pending_review", createdByUserId: U } });
+  check("OTHER-INCOME1 «Приход Иное» в ИП создаётся по клубу (source/comment/status pending_review)", oi.status === "pending_review" && oi.legalEntityId === IP && oi.source === "regional" && oi.comment === "передал регионал");
+  const afterOI = await loadClubCash(CO, CLUB, now);
+  check("OTHER-INCOME2 pending «Приход Иное» сразу увеличивает фактический остаток ИП", afterOI.cashIpFactBalance === beforeOI.cashIpFactBalance + 70000 && afterOI.cashIpOtherIncome === beforeOI.cashIpOtherIncome + 70000);
+  check("OTHER-INCOME3 «Приход Иное» не меняет остаток ООО", afterOI.cashOooFactBalance === beforeOI.cashOooFactBalance);
+  check("OTHER-INCOME4 «Приход Иное» — отдельный показатель, не смешивается с «Изъятиями из ООО»", afterOI.cashIpWithdrawalsFromOoo === beforeOI.cashIpWithdrawalsFromOoo && afterOI.cashIpOtherIncome !== afterOI.cashIpWithdrawalsFromOoo);
+  check("OTHER-INCOME5 «Приход Иное» сохранён в истории (запись со статусом/источником/комментарием)", (await p.cashOtherIncome.findUnique({ where: { id: oi.id } })) !== null);
+  // Soft-cancel: pending → cancelled → no longer increases ИП.
+  const okCancelOI = await p.cashOtherIncome.updateMany({ where: { id: oi.id, status: { in: ["draft", "pending_review"] } }, data: { status: "cancelled", reviewedByUserId: U, reviewedAt: now } });
+  check("OTHER-INCOME6a pending «Приход Иное» можно отменить (soft-cancel, не hard delete)", okCancelOI.count === 1 && (await p.cashOtherIncome.findUnique({ where: { id: oi.id } })).status === "cancelled");
+  const afterCancelOI = await loadClubCash(CO, CLUB, now);
+  check("OTHER-INCOME6 cancelled «Приход Иное» больше не увеличивает остаток ИП", afterCancelOI.cashIpFactBalance === beforeOI.cashIpFactBalance && afterCancelOI.cashIpOtherIncome === beforeOI.cashIpOtherIncome);
+  const oiA = await p.cashOtherIncome.create({ data: { companyId: CO, clubId: CLUB, legalEntityId: IP, amountKopeks: 20000, operationDate: now, source: "owner", comment: "внёс собственник", status: "approved", createdByUserId: U } });
+  check("OTHER-INCOME7 approved «Приход Иное» нельзя отменить обычным действием", (await p.cashOtherIncome.updateMany({ where: { id: oiA.id, status: { in: ["draft", "pending_review"] } }, data: { status: "cancelled" } })).count === 0 && (await p.cashOtherIncome.findUnique({ where: { id: oiA.id } })).status === "approved");
+  check("OTHER-INCOME8 «Приход Иное» не создаёт Sale", (await p.sale.count({ where: { companyId: CO } }).catch(() => 0)) === 0);
+  check("OTHER-INCOME9 «Приход Иное» не попадает в ОФД-продажи/статьи доходов (нет OfdReceiptItem/Import; OfdDailySalesSummary не создаётся операцией)", (await p.ofdReceiptItem.count({ where: { companyId: CO } }).catch(() => 0)) === 0 && (await p.ofdReceiptImport.count({ where: { companyId: CO } }).catch(() => 0)) === 0 && (await p.ofdDailySalesSummary.count({ where: { companyId: CO } })) === summariesBefore);
+  const oiL1 = await loadClubCash(CO, CLUB, now), oiL2 = await loadClubCash(CO, CLUB, now);
+  check("DASHBOARD-OTHER-INCOME1 после «Прихода Иное» /collections, /expenses, dashboard дают один ИП-остаток (единый loader)", JSON.stringify(oiL1) === JSON.stringify(oiL2));
+
   // ===== Static source guards ================================================
   const rd = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
   const lib = rd("src/lib/cash-balances.ts");
@@ -243,6 +267,17 @@ async function main() {
   check("CASH-OLD-UI1 старая «Касса ИП» больше не показывает confirmed-only остаток (убраны getClubCashBreakdown/«Наличные в клубе»/«У региональных»); показывает фактический из loadClubCashBalances", !oldCashSrc.includes("getClubCashBreakdown") && !oldCashSrc.includes("Наличные в клубе") && !oldCashSrc.includes("У региональных директоров") && !oldCashSrc.includes("Передача наличных") && oldCashSrc.includes("loadClubCashBalances") && oldCashSrc.includes("Управление кассой перенесено"));
   check("CASH-OLD-UI2 на странице расходов нет второго остатка ИП (getClubCashCards/CashCards/«Всего наличных ИП» убраны)", !expSrc.includes("getClubCashCards") && !expSrc.includes("CashCards") && !expSrc.includes("Всего наличных ИП") && !expSrc.includes('href="/expenses/cash"'));
   check("CASH-OLD-UI3 пользователь видит ссылку на /collections для управления кассой", expSrc.includes('href="/collections"') && oldCashSrc.includes('href="/collections"'));
+  // ----- Приход «Иное» (new system) -----
+  check("OTHER-INCOME-MODEL loader берёт «Иное» из CashOtherIncome (pending/approved), не из старого confirmed-only CashMovement", loader.includes("cashOtherIncome.findMany") && !loader.includes("cashMovement.findMany") && lib.includes("OTHER_INCOME_FACT_STATUSES") && /OTHER_INCOME_FACT_STATUSES[^\n]*OTHER_INCOME_STATUS\.PENDING[^\n]*OTHER_INCOME_STATUS\.APPROVED/.test(lib) && lib.includes('PENDING: "pending_review"'));
+  check("OTHER-INCOME5-S история /collections включает CashOtherIncome (kind other_income + источник + подсчёт документов)", loader.includes('kind: "other_income"') && loader.includes("otherIncomeId") && pageSrc.includes("other_income") && pageSrc.includes("SOURCE_LABELS") && forms.includes("export function OtherIncomeForm"));
+  check("OTHER-INCOME-CREATE create: canCreateOperational, комментарий обязателен, документы опциональны (0), pending_review, источник валидируется", actions.includes("export async function createCashOtherIncome") && actions.includes("canCreateOperational(g.roles)") && /if \(!comment\) return \{ ok: false, error: "Комментарий обязателен/.test(actions) && actions.includes("collectDocuments(formData, 0)") && actions.includes('status: "pending_review"') && actions.includes("OTHER_INCOME_SOURCES"));
+  check("OTHER-INCOME7-S approved «Приход Иное» нельзя отменить (guard), soft-cancel только draft/pending_review, без hard delete", actions.includes("export async function cancelCashOtherIncome") && actions.includes("Подтверждённый приход «Иное» нельзя удалить") && /status: \{ in: CANCELABLE_OTHER_INCOME \}/.test(actions) && !/cashOtherIncome\.delete/.test(actions) && actions.includes('CANCELABLE_OTHER_INCOME = ["draft", "pending_review"]'));
+  check("OTHER-INCOME10 /expenses/cash остаётся read-only указателем — старая форма «Приход Иное»/«Передача» НЕ возвращена", !oldCashSrc.includes("OtherIncomeForm") && !oldCashSrc.includes("TransferForm") && !oldCashSrc.includes("createOtherCashIncome") && oldCashSrc.includes("Управление кассой перенесено"));
+  check("OTHER-INCOME11 на «Наличных расходах» есть переход «Добавить приход «Иное»» → /collections", expSrc.includes("Добавить приход «Иное»") && /Добавить приход «Иное»[\s\S]{0,120}href="\/collections"|href="\/collections"[\s\S]{0,120}Добавить приход «Иное»/.test(expSrc));
+  check("OTHER-INCOME-ROLE1/2 create скоуп allowedClubIds (manager/regional свои клубы); ROLE3 вне scope нельзя (clubId in allowedClubIds в create/cancel)", actions.includes("ctx.allowedClubIds.includes(clubId)") && /createCashOtherIncome[\s\S]{0,700}clubId: \{ in: g\.clubIds \}|cancelCashOtherIncome[\s\S]{0,500}clubId: \{ in: g\.clubIds \}/.test(actions) && actions.includes("const isCreator = row.createdByUserId === g.userId"));
+  check("OTHER-INCOME-NO-MIX «Приход Иное» не создаёт Sale/OFD/выручку; не изъятие/инкассация", !/createCashOtherIncome[\s\S]{0,900}(prisma\.sale\.create|ofdReceipt|ofdDailySalesSummary\.create|ofdRevenueCategory|cashWithdrawal\.create|cashCollection\.create)/.test(actions) && actions.includes('"cash.other_income_created"'));
+  check("OTHER-INCOME-AUDIT события cash.other_income_* с безопасными полями (amount/source/status/reason), без документов/секретов/ПДн", actions.includes('"cash.other_income_created"') && actions.includes('"cash.other_income_cancelled"') && actions.includes('"cash.other_income_approved"') && actions.includes('"cash.other_income_rejected"') && !/other_income[\s\S]{0,300}metadata:\s*\{[^}]*(storageKey|rawJson|\bphone\b|\bemail\b|\.stack)/i.test(actions));
+  check("OTHER-INCOME-MIGRATION dev+prod: CashOtherIncome table + CashOperationDocument.otherIncomeId (неразрушающе)", /CREATE TABLE "CashOtherIncome"/.test(rd("prisma/migrations/20260719000000_add_cash_other_income/migration.sql")) && /ADD COLUMN "otherIncomeId"/.test(rd("prisma/migrations/20260719000000_add_cash_other_income/migration.sql")) && /CREATE TABLE "CashOtherIncome"/.test(rd("prisma/production/migrations/20260719000000_add_cash_other_income/migration.sql")) && /ADD COLUMN "otherIncomeId"/.test(rd("prisma/production/migrations/20260719000000_add_cash_other_income/migration.sql")));
   check("CANCEL-ROLE1/2 отмена доступна создателю (pending) или reviewer (regional/accountant/owner/GD)", actions.includes("const isCreator = row.createdByUserId === g.userId") && actions.includes("canReviewCollection(g.roles)") && actions.includes("canReviewWithdrawal(g.roles)") && actions.includes("export async function cancelCashCollection") && actions.includes("export async function cancelCashWithdrawal"));
   check("CANCEL-ROLE3 вне scope отменить нельзя (clubId in allowedClubIds guard в обоих cancel-actions)", /cancelCashCollection[\s\S]{0,500}clubId: \{ in: g\.clubIds \}/.test(actions) && /cancelCashWithdrawal[\s\S]{0,500}clubId: \{ in: g\.clubIds \}/.test(actions));
   check("CANCEL-SOFT soft-cancel: статус cancelled через updateMany (draft/pending only), без hard delete; approved отклоняется", !/cashCollection\.delete|cashWithdrawal\.delete/.test(actions) && /status: \{ in: CANCELABLE_COLLECTION \}/.test(actions) && /status: \{ in: CANCELABLE_WITHDRAWAL \}/.test(actions) && actions.includes("Подтверждённую инкассацию нельзя удалить") && actions.includes("Подтверждённое изъятие нельзя удалить"));
@@ -253,13 +288,13 @@ async function main() {
   check("BALANCE-ALIGN2 expenses page no longer renders the conflicting wallet cards (getClubCashCards removed)", !expSrc.includes("getClubCashCards") && !expSrc.includes("Всего наличных ИП") && expSrc.includes("IpCashFactBlock"));
   check("DASHBOARD-CASH-ALIGN1 dashboard cash cards come from loadClubCashBalances (same fact balance as /collections)", dashSrc.includes("loadClubCashBalances") && dashSrc.includes("cashOooFactBalance") && dashSrc.includes("cashIpFactBalance"));
   check("LABELS-S UI distinguishes вчера / сегодня / после контрольной точки / за месяц / фактический остаток", pageSrc.includes("вчера") && pageSrc.includes("сегодня") && pageSrc.includes("после контрольной точки") && pageSrc.includes("за месяц") && (pageSrc.includes("Фактический остаток") || pageSrc.includes("Расчётный остаток")));
-  check("WITHDRAWAL-VIEW-S UI shows «Изъятия из ООО» separate from «Приход «Иное»» (not merged)", pageSrc.includes("Изъятия из ООО") && pageSrc.includes("Приход «Иное»") && expSrc.includes("Изъятия из ООО") && !/Иное[\s\S]{0,40}Изъяти|Изъяти[\s\S]{0,40}Приход «Иное»/.test(pageSrc.replace(/\n/g, " ")));
+  check("WITHDRAWAL-VIEW-S UI: «Изъятия из ООО» и «Приход «Иное»» — отдельные строки в карточке ИП (не слиты)", pageSrc.includes('label="Изъятия из ООО"') && pageSrc.includes('label="Приход «Иное»"') && expSrc.includes('label="Изъятия из ООО"') && expSrc.includes('label="Приход «Иное»"'));
   check("OPENING7 без комментария контрольный остаток создать нельзя (comment обязателен)", actions.includes("Комментарий обязателен") && /if \(!comment\)/.test(actions));
   check("OPENING-S setCashOpeningBalance создаёт НОВУЮ контрольную точку (balanceSnapshot.create), не редактирует историю; аудит cash.opening_balance_set", actions.includes("export async function setCashOpeningBalance") && actions.includes("prisma.balanceSnapshot.create") && !/balanceSnapshot\.update/.test(actions) && actions.includes('"cash.opening_balance_set"'));
   check("ROLE-OPENING1/2 контрольный остаток скоупится по allowedClubIds (manager/regional только свои клубы)", actions.includes("ctx.allowedClubIds.includes(clubId)") && actions.includes("canSetOpeningBalance(g.roles)"));
   check("SYNC-CASH1 sync ИП uses runSyncNowForCompany, returns SAFE summary (found/imported/skipped), no secrets", actions.includes("export async function syncIpCashAction") && actions.includes("runSyncNowForCompany") && /found:\s*t\.foundReceipts/.test(actions) && !/login|password|integratorId|sessionToken|Bearer/i.test(actions));
   check("SYNC-CASH2 sync ООО uses the same safe sync path; hint mentions вчера/период/фактический (not only «за сегодня»)", actions.includes("export async function syncOooCashAction") && pageSrc.includes("пересчитываются вчера, период и фактический остаток"));
-  check("COLLECTION6 create requires >=1 document (min) — server-enforced", docStore.includes("MIN_CASH_OPERATION_DOCUMENTS = 1") && actions.includes("Прикрепите хотя бы один подтверждающий документ") && /files\.length < MIN_CASH_OPERATION_DOCUMENTS/.test(actions));
+  check("COLLECTION6 create requires >=1 document (min, default = MIN_CASH_OPERATION_DOCUMENTS) — server-enforced", docStore.includes("MIN_CASH_OPERATION_DOCUMENTS = 1") && actions.includes("Прикрепите хотя бы один подтверждающий документ") && /files\.length < min/.test(actions) && actions.includes("min: number = MIN_CASH_OPERATION_DOCUMENTS"));
   check("COLLECTION7 create rejects >3 documents (max)", docStore.includes("MAX_CASH_OPERATION_DOCUMENTS = 3") && /files\.length > MAX_CASH_OPERATION_DOCUMENTS/.test(actions));
   check("WITHDRAWAL1/2 create gated to canCreateOperational (manager + regional_director have operational.create)", /regional_director:\s*\["operational\.create"\]/.test(authSrc) && /manager:\s*\["operational\.create"\]/.test(authSrc) && actions.includes("canCreateOperational(g.roles)") && actions.includes("export async function createCashWithdrawal"));
   check("ROLE-CASH page access owner/GD/regional/manager/accountant/chief (NOT marketer); page guarded", /owner:\s*\[[^\]]*"collections"/.test(authSrc) && /regional_director:\s*\[[^\]]*"collections"/.test(authSrc) && /\bmanager:\s*\[[^\]]*"collections"/.test(authSrc) && /\baccountant:\s*\[[^\]]*"collections"/.test(authSrc) && !/marketer:\s*\[[^\]]*"collections"/.test(authSrc) && pageSrc.includes('requirePageAccess("collections")'));

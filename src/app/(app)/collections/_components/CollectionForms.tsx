@@ -10,6 +10,10 @@ import {
   rejectCashWithdrawal,
   cancelCashCollection,
   cancelCashWithdrawal,
+  createCashOtherIncome,
+  approveCashOtherIncome,
+  rejectCashOtherIncome,
+  cancelCashOtherIncome,
   setCashOpeningBalance,
   syncIpCashAction,
   syncOooCashAction,
@@ -137,8 +141,38 @@ export function WithdrawalForm({ clubs, today }: { clubs: ClubOpt[]; today: stri
   );
 }
 
-export function CancelButton({ id, kind }: { id: string; kind: "collection" | "withdrawal" }) {
-  const cancel = kind === "collection" ? cancelCashCollection : cancelCashWithdrawal;
+export function OtherIncomeForm({ clubs, today }: { clubs: ClubOpt[]; today: string }) {
+  const [state, action] = useFormState(createCashOtherIncome, initial);
+  return (
+    <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <ClubSelect clubs={clubs} />
+      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Сумма, ₽</span><input name="amount" inputMode="decimal" required placeholder="0" className="input" /></label>
+      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Дата поступления</span><input type="date" name="operationDate" required defaultValue={today} className="input" /></label>
+      <label className="block">
+        <span className="mb-1 block text-sm font-medium text-slate-700">Источник</span>
+        <select name="source" defaultValue="regional" className="input">
+          <option value="regional">Региональный директор</option>
+          <option value="owner">Собственник</option>
+          <option value="general_director">Генеральный директор</option>
+          <option value="other">Другое</option>
+        </select>
+      </label>
+      <label className="block md:col-span-2"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий (обязательно)</span><input name="comment" required className="input" /></label>
+      <label className="block md:col-span-2">
+        <span className="mb-1 block text-sm font-medium text-slate-700">Документы (необязательно, до 3: JPG, PNG, WEBP, PDF)</span>
+        <input type="file" name="documents" multiple accept="image/jpeg,image/png,image/webp,application/pdf" className="block w-full text-sm" />
+      </label>
+      <div className="md:col-span-2 flex items-center justify-between gap-3">
+        <Msg s={state} />
+        <Submit idle="Добавить приход «Иное»" busy="Отправка..." />
+      </div>
+    </form>
+  );
+}
+
+type OpKind = "collection" | "withdrawal" | "other_income";
+export function CancelButton({ id, kind }: { id: string; kind: OpKind }) {
+  const cancel = kind === "collection" ? cancelCashCollection : kind === "withdrawal" ? cancelCashWithdrawal : cancelCashOtherIncome;
   const [state, action] = useFormState(cancel, initial);
   return (
     <details className="inline-block">
@@ -153,9 +187,9 @@ export function CancelButton({ id, kind }: { id: string; kind: "collection" | "w
   );
 }
 
-export function ReviewButtons({ id, kind }: { id: string; kind: "collection" | "withdrawal" }) {
-  const approve = kind === "collection" ? approveCashCollection : approveCashWithdrawal;
-  const reject = kind === "collection" ? rejectCashCollection : rejectCashWithdrawal;
+export function ReviewButtons({ id, kind }: { id: string; kind: OpKind }) {
+  const approve = kind === "collection" ? approveCashCollection : kind === "withdrawal" ? approveCashWithdrawal : approveCashOtherIncome;
+  const reject = kind === "collection" ? rejectCashCollection : kind === "withdrawal" ? rejectCashWithdrawal : rejectCashOtherIncome;
   const [aState, aAction] = useFormState(approve, initial);
   const [rState, rAction] = useFormState(reject, initial);
   return (

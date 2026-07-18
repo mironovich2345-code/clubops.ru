@@ -36,6 +36,17 @@ export const WITHDRAWAL_STATUS = {
 export const COLLECTION_FACT_STATUSES: readonly string[] = [COLLECTION_STATUS.PENDING, COLLECTION_STATUS.APPROVED];
 export const WITHDRAWAL_FACT_STATUSES: readonly string[] = [WITHDRAWAL_STATUS.PENDING, WITHDRAWAL_STATUS.APPROVED];
 
+// Приход «Иное» — internal ИП cash top-up. Same status machine as изъятие; pending
+// and approved increase the ИП fact balance (draft/rejected/cancelled never count).
+export const OTHER_INCOME_STATUS = {
+  DRAFT: "draft",
+  PENDING: "pending_review",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+  CANCELLED: "cancelled",
+} as const;
+export const OTHER_INCOME_FACT_STATUSES: readonly string[] = [OTHER_INCOME_STATUS.PENDING, OTHER_INCOME_STATUS.APPROVED];
+
 // ИП cash-expense statuses. "Money physically left the till" the moment the expense
 // is submitted for review, so every non-draft/non-terminal status reduces the fact
 // balance. Profit/budget analytics keep their own stricter "realized" set (verified/
@@ -68,7 +79,7 @@ export type CashBalancesInput = {
   collections: DatedStatusAmount[]; // ООО collections (инкассация)
   withdrawals: DatedStatusAmount[]; // ООО→ИП (изъятие)
   ipExpenses: DatedStatusAmount[]; // наличные расходы ИП
-  ipOtherIncome?: DatedAmount[]; // confirmed «Иное»
+  ipOtherIncome?: DatedStatusAmount[]; // Приход «Иное» (pending/approved count)
 };
 
 export type CashBalances = {
@@ -122,7 +133,7 @@ export function calculateCashBalances(input: CashBalancesInput): CashBalances {
   const cashIpOfdToday = ofdCashNet(input.ofdRows, "ip", (d) => d === input.today);
   const cashIpOfdMonth = ofdCashNet(input.ofdRows, "ip", (d) => d.startsWith(input.monthPrefix));
   const cashIpWithdrawalsFromOoo = sum(pick(input.withdrawals.filter((w) => after(w.date, ipSince)), WITHDRAWAL_FACT_STATUSES));
-  const cashIpOtherIncome = sum(other.filter((o) => after(o.date, ipSince)));
+  const cashIpOtherIncome = sum(pick(other.filter((o) => after(o.date, ipSince)), OTHER_INCOME_FACT_STATUSES));
   const cashIpPendingExpenses = sum(pick(input.ipExpenses.filter((e) => after(e.date, ipSince)), IP_EXPENSE_PENDING_STATUSES));
   const cashIpApprovedExpenses = sum(pick(input.ipExpenses.filter((e) => after(e.date, ipSince)), IP_EXPENSE_APPROVED_STATUSES));
   const cashIpFactBalance = cashIpOpening + cashIpOfdSinceOpening + cashIpWithdrawalsFromOoo + cashIpOtherIncome - cashIpPendingExpenses - cashIpApprovedExpenses;

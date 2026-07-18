@@ -45,10 +45,11 @@ function parseDate(raw: string | null): Date | null {
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
 }
 
-/** Validate + store the 1–3 supporting documents from the form. */
-async function collectDocuments(formData: FormData): Promise<{ ok: true; docs: StoredCashDocument[] } | { ok: false; error: string }> {
+/** Validate + store the supporting documents from the form (min..3). Pass min=0 for
+ * operations where documents are optional (e.g. Приход «Иное»). */
+async function collectDocuments(formData: FormData, min: number = MIN_CASH_OPERATION_DOCUMENTS): Promise<{ ok: true; docs: StoredCashDocument[] } | { ok: false; error: string }> {
   const files = formData.getAll("documents").filter(isUploadedFile);
-  if (files.length < MIN_CASH_OPERATION_DOCUMENTS) return { ok: false, error: "Прикрепите хотя бы один подтверждающий документ." };
+  if (files.length < min) return { ok: false, error: "Прикрепите хотя бы один подтверждающий документ." };
   if (files.length > MAX_CASH_OPERATION_DOCUMENTS) return { ok: false, error: `Не более ${MAX_CASH_OPERATION_DOCUMENTS} документов.` };
   const stored: StoredCashDocument[] = [];
   for (const f of files) {
@@ -244,6 +245,90 @@ export async function cancelCashWithdrawal(_p: CashState | undefined, formData: 
   revalidatePath("/expenses");
   revalidatePath("/dashboard");
   return { ok: true, notice: "Изъятие отменено. Остатки ООО и ИП возвращены." };
+}
+
+// --- Приход «Иное» — internal ИП cash top-up (regional/owner/GD/other) ------
+// NOT a sale / OFD / revenue / инкассация / изъятие / expense — only increases the
+// ИП fact balance. Same status machine as изъятие; pending counts immediately.
+const OTHER_INCOME_SOURCES = ["regional", "owner", "general_director", "other"];
+const CANCELABLE_OTHER_INCOME = ["draft", "pending_review"];
+
+/** Создать «Приход Иное» в ИП. Комментарий обязателен; документы опциональны (0–3). */
+export async function createCashOtherIncome(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const clubId = String(formData.get("clubId") ?? "").trim() || null;
+  const g = await ctxForWrite(clubId);
+  if (!g.ok) return { ok: false, error: g.error };
+  if (!canCreateOperational(g.roles)) return { ok: false, error: "Создавать приход «Иное» может управляющий или региональный директор." };
+  if (!clubId) return { ok: false, error: "Выберите клуб." };
+  const amountKopeks = parseAmountKopeks(String(formData.get("amount") ?? ""));
+  if (!amountKopeks) return { ok: false, error: "Укажите сумму." };
+  const operationDate = parseDate(String(formData.get("operationDate") ?? ""));
+  if (!operationDate) return { ok: false, error: "Укажите дату поступления." };
+  const source = OTHER_INCOME_SOURCES.includes(String(formData.get("source") ?? "")) ? String(formData.get("source")) : "other";
+  const comment = String(formData.get("comment") ?? "").trim();
+  if (!comment) return { ok: false, error: "Комментарий обязателен." };
+  const { ip } = await getActiveClubLegalEntities(clubId);
+  if (!ip) return { ok: false, error: "У клуба нет активного ИП." };
+  // Documents are OPTIONAL here (передача от регионала может быть без чека).
+  const docs = await collectDocuments(formData, 0);
+  if (!docs.ok) return { ok: false, error: docs.error };
+
+  const created = await prisma.$transaction(async (tx) => {
+    const o = await tx.cashOtherIncome.create({
+      data: { companyId: g.companyId, clubId, legalEntityId: ip.id, amountKopeks, operationDate, source, comment: comment.slice(0, 500), status: "pending_review", createdByUserId: g.userId },
+    });
+    if (docs.docs.length) await tx.cashOperationDocument.createMany({ data: docs.docs.map((d) => ({ otherIncomeId: o.id, companyId: g.companyId, clubId, storageKey: d.storageKey, originalFilename: d.originalFilename, safeFilename: d.safeFilename, mimeType: d.mimeType, sizeBytes: d.sizeBytes, sha256: d.sha256, uploadedByUserId: g.userId })) });
+    return o;
+  });
+  await recordAudit({ action: "cash.other_income_created", entityType: "CashOtherIncome", entityId: created.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { amountKopeks, source, documents: docs.docs.length } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: "Приход «Иное» добавлен. Остаток ИП увеличен." };
+}
+
+async function reviewOtherIncome(formData: FormData, toStatus: "approved" | "rejected", action: string): Promise<CashState> {
+  const id = String(formData.get("id") ?? "").trim();
+  const g = await ctxForWrite(null);
+  if (!g.ok) return { ok: false, error: g.error };
+  if (!canReviewWithdrawal(g.roles)) return { ok: false, error: "Недостаточно прав." };
+  const row = await prisma.cashOtherIncome.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, select: { id: true, clubId: true, amountKopeks: true, source: true } });
+  if (!row) return { ok: false, error: "Операция не найдена." };
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 200) || null;
+  const n = await prisma.cashOtherIncome.updateMany({ where: { id, status: "pending_review" }, data: { status: toStatus, reviewedByUserId: g.userId, reviewedAt: new Date(), reviewReason: reason } });
+  if (n.count === 0) return { ok: false, error: "Операция уже обработана." };
+  await recordAudit({ action, entityType: "CashOtherIncome", entityId: id, companyId: g.companyId, clubId: row.clubId, userId: g.userId, metadata: { amountKopeks: row.amountKopeks, source: row.source } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: toStatus === "approved" ? "Приход «Иное» подтверждён." : "Приход «Иное» отклонён, остаток ИП возвращён." };
+}
+export async function approveCashOtherIncome(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  return reviewOtherIncome(formData, "approved", "cash.other_income_approved");
+}
+export async function rejectCashOtherIncome(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  return reviewOtherIncome(formData, "rejected", "cash.other_income_rejected");
+}
+
+/** Отмена «Приход Иное» (soft-cancel → status "cancelled"). */
+export async function cancelCashOtherIncome(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const id = String(formData.get("id") ?? "").trim();
+  const g = await ctxForWrite(null);
+  if (!g.ok) return { ok: false, error: g.error };
+  const row = await prisma.cashOtherIncome.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, select: { id: true, clubId: true, amountKopeks: true, source: true, status: true, createdByUserId: true } });
+  if (!row) return { ok: false, error: "Операция не найдена." };
+  const isCreator = row.createdByUserId === g.userId;
+  if (!isCreator && !canReviewWithdrawal(g.roles)) return { ok: false, error: "Недостаточно прав для отмены." };
+  if (row.status === "approved") return { ok: false, error: "Подтверждённый приход «Иное» нельзя удалить. Создайте корректировку или обратитесь к администратору." };
+  if (!CANCELABLE_OTHER_INCOME.includes(row.status)) return { ok: false, error: "Операция уже обработана и не может быть отменена." };
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 200) || null;
+  const n = await prisma.cashOtherIncome.updateMany({ where: { id, status: { in: CANCELABLE_OTHER_INCOME } }, data: { status: "cancelled", reviewedByUserId: g.userId, reviewedAt: new Date(), reviewReason: reason } });
+  if (n.count === 0) return { ok: false, error: "Операция уже обработана." };
+  await recordAudit({ action: "cash.other_income_cancelled", entityType: "CashOtherIncome", entityId: id, companyId: g.companyId, clubId: row.clubId, userId: g.userId, metadata: { amountKopeks: row.amountKopeks, source: row.source, status: "cancelled", reason } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: "Приход «Иное» отменён. Остаток ИП возвращён." };
 }
 
 /** Synchronize ИП/ООО cash from ОФД (reuses the safe company sync). Returns SAFE

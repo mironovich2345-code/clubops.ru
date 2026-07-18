@@ -7,7 +7,7 @@ import { canCreateOperational, type Role } from "@/lib/auth";
 import { legalEntityTypeLabel } from "@/lib/legal-entities";
 import { loadClubCashBalances, loadCashOpsHistory, loadClubOpeningHistory } from "@/lib/cash-collections";
 import type { CashBalances } from "@/lib/cash-balances";
-import { CashSyncButtons, CollectionForm, WithdrawalForm, ReviewButtons, CancelButton, OpeningBalanceForm } from "./_components/CollectionForms";
+import { CashSyncButtons, CollectionForm, WithdrawalForm, OtherIncomeForm, ReviewButtons, CancelButton, OpeningBalanceForm } from "./_components/CollectionForms";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,9 @@ export default async function CollectionsPage() {
   const mayReview = canReview(roles);
   const myUserId = ctx.user.id;
   const today = ymd(new Date());
-  const CANCELABLE: Record<string, string[]> = { collection: ["draft", "pending_accountant_review"], withdrawal: ["draft", "pending_review"] };
+  const CANCELABLE: Record<string, string[]> = { collection: ["draft", "pending_accountant_review"], withdrawal: ["draft", "pending_review"], other_income: ["draft", "pending_review"] };
+  const SOURCE_LABELS: Record<string, string> = { regional: "Региональный директор", owner: "Собственник", general_director: "Генеральный директор", other: "Другое" };
+  const OP_TYPE: Record<string, string> = { collection: "Инкассация ООО", withdrawal: "Изъятие ООО→ИП", other_income: "Приход «Иное»" };
 
   const clubs = clubIds.length ? await prisma.club.findMany({ where: { companyId, id: { in: clubIds } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
   const clubName = new Map(clubs.map((c) => [c.id, c.name]));
@@ -108,6 +110,10 @@ export default async function CollectionsPage() {
         <>
           <Section title="Инкассировать ООО"><CollectionForm clubs={clubs} today={today} /></Section>
           <Section title="Изъять из ООО в ИП"><WithdrawalForm clubs={clubs} today={today} /></Section>
+          <Section title="Пополнить ИП — приход «Иное»">
+            <p className="mb-3 text-xs text-slate-500">Внутреннее пополнение наличных ИП (передал регионал/собственник/директор). Это не продажа, не выручка, не ОФД и не изъятие — только увеличивает фактический остаток ИП.</p>
+            <OtherIncomeForm clubs={clubs} today={today} />
+          </Section>
         </>
       ) : null}
 
@@ -125,7 +131,7 @@ export default async function CollectionsPage() {
                   return (
                     <tr key={h.id}>
                       <Td>{dfmt.format(h.operationDate)}</Td>
-                      <Td>{h.kind === "collection" ? "Инкассация ООО" : "Изъятие ООО→ИП"}</Td>
+                      <Td>{OP_TYPE[h.kind] ?? h.kind}{h.kind === "other_income" && h.source ? ` · ${SOURCE_LABELS[h.source] ?? h.source}` : ""}</Td>
                       <Td>{clubName.get(h.clubId) ?? "—"}</Td>
                       <Td>{formatKopeks(h.amountKopeks)}</Td>
                       <Td>{STATUS_LABELS[h.status] ?? h.status}</Td>
