@@ -151,6 +151,8 @@ export type DocumentInfoShape = {
   numericFfdModeDetected: boolean; // true if the numeric FFD tag 1059 is present
   safeDocumentType: string | null; // documentType value ("3" | …), safe code only
   hasCashierLikeKey: boolean; // DIAGNOSTIC: a cashier/operator KEY exists (name only, never the value)
+  cashierDetected: boolean; // alias of hasCashierLikeKey — "поля кассира обнаружены: да/нет"
+  cashierFieldsDetected: string[]; // matched cashier KEY NAMES only ("1021"/"1203"/…), never the value
 };
 
 export type OfdResult<T> =

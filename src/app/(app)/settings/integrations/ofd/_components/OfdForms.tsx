@@ -458,6 +458,12 @@ export function OfdDocInfoDiagnostics({ connectionId }: { connectionId: string }
             <div><span className="text-slate-500">Позиции чека:</span> {shape.hasItemsLikeData ? <span className="text-emerald-700 font-medium">найдены ({shape.itemLikeCount})</span> : <span className="text-slate-500">не найдены</span>}</div>
             <div><span className="text-slate-500">Формат ФФД (тег 1059):</span> {shape.numericFfdModeDetected ? <span className="text-emerald-700 font-medium">обнаружен</span> : <span className="text-slate-500">нет</span>}</div>
             {shape.safeDocumentType ? <div><span className="text-slate-500">Тип документа:</span> <span className="font-mono">{shape.safeDocumentType}</span></div> : null}
+            <div className="md:col-span-2">
+              <span className="text-slate-500">Поля кассира в чеке:</span>{" "}
+              {shape.cashierDetected ? <span className="text-emerald-700 font-medium">обнаружены</span> : <span className="text-slate-500">нет</span>}
+              {shape.cashierFieldsDetected.length ? <span className="ml-1 font-mono text-xs text-slate-500">(теги: {shape.cashierFieldsDetected.join(", ")})</span> : null}
+              <span className="ml-1 text-xs text-slate-400">— только факт наличия, без ФИО/ИНН. Для расчёта ЗП потребуется отдельная модель.</span>
+            </div>
             <div className="md:col-span-2"><span className="text-slate-500">Ключи верхнего уровня:</span> {shape.topLevelKeys.length ? <span className="font-mono">{shape.topLevelKeys.join(", ")}</span> : "—"}</div>
             <div className="md:col-span-2"><span className="text-slate-500">Ключи документа:</span> {shape.documentKeys.length ? <span className="font-mono">{shape.documentKeys.join(", ")}</span> : "—"}</div>
             {shape.detectedItemLikeKeys.length ? (

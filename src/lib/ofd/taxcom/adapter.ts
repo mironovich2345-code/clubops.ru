@@ -221,11 +221,13 @@ export function inspectDocumentInfoShape(raw: unknown): DocumentInfoShape {
   // DIAGNOSTIC ONLY (for a future cashier→payroll link): detect whether the receipt
   // carries a cashier/operator field. Checks KEY NAMES only (FFD tag 1021 = cashier
   // name, 1203 = cashier ИНН, or string keys) — never reads or returns the VALUE,
-  // so no ФИО/PII ever leaves this function. Nothing is stored.
+  // so no ФИО/ИНН/PII ever leaves this function. Nothing is stored. cashierFieldsDetected
+  // holds only the matched KEY NAMES ("1021"/"1203"/…), never the value behind them.
   const cashierKeyNames = new Set(["1021", "1203", "cashier", "cashierName", "operator", "user", "Cashier", "CashierName", "Operator", "User"]);
-  const hasCashierLikeKey = [...topLevelKeys, ...documentKeys, ...firstItemKeys].some((k) => cashierKeyNames.has(k));
+  const cashierFieldsDetected = [...new Set([...topLevelKeys, ...documentKeys, ...firstItemKeys].filter((k) => cashierKeyNames.has(k)))].sort();
+  const cashierDetected = cashierFieldsDetected.length > 0;
 
-  return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, firstItemKeys, numericFfdModeDetected, safeDocumentType, hasCashierLikeKey };
+  return { topLevelKeys, documentKeys, detectedItemLikeKeys, hasItemsLikeData: detectedItemLikeKeys.length > 0, itemLikeCount, firstItemKeys, numericFfdModeDetected, safeDocumentType, hasCashierLikeKey: cashierDetected, cashierDetected, cashierFieldsDetected };
 }
 
 /** Why a document was not turned into a receipt (for safe aggregate diagnostics). */

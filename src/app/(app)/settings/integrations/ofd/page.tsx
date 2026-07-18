@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
@@ -306,6 +307,7 @@ export default async function OfdIntegrationPage() {
                 <SalesBlock title="Вчера" agg={aggFor(yesterday, yesterday)} clubName={clubName} />
                 <SalesBlock title="Июль 2026" agg={aggFor("2026-07-01", "2026-07-31")} clubName={clubName} />
                 <p className="mt-1 text-xs text-slate-500">Источник чеков задаётся в настройках кассы: «Касса клуба» или «Онлайн-касса». Онлайн-оплаты попадают в продажи выбранного клуба, но отмечены как онлайн-касса.</p>
+                <Link href="/analytics/ofd-sales" className="mt-3 inline-block text-sm font-medium text-brand-700 hover:underline">Подробная аналитика ОФД-продаж →</Link>
               </Section>
 
               {/* 5) Статьи доходов ОФД */}
@@ -322,7 +324,7 @@ export default async function OfdIntegrationPage() {
                 )}
                 {unrecognized.length > 0 ? (
                   <div className="mt-6">
-                    <div className="mb-2 text-sm font-medium text-slate-600">Нераспознанная номенклатура (топ-20, «Иное»)</div>
+                    <div className="mb-2 text-sm font-medium text-slate-600">Требуют проверки — нераспознанная номенклатура (топ-20, «Иное»)</div>
                     <div className="overflow-x-auto rounded-lg border border-slate-200">
                       <table className="min-w-full divide-y divide-slate-200 text-sm">
                         <thead className="bg-slate-50"><tr><Th>Позиция</Th><Th>Сумма</Th><Th>Кол-во</Th></tr></thead>
@@ -343,8 +345,8 @@ export default async function OfdIntegrationPage() {
                 <OfdRecalcCategories />
               </Section>
 
-              {/* 6) История синхронизаций */}
-              <Section title="История синхронизаций">
+              {/* 6) История синхронизаций (свёрнута по умолчанию) */}
+              <Collapsible title="История синхронизаций" subtitle="Ручные и автоматические импорты ОФД">
                 <div className="overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="bg-slate-50"><tr><Th>Когда</Th><Th>Режим</Th><Th>Период</Th><Th>Статус</Th><Th>Найдено/Добавлено/Пропущено</Th><Th>Приход</Th><Th>Возврат</Th><Th>Ошибки</Th></tr></thead>
@@ -365,27 +367,23 @@ export default async function OfdIntegrationPage() {
                     </tbody>
                   </table>
                 </div>
-              </Section>
+              </Collapsible>
 
-              {/* 7) Расширенная диагностика (свёрнута по умолчанию) */}
-              <div className="mb-8">
-                <details className="rounded-lg border border-slate-200 bg-white shadow-sm">
-                  <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-slate-700">Расширенная диагностика</summary>
-                  <div className="border-t border-slate-200 p-5">
-                    <p className="mb-4 text-xs text-slate-500">Технический блок для проверки ответов Такском. Не нужен для ежедневной работы.</p>
-                    <div className="mb-2 text-sm font-medium text-slate-700">Проверить структуру NewDocuments</div>
-                    <p className="mb-3 text-xs text-slate-500">
-                      Проверяет, отдаёт ли метод Такском <span className="font-mono">GET /API/v2/NewDocuments</span> позиции чеков (номенклатуру).
-                      Возвращает только структуру ответа — без содержимого и без сохранения сырого JSON.
-                    </p>
-                    <OfdNewDocsDiagnostics connectionId={connections[0].id} />
-                    <div className="mt-5 border-t border-slate-200 pt-4">
-                      <div className="mb-2 text-sm font-medium text-slate-700">Диагностика конкретного чека DocumentInfo</div>
-                      <OfdDocInfoDiagnostics connectionId={connections[0].id} />
-                    </div>
-                  </div>
-                </details>
-              </div>
+              {/* 7) Расширенная диагностика (свёрнута по умолчанию) — технические
+                  NewDocuments / DocumentInfo / ФН / ФД / shape-диагностика только здесь. */}
+              <Collapsible title="Расширенная диагностика" subtitle="Технический блок для проверки ответов Такском. Не нужен для ежедневной работы">
+                <div className="mb-2 text-sm font-medium text-slate-700">Проверить структуру NewDocuments</div>
+                <p className="mb-3 text-xs text-slate-500">
+                  Проверяет, отдаёт ли метод Такском <span className="font-mono">GET /API/v2/NewDocuments</span> позиции чеков (номенклатуру).
+                  Возвращает только структуру ответа — без содержимого и без сохранения сырого JSON.
+                </p>
+                <OfdNewDocsDiagnostics connectionId={connections[0].id} />
+                <div className="mt-5 border-t border-slate-200 pt-4">
+                  <div className="mb-2 text-sm font-medium text-slate-700">Диагностика конкретного чека DocumentInfo</div>
+                  <p className="mb-3 text-xs text-slate-500">Показывает структуру чека и факт наличия полей кассира (без ФИО/ИНН).</p>
+                  <OfdDocInfoDiagnostics connectionId={connections[0].id} />
+                </div>
+              </Collapsible>
             </>
           ) : (
             <p className="mt-4 text-sm text-slate-500">Сначала сохраните подключение, затем добавьте кассы и запустите импорт.</p>
@@ -431,6 +429,24 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="mb-3 text-sm font-semibold text-slate-700">{title}</h2>
       <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">{children}</div>
     </div>
+  );
+}
+
+// Native <details> collapsible (same pattern as /collections): title always visible,
+// keyboard-accessible, safe for server-action forms, themed centrally for light/dark.
+// Collapsed by default — used for technical/rarely-needed blocks.
+function Collapsible({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <details className="group mb-8 rounded-lg border border-slate-200 bg-white shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+        <div>
+          <div className="text-sm font-semibold text-slate-700">{title}</div>
+          {subtitle ? <div className="mt-0.5 text-xs text-slate-500">{subtitle}</div> : null}
+        </div>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180"><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </summary>
+      <div className="border-t border-slate-200 px-5 pb-5 pt-4">{children}</div>
+    </details>
   );
 }
 function Th({ children }: { children: React.ReactNode }) {

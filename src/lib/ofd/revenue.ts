@@ -76,11 +76,16 @@ export function cleanItemName(v: unknown): string {
  * for a first-match within this list: the broad membership "карта" is intentionally
  * LAST so extra-service / training patterns win first. No "bar" category. */
 export const DEFAULT_CATEGORY_RULES: { code: string; name: string; matchType: MatchType; pattern: string }[] = [
-  ...["групповая тренировка", "групповые тренировки", "групповое занятие", "групповые занятия", "мини-группа", "мини группа"].map((pattern) => ({ code: "group_training", name: "Групповые тренировки", matchType: "contains" as MatchType, pattern })),
+  // Group training FIRST so any "группов*" line wins before the personal "тренер" stem
+  // (e.g. "групповой тренер" → group, not personal). Conservative fitness-domain stems.
+  ...["групповая тренировка", "групповые тренировки", "групповое занятие", "групповые занятия", "мини-группа", "мини группа", "групповая", "групповые", "групповое", "групповой", "секция", "направление"].map((pattern) => ({ code: "group_training", name: "Групповые тренировки", matchType: "contains" as MatchType, pattern })),
   { code: "group_training", name: "Групповые тренировки", matchType: "starts_with", pattern: "гт" },
-  ...["персональная тренировка", "персональные тренировки", "тренировка с тренером", "индивидуальная тренировка", "индивидуальные тренировки"].map((pattern) => ({ code: "personal_training", name: "Персональные тренировки", matchType: "contains" as MatchType, pattern })),
+  // Personal training. "персональная"/"персональные" (fem/plural, almost always followed
+  // by тренировка) + "тренер"; deliberately NOT bare "персональн"/"индивидуальн" so that a
+  // "персональный/индивидуальный шкафчик" stays in Доп. услуги (better «Иное» than wrong).
+  ...["персональная тренировка", "персональные тренировки", "тренировка с тренером", "индивидуальная тренировка", "индивидуальные тренировки", "персональная", "персональные", "тренер"].map((pattern) => ({ code: "personal_training", name: "Персональные тренировки", matchType: "contains" as MatchType, pattern })),
   { code: "personal_training", name: "Персональные тренировки", matchType: "starts_with", pattern: "пт" },
-  ...["заморозка", "продление", "переоформление", "переоформления", "восстановление карты", "аренда", "полотенце", "шкафчик", "солярий", "доп услуга", "доп услуги", "дополнительная услуга", "дополнительные услуги"].map((pattern) => ({ code: "extra_services", name: "Доп. услуги", matchType: "contains" as MatchType, pattern })),
+  ...["заморозка", "разморозка", "продление", "переоформление", "переоформления", "восстановление карты", "аренда", "полотенце", "шкафчик", "солярий", "доп услуга", "доп услуги", "дополнительная услуга", "дополнительные услуги"].map((pattern) => ({ code: "extra_services", name: "Доп. услуги", matchType: "contains" as MatchType, pattern })),
   // Physical-culture/health services sold as memberships in CLUB-OPS.
   ...["физкультурно оздоровительные услуги", "физкультурно оздоровительные", "физ оздоровительные услуги", "клубная карта", "карта клуба", "абонемент", "членство", "карта"].map((pattern) => ({ code: "membership", name: "Абонементы", matchType: "contains" as MatchType, pattern })),
 ];
