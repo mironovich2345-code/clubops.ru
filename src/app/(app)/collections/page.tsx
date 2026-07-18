@@ -7,7 +7,7 @@ import { canCreateOperational, type Role } from "@/lib/auth";
 import { legalEntityTypeLabel } from "@/lib/legal-entities";
 import { loadClubCashBalances, loadCashOpsHistory, loadClubOpeningHistory } from "@/lib/cash-collections";
 import type { CashBalances } from "@/lib/cash-balances";
-import { CashSyncButtons, CollectionForm, WithdrawalForm, ReviewButtons, OpeningBalanceForm } from "./_components/CollectionForms";
+import { CashSyncButtons, CollectionForm, WithdrawalForm, ReviewButtons, CancelButton, OpeningBalanceForm } from "./_components/CollectionForms";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +36,9 @@ export default async function CollectionsPage() {
   const roles = ctx.effectiveRoles;
   const mayCreate = canCreateOperational(roles);
   const mayReview = canReview(roles);
+  const myUserId = ctx.user.id;
   const today = ymd(new Date());
+  const CANCELABLE: Record<string, string[]> = { collection: ["draft", "pending_accountant_review"], withdrawal: ["draft", "pending_review"] };
 
   const clubs = clubIds.length ? await prisma.club.findMany({ where: { companyId, id: { in: clubIds } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
   const clubName = new Map(clubs.map((c) => [c.id, c.name]));
@@ -115,10 +117,11 @@ export default async function CollectionsPage() {
         ) : (
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Тип</Th><Th>Клуб</Th><Th>Сумма</Th><Th>Статус</Th><Th>Комментарий</Th><Th>Док.</Th><Th>Кто создал</Th>{mayReview ? <Th>Действия</Th> : null}</tr></thead>
+              <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Тип</Th><Th>Клуб</Th><Th>Сумма</Th><Th>Статус</Th><Th>Комментарий</Th><Th>Док.</Th><Th>Кто создал</Th><Th>Действия</Th></tr></thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {history.map((h) => {
                   const isPending = h.status === "pending_accountant_review" || h.status === "pending_review";
+                  const canCancel = CANCELABLE[h.kind].includes(h.status) && (h.createdByUserId === myUserId || mayReview);
                   return (
                     <tr key={h.id}>
                       <Td>{dfmt.format(h.operationDate)}</Td>
@@ -129,7 +132,13 @@ export default async function CollectionsPage() {
                       <Td>{h.comment ?? "—"}</Td>
                       <Td>{h.documents}</Td>
                       <Td>{authorName.get(h.createdByUserId) ?? "—"}</Td>
-                      {mayReview ? <Td>{isPending ? <ReviewButtons id={h.id} kind={h.kind} /> : "—"}</Td> : null}
+                      <Td>
+                        <div className="flex flex-wrap items-start gap-2">
+                          {mayReview && isPending ? <ReviewButtons id={h.id} kind={h.kind} /> : null}
+                          {canCancel ? <CancelButton id={h.id} kind={h.kind} /> : null}
+                          {!canCancel && !(mayReview && isPending) ? "—" : null}
+                        </div>
+                      </Td>
                     </tr>
                   );
                 })}

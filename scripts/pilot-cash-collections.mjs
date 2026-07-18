@@ -201,6 +201,30 @@ async function main() {
   const dbOpen2 = await loadClubCash(CO, CLUB, now);
   check("OPENING-supersede последняя контрольная точка (по дате) используется как база; ОФД до неё игнорируется", dbOpen2.cashOooOpening === 900000 && dbOpen2.cashOooOfdSinceOpening === 0 && dbOpen2.cashOooFactBalance === 900000);
 
+  // ===== Cancellations (soft-cancel, never hard delete) ======================
+  const cancelColl = async (id) => (await p.cashCollection.updateMany({ where: { id, status: { in: ["draft", "pending_accountant_review"] } }, data: { status: "cancelled", reviewedByUserId: U, reviewedAt: now, reviewReason: "тест" } })).count;
+  const cancelWd = async (id) => (await p.cashWithdrawal.updateMany({ where: { id, status: { in: ["draft", "pending_review"] } }, data: { status: "cancelled", reviewedByUserId: U, reviewedAt: now, reviewReason: "тест" } })).count;
+
+  const colC = await p.cashCollection.create({ data: { companyId: CO, clubId: CLUB, legalEntityId: OOO, amountKopeks: 100000, operationDate: now, status: "pending_accountant_review", createdByUserId: U } });
+  const beforeCancel = await loadClubCash(CO, CLUB, now);
+  check("CANCEL-COLLECTION1 pending-инкассацию можно отменить (soft-cancel → cancelled)", (await cancelColl(colC.id)) === 1 && (await p.cashCollection.findUnique({ where: { id: colC.id } })).status === "cancelled");
+  const afterCancel = await loadClubCash(CO, CLUB, now);
+  check("CANCEL-COLLECTION2 cancelled-инкассация больше не уменьшает остаток ООО", afterCancel.cashOooFactBalance === beforeCancel.cashOooFactBalance + 100000);
+  const colA = await p.cashCollection.create({ data: { companyId: CO, clubId: CLUB, legalEntityId: OOO, amountKopeks: 50000, operationDate: now, status: "approved", createdByUserId: U } });
+  check("CANCEL-COLLECTION3 approved-инкассацию нельзя отменить обычным действием (updateMany guard = 0)", (await cancelColl(colA.id)) === 0 && (await p.cashCollection.findUnique({ where: { id: colA.id } })).status === "approved");
+  check("CANCEL-COLLECTION4 cancelled-инкассация остаётся в истории (не hard delete)", (await p.cashCollection.findUnique({ where: { id: colC.id } })) !== null && (await p.cashCollection.findUnique({ where: { id: colC.id } })).status === "cancelled");
+
+  const wdC = await p.cashWithdrawal.create({ data: { companyId: CO, clubId: CLUB, fromLegalEntityId: OOO, toLegalEntityId: IP, amountKopeks: 80000, operationDate: now, status: "pending_review", createdByUserId: U } });
+  const beforeW = await loadClubCash(CO, CLUB, now);
+  check("CANCEL-WITHDRAWAL1 pending-изъятие можно отменить", (await cancelWd(wdC.id)) === 1 && (await p.cashWithdrawal.findUnique({ where: { id: wdC.id } })).status === "cancelled");
+  const afterW = await loadClubCash(CO, CLUB, now);
+  check("CANCEL-WITHDRAWAL2 cancelled-изъятие больше не уменьшает ООО и не увеличивает ИП", afterW.cashOooFactBalance === beforeW.cashOooFactBalance + 80000 && afterW.cashIpFactBalance === beforeW.cashIpFactBalance - 80000);
+  const wdA = await p.cashWithdrawal.create({ data: { companyId: CO, clubId: CLUB, fromLegalEntityId: OOO, toLegalEntityId: IP, amountKopeks: 30000, operationDate: now, status: "approved", createdByUserId: U } });
+  check("CANCEL-WITHDRAWAL3 approved-изъятие нельзя отменить обычным действием", (await cancelWd(wdA.id)) === 0 && (await p.cashWithdrawal.findUnique({ where: { id: wdA.id } })).status === "approved");
+  check("CANCEL-WITHDRAWAL4 cancelled-изъятие остаётся в истории", (await p.cashWithdrawal.findUnique({ where: { id: wdC.id } })) !== null);
+  const l1 = await loadClubCash(CO, CLUB, now), l2 = await loadClubCash(CO, CLUB, now);
+  check("DASHBOARD-CANCEL1 после отмены остатки детерминированы (единый источник loadClubCashBalances для /collections, /expenses, dashboard)", JSON.stringify(l1) === JSON.stringify(l2));
+
   // ===== Static source guards ================================================
   const rd = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
   const lib = rd("src/lib/cash-balances.ts");
@@ -213,8 +237,19 @@ async function main() {
   const wsSrc = rd("src/app/(app)/workspace/page.tsx");
   const docStore = rd("src/lib/cash-document-storage.ts");
   const expSrc = rd("src/app/(app)/expenses/page.tsx");
+  const oldCashSrc = rd("src/app/(app)/expenses/cash/page.tsx");
 
-  check("BALANCE-ALIGN1 collections + expenses + dashboard use the SAME loadClubCashBalances (single source)", pageSrc.includes("loadClubCashBalances") && expSrc.includes("loadClubCashBalances") && dashSrc.includes("loadClubCashBalances") && loader.includes("calculateCashBalances"));
+  // ----- Legacy "Касса ИП" retired + cancellations -----
+  check("CASH-OLD-UI1 старая «Касса ИП» больше не показывает confirmed-only остаток (убраны getClubCashBreakdown/«Наличные в клубе»/«У региональных»); показывает фактический из loadClubCashBalances", !oldCashSrc.includes("getClubCashBreakdown") && !oldCashSrc.includes("Наличные в клубе") && !oldCashSrc.includes("У региональных директоров") && !oldCashSrc.includes("Передача наличных") && oldCashSrc.includes("loadClubCashBalances") && oldCashSrc.includes("Управление кассой перенесено"));
+  check("CASH-OLD-UI2 на странице расходов нет второго остатка ИП (getClubCashCards/CashCards/«Всего наличных ИП» убраны)", !expSrc.includes("getClubCashCards") && !expSrc.includes("CashCards") && !expSrc.includes("Всего наличных ИП") && !expSrc.includes('href="/expenses/cash"'));
+  check("CASH-OLD-UI3 пользователь видит ссылку на /collections для управления кассой", expSrc.includes('href="/collections"') && oldCashSrc.includes('href="/collections"'));
+  check("CANCEL-ROLE1/2 отмена доступна создателю (pending) или reviewer (regional/accountant/owner/GD)", actions.includes("const isCreator = row.createdByUserId === g.userId") && actions.includes("canReviewCollection(g.roles)") && actions.includes("canReviewWithdrawal(g.roles)") && actions.includes("export async function cancelCashCollection") && actions.includes("export async function cancelCashWithdrawal"));
+  check("CANCEL-ROLE3 вне scope отменить нельзя (clubId in allowedClubIds guard в обоих cancel-actions)", /cancelCashCollection[\s\S]{0,500}clubId: \{ in: g\.clubIds \}/.test(actions) && /cancelCashWithdrawal[\s\S]{0,500}clubId: \{ in: g\.clubIds \}/.test(actions));
+  check("CANCEL-SOFT soft-cancel: статус cancelled через updateMany (draft/pending only), без hard delete; approved отклоняется", !/cashCollection\.delete|cashWithdrawal\.delete/.test(actions) && /status: \{ in: CANCELABLE_COLLECTION \}/.test(actions) && /status: \{ in: CANCELABLE_WITHDRAWAL \}/.test(actions) && actions.includes("Подтверждённую инкассацию нельзя удалить") && actions.includes("Подтверждённое изъятие нельзя удалить"));
+  check("CANCEL-UI история показывает кнопку «Отменить» только для отменяемых операций (draft/pending), для approved/rejected/cancelled — нет", forms.includes("export function CancelButton") && forms.includes(">Отменить<") && pageSrc.includes("CANCELABLE[h.kind].includes(h.status)") && pageSrc.includes("<CancelButton"));
+  check("HISTORY-STATUSES история не скрывает cancelled (loadCashOpsHistory без status-фильтра → все статусы)", pageSrc.includes("loadCashOpsHistory") && !/status:\s*\{/.test(loader.slice(loader.indexOf("loadCashOpsHistory"), loader.indexOf("loadCashOpsHistory") + 700)) && pageSrc.includes("STATUS_LABELS") && pageSrc.includes("cancelled"));
+
+
   check("BALANCE-ALIGN2 expenses page no longer renders the conflicting wallet cards (getClubCashCards removed)", !expSrc.includes("getClubCashCards") && !expSrc.includes("Всего наличных ИП") && expSrc.includes("IpCashFactBlock"));
   check("DASHBOARD-CASH-ALIGN1 dashboard cash cards come from loadClubCashBalances (same fact balance as /collections)", dashSrc.includes("loadClubCashBalances") && dashSrc.includes("cashOooFactBalance") && dashSrc.includes("cashIpFactBalance"));
   check("LABELS-S UI distinguishes вчера / сегодня / после контрольной точки / за месяц / фактический остаток", pageSrc.includes("вчера") && pageSrc.includes("сегодня") && pageSrc.includes("после контрольной точки") && pageSrc.includes("за месяц") && (pageSrc.includes("Фактический остаток") || pageSrc.includes("Расчётный остаток")));
@@ -232,8 +267,8 @@ async function main() {
   check("DASHBOARD-CASH1 dashboard cash cards: ООО/ИП + pending counters gated by financials", dashSrc.includes("Наличные ООО") && dashSrc.includes("Наличные ИП") && dashSrc.includes("Инкассации на проверке") && dashSrc.includes("Изъятия на проверке") && dashSrc.includes("showPending") && rd("src/app/(app)/dashboard/page.tsx").includes("showPending={financials}"));
   check("DASHBOARD-CASH2 manager sees operational balances w/o review counters (showPending gate)", /showPending \? [\s\S]{0,200}Инкассации на проверке/.test(dashSrc) && dashSrc.includes("showPending ? "));
   check("ROLE-CASH2 accountant workspace surfaces инкассации/изъятия на проверке", wsSrc.includes("Инкассации на проверке") && wsSrc.includes("Изъятия на проверке") && wsSrc.includes("loadPendingCashOps"));
-  check("SECURITY no secrets/technical fiscal terms/PII in cash page, forms, actions, lib, loader, dashboard", ![pageSrc, forms, actions, lib, loader, dashSrc].some((s) => /login|password|integratorId|sessionToken|Bearer|rawJson|fiscalSign|ФПД|ShiftList|DocumentInfo|NewDocuments|\bphone\b|\bemail\b|buyer|customer|\.stack/i.test(s)));
-  check("SECURITY-audit cash audit actions are cash.* with SAFE metadata (amountKopeks/counts), never raw/PII", actions.includes('"cash.collection_created"') && actions.includes('"cash.withdrawal_created"') && actions.includes('"cash.opening_balance_set"') && actions.includes("metadata: { amountKopeks") && !/metadata:\s*\{[^}]*(rawJson|fiscalSign|\bphone\b|\bemail\b|\.stack)/i.test(actions));
+  check("SECURITY no secrets/technical fiscal terms/PII in cash pages, forms, actions, lib, loader, dashboard", ![pageSrc, forms, actions, lib, loader, dashSrc, oldCashSrc].some((s) => /login|password|integratorId|sessionToken|Bearer|rawJson|fiscalSign|ФПД|ShiftList|DocumentInfo|NewDocuments|\bphone\b|\bemail\b|buyer|customer|\.stack/i.test(s)));
+  check("SECURITY-audit cash audit actions are cash.* with SAFE metadata (amountKopeks/counts), never raw/PII/documents", actions.includes('"cash.collection_created"') && actions.includes('"cash.withdrawal_created"') && actions.includes('"cash.opening_balance_set"') && actions.includes('"cash.collection_cancelled"') && actions.includes('"cash.withdrawal_cancelled"') && actions.includes("metadata: { amountKopeks") && !/metadata:\s*\{[^}]*(rawJson|fiscalSign|\bphone\b|\bemail\b|storageKey|\.stack)/i.test(actions));
   check("NO-MIX withdrawal/collection are NOT sales/income: no Sale/Ofd writes in actions", !/prisma\.sale\.create|ofdReceipt|ofdDailySalesSummary\.create|ofdRevenueCategory/i.test(actions));
   check("MIGRATION dev+prod add CashCollection/CashWithdrawal/CashOperationDocument (non-destructive CREATE TABLE)", /CREATE TABLE "CashCollection"/.test(rd("prisma/migrations/20260718000000_add_cash_collections_withdrawals/migration.sql")) && /CREATE TABLE "CashWithdrawal"/.test(rd("prisma/production/migrations/20260718000000_add_cash_collections_withdrawals/migration.sql")) && /CREATE TABLE "CashOperationDocument"/.test(rd("prisma/production/migrations/20260718000000_add_cash_collections_withdrawals/migration.sql")));
   check("LIB pure calc exports calculateCashBalances + opening-window fields; no I/O", lib.includes("export function calculateCashBalances") && lib.includes("cashOooOfdSinceOpening") && lib.includes("cashOooOpeningSet") && lib.includes("oooOpeningDate") && !lib.includes("import { prisma }"));

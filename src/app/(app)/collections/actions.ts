@@ -197,6 +197,55 @@ export async function rejectCashWithdrawal(_p: CashState | undefined, formData: 
   return reviewWithdrawal(formData, "rejected", "cash.withdrawal_rejected");
 }
 
+// Soft-cancel: never a hard delete — the row stays in history as "cancelled" and
+// stops affecting the fact balance. Reuses reviewedBy/reviewedAt/reviewReason to
+// record who cancelled it and why (no schema change). Only draft / pending may be
+// cancelled; an approved operation is refused with a clear message.
+const CANCELABLE_COLLECTION = ["draft", "pending_accountant_review"];
+const CANCELABLE_WITHDRAWAL = ["draft", "pending_review"];
+
+/** Отмена инкассации ООО (soft-cancel → status "cancelled"). */
+export async function cancelCashCollection(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const id = String(formData.get("id") ?? "").trim();
+  const g = await ctxForWrite(null);
+  if (!g.ok) return { ok: false, error: g.error };
+  const row = await prisma.cashCollection.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, select: { id: true, clubId: true, amountKopeks: true, status: true, createdByUserId: true } });
+  if (!row) return { ok: false, error: "Инкассация не найдена." };
+  const isCreator = row.createdByUserId === g.userId;
+  if (!isCreator && !canReviewCollection(g.roles)) return { ok: false, error: "Недостаточно прав для отмены." };
+  if (row.status === "approved") return { ok: false, error: "Подтверждённую инкассацию нельзя удалить. Создайте корректировку или обратитесь к администратору." };
+  if (!CANCELABLE_COLLECTION.includes(row.status)) return { ok: false, error: "Операция уже обработана и не может быть отменена." };
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 200) || null;
+  const n = await prisma.cashCollection.updateMany({ where: { id, status: { in: CANCELABLE_COLLECTION } }, data: { status: "cancelled", reviewedByUserId: g.userId, reviewedAt: new Date(), reviewReason: reason } });
+  if (n.count === 0) return { ok: false, error: "Операция уже обработана." };
+  await recordAudit({ action: "cash.collection_cancelled", entityType: "CashCollection", entityId: id, companyId: g.companyId, clubId: row.clubId, userId: g.userId, metadata: { amountKopeks: row.amountKopeks, status: "cancelled", reason } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: "Инкассация отменена. Остаток ООО возвращён." };
+}
+
+/** Отмена изъятия ООО→ИП (soft-cancel → status "cancelled"). */
+export async function cancelCashWithdrawal(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const id = String(formData.get("id") ?? "").trim();
+  const g = await ctxForWrite(null);
+  if (!g.ok) return { ok: false, error: g.error };
+  const row = await prisma.cashWithdrawal.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, select: { id: true, clubId: true, amountKopeks: true, status: true, createdByUserId: true } });
+  if (!row) return { ok: false, error: "Изъятие не найдено." };
+  const isCreator = row.createdByUserId === g.userId;
+  if (!isCreator && !canReviewWithdrawal(g.roles)) return { ok: false, error: "Недостаточно прав для отмены." };
+  if (row.status === "approved") return { ok: false, error: "Подтверждённое изъятие нельзя удалить. Создайте корректировку или обратитесь к администратору." };
+  if (!CANCELABLE_WITHDRAWAL.includes(row.status)) return { ok: false, error: "Операция уже обработана и не может быть отменена." };
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 200) || null;
+  const n = await prisma.cashWithdrawal.updateMany({ where: { id, status: { in: CANCELABLE_WITHDRAWAL } }, data: { status: "cancelled", reviewedByUserId: g.userId, reviewedAt: new Date(), reviewReason: reason } });
+  if (n.count === 0) return { ok: false, error: "Операция уже обработана." };
+  await recordAudit({ action: "cash.withdrawal_cancelled", entityType: "CashWithdrawal", entityId: id, companyId: g.companyId, clubId: row.clubId, userId: g.userId, metadata: { amountKopeks: row.amountKopeks, status: "cancelled", reason } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: "Изъятие отменено. Остатки ООО и ИП возвращены." };
+}
+
 /** Synchronize ИП/ООО cash from ОФД (reuses the safe company sync). Returns SAFE
  * aggregates only — never secrets, tokens, raw fiscal data or personal data. */
 async function syncCash(action: "cash.ip_sync" | "cash.ooo_sync"): Promise<CashState> {

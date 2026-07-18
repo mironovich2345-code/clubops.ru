@@ -8,6 +8,8 @@ import {
   rejectCashCollection,
   approveCashWithdrawal,
   rejectCashWithdrawal,
+  cancelCashCollection,
+  cancelCashWithdrawal,
   setCashOpeningBalance,
   syncIpCashAction,
   syncOooCashAction,
@@ -132,6 +134,22 @@ export function WithdrawalForm({ clubs, today }: { clubs: ClubOpt[]; today: stri
         <Submit idle="Изъять из ООО в ИП" busy="Отправка..." />
       </div>
     </form>
+  );
+}
+
+export function CancelButton({ id, kind }: { id: string; kind: "collection" | "withdrawal" }) {
+  const cancel = kind === "collection" ? cancelCashCollection : cancelCashWithdrawal;
+  const [state, action] = useFormState(cancel, initial);
+  return (
+    <details className="inline-block">
+      <summary className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">Отменить</summary>
+      <form action={action} className="mt-2 flex flex-col gap-1.5 rounded-md border border-slate-200 bg-white p-2 shadow-sm">
+        <input type="hidden" name="id" value={id} />
+        <input name="reason" placeholder="Причина отмены (необязательно)" className="input text-xs" />
+        <button type="submit" className="rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100">Подтвердить отмену</button>
+        <Msg s={state} />
+      </form>
+    </details>
   );
 }
 

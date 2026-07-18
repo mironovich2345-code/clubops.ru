@@ -1,201 +1,59 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { prisma } from "@/lib/prisma";
-import { requirePageAccess, getCurrentAccessContext, userHasClubRole } from "@/lib/access";
-import { canCreateOperational } from "@/lib/auth";
 import { formatKopeks } from "@/lib/money";
-import { formatUserDisplayName } from "@/lib/user-display";
-import { resolveActiveIpForClub } from "@/lib/expense-simplified";
-import { getClubCashBreakdown, getClubOpeningBalance, MOVEMENT, MSTATUS } from "@/lib/cash-wallets";
-import { OpeningBalanceForm, OtherIncomeForm, TransferForm, PendingTransfers } from "./CashPanel";
-import { confirmOtherIncomeAction } from "../cash-actions";
+import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
+import { loadClubCashBalances } from "@/lib/cash-collections";
 
 export const dynamic = "force-dynamic";
 
-const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
-const dateTimeFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
+// The legacy confirmed-only "Касса ИП" (CashWallet/CashMovement) is retired from the
+// user flow: it showed a SECOND, different ИП balance that conflicted with the fact
+// balance. Cash management now lives in Финансы → Инкассация (/collections), which is
+// the single source of truth via loadClubCashBalances. This page is now a read-only
+// pointer showing the same fact balance. The wallet ledger + its actions remain in
+// code (cash-actions.ts / cash-wallets.ts) but are no longer surfaced here.
 export default async function CashPage() {
   await requirePageAccess("expenses");
   const ctx = await getCurrentAccessContext();
-  if (!ctx) redirect("/login");
+  if (!ctx || !ctx.selectedCompanyId) redirect("/expenses");
   const companyId = ctx.selectedCompanyId;
   const clubId = ctx.selectedClubId ?? (ctx.allowedClubIds.length === 1 ? ctx.allowedClubIds[0] : null);
-  if (!companyId || !clubId) redirect("/expenses");
-
-  const ip = await resolveActiveIpForClub(clubId);
-  if (!ip.ok) {
-    return (
-      <div>
-        <PageHeader title="Касса ИП" description="Наличные клуба и региональных директоров" />
-        <div className="mt-4 rounded-md bg-amber-50 p-4 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">{ip.error}</div>
-      </div>
-    );
-  }
-
-  const [breakdown, isRegional, isManager, canOp, openingInfo, ipRows] = await Promise.all([
-    getClubCashBreakdown(clubId, ip.legalEntityId),
-    userHasClubRole(ctx.user.id, clubId, ["regional_director"]),
-    userHasClubRole(ctx.user.id, clubId, ["manager"]),
-    Promise.resolve(canCreateOperational(ctx.effectiveRoles)),
-    getClubOpeningBalance(clubId, ip.legalEntityId),
-    // Active ИП linked to this club (ООО excluded) — options for the form.
-    prisma.clubLegalEntity.findMany({
-      where: { clubId, isActive: true, legalEntity: { isActive: true, type: { in: ["ip", "ИП"] } } },
-      select: { legalEntity: { select: { id: true, name: true } } },
-    }),
-  ]);
-  const allWallets = ctx.effectiveRoles.some((r) => ["owner", "general_director", "regional_director", "accountant", "chief_accountant"].includes(r));
-  const ipOptions = ipRows.map((r) => ({ id: r.legalEntity.id, name: r.legalEntity.name }));
-  const canCreateTransfer = isManager || isRegional;
-
-  // Author + ИП names for the "Начальный остаток задан" detail card.
-  const openingAuthor = openingInfo?.createdByUserId
-    ? await prisma.user.findUnique({ where: { id: openingInfo.createdByUserId }, select: { name: true, firstName: true, lastName: true, deletedAt: true } })
-    : null;
-  const openingIpName = openingInfo ? (ipOptions.find((o) => o.id === openingInfo.legalEntityId)?.name ?? null) : null;
-  const club = await prisma.club.findUnique({ where: { id: clubId }, select: { name: true } });
-
-  // «Приход Иное» pending confirmations for this Club.
-  const otherIncomePending = canOp
-    ? await prisma.cashMovement.findMany({ where: { clubId, legalEntityId: ip.legalEntityId, status: MSTATUS.PENDING, type: MOVEMENT.OTHER_INCOME }, orderBy: { createdAt: "desc" }, take: 50 })
-    : [];
-
-  // Two-way transfers (pending + recent confirmed) for this Club.
-  const transfers = canOp
-    ? await prisma.cashMovement.findMany({
-        where: { clubId, legalEntityId: ip.legalEntityId, type: MOVEMENT.TRANSFER, status: { in: [MSTATUS.PENDING, MSTATUS.CONFIRMED] } },
-        orderBy: [{ createdAt: "desc" }], take: 40,
-        select: { id: true, amountKopeks: true, occurredAt: true, comment: true, status: true, confirmedByUserId: true, confirmedAt: true, fromWallet: { select: { type: true, holderUserId: true } }, toWallet: { select: { type: true, holderUserId: true } } },
-      })
-    : [];
-
-  // Resolve display names for regionals (transfer targets) + confirmers.
-  const regionalUsers = canOp
-    ? await prisma.user.findMany({
-        where: { isActive: true, deletedAt: null, OR: [{ clubRoles: { some: { clubId, role: "regional_director" } } }, { companyAccess: { some: { companyId, role: "regional_director" } } }] },
-        select: { id: true, name: true, firstName: true, lastName: true, deletedAt: true },
-      })
-    : [];
-  const extraIds = Array.from(new Set(transfers.flatMap((m) => [m.confirmedByUserId, m.toWallet?.holderUserId].filter(Boolean) as string[])));
-  const extraUsers = extraIds.length ? await prisma.user.findMany({ where: { id: { in: extraIds } }, select: { id: true, name: true, firstName: true, lastName: true, deletedAt: true } }) : [];
-  const nameMap = new Map<string, string>();
-  for (const u of [...regionalUsers, ...extraUsers]) nameMap.set(u.id, formatUserDisplayName(u));
-  const nameOf = (id: string | null | undefined) => (id ? (nameMap.get(id) ?? "—") : "—");
-
-  const transferRows = transfers.map((m) => {
-    const toRegional = m.toWallet?.type === "regional_cash";
-    return {
-      id: m.id,
-      directionLabel: toRegional ? "Клуб → Директор" : "Директор → Клуб",
-      amountText: formatKopeks(m.amountKopeks),
-      dateText: dateFmt.format(m.occurredAt),
-      comment: m.comment,
-      confirmed: m.status === MSTATUS.CONFIRMED,
-      statusLabel: m.status === MSTATUS.CONFIRMED ? "Получено" : toRegional ? "Ожидает подтверждения директором" : "Ожидает подтверждения клубом",
-      counterpartyLabel: toRegional ? `Получатель: ${nameOf(m.toWallet?.holderUserId)}` : `Получатель: ${club?.name ?? "Клуб"}`,
-      confirmedByName: m.confirmedByUserId ? nameOf(m.confirmedByUserId) : null,
-      confirmedAtText: m.confirmedAt ? dateTimeFmt.format(m.confirmedAt) : null,
-      // Only the true recipient may confirm (re-checked on the server too).
-      canConfirm: m.status === MSTATUS.PENDING && (toRegional ? m.toWallet?.holderUserId === ctx.user.id && isRegional : isManager),
-    };
-  });
 
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Касса ИП" description="Наличные клуба и региональных директоров (только подтверждённые движения)" />
-
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-medium text-slate-500">Наличные в клубе</div>
-          <div className="mt-1 text-xl font-semibold text-slate-900">
-            {breakdown.hasOpeningBalance ? formatKopeks(breakdown.clubBalanceKopeks) : <span className="text-sm text-amber-700">Требуется задать начальный остаток</span>}
-          </div>
-          {!allWallets && breakdown.transferredToRegionalTotalKopeks > 0 ? (
-            <div className="mt-1 text-xs text-slate-500">Передано региональному директору: {formatKopeks(breakdown.transferredToRegionalTotalKopeks)}</div>
-          ) : null}
-        </div>
-        {allWallets ? (
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-medium text-slate-500">У региональных директоров</div>
-            <div className="mt-1 text-xl font-semibold text-slate-900">{formatKopeks(breakdown.regionalTotalKopeks)}</div>
-            <div className="mt-1 text-xs text-slate-500">Всего: {formatKopeks(breakdown.combinedKopeks)}</div>
-          </div>
-        ) : null}
+      <PageHeader title="Касса ИП" description="Фактический остаток наличных ИП" />
+      <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        Управление кассой перенесено в Финансы → Инкассация. Контрольные остатки, инкассации и изъятия — на одной странице.
+        <Link href="/collections" className="ml-1 font-medium text-brand-700 underline">Перейти в «Инкассация»</Link>
       </div>
-
-      {breakdown.hasOpeningBalance && openingInfo ? (
-        <Section title="Начальный остаток">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Начальный остаток задан</span>
-            <span className="text-lg font-semibold text-slate-900">{formatKopeks(openingInfo.amountKopeks)}</span>
-          </div>
-          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
-            <div><dt className="inline text-slate-500">Дата остатка: </dt><dd className="inline">{dateFmt.format(openingInfo.occurredAt)}</dd></div>
-            <div><dt className="inline text-slate-500">ИП: </dt><dd className="inline">{openingIpName ?? "—"}</dd></div>
-            <div><dt className="inline text-slate-500">Касса: </dt><dd className="inline">Касса клуба</dd></div>
-            <div><dt className="inline text-slate-500">Задал: </dt><dd className="inline">{openingAuthor ? formatUserDisplayName(openingAuthor) : "—"}</dd></div>
-            {openingInfo.comment ? <div className="sm:col-span-2"><dt className="inline text-slate-500">Комментарий: </dt><dd className="inline">{openingInfo.comment}</dd></div> : null}
-          </dl>
-        </Section>
-      ) : isRegional ? (
-        <Section title="Начальный остаток">
-          <OpeningBalanceForm ipOptions={ipOptions} defaultDate={todayISO()} clubName={club?.name ?? null} />
-        </Section>
-      ) : null}
-
-      {canOp ? (
-        <Section title="Приход «Иное» (внешнее пополнение наличными — не продажа)"><OtherIncomeForm /></Section>
-      ) : null}
-
-      {canCreateTransfer ? (
-        <Section title="Передача наличных">
-          <TransferForm
-            regionals={regionalUsers.map((r) => ({ userId: r.id, name: formatUserDisplayName(r) }))}
-            canCreateToRegional={isManager || isRegional}
-            canCreateToClub={isRegional}
-          />
-        </Section>
-      ) : null}
-
-      {canOp && transferRows.length > 0 ? (
-        <Section title="Передачи наличных (ожидают подтверждения / получено)">
-          <PendingTransfers rows={transferRows} />
-        </Section>
-      ) : null}
-
-      {otherIncomePending.length > 0 ? (
-        <Section title="Приход «Иное» — ожидают подтверждения получателем">
-          <ul className="divide-y divide-slate-100">
-            {otherIncomePending.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <div className="text-sm text-slate-700">
-                  Приход «Иное» · {formatKopeks(m.amountKopeks)} · {dateFmt.format(m.occurredAt)}
-                  {m.comment ? <span className="ml-1 text-xs text-slate-500">· {m.comment}</span> : null}
-                </div>
-                <form action={confirmOtherIncomeAction}>
-                  <input type="hidden" name="movementId" value={m.id} />
-                  <button type="submit" className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100">Подтвердить</button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      ) : null}
+      {clubId ? <IpBlock companyId={companyId} clubId={clubId} /> : <div className="mt-4 text-sm text-slate-500">Выберите клуб, чтобы увидеть остаток.</div>}
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+async function IpBlock({ companyId, clubId }: { companyId: string; clubId: string }) {
+  const { balances: b, ipName } = await loadClubCashBalances(companyId, clubId);
   return (
-    <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 text-sm font-semibold text-slate-700">{title}</div>
-      {children}
+    <div className="mt-4 rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
+      <div className="text-sm font-medium text-slate-500">Наличные ИП{ipName ? ` — ${ipName}` : ""}</div>
+      <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{formatKopeks(b.cashIpFactBalance)}</div>
+      <div className="text-xs text-slate-500">{b.cashIpOpeningSet ? "Фактический остаток ИП сейчас" : "Расчётный остаток ИП от 0 ₽"}</div>
+      {!b.cashIpOpeningSet ? (
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Начальный остаток не задан. Задайте контрольный остаток в Финансы → Инкассация.</div>
+      ) : null}
+      <dl className="mt-3 space-y-1 text-sm">
+        <Row label={`Контрольный остаток${b.cashIpOpeningDate ? ` (${b.cashIpOpeningDate})` : ""}`} value={b.cashIpOpeningSet ? formatKopeks(b.cashIpOpening) : "не задан"} />
+        <Row label="Приход ИП вчера (ОФД)" value={formatKopeks(b.cashIpOfdYesterday)} />
+        <Row label="Изъятия из ООО" value={formatKopeks(b.cashIpWithdrawalsFromOoo)} />
+        <Row label="Приход «Иное»" value={formatKopeks(b.cashIpOtherIncome)} />
+        <Row label="Расходы ИП на проверке" value={formatKopeks(b.cashIpPendingExpenses)} />
+      </dl>
+      <Link href="/collections" className="mt-3 inline-block text-xs font-medium text-brand-700 hover:underline">Управление контрольными остатками, изъятиями и инкассацией →</Link>
     </div>
   );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-baseline justify-between gap-2"><dt className="text-slate-500">{label}</dt><dd className="font-medium text-slate-800">{value}</dd></div>;
 }

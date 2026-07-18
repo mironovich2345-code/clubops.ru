@@ -159,8 +159,8 @@ export default async function ExpensesPage({
         <PageHeader title="Расходы" description="Наличные расходы ИП, документы и согласование" />
         {canCreate ? (
           <div className="flex flex-wrap gap-2">
-            <Link href="/expenses/cash" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-              Касса
+            <Link href="/collections" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+              Инкассация и остатки
             </Link>
             <Link href="/expenses/simple" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700">
               + Новый расход
