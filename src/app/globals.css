@@ -2,8 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme tokens. Light is the default (unchanged look); dark is applied by a `.dark`
+   class on <html> (Tailwind darkMode: "class"). The tokens are the single source of
+   the palette; the `.dark` utility remaps below reference them so the whole app is
+   themed centrally, without per-page rewrites. */
 :root {
   color-scheme: light;
+  --background: #f8fafc;      /* app background (slate-50) */
+  --foreground: #0f172a;      /* primary text (slate-900) */
+  --card: #ffffff;            /* cards / topbar / sidebar */
+  --card-foreground: #0f172a;
+  --muted: #f1f5f9;           /* subtle surfaces (slate-100) */
+  --muted-foreground: #64748b;/* secondary text (slate-500) */
+  --border: #e2e8f0;          /* borders (slate-200) */
+  --input: #ffffff;           /* input background */
+  --primary: #2563eb;         /* brand-600 */
+  --destructive: #e11d48;     /* rose-600 */
+  --success: #059669;         /* emerald-600 */
+  --warning: #d97706;         /* amber-600 */
+}
+
+:root.dark,
+.dark {
+  color-scheme: dark;
+  /* Not pure black: dark slate background, cards a touch lighter, visible borders. */
+  --background: #0b1220;
+  --foreground: #e2e8f0;
+  --card: #111827;
+  --card-foreground: #e2e8f0;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --border: #273244;
+  --input: #0e1626;
+  --primary: #3b82f6;
+  --destructive: #fb7185;
+  --success: #34d399;
+  --warning: #fbbf24;
 }
 
 @layer components {
@@ -29,3 +63,81 @@ body {
     Arial,
     sans-serif;
 }
+
+/* ---------------------------------------------------------------------------
+   Dark theme — centralized remap of the neutral palette the app uses everywhere.
+   Uses !important so the palette is UNIFIED (also over any existing dark: variant),
+   giving one consistent dark look across sidebar, topbar, cards, tables, forms,
+   inputs, badges and every page. Only NEUTRAL surfaces + text + borders + light
+   status tints are remapped; brand buttons and white-on-color text are left alone.
+   The light theme is not touched (all rules are scoped under .dark).
+--------------------------------------------------------------------------- */
+.dark body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* Surfaces */
+.dark .bg-white { background-color: var(--card) !important; }
+.dark .bg-slate-50 { background-color: var(--background) !important; }
+.dark .bg-slate-100 { background-color: var(--muted) !important; }
+.dark .hover\:bg-slate-50:hover { background-color: var(--muted) !important; }
+.dark .hover\:bg-slate-100:hover { background-color: var(--muted) !important; }
+
+/* Neutral text */
+.dark .text-slate-900 { color: #f1f5f9 !important; }
+.dark .text-slate-800 { color: #e2e8f0 !important; }
+.dark .text-slate-700 { color: #cbd5e1 !important; }
+.dark .text-slate-600 { color: #a9b6c8 !important; }
+.dark .text-slate-500 { color: var(--muted-foreground) !important; }
+.dark .text-slate-400 { color: #6b7a90 !important; }
+.dark .text-slate-300 { color: #64748b !important; }
+
+/* Borders / dividers */
+.dark .border-slate-100 { border-color: var(--border) !important; }
+.dark .border-slate-200 { border-color: var(--border) !important; }
+.dark .border-slate-300 { border-color: #334155 !important; }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border) !important; }
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border) !important; }
+
+/* Inputs / selects */
+.dark .input {
+  background-color: var(--input);
+  color: var(--foreground);
+  border-color: #334155;
+}
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: var(--input);
+  color: var(--foreground);
+}
+.dark ::placeholder { color: #64748b; }
+
+/* Status tints — softened translucent fills + brighter text for dark backgrounds */
+.dark .bg-brand-50,
+.dark .bg-brand-50\/40 { background-color: rgba(59, 130, 246, 0.12) !important; }
+.dark .bg-emerald-50,
+.dark .bg-emerald-50\/60 { background-color: rgba(16, 185, 129, 0.12) !important; }
+.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.12) !important; }
+.dark .bg-amber-50,
+.dark .bg-amber-50\/40 { background-color: rgba(245, 158, 11, 0.12) !important; }
+.dark .bg-sky-50 { background-color: rgba(56, 189, 248, 0.12) !important; }
+
+.dark .text-brand-700 { color: #93c5fd !important; }
+.dark .text-emerald-700,
+.dark .text-emerald-800 { color: #6ee7b7 !important; }
+.dark .text-rose-600,
+.dark .text-rose-700 { color: #fda4af !important; }
+.dark .text-amber-700,
+.dark .text-amber-800,
+.dark .text-amber-900 { color: #fcd34d !important; }
+.dark .text-sky-700 { color: #7dd3fc !important; }
+
+.dark .border-brand-200 { border-color: rgba(59, 130, 246, 0.35) !important; }
+.dark .border-emerald-200,
+.dark .border-emerald-300 { border-color: rgba(16, 185, 129, 0.35) !important; }
+.dark .border-rose-200,
+.dark .border-rose-300 { border-color: rgba(244, 63, 94, 0.35) !important; }
+.dark .border-amber-200,
+.dark .border-amber-300 { border-color: rgba(245, 158, 11, 0.35) !important; }

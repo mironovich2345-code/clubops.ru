@@ -27,9 +27,17 @@ export const viewport: Viewport = {
   themeColor: "#0F172A",
 };
 
+// Runs before paint (no framework, no imports) so the saved theme is applied before
+// React hydrates — prevents a light→dark flash. Reads localStorage("theme") =
+// light | dark | system (default system → follows the OS). Never touches auth/session.
+const THEME_INIT = `(function(){try{var t=localStorage.getItem('theme')||'system';var m=window.matchMedia('(prefers-color-scheme: dark)').matches;var d=t==='dark'||(t==='system'&&m);var e=document.documentElement;e.classList.toggle('dark',d);e.setAttribute('data-theme',d?'dark':'light');e.style.colorScheme=d?'dark':'light';}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru">
+    <html lang="ru" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

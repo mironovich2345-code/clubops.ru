@@ -7,6 +7,7 @@ import { getCurrentAccessContext, getUserCompanies, getUserClubs } from "@/lib/a
 import { NAV_ITEMS, ROLE_LABELS, STRATEGIC_HIDDEN_PAGES } from "@/lib/navigation";
 import { logoutAction } from "@/app/auth-actions";
 import { ScopeSwitcher } from "./_components/ScopeSwitcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // This layout reads the database and the session, so the whole (app) subtree
 // must be rendered on demand, never statically prerendered at build time.
@@ -52,6 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           )}
           <div className="flex items-center gap-3">
             <UserBadge user={user} roleLabel={roleLabel} />
+            <ThemeToggle />
             <Link
               href="/settings/security"
               className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"

@@ -61,6 +61,7 @@ const pilots = [
   ["Employee role management", "pilot-employee-role-management.mjs"],
   ["Deploy config", "pilot-deploy-config.mjs"],
   ["Document security", "pilot-document-security.mjs"],
+  ["Dark mode toggle", "pilot-theme.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
