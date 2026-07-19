@@ -83,7 +83,7 @@ export default async function OfdSalesAnalyticsPage({ searchParams }: { searchPa
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="ОФД-продажи" description="Детализация и сверка чеков ОФД: наличные, безнал, возвраты, юрлица и статьи доходов." />
+      <PageHeader title="ОФД-продажи" description="Детализация и сверка чеков ОФД: наличные, безнал, ОФД-возвраты (фискальные коррекции по кассе — не клиентские возвраты), юрлица и статьи доходов." />
 
       {/* Today / yesterday / selected-month cards */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -140,7 +140,7 @@ function SalesCard({ title, agg, highlight }: { title: string; agg: OfdMoneyAgg;
       <dl className="mt-3 space-y-1 text-sm">
         <Row label="Наличные" value={formatKopeks(agg.cash)} />
         <Row label="Безнал" value={formatKopeks(agg.electronic)} />
-        <Row label="Возвраты" value={formatKopeks(agg.ret)} />
+        <Row label="ОФД-возвраты" value={formatKopeks(agg.ret)} />
         <Row label="Чеков" value={String(agg.receipts)} />
       </dl>
     </div>
@@ -173,7 +173,7 @@ function MoneyTable({ firstHeader, rows }: { firstHeader: string; rows: { label:
     <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50">
-          <tr><Th>{firstHeader}</Th><Th>Наличные</Th><Th>Безнал</Th><Th>Возвраты</Th><Th>Итого</Th><Th>Чеков</Th></tr>
+          <tr><Th>{firstHeader}</Th><Th>Наличные</Th><Th>Безнал</Th><Th>ОФД-возвраты</Th><Th>Итого</Th><Th>Чеков</Th></tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
           {rows.map((r, i) => (

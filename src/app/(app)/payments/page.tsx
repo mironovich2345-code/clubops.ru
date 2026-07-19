@@ -222,7 +222,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
                 + Обязательный платёж
               </Link>
               <Link
-                href="/balances"
+                href="/collections"
                 className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 Обновить остаток

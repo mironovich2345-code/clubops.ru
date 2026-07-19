@@ -1,9 +1,9 @@
 # CLUB-OPS — Finance & Accounting Logic Audit
 
-Date: 2026-07-19
-Base commit audited: `ef2306e` (main)
+Date: 2026-07-19 (updated after owner decisions on RISK-1 / RISK-2)
+Base commit audited: `ef2306e` (main); risks closed in follow-up `fix(finance): resolve audit risks for refunds and balances`.
 Scope: formulas, data sources, page/route wiring, roles, accounting semantics, double-counting, legacy/dead code.
-This audit changed **no** business logic except one minimal presentation bug fix (§9); everything else is documentation + verification tests.
+This audit changed **no** working finance math. Changes: one presentation bug fix (§9); the two open risks were closed by owner decision (§7, §10) — RISK-1 accepted as business-correct (no code change to the result formula), RISK-2 closed by disabling the legacy `/balances` writer/UI.
 
 ## 1. Executive summary
 
@@ -14,9 +14,9 @@ The managerial finance contour is coherent and OFD-driven:
 - **Expenses / result / obligations** follow one consistent definition across Dashboard, Analytics and the cash pages.
 - **Cash operations** (инкассация, изъятие, приход «Иное») correctly move cash but never touch revenue or profit.
 
-Two items require a **business decision** (not code bugs): (a) a potential **double-count of returns** if a refund is recorded both as an OFD fiscal return and as a manual `Refund`, and (b) two pages (`/balances` and `/collections`) writing the same `BalanceSnapshot` baseline. One clear **bug was fixed**: the Analytics "Финансовый итог" card showed profit/cash from the retired `SalesReport` source.
+Both audit risks are now **closed by owner decision**: (a) the returns "double-count" is **business-correct, not a defect** — an OFD `returnTotal` is a fiscal correction at the till (usually a cashier error), while a manual `Refund` is a separate client-refund process; they are different events, so OFD returns reduce ОФД net and paid `Refund` stays in confirmedCosts (§7); (b) `/balances` is **disabled as legacy** — control balances are set only via `/collections`; `/balances` now redirects there and its writer is refused (§10). One clear **bug was fixed**: the Analytics "Финансовый итог" card showed profit/cash from the retired `SalesReport` source (§9).
 
-**Final verdict: PASS WITH RISKS.**
+**Final verdict: PASS** (no open risks; only inert legacy/dead code observations remain — §8, §10).
 
 ## 2. Data source map
 
@@ -77,7 +77,7 @@ These formulas are shared (one implementation each) across Dashboard, Analytics,
 | /collections | collections | **A** | Инкассация/изъятия/приход/контрольный остаток | source of truth для cash |
 | /invoices | invoices | **A** | Счета | |
 | /refunds | refunds | **A** | Возвраты | |
-| /balances | balances | **B legacy / risk** | Ручные снапшоты остатка | нет в навигации; пишет тот же `BalanceSnapshot`, что и /collections — см. §10 риск |
+| /balances | balances | **B legacy — DISABLED** | Ручные снапшоты остатка (отключено) | нет в навигации; прямое открытие → `redirect("/collections")`; writer `createBalanceSnapshot` отключён (возвращает «Legacy /balances disabled. Use /collections.»). Контрольные остатки — только через /collections |
 | /payments | payments | **A** | Календарь платежей, кассовые разрывы | |
 | /mandatory-payments | mandatory_payments | **A** | Обязательные платежи | нет в навигации (внутри календаря) |
 | /budgets | budgets | **A** | Бюджеты/лимиты | |
@@ -120,9 +120,14 @@ Enforcement is server-side: `requirePageAccess` on every page; write actions che
 | Счёт как invoice И как expense | Один и тот же invoice — одна запись в spend | OK |
 | Расход как Expense И как invoice | Разные модели, не задваиваются | OK |
 | SalesReport в текущей выручке | Только fallback при отсутствии ОФД | OK |
-| **ОФД возврат И paid Refund** | **Возможен** — см. риск | ⚠ RISK |
+| **ОФД возврат И paid Refund** | **Нет** — разные бизнес-события (решение собственника) | ✔ RESOLVED |
 
-**Returns double-counting (critical):** `ofdNet` subtracts OFD returns (`returnTotalKopeks`); `confirmedCosts` separately includes paid `Refund` rows (category `refunds`). There is **no code linkage or dedup** between a `Refund` row and an OFD return receipt (the OFD importer never creates `Refund`/`Expense`; `Refund` has no fiscal field; refunds are created only via the manual `/refunds` flow). Therefore `result = ofdNet − confirmedCosts` subtracts a refund twice **iff the same economic refund is recorded both as a fiscal return receipt and as a manual paid `Refund`**. Whether that co-occurs is a **business-process** question — see §10.
+**Returns — RESOLVED / business decision (не double-count):** `ofdNet` subtracts OFD returns (`returnTotalKopeks`); `confirmedCosts` separately includes paid `Refund` rows (category `refunds`). The owner confirmed these are **different economic events, not the same refund counted twice**:
+
+- **ОФД `returnTotal`** = фискальный возврат/коррекция по кассе (чаще всего ошибка кассира / фискальная корректировка).
+- **Ручной `Refund`** = клиентский возврат, созданный управляющим, — отдельная бизнес-операция и отдельный процесс.
+
+Therefore the current behavior is correct and stays unchanged: **OFD returns reduce ОФД net revenue; paid `Refund` stays in `confirmedCosts`; `result = ofdNet − confirmedCosts` is not a double-count.** The code already matches this decision (the OFD importer never creates `Refund`/`Expense`; `Refund` has no fiscal field; refunds are created only via the manual `/refunds` flow), so no formula change was made. UI labels for OFD returns were clarified to «ОФД-возвраты (фискальные коррекции)» on `/analytics/ofd-sales` to avoid confusing them with client refunds.
 
 ## 8. Legacy / dead code inventory
 
@@ -135,7 +140,8 @@ Enforcement is server-side: `requirePageAccess` on every page; write actions che
 | `src/app/(app)/sales/_components/SalesReportForm.tsx` | **C dead** | не импортируется; createSalesReport отключён |
 | `src/app/(app)/sales/*` (архив отчётов) | **B legacy read-only** | доступен по URL, нет в навигации |
 | `src/app/(app)/expenses/cash/page.tsx` | **B legacy read-only** | указатель на /collections |
-| `/balances` | **E требует решения** | активна, но дублирует контрольный остаток /collections |
+| `/balances` (`page.tsx` + `actions.ts`) | **B legacy — DISABLED** | redirect → /collections; writer отключён. Контрольные остатки только через /collections |
+| `src/app/(app)/balances/_components/BalanceForm.tsx` + `getRecentSnapshots`/`getSnapshotTargetsForScope` | **C dead** | использовались только старой /balances; после отключения не вызываются |
 
 None removed in this audit (task: не удалять крупный дед-код). No **class D (dangerous)** legacy found — the manual-sales creation path is already server-disabled; the dead CashWallet UI is unreachable.
 
@@ -146,18 +152,20 @@ None removed in this audit (task: не удалять крупный дед-ко
 - Fix (minimal, `src/app/(app)/analytics/page.tsx`): при `useOfd` показывать управленческий результат `ofdNet − confirmedCosts` (та же `computeManagementResult`, уже используемая на странице) с лейблом «Результат (ОФД − расходы)»; «Наличные ООО/ИП» — фактический остаток из `loadClubCashBalances` (`loadScopeCashFactTotals`), а не из `SalesReport`. Без `useOfd` (нет ОФД / роль без доступа) поведение прежнее.
 - Covered by tests `AUDIT-BUGFIX1`, `AUDIT-PAGE6`.
 
-## 10. Risks requiring business decision
+## 10. Risks — both CLOSED by owner decision
 
-- **RISK-1 — Returns double-count.** If a refund can be both a fiscal return (OFD `returnTotalKopeks`) and a manual paid `Refund`, the management result subtracts it twice. Decision needed: (a) OFD returns and manual refunds are always distinct money (no action) → current formula correct; or (b) they can overlap → need a dedup/exclusion rule (e.g. exclude fiscal-origin refunds from `confirmedCosts`, or tag refunds that were issued through the till). **Not changed silently.** Test `AUDIT-DOUBLECOUNT1` documents the current, un-deduplicated behavior.
-- **RISK-2 — `/balances` vs `/collections` share one `BalanceSnapshot` baseline.** Both `createBalanceSnapshot` (/balances) and `setCashOpeningBalance` (/collections) write `BalanceSnapshot`; the fact-balance engine takes the latest by (snapshotDate desc, createdAt desc). A snapshot entered on either page silently rebases the other's baseline. Decision: retire `/balances` (route already out of the sidebar), or keep both with clear guidance. **Not changed** (no proven bug; `/balances` is a legitimate, role-gated register).
+- **RISK-1 — Returns "double-count" → CLOSED (business-correct).** Owner decision: OFD `returnTotal` (fiscal correction / cashier error at the till) and manual `Refund` (client-refund process) are **different events**, not the same refund. Therefore OFD returns reduce ОФД net, paid `Refund` stays in `confirmedCosts`, and `result = ofdNet − confirmedCosts` is correct as-is. **No formula change.** UI clarified: OFD returns labelled «ОФД-возвраты (фискальные коррекции)» on `/analytics/ofd-sales`. See §7.
+- **RISK-2 — `/balances` vs `/collections` snapshot overlap → CLOSED (legacy disabled).** Owner decision: control balances are set **only** via `/collections` (`setCashOpeningBalance`). `/balances` now `redirect("/collections")`, renders no form, and its `createBalanceSnapshot` writer is disabled (refuses with «Legacy /balances disabled. Use /collections.», audits `balance_snapshot.create`). The `BalanceSnapshot` model, its history, and the `/collections` checkpoint are untouched (no migration, no hard delete). Only one writer remains, so the overlap is eliminated.
 - **OBSERVATION — `Refund.status` inline comment** omits `approved_by_chief_accountant`, although that status is included in `APPROVED_UNPAID_STATUSES`. Doc-only; no behavior impact.
 - **OBSERVATION — Analytics «Динамика продаж» chart** uses `report.salesSplitTrend` (SalesReport-derived) and renders an empty trend when OFD-only. Migrating it to an OFD daily split-trend is a follow-up feature (out of this audit's minimal-change scope). Documented; not changed.
 - **OBSERVATION — Vestigial `CashMovement` writes.** `/expenses/simple` still writes the confirmed-only ledger via `recordExpenseMovement`, though nothing renders it. Harmless to displayed numbers; candidate for later removal.
 
 ## 11. Tests added
 
-`AUDIT-FORMULA1..10`, `AUDIT-DOUBLECOUNT1`, `AUDIT-PAGE1..6`, `AUDIT-ROLE1..4`, `AUDIT-SCOPE1`, `AUDIT-NAV1`, `AUDIT-SECURITY1`, `AUDIT-LEGACY1`, `AUDIT-BUGFIX1` — in `scripts/pilot-ofd-taxcom.mjs` (pure invariants + static-source guards). See test names for exact assertions.
+`AUDIT-FORMULA1..10`, `AUDIT-DOUBLECOUNT1`, `AUDIT-PAGE1..6`, `AUDIT-ROLE1..4`, `AUDIT-SCOPE1`, `AUDIT-NAV1`, `AUDIT-SECURITY1`, `AUDIT-LEGACY1`, `AUDIT-BUGFIX1` — in `scripts/pilot-ofd-taxcom.mjs`.
+
+Risk-closure tests (added when RISK-1/RISK-2 were closed): `AUDIT-REFUND-POLICY1..4` (returns business decision + formula unchanged + OFD returns reduce net + paid Refund stays in costs), `AUDIT-REFUND-LABEL1` (UI distinguishes ОФД-возвраты from client Refund), `BALANCES-LEGACY1..5` (/balances no create form; redirect to /collections; writer refuses; /collections `setCashOpeningBalance` + history intact), `AUDIT-REPORT1..2` (no open RISK-1/RISK-2; verdict PASS), `NAV-CHECK1` (no «Продажи» nav), `SALES-CHECK1` (/sales read-only + createSalesReport disabled), `SECURITY-AUDIT-CLOSE1`. All static/invariant guards; pure invariants live in `pilot-cash-collections.mjs` and `pilot-ofd-taxcom.mjs`.
 
 ## 12. Final verdict
 
-**PASS WITH RISKS.** No critical accounting violation blocks further development. Managerial revenue is OFD-only; cash, expenses, result and obligations use single consistent formulas; cash operations never distort profit; manual sales are disabled and out of the UI. Outstanding items are two **business decisions** (returns double-count RISK-1, balances-snapshot overlap RISK-2) and inert legacy code — none of which mis-state currently-displayed numbers after the §9 fix.
+**PASS.** No critical accounting violation and no open risks. Managerial revenue is OFD-only; cash, expenses, result and obligations use single consistent formulas; cash operations never distort profit; manual sales are disabled and out of the UI. RISK-1 is accepted as business-correct (OFD fiscal corrections ≠ client refunds; result formula unchanged); RISK-2 is closed by disabling the legacy `/balances` writer/UI so `/collections` is the sole control-balance entry point. Remaining items are inert legacy/dead-code observations (§8, §10) that do not mis-state any displayed number.
