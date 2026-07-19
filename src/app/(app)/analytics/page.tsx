@@ -188,7 +188,11 @@ export default async function AnalyticsPage({
 
   // Single Company in scope (strategic-filtered or non-strategic): full analytics.
   const aCompanyId = groups ? groups.filteredCompanyIds[0] ?? scope.company.id : scope.company.id;
-  const aClubIds = groups ? groups.filteredClubIds : ctx.allowedClubIds;
+  // Non-strategic (regional/manager): honour a ?clubId= from a dashboard club-card
+  // click, but ONLY if it is within the caller's allowed clubs — a foreign clubId is
+  // ignored (falls back to full allowed scope), never leaking another club's data.
+  const requestedClubId = !groups && sp.clubId && ctx.allowedClubIds.includes(sp.clubId) ? sp.clubId : null;
+  const aClubIds = groups ? groups.filteredClubIds : requestedClubId ? [requestedClubId] : ctx.allowedClubIds;
   const data = await loadAnalyticsData(aCompanyId, aClubIds, period);
   const report = buildAnalyticsReport(data, period, granularity);
   const s = report.summary;

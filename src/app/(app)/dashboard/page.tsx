@@ -12,15 +12,8 @@ import { resolveStrategicScope } from "@/lib/strategic-scope";
 import { loadCompanyClubCards } from "@/lib/dashboard-cards";
 import { getPendingReopenRequestsForCompanies } from "@/lib/month-reopen";
 import { StrategicScopeFilter } from "./_components/StrategicScopeFilter";
-import { DashboardKeyCards } from "./_components/DashboardKeyCards";
-import { loadOfdManagementOverview, computeManagementResult } from "@/lib/analytics/ofd-management";
-import { loadScopeCashFactTotals } from "@/lib/cash-collections";
-import { openInStrategicScope } from "./strategic-actions";
-import {
-  loadAnalyticsData,
-  buildAnalyticsReport,
-  resolveMonthPeriod,
-} from "@/lib/analytics";
+import { ClubCardsGrid } from "./_components/ClubCard";
+import { resolveMonthPeriod } from "@/lib/analytics";
 import {
   getSalesPlansForCompanyMonth,
   monthKey,
@@ -32,11 +25,11 @@ import { SalesPlanImport } from "./_components/SalesPlanImport";
 import { PlanImportPanel } from "./_components/PlanImportPanel";
 import { OwnerReopenApprovals, type ReopenRow } from "./_components/OwnerReopenApprovals";
 import { DashboardMonthSelector } from "./_components/DashboardMonthSelector";
-import { openClubAnalytics } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 const monthFormatter = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" });
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 // Financial fields on a club card (Расходы, Окупаемость) are for owner /
 // general_director / regional_director / accountant only. Managers (sales-only)
@@ -119,7 +112,7 @@ export default async function DashboardPage({
       byCompany.set(c.companyId, g);
     }
     const cardGroups = await Promise.all(
-      [...byCompany.entries()].map(([cid, g]) => loadCompanyClubCards(cid, g.name, g.clubs, period, financials, now, canSeeOfdSales)),
+      [...byCompany.entries()].map(([cid, g]) => loadCompanyClubCards(cid, g.name, g.clubs, period, financials, now, canSeeOfdSales, canSeeCash)),
     );
     const cards = cardGroups
       .flat()
@@ -153,15 +146,6 @@ export default async function DashboardPage({
       ? companyNameById.get(strategic.selectedCompanyId) ?? "Сеть"
       : "Все доступные сети";
 
-    // Simplified key figures for the scope (summed from the per-club ОФД + expenses).
-    const singleCompany = strategic.filteredCompanyIds.length === 1;
-    const keyAbKopeks = cards.reduce((a, c) => a + c.ofd.ofdSubscriptionsKopeks, 0);
-    const keyPtKopeks = cards.reduce((a, c) => a + c.ofd.ofdPersonalTrainingKopeks, 0);
-    const keyExpensesKopeks = cards.reduce((a, c) => a + c.expensesKopeks, 0);
-    const keyResultKopeks = computeManagementResult(cards.reduce((a, c) => a + c.ofd.ofdNetKopeks, 0), keyExpensesKopeks);
-    // ООО / ИП fact cash only when a single company is in scope (never merge networks).
-    const cashTotals = canSeeCash && singleCompany ? await loadScopeCashFactTotals(strategic.filteredCompanyIds[0], filteredClubIds, now) : { oooKopeks: 0, ipKopeks: 0 };
-
     return (
       <div className="mx-auto max-w-[1440px]">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -187,25 +171,22 @@ export default async function DashboardPage({
           />
         ) : null}
 
-        {/* Only key monthly figures. Подробности (клубы, ООО/ИП, статьи, темп,
-            детализация чеков) — в Аналитике и /analytics/ofd-sales. */}
+        {/* Обзор клубов карточками. Подробные таблицы (ОФД сегодня/вчера/темп, ООО/ИП,
+            статьи доходов) остаются в Аналитике и /analytics/ofd-sales. */}
         {strategic.accessibleClubs.length === 0 ? (
           <div className={`px-4 py-16 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
             Нет доступных сетей или клубов
           </div>
         ) : (
-          <DashboardKeyCards
+          <ClubCardsGrid
+            cards={cards}
             showSales={canSeeOfdSales}
             showExpenses={financials}
             showCash={canSeeCash}
-            cashAvailable={singleCompany}
-            abKopeks={keyAbKopeks}
-            ptKopeks={keyPtKopeks}
-            expensesKopeks={keyExpensesKopeks}
-            resultKopeks={keyResultKopeks}
-            oooCashKopeks={cashTotals.oooKopeks}
-            ipCashKopeks={cashTotals.ipKopeks}
-            monthLabel={monthLabel}
+            daysLeft={daysLeft}
+            showCompany={multiCompany}
+            linkFrom={isoDay(period.start)}
+            linkTo={isoDay(new Date(period.end.getTime() - 86_400_000))}
           />
         )}
 
@@ -244,45 +225,31 @@ export default async function DashboardPage({
   // regardless of the topbar's selected club. getUserClubs is the role-correct
   // scope: owner/GD -> all company clubs; regional -> assigned; manager -> own.
   const clubs = await getUserClubs(user.id, companyId);
-  const clubIds = clubs.map((c) => c.id);
 
-  // Per-club figures reuse the SAME source of truth as Analytics, for the
-  // SELECTED month, so the cards match the Analytics page exactly.
-  const data = await loadAnalyticsData(companyId, clubIds, period);
-  const report = buildAnalyticsReport(data, period, "day");
-
-  // --- Simplified dashboard: only the key monthly figures for the scope. Detailed
-  // ОФД tables, per-club cards and the forecast live in /analytics and
-  // /analytics/ofd-sales — the dashboard is a fast "что сейчас" screen. ---
-  const s = report.summary;
-  const ofdMgmt = canSeeOfdSales ? await loadOfdManagementOverview(companyId, clubIds, period.start, period.end) : null;
-  const useOfd = !!ofdMgmt && ofdMgmt.hasData;
-  const keyAbKopeks = useOfd ? ofdMgmt!.totals.subscriptionsKopeks : s.subscriptionsKopeks;
-  const keyPtKopeks = useOfd ? ofdMgmt!.totals.personalTrainingKopeks : s.personalTrainingKopeks;
-  const keyResultKopeks = canSeeOfdSales ? computeManagementResult(ofdMgmt?.totals.netKopeks ?? 0, s.expensesKopeks) : 0;
-  // Current ООО / ИП fact cash for the scope (loadClubCashBalances; unchanged math).
-  const cashTotals = canSeeCash ? await loadScopeCashFactTotals(companyId, clubIds, now) : { oooKopeks: 0, ipKopeks: 0 };
+  // Обзор клубов карточками — per-club ОФД + расходы + факт-остаток (одна поверхность
+  // с Аналитикой). If the topbar selected a single club, show only that card.
+  const selectedClubId = scope.club?.id ?? null;
+  const cardClubs = (selectedClubId ? clubs.filter((c) => c.id === selectedClubId) : clubs).map((c) => ({ id: c.id, name: c.name, city: c.city ?? "" }));
+  const cards = await loadCompanyClubCards(companyId, companyName, cardClubs, period, financials, now, canSeeOfdSales, canSeeCash);
+  const daysInSelMonth = new Date(period.start.getFullYear(), period.start.getMonth() + 1, 0).getDate();
+  const daysLeftMonth = monthMode === "past" ? 0 : monthMode === "future" ? daysInSelMonth : daysInSelMonth - now.getDate() + 1;
 
   return (
     <div className="mx-auto max-w-[1440px]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <PageHeader title="Дашборд" description="Ключевые показатели по клубу/сети" />
+        <PageHeader title="Дашборд" description="Обзор клубов" />
         <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
       </div>
 
-      {/* Only the essential monthly figures. Подробности — в Аналитике и ОФД-сверке. */}
-      <DashboardKeyCards
+      {/* Обзор клубов карточками. Подробные ОФД-таблицы — в Аналитике и ОФД-сверке. */}
+      <ClubCardsGrid
+        cards={cards}
         showSales={canSeeOfdSales}
         showExpenses={financials}
         showCash={canSeeCash}
-        cashAvailable={canSeeCash}
-        abKopeks={keyAbKopeks}
-        ptKopeks={keyPtKopeks}
-        expensesKopeks={s.expensesKopeks}
-        resultKopeks={keyResultKopeks}
-        oooCashKopeks={cashTotals.oooKopeks}
-        ipCashKopeks={cashTotals.ipKopeks}
-        monthLabel={monthLabel}
+        daysLeft={daysLeftMonth}
+        linkFrom={isoDay(period.start)}
+        linkTo={isoDay(new Date(period.end.getTime() - 86_400_000))}
       />
 
       {/* Critical owner action kept on the dashboard; everything analytical moved out. */}

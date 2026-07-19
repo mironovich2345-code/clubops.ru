@@ -9,6 +9,7 @@ import { loadPaymentObligationsForScope } from "@/lib/payment-obligations";
 import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
 import { dayStart, addDays } from "@/lib/payments";
 import { loadOfdManagementOverview, ofdCardFields, type OfdCardFields } from "@/lib/analytics/ofd-management";
+import { loadClubCashBalances } from "@/lib/cash-collections";
 
 export type ClubCard = {
   id: string;
@@ -28,6 +29,9 @@ export type ClubCard = {
   ipKopeks: number | null;
   oooRisk: "low" | "high" | "unknown";
   ipRisk: "low" | "high" | "unknown";
+  // Current ООО / ИП fact cash (loadClubCashBalances) — shown on the club card.
+  oooFactKopeks: number;
+  ipFactKopeks: number;
   ofd: OfdCardFields;
 };
 
@@ -46,6 +50,7 @@ export async function loadCompanyClubCards(
   financials: boolean,
   now: Date,
   showOfd: boolean = false,
+  showCash: boolean = false,
 ): Promise<ClubCard[]> {
   if (clubs.length === 0) return [];
   const clubIds = clubs.map((c) => c.id);
@@ -54,6 +59,12 @@ export async function loadCompanyClubCards(
   const report = buildAnalyticsReport(data, period, "day");
   // ОФД management overlay (owner/GD/regional): real per-club revenue by category.
   const ofdMgmt = showOfd ? await loadOfdManagementOverview(companyId, clubIds, period.start, period.end) : null;
+  // Current ООО / ИП fact cash per club (loadClubCashBalances — unchanged math).
+  const factCash = new Map<string, { ooo: number; ip: number }>();
+  if (showCash) {
+    const per = await Promise.all(clubIds.map((id) => loadClubCashBalances(companyId, id, now)));
+    clubIds.forEach((id, i) => factCash.set(id, { ooo: per[i].balances.cashOooFactBalance, ip: per[i].balances.cashIpFactBalance }));
+  }
 
   const expensesByClub = new Map(report.clubRanking.map((r) => [r.clubId, r.expensesKopeks]));
   const splitByClub = new Map(report.planSplitByClub.map((r) => [r.clubId, r]));
@@ -102,6 +113,8 @@ export async function loadCompanyClubCards(
       ipKopeks,
       oooRisk: riskFor(oooKopeks, obl.ooo),
       ipRisk: riskFor(ipKopeks, obl.ip),
+      oooFactKopeks: factCash.get(c.id)?.ooo ?? 0,
+      ipFactKopeks: factCash.get(c.id)?.ip ?? 0,
       ofd: ofdCardFields(ofdMgmt?.perClub.get(c.id)),
     };
   });
