@@ -3,12 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext } from "@/lib/access";
 import { canImportPlansAndBudgets } from "@/lib/auth";
 import { normalizeMonth } from "@/lib/sales-plans";
-import { buildPlanTemplateBuffer } from "@/lib/imports/plan-import";
+import { BUDGET_CATEGORIES, budgetCategoryLabel } from "@/lib/budgets";
+import { buildBudgetTemplateBuffer } from "@/lib/imports/budget-import";
 
 export const dynamic = "force-dynamic";
 
-// Sales-plan XLSX template — owner / general director only. Pre-filled with the
-// caller's scope clubs (clubId, name, city) for the selected month. No secrets.
+// Budget-by-category XLSX template — owner / general director only. One row per
+// (club × budget category) for the selected month, amounts left blank. No secrets.
 export async function GET(req: Request) {
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId || !canImportPlansAndBudgets(ctx.effectiveRoles)) {
@@ -21,12 +22,13 @@ export async function GET(req: Request) {
   const clubs = ctx.allowedClubIds.length
     ? (await prisma.club.findMany({ where: { companyId: ctx.selectedCompanyId, id: { in: ctx.allowedClubIds } }, select: { id: true, name: true, city: true }, orderBy: { name: "asc" } })).map((c) => ({ id: c.id, name: c.name, city: c.city ?? "" }))
     : [];
-  const buf = new Uint8Array(buildPlanTemplateBuffer(month, clubs));
+  const categories = BUDGET_CATEGORIES.map((c) => ({ key: c.key, label: budgetCategoryLabel(c.key) }));
+  const buf = new Uint8Array(buildBudgetTemplateBuffer(month, clubs, categories));
   return new NextResponse(buf, {
     status: 200,
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="sales-plans-template-${month}.xlsx"`,
+      "Content-Disposition": `attachment; filename="budgets-template-${month}.xlsx"`,
       "Cache-Control": "no-store",
     },
   });

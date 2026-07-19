@@ -211,6 +211,12 @@ export function canManageSalesPlans(roles: readonly Role[]): boolean {
   return can(roles, "sales_plan.manage");
 }
 
+/** Bulk-import sales plans / budgets via the template flow — owner + general
+ * director only (server-enforced; regional/manager/accountant/marketer excluded). */
+export function canImportPlansAndBudgets(roles: readonly Role[]): boolean {
+  return roles.includes("owner") || roles.includes("general_director");
+}
+
 /** Set/update monthly budget limits (owner / general director). */
 export function canManageBudgets(roles: readonly Role[]): boolean {
   return can(roles, "budget.manage");

@@ -76,14 +76,24 @@ export function SalesPlanForm({
   );
 }
 
+// Live thousands-grouping so the number of zeros is readable (2 500 000). The value
+// is submitted with spaces; the server parser (parseImportAmountToKopeks) accepts them.
+function groupThousands(digits: string): string {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
 function AmountField({ name, label }: { name: string; label: string }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium text-slate-600">{label}</span>
       <input
         name={name}
-        inputMode="decimal"
+        inputMode="numeric"
         placeholder="—"
+        onInput={(e) => {
+          const el = e.currentTarget;
+          const digits = el.value.replace(/\D/g, "");
+          el.value = digits ? groupThousands(digits) : "";
+        }}
         className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
       />
     </label>

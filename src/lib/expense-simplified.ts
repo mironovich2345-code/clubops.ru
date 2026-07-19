@@ -42,7 +42,14 @@ export const V2_CANCELABLE_STATUSES = [
 // Single source of truth. Uses server-local calendar days as the deployment
 // business timezone (consistent with the existing month-range logic), so an
 // expense never shifts across a day/month boundary via raw UTC comparison.
+// Kept for the regional-director date-correction window only (below); no longer
+// used for the manager entry range, which is now the whole current month.
 export const EXPENSE_MAX_PAST_DAYS = 7;
+
+// Managers/regionals may enter an expense for ANY day of the CURRENT calendar
+// month up to today (no future). Past months are blocked here; a closed month is
+// blocked separately by monthClosedError in the actions.
+export const EXPENSE_DATE_RANGE_ERROR = "Расход можно занести только за текущий месяц и не позже сегодняшнего дня.";
 
 export function startOfBusinessDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -53,11 +60,15 @@ function diffCalendarDays(a: Date, b: Date): number {
 
 export type DateCheck = { ok: true } | { ok: false; error: string };
 
-/** Validate a manager-entered expense date against future + 7-day-past rules. */
+/** Validate a manager-entered expense date: within the CURRENT calendar month and
+ * not in the future. First-of-month … today inclusive. Prior months are rejected. */
 export function validateExpenseBusinessDate(expenseDate: Date, now: Date = new Date()): DateCheck {
-  const dayDelta = diffCalendarDays(now, expenseDate); // >0 = past, <0 = future
-  if (dayDelta < 0) return { ok: false, error: "Дата не может быть в будущем." };
-  if (dayDelta > EXPENSE_MAX_PAST_DAYS) return { ok: false, error: `Дата не может быть раньше, чем ${EXPENSE_MAX_PAST_DAYS} дней назад.` };
+  const d = startOfBusinessDay(expenseDate);
+  const today = startOfBusinessDay(now);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (d.getTime() > today.getTime() || d.getTime() < monthStart.getTime()) {
+    return { ok: false, error: EXPENSE_DATE_RANGE_ERROR };
+  }
   return { ok: true };
 }
 

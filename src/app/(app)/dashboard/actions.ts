@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { canManageSalesPlans } from "@/lib/auth";
 import { getCurrentAccessContext, recordAudit, canAccessClub } from "@/lib/access";
-import { rublesToKopeks } from "@/lib/money";
+import { parseImportAmountToKopeks } from "@/lib/imports/amount";
 import { normalizeMonth, PLAN_TYPES } from "@/lib/sales-plans";
 import { setActiveScope } from "../scope-actions";
 
@@ -60,13 +60,13 @@ export async function saveSalesPlan(
 
   let saved = 0;
   for (const t of PLAN_TYPES) {
-    const raw = String(formData.get(`amount_${t.key}`) ?? "").trim().replace(",", ".");
-    if (raw === "") continue; // empty = do not change this plan type
-    const amount = Number(raw);
-    if (!Number.isFinite(amount) || amount < 0) {
+    // Accept grouped input ("2 500 000", "2.500.000"); empty = do not change.
+    const parsed = parseImportAmountToKopeks(String(formData.get(`amount_${t.key}`) ?? ""));
+    if ("empty" in parsed) continue;
+    if ("error" in parsed) {
       return { ok: false, error: `Неверная сумма для «${t.label}» (нужно число ≥ 0)` };
     }
-    const targetAmountKopeks = rublesToKopeks(amount);
+    const targetAmountKopeks = parsed.kopeks;
 
     const existing = await prisma.salesPlan.findFirst({
       where: { companyId, clubId, month, planType: t.key },

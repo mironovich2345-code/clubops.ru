@@ -24,6 +24,7 @@ import {
 import { canManageBudgets, canApproveBudgetOverrunForCategory } from "@/lib/auth";
 import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { BudgetLimitForm } from "./_components/BudgetForms";
+import { BudgetImportPanel } from "./_components/BudgetImportPanel";
 import { RequestActions } from "./_components/RequestActions";
 
 export const dynamic = "force-dynamic";
@@ -174,6 +175,7 @@ export default async function BudgetsPage({
       {canSetLimits ? (
         <div className="mb-6">
           <BudgetLimitForm clubId={selectedClubId} month={month} categories={BUDGET_CATEGORIES} />
+          <BudgetImportPanel month={month} />
         </div>
       ) : (
         <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">

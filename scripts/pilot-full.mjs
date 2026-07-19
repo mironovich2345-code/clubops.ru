@@ -47,6 +47,7 @@ const pilots = [
   ["Financial integrity", "pilot-financial.mjs"],
   ["Account deletion / recovery", "pilot-account-deletion.mjs"],
   ["Expenses simplified workflow", "pilot-expenses-simplified.mjs"],
+  ["Plan & budget imports", "pilot-plan-budget-imports.mjs"],
   ["Expense documents", "pilot-expense-documents.mjs"],
   ["Expense workflow", "pilot-expense-workflow.mjs"],
   ["Expense page cards", "pilot-expense-cards.mjs"],

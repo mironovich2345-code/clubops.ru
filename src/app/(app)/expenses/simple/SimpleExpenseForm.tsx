@@ -25,6 +25,11 @@ function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+// First day of the CURRENT calendar month — lower bound for expense entry.
+function firstOfMonthISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
@@ -173,7 +178,8 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Дата</span>
-            <input type="date" name="expenseDate" required defaultValue={todayISO()} max={todayISO()} className="input w-full" />
+            <input type="date" name="expenseDate" required defaultValue={todayISO()} min={firstOfMonthISO()} max={todayISO()} className="input w-full" />
+            <span className="mt-1 block text-xs text-slate-500">Можно заносить расходы за текущий месяц до сегодняшнего дня.</span>
           </label>
 
           <label className="block">

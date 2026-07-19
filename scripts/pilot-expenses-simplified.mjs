@@ -11,13 +11,16 @@ const p = new PrismaClient();
 // --- mirrors of the pure service logic ------------------------------------
 const REALIZED = ["confirmed", "verified"];
 const FIVE_PCT_BP = 500;
-const MAX_PAST_DAYS = 7;
+const MAX_PAST_DAYS = 7; // regional date-correction window only
 const sod = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const diffDays = (a, b) => Math.round((sod(a) - sod(b)) / 86400000);
+// Mirror of validateExpenseBusinessDate: any day of the CURRENT month up to today.
 function validateDate(expenseDate, now = new Date()) {
-  const delta = diffDays(now, expenseDate);
-  if (delta < 0) return "future";
-  if (delta > MAX_PAST_DAYS) return "too_old";
+  const d = sod(expenseDate);
+  const today = sod(now);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (d.getTime() > today.getTime()) return "future";
+  if (d.getTime() < monthStart.getTime()) return "past_month";
   return "ok";
 }
 function buildTitle(cat, list) {
@@ -104,11 +107,15 @@ async function main() {
   check("3 title strips HTML/script chars", !buildTitle("Расход", "<script>alert(1)</script>").includes("<"));
   check("3 title truncates long list", buildTitle("Кат", "a".repeat(200)).length <= 120);
 
-  // --- Date rules (Part 14) ---
-  check("7 future date rejected", validateDate(new Date(today.getTime() + 864e5)) === "future");
-  check("today accepted", validateDate(today) === "ok");
-  check("8 exactly 7 days ago accepted", validateDate(new Date(sod(today).getTime() - 7 * 864e5)) === "ok");
-  check("9 8 days ago rejected", validateDate(new Date(sod(today).getTime() - 8 * 864e5)) === "too_old");
+  // --- Date rules: any day of the CURRENT month up to today ---
+  const NOW = new Date(2026, 6, 20); // fixed: 2026-07-20 (deterministic)
+  check("EXPENSE-DATE1 первое число текущего месяца принимается", validateDate(new Date(2026, 6, 1), NOW) === "ok");
+  check("EXPENSE-DATE2 дата внутри месяца старше 7 дней принимается", validateDate(new Date(2026, 6, 2), NOW) === "ok" && diffDays(NOW, new Date(2026, 6, 2)) > 7);
+  check("today accepted", validateDate(NOW, NOW) === "ok");
+  check("EXPENSE-DATE3 будущая дата отклоняется", validateDate(new Date(2026, 6, 21), NOW) === "future");
+  check("EXPENSE-DATE4 прошлый месяц отклоняется", validateDate(new Date(2026, 5, 30), NOW) === "past_month");
+  const srcExpSimp = readFileSync(new URL("../src/lib/expense-simplified.ts", import.meta.url), "utf8");
+  check("EXPENSE-DATE6 текст ошибки без «7 дней»; диапазон = текущий месяц", srcExpSimp.includes('EXPENSE_DATE_RANGE_ERROR = "Расход можно занести только за текущий месяц и не позже сегодняшнего дня."') && !/validateExpenseBusinessDate[\s\S]{0,320}7 дней/.test(srcExpSimp) && /validateExpenseBusinessDate[\s\S]{0,320}monthStart/.test(srcExpSimp));
 
   // --- Active ИП (Part 6) ---
   check("15 single active ИП resolved", (await activeIp(CLUB)).id === IP1);
@@ -254,6 +261,10 @@ async function main() {
   check("R10 budget analytics fields still stored on submit", actions.includes("budgetOverrunKopeks: route.overrunKopeks") && actions.includes("budgetApprovalLevel: route.level"));
   const simplifiedLib = readFileSync(new URL("../src/lib/expense-simplified.ts", import.meta.url), "utf8");
   check("R11 canApproveRegionalExpense blocks self-approval", simplifiedLib.includes("e.createdByUserId === a.userId) return false"));
+  const cashBalLib = readFileSync(new URL("../src/lib/cash-balances.ts", import.meta.url), "utf8");
+  const budgetsLib = readFileSync(new URL("../src/lib/budgets.ts", import.meta.url), "utf8");
+  check("EXPENSE-DATE5 закрытый месяц блокирует создание/изменение (monthClosedError сохранён) + понятный текст", actions.includes("monthClosedError") && actions.includes('MONTH_CLOSED: "Месяц закрыт. Добавление или изменение расходов недоступно."') && /createSimplifiedExpenseDraft[\s\S]{0,900}monthClosedError/.test(actions) && /updateSimplifiedExpense[\s\S]{0,1200}monthClosedError/.test(actions));
+  check("EXPENSE-DATE7 pending cash-расход уменьшает факт-остаток ИП, но не confirmedCosts/прибыль (математика не изменена)", cashBalLib.includes("IP_EXPENSE_PENDING_STATUSES") && cashBalLib.includes('"submitted"') && cashBalLib.includes('IP_EXPENSE_APPROVED_STATUSES: readonly string[] = ["verified", "confirmed"]') && /EXPENSE_REALIZED_STATUSES\s*=\s*\[\s*"confirmed",\s*"verified"\s*\]/.test(budgetsLib));
 
   // --- No-regional block: status + documents unchanged (R12–R20) -----------
   // FOREIGN is a manager of CLUB2, which has NO regional director.

@@ -7,7 +7,7 @@ import {
   getCurrentAccessContext,
   getUserClubs,
 } from "@/lib/access";
-import { canManageSalesPlans, canApproveMonthReopen, canAnyRoleAccessPage, isStrategicRole, type Role } from "@/lib/auth";
+import { canManageSalesPlans, canImportPlansAndBudgets, canApproveMonthReopen, canAnyRoleAccessPage, isStrategicRole, type Role } from "@/lib/auth";
 import { resolveStrategicScope } from "@/lib/strategic-scope";
 import { loadCompanyClubCards } from "@/lib/dashboard-cards";
 import { getPendingReopenRequestsForCompanies } from "@/lib/month-reopen";
@@ -29,6 +29,7 @@ import {
 import { getPendingReopenRequestsForCompany } from "@/lib/month-reopen";
 import { SalesPlanForm } from "./_components/SalesPlanForm";
 import { SalesPlanImport } from "./_components/SalesPlanImport";
+import { PlanImportPanel } from "./_components/PlanImportPanel";
 import { OwnerReopenApprovals, type ReopenRow } from "./_components/OwnerReopenApprovals";
 import { DashboardMonthSelector } from "./_components/DashboardMonthSelector";
 import { openClubAnalytics } from "./actions";
@@ -69,6 +70,9 @@ export default async function DashboardPage({
   const roles = ctx?.effectiveRoles ?? [];
   const financials = roles.some((r) => FINANCIAL_ROLES.has(r));
   const canEditPlan = canManageSalesPlans(roles);
+  // Owner + general director may bulk-import plans via the template flow (GD also
+  // has the manual form; owner gets import only). Reuses ManagementSection.
+  const canImportPlans = canImportPlansAndBudgets(roles);
   const canApproveReopen = canApproveMonthReopen(roles);
   // Cash fact balances are a finance/operational surface: shown to any role that can
   // reach Инкассация (/collections) — owner/GD/regional/manager. A marketer has
@@ -128,7 +132,7 @@ export default async function DashboardPage({
 
     // Plan management (GD) stays on the cookie-selected company — an operational
     // surface, not part of the read-only cross-Company aggregation.
-    const planClubs = canEditPlan ? (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name })) : [];
+    const planClubs = canEditPlan || canImportPlans ? (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name })) : [];
 
     const filteredClubIds = strategic.filteredClubs.map((c) => c.id);
     const companyNameById = new Map(strategic.accessibleCompanies.map((c) => [c.id, c.name]));
@@ -207,10 +211,11 @@ export default async function DashboardPage({
 
         {canApproveReopen ? <OwnerReopenApprovals requests={strategicReopenRows} /> : null}
 
-        {canEditPlan ? (
+        {canEditPlan || canImportPlans ? (
           <ManagementSection
             companyId={companyId}
             canEditPlan={canEditPlan}
+            canImportPlans={canImportPlans}
             clubs={planClubs}
             defaultClubId={planClubs[0]?.id ?? ""}
             searchParams={sp}
@@ -286,10 +291,11 @@ export default async function DashboardPage({
       {/* Sales-plan management (general director). Month close / reopen no longer
           lives on the dashboard — it moved to the Chief Accountant workspace and
           the Owner approval block above. */}
-      {canEditPlan ? (
+      {canEditPlan || canImportPlans ? (
         <ManagementSection
           companyId={companyId}
           canEditPlan={canEditPlan}
+          canImportPlans={canImportPlans}
           clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
           defaultClubId={scope.club?.id ?? clubs[0]?.id ?? ""}
           searchParams={sp}
@@ -309,6 +315,7 @@ function capitalize(s: string): string {
 async function ManagementSection({
   companyId,
   canEditPlan,
+  canImportPlans,
   clubs,
   defaultClubId,
   searchParams,
@@ -316,6 +323,7 @@ async function ManagementSection({
 }: {
   companyId: string;
   canEditPlan: boolean;
+  canImportPlans: boolean;
   clubs: { id: string; name: string }[];
   defaultClubId: string;
   searchParams: { month?: string; closeMonth?: string };
@@ -324,7 +332,7 @@ async function ManagementSection({
   const planMonth = monthKey(now);
   const selectedPlanMonth = normalizeMonth(searchParams.month ?? "") ?? planMonth;
 
-  const splitPlanRows = canEditPlan ? await getSalesPlansForCompanyMonth(companyId, selectedPlanMonth) : [];
+  const splitPlanRows = canEditPlan || canImportPlans ? await getSalesPlansForCompanyMonth(companyId, selectedPlanMonth) : [];
 
   // Per-club plan rows for the bulk-import preview (GD plan management).
   const perClubPlan = new Map<string, { total: number; subscriptions: number; personal_training: number }>();
@@ -348,7 +356,7 @@ async function ManagementSection({
     <div className="mt-8">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Управление</h2>
 
-      {canEditPlan && clubs.length > 0 ? (
+      {(canEditPlan || canImportPlans) && clubs.length > 0 ? (
         <div className={`mt-4 p-4 ${CARD}`}>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -364,8 +372,9 @@ async function ManagementSection({
               </button>
             </form>
           </div>
-          <SalesPlanForm clubs={clubs} defaultClubId={defaultClubId} defaultMonth={selectedPlanMonth} />
+          {canEditPlan ? <SalesPlanForm clubs={clubs} defaultClubId={defaultClubId} defaultMonth={selectedPlanMonth} /> : null}
           <SalesPlanImport rows={planClubRows} />
+          {canImportPlans ? <PlanImportPanel month={selectedPlanMonth} /> : null}
         </div>
       ) : null}
     </div>
