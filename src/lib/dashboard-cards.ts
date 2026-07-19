@@ -8,6 +8,7 @@ import { getLatestBalancesByClub } from "@/lib/balance-snapshots";
 import { loadPaymentObligationsForScope } from "@/lib/payment-obligations";
 import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
 import { dayStart, addDays } from "@/lib/payments";
+import { loadOfdManagementOverview, ofdCardFields, type OfdCardFields } from "@/lib/analytics/ofd-management";
 
 export type ClubCard = {
   id: string;
@@ -27,6 +28,7 @@ export type ClubCard = {
   ipKopeks: number | null;
   oooRisk: "low" | "high" | "unknown";
   ipRisk: "low" | "high" | "unknown";
+  ofd: OfdCardFields;
 };
 
 export type CardClubInput = { id: string; name: string; city: string };
@@ -43,12 +45,15 @@ export async function loadCompanyClubCards(
   period: ResolvedPeriod,
   financials: boolean,
   now: Date,
+  showOfd: boolean = false,
 ): Promise<ClubCard[]> {
   if (clubs.length === 0) return [];
   const clubIds = clubs.map((c) => c.id);
 
   const data = await loadAnalyticsData(companyId, clubIds, period);
   const report = buildAnalyticsReport(data, period, "day");
+  // ОФД management overlay (owner/GD/regional): real per-club revenue by category.
+  const ofdMgmt = showOfd ? await loadOfdManagementOverview(companyId, clubIds, period.start, period.end) : null;
 
   const expensesByClub = new Map(report.clubRanking.map((r) => [r.clubId, r.expensesKopeks]));
   const splitByClub = new Map(report.planSplitByClub.map((r) => [r.clubId, r]));
@@ -97,6 +102,7 @@ export async function loadCompanyClubCards(
       ipKopeks,
       oooRisk: riskFor(oooKopeks, obl.ooo),
       ipRisk: riskFor(ipKopeks, obl.ip),
+      ofd: ofdCardFields(ofdMgmt?.perClub.get(c.id)),
     };
   });
 }

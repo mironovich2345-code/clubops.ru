@@ -1518,6 +1518,55 @@ async function main() {
   check("DASH-OFD empty state: нет данных → hasData=false, дружелюбное пустое состояние", anDashboard({ ...dBase, summaries: [], categoryDays: [] }).hasData === false && overviewComp.includes("Пока нет продаж по ОФД"));
   check("DARK-DASH-OFD1 блок ОФД-продаж читаем в тёмной теме (dark: варианты для карточек/панелей/сигналов; не белый на тёмном)", overviewComp.includes("dark:bg-slate-900") && overviewComp.includes("dark:border-slate-800") && overviewComp.includes("dark:text-slate-200") && overviewComp.includes("dark:bg-amber-950/40") && overviewComp.includes("dark:text-slate-400"));
 
+  // ===== ОФД в Дашборде и Аналитике (DASH-USE-OFD / ANALYTICS-USE-OFD) =========
+  // Mirror of buildOfdManagementOverview + computeManagementResult (pure).
+  const CAT_FIELD = { membership: "subscriptionsKopeks", personal_training: "personalTrainingKopeks", group_training: "groupTrainingKopeks", extra_services: "extraServicesKopeks", other: "otherKopeks" };
+  const emptyMgmt = () => ({ incomeKopeks: 0, cashKopeks: 0, cardKopeks: 0, returnsKopeks: 0, netKopeks: 0, receipts: 0, subscriptionsKopeks: 0, personalTrainingKopeks: 0, groupTrainingKopeks: 0, extraServicesKopeks: 0, otherKopeks: 0 });
+  const inWin = (d, a, b) => d >= a && d < b;
+  const buildMgmt = ({ summaries, categories, startStr, endStr }) => {
+    const perClub = new Map(); const totals = emptyMgmt();
+    const clubFor = (id) => { let f = perClub.get(id); if (!f) { f = emptyMgmt(); perClub.set(id, f); } return f; };
+    for (const s of summaries) { if (!inWin(s.date, startStr, endStr)) continue; const f = clubFor(s.clubId); f.incomeKopeks += s.incomeTotalKopeks; f.cashKopeks += s.incomeCashKopeks; f.cardKopeks += s.incomeElectronicKopeks; f.returnsKopeks += s.returnTotalKopeks; f.netKopeks += s.netTotalKopeks; f.receipts += s.receiptCount; totals.incomeKopeks += s.incomeTotalKopeks; totals.cashKopeks += s.incomeCashKopeks; totals.cardKopeks += s.incomeElectronicKopeks; totals.returnsKopeks += s.returnTotalKopeks; totals.netKopeks += s.netTotalKopeks; totals.receipts += s.receiptCount; }
+    for (const c of categories) { if (!inWin(c.date, startStr, endStr)) continue; const field = CAT_FIELD[c.categoryCode]; if (!field) continue; clubFor(c.clubId)[field] += c.incomeTotalKopeks; totals[field] += c.incomeTotalKopeks; }
+    return { perClub, totals, hasData: totals.incomeKopeks > 0 || totals.returnsKopeks > 0 || totals.receipts > 0 };
+  };
+  const mgmtResult = (net, costs) => net - costs;
+  const mSum = (clubId, date, income, cash, elec, ret, net, receipts) => ({ clubId, date, incomeTotalKopeks: income, incomeCashKopeks: cash, incomeElectronicKopeks: elec, returnTotalKopeks: ret, netTotalKopeks: net, receiptCount: receipts });
+  const mCat = (clubId, date, code, income) => ({ clubId, date, categoryCode: code, incomeTotalKopeks: income });
+  const mSummaries = [
+    mSum("clubA", "2026-07-05", 600000, 400000, 200000, 0, 600000, 6),
+    mSum("clubA", "2026-06-30", 999999, 0, 0, 0, 999999, 9), // before window → ignored
+    mSum("clubB", "2026-07-10", 300000, 100000, 200000, 50000, 250000, 4),
+  ];
+  const mCats = [
+    mCat("clubA", "2026-07-05", "membership", 400000), mCat("clubA", "2026-07-05", "personal_training", 150000), mCat("clubA", "2026-07-05", "other", 50000),
+    mCat("clubB", "2026-07-10", "membership", 180000), mCat("clubB", "2026-07-10", "group_training", 70000),
+    mCat("clubA", "2026-06-30", "membership", 999999), // before window → ignored
+  ];
+  const mgmt = buildMgmt({ summaries: mSummaries, categories: mCats, startStr: "2026-07-01", endStr: "2026-08-01" });
+  const dashPage = dashPageSrc; // read earlier
+  const dashCardsLib = readFileSync(new URL("../src/lib/dashboard-cards.ts", import.meta.url), "utf8");
+  const analyticsPage = readFileSync(new URL("../src/app/(app)/analytics/page.tsx", import.meta.url), "utf8");
+  const mgmtLib = readFileSync(new URL("../src/lib/analytics/ofd-management.ts", import.meta.url), "utf8");
+
+  check("DASH-USE-OFD1 карточки клубов используют ОФД и не показывают 0, когда в ОФД есть выручка", mgmt.hasData === true && mgmt.perClub.get("clubA").incomeKopeks === 600000 && mgmt.perClub.get("clubB").incomeKopeks === 300000 && dashPage.includes("card.ofd.ofdHasData") && dashPage.includes("Выручка ОФД") && dashPage.includes("ofdCardFields(ofdMgmt?.perClub.get(c.id))") && dashCardsLib.includes("ofdCardFields(ofdMgmt?.perClub.get(c.id))"));
+  check("DASH-USE-OFD2 «Абонементы» берутся из ОФД-категории membership", mgmt.perClub.get("clubA").subscriptionsKopeks === 400000 && mgmt.totals.subscriptionsKopeks === 580000 && dashPage.includes('useOfd ? "Абонементы" : "Продажи АБ"') && dashPage.includes("card.ofd.ofdSubscriptionsKopeks"));
+  check("DASH-USE-OFD3 «ПТ» берётся из ОФД-категории personal_training", mgmt.perClub.get("clubA").personalTrainingKopeks === 150000 && dashPage.includes('useOfd ? "ПТ" : "Продажи ПТ"') && dashPage.includes("card.ofd.ofdPersonalTrainingKopeks"));
+  check("DASH-USE-OFD4 учитывается фильтр месяца (окно [start,end) отсекает дни вне периода)", buildMgmt({ summaries: mSummaries, categories: mCats, startStr: "2026-06-01", endStr: "2026-07-01" }).perClub.get("clubA").incomeKopeks === 999999 && mgmt.perClub.get("clubA").incomeKopeks === 600000);
+  check("DASH-USE-OFD5 учитывает выбранную компанию/клуб (loader фильтрует companyId + clubId in clubIds)", mgmtLib.includes('provider: "taxcom"') && mgmtLib.includes("clubId: { in: clubIds }") && mgmtLib.includes("companyId,") && mgmtLib.includes("if (clubIds.length === 0)"));
+  check("DASH-USE-OFD6 regional видит только allowedClubIds (dashboard передаёт clubIds; loader не расширяет scope)", dashPage.includes("loadOfdManagementOverview(companyId, clubIds, period.start, period.end)") && mgmtLib.includes("clubId: { in: clubIds }"));
+  check("ANALYTICS-USE-OFD1 верхние карточки аналитики используют ОФД (выручка/категории)", analyticsPage.includes("loadOfdManagementOverview(aCompanyId, aClubIds, period.start, period.end)") && analyticsPage.includes("Выручка ОФД") && analyticsPage.includes("const useOfd = !!ofd && ofd.hasData"));
+  check("ANALYTICS-USE-OFD2 «Продажи АБ» = ОФД-категория «Абонементы»", analyticsPage.includes("const abValue = useOfd ? ofd!.totals.subscriptionsKopeks : s.subscriptionsKopeks") && mgmt.totals.subscriptionsKopeks === 580000);
+  check("ANALYTICS-USE-OFD3 «Продажи ПТ» = ОФД-категория «Персональные тренировки»", analyticsPage.includes("const ptValue = useOfd ? ofd!.totals.personalTrainingKopeks : s.personalTrainingKopeks") && mgmt.totals.personalTrainingKopeks === 150000);
+  check("ANALYTICS-USE-OFD4 «По сетям» использует ОФД-категории вместо старых нулей", analyticsPage.includes("useOfd ? p.ofd!.totals.subscriptionsKopeks : p.r.summary.subscriptionsKopeks") && analyticsPage.includes("useOfd ? p.ofd!.totals.personalTrainingKopeks : p.r.summary.personalTrainingKopeks") && analyticsPage.includes("netRows.map"));
+  check("ANALYTICS-USE-OFD5 учитывает фильтры город/компания/клуб (scoped clubIds)", analyticsPage.includes("loadOfdManagementOverview(g.companyId, g.clubIds, period.start, period.end)") && analyticsPage.includes("const aClubIds = groups ? groups.filteredClubIds : ctx.allowedClubIds"));
+  check("ANALYTICS-USE-OFD6 результат = ОФД net − подтверждённые расходы", mgmtResult(mgmt.totals.netKopeks, 200000) === mgmt.totals.netKopeks - 200000 && analyticsPage.includes("computeManagementResult(ofd!.totals.netKopeks, s.expensesKopeks)") && mgmtLib.includes("export function computeManagementResult(ofdNetKopeks: number, confirmedCostsKopeks: number)"));
+  check("OFD-SALES-RECON1 /analytics/ofd-sales остаётся детальной сверкой, а не единственным управленческим экраном", ofdSalesPage.includes("Детализация и сверка чеков ОФД") && dashPage.includes("loadOfdManagementOverview") && analyticsPage.includes("loadOfdManagementOverview") && ofdSalesPage.includes('requirePageAccess("ofd_sales")'));
+  check("ROLE-OFD-MGMT1 manager/accountant/marketer НЕ получают управленческую ОФД-аналитику (гейт canSeeOfdSales; нет ofd_sales доступа)", dashPage.includes('const canSeeOfdSales = canAnyRoleAccessPage(roles, "ofd_sales")') && analyticsPage.includes('const canSeeOfdSales = canAnyRoleAccessPage(roles, "ofd_sales")') && !/\bmanager:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/\baccountant:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/marketer:\s*\[[^\]]*"ofd_sales"/.test(authSrc));
+  check("ROLE-OFD-MGMT2 owner/GD/regional видят управленческие ОФД-данные по scope", /owner:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && /general_director:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && /regional_director:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && dashPage.includes("showOfd={canSeeOfdSales}") && analyticsPage.includes("canSeeOfdSales ? await loadOfdManagementOverview"));
+  check("SECURITY-OFD-MGMT1 нет секретов/raw JSON/cashier/ПДн/реквизитов в ОФД-выводе дашборда/аналитики/хелпера", ![mgmtLib, dashCardsLib].some((s) => /login|password|integrator|sessionToken|Bearer|rawJson|fiscalSign|ФПД|\bfpd\b|cashierName|cashierInn|\bphone\b|\bemail\b|buyer|customer|iban|\bбик\b|расчетный счет|\.stack|JSON\.stringify/i.test(s)) && mgmtLib.includes('provider: "taxcom"') && !/JSON\.stringify/.test(mgmtLib));
+  check("DARK-OFD-MGMT1 ОФД-блоки в дашборде/аналитике читаемы в тёмной теме", dashPage.includes('Выручка ОФД</div>') && dashPage.includes("dark:text-slate-100") && analyticsPage.includes("KpiCard") && analyticsPage.includes("dark:bg-slate-900"));
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();

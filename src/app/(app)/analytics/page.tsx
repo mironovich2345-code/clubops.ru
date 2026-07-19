@@ -14,7 +14,8 @@ import {
   getCurrentAccessContext,
   getCurrentCompanyAndClub,
 } from "@/lib/access";
-import { isStrategicRole, type Role } from "@/lib/auth";
+import { isStrategicRole, canAnyRoleAccessPage, type Role } from "@/lib/auth";
+import { loadOfdManagementOverview, computeManagementResult } from "@/lib/analytics/ofd-management";
 import { resolveStrategicGroups, type StrategicGroups } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
 import {
@@ -83,6 +84,9 @@ export default async function AnalyticsPage({
 
   const roles = ctx.effectiveRoles;
   const financials = roles.some((r) => FINANCIAL_ROLES.has(r));
+  // ОФД management overlay is owner/GD/regional (ofd_sales access). Manager/marketer
+  // keep their existing report-based view and never see ОФД financial sums.
+  const canSeeOfdSales = canAnyRoleAccessPage(roles, "ofd_sales");
 
   const sp = await searchParams;
   const periodKey: AnalyticsPeriodKey = PERIOD_OPTIONS.some((p) => p.value === sp.period)
@@ -105,12 +109,30 @@ export default async function AnalyticsPage({
   if (groups && groups.multiCompany) {
     const perCompany = await Promise.all(
       groups.byCompany.map((g) =>
-        loadAnalyticsData(g.companyId, g.clubIds, period).then((d) => ({ g, r: buildAnalyticsReport(d, period, granularity) })),
+        Promise.all([
+          loadAnalyticsData(g.companyId, g.clubIds, period).then((d) => buildAnalyticsReport(d, period, granularity)),
+          canSeeOfdSales ? loadOfdManagementOverview(g.companyId, g.clubIds, period.start, period.end) : Promise.resolve(null),
+        ]).then(([r, ofd]) => ({ g, r, ofd })),
       ),
     );
-    const tAb = perCompany.reduce((x, p) => x + p.r.summary.subscriptionsKopeks, 0);
-    const tPt = perCompany.reduce((x, p) => x + p.r.summary.personalTrainingKopeks, 0);
-    const tExp = perCompany.reduce((x, p) => x + p.r.summary.expensesKopeks, 0);
+    // Продажи АБ/ПТ from ОФД categories when ОФД has data for a network; the rest
+    // keep the confirmed-report totals. Расходы always from the finance logic.
+    const netRows = perCompany.map((p) => {
+      const useOfd = !!p.ofd && p.ofd.hasData;
+      return {
+        companyId: p.g.companyId,
+        companyName: p.g.companyName,
+        ab: useOfd ? p.ofd!.totals.subscriptionsKopeks : p.r.summary.subscriptionsKopeks,
+        pt: useOfd ? p.ofd!.totals.personalTrainingKopeks : p.r.summary.personalTrainingKopeks,
+        rev: p.ofd?.totals.incomeKopeks ?? 0,
+        exp: p.r.summary.expensesKopeks,
+      };
+    });
+    const anyOfd = netRows.some((r) => r.rev > 0);
+    const tAb = netRows.reduce((x, r) => x + r.ab, 0);
+    const tPt = netRows.reduce((x, r) => x + r.pt, 0);
+    const tRev = netRows.reduce((x, r) => x + r.rev, 0);
+    const tExp = netRows.reduce((x, r) => x + r.exp, 0);
     return (
       <div className="mx-auto max-w-[1440px]">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -131,6 +153,7 @@ export default async function AnalyticsPage({
           />
         </div>
         <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {anyOfd ? <KpiCard label="Выручка ОФД (все сети)" value={formatKopeks(tRev)} accent="text-brand-700 dark:text-brand-400" /> : null}
           <KpiCard label="Продажи АБ (все сети)" value={formatKopeks(tAb)} accent="text-emerald-600 dark:text-emerald-400" />
           <KpiCard label="Продажи ПТ (все сети)" value={formatKopeks(tPt)} accent="text-sky-600 dark:text-sky-400" />
           {financials ? <KpiCard label="Расходы (все сети)" value={formatKopeks(tExp)} accent="text-rose-600 dark:text-rose-400" /> : null}
@@ -140,15 +163,16 @@ export default async function AnalyticsPage({
           <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">По сетям</div>
           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
             <thead className="bg-slate-50 dark:bg-slate-800/50">
-              <tr><Th>Сеть</Th><Th className="text-right">Продажи АБ</Th><Th className="text-right">Продажи ПТ</Th>{financials ? <Th className="text-right">Расходы</Th> : null}</tr>
+              <tr><Th>Сеть</Th>{anyOfd ? <Th className="text-right">Выручка ОФД</Th> : null}<Th className="text-right">Продажи АБ</Th><Th className="text-right">Продажи ПТ</Th>{financials ? <Th className="text-right">Расходы</Th> : null}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-              {perCompany.map((p) => (
-                <tr key={p.g.companyId} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                  <Td className="whitespace-nowrap font-medium text-slate-900 dark:text-slate-100">{p.g.companyName}</Td>
-                  <Td className="text-right">{formatKopeks(p.r.summary.subscriptionsKopeks)}</Td>
-                  <Td className="text-right">{formatKopeks(p.r.summary.personalTrainingKopeks)}</Td>
-                  {financials ? <Td className="text-right">{formatKopeks(p.r.summary.expensesKopeks)}</Td> : null}
+              {netRows.map((r) => (
+                <tr key={r.companyId} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                  <Td className="whitespace-nowrap font-medium text-slate-900 dark:text-slate-100">{r.companyName}</Td>
+                  {anyOfd ? <Td className="text-right">{formatKopeks(r.rev)}</Td> : null}
+                  <Td className="text-right">{formatKopeks(r.ab)}</Td>
+                  <Td className="text-right">{formatKopeks(r.pt)}</Td>
+                  {financials ? <Td className="text-right">{formatKopeks(r.exp)}</Td> : null}
                 </tr>
               ))}
             </tbody>
@@ -167,6 +191,15 @@ export default async function AnalyticsPage({
   const data = await loadAnalyticsData(aCompanyId, aClubIds, period);
   const report = buildAnalyticsReport(data, period, granularity);
   const s = report.summary;
+
+  // ОФД management overlay (owner/GD/regional): use real ОФД revenue by category so
+  // Продажи АБ/ПТ are not stuck at 0. Расходы keep the confirmed finance logic.
+  const ofd = canSeeOfdSales ? await loadOfdManagementOverview(aCompanyId, aClubIds, period.start, period.end) : null;
+  const useOfd = !!ofd && ofd.hasData;
+  const abValue = useOfd ? ofd!.totals.subscriptionsKopeks : s.subscriptionsKopeks;
+  const ptValue = useOfd ? ofd!.totals.personalTrainingKopeks : s.personalTrainingKopeks;
+  const ofdRevenueKopeks = ofd?.totals.incomeKopeks ?? 0;
+  const ofdResultKopeks = useOfd ? computeManagementResult(ofd!.totals.netKopeks, s.expensesKopeks) : 0;
 
   // --- Monthly forecast inputs (reusing the report's source-of-truth values) ---
   const salesFact = s.subscriptionsKopeks + s.personalTrainingKopeks;
@@ -274,22 +307,26 @@ export default async function AnalyticsPage({
         <span>{rangeLabel}</span>
       </div>
 
-      {/* Part 2 — top KPI grid (2×2) with plan progress on the sales cards */}
+      {/* Part 2 — top KPI grid with plan progress on the sales cards. Продажи АБ/ПТ
+          come from ОФД categories for owner/GD/regional when ОФД has data. */}
       <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {useOfd ? (
+          <KpiCard label="Выручка ОФД" value={formatKopeks(ofdRevenueKopeks)} sub={rangeLabel} accent="text-brand-700 dark:text-brand-400" />
+        ) : null}
         <KpiCard
-          label="Продажи абонементов"
-          value={formatKopeks(s.subscriptionsKopeks)}
+          label={useOfd ? "Абонементы (ОФД)" : "Продажи абонементов"}
+          value={formatKopeks(abValue)}
           sub={rangeLabel}
           accent="text-emerald-600 dark:text-emerald-400"
-          trend={{ cur: s.subscriptionsKopeks, prev: s.prevSubscriptionsKopeks, goodWhenUp: true }}
+          trend={{ cur: abValue, prev: s.prevSubscriptionsKopeks, goodWhenUp: true }}
           progress={report.planTotals.subscriptions}
         />
         <KpiCard
-          label="Продажи персональных тренировок"
-          value={formatKopeks(s.personalTrainingKopeks)}
+          label={useOfd ? "Персональные тренировки (ОФД)" : "Продажи персональных тренировок"}
+          value={formatKopeks(ptValue)}
           sub={rangeLabel}
           accent="text-sky-600 dark:text-sky-400"
-          trend={{ cur: s.personalTrainingKopeks, prev: s.prevPersonalTrainingKopeks, goodWhenUp: true }}
+          trend={{ cur: ptValue, prev: s.prevPersonalTrainingKopeks, goodWhenUp: true }}
           progress={report.planTotals.personal_training}
         />
         {financials ? (
@@ -301,6 +338,14 @@ export default async function AnalyticsPage({
               accent="text-rose-600 dark:text-rose-400"
               trend={{ cur: s.expensesKopeks, prev: s.prevExpensesKopeks, goodWhenUp: false }}
             />
+            {useOfd ? (
+              <KpiCard
+                label="Результат (ОФД − расходы)"
+                value={formatKopeks(ofdResultKopeks)}
+                sub="выручка ОФД за вычетом подтверждённых расходов"
+                accent={ofdResultKopeks >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}
+              />
+            ) : null}
             <KpiCard
               label="Долги / обязательства"
               value={formatKopeks(s.obligationsKopeks)}

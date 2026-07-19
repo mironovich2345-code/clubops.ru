@@ -83,7 +83,7 @@ export default async function OfdSalesAnalyticsPage({ searchParams }: { searchPa
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="ОФД-продажи" description="Фактическая выручка по чекам ОФД: наличные, безнал, возвраты и статьи доходов." />
+      <PageHeader title="ОФД-продажи" description="Детализация и сверка чеков ОФД: наличные, безнал, возвраты, юрлица и статьи доходов." />
 
       {/* Today / yesterday / selected-month cards */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">

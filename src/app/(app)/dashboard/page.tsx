@@ -15,6 +15,7 @@ import { getPendingReopenRequestsForCompanies } from "@/lib/month-reopen";
 import { StrategicScopeFilter } from "./_components/StrategicScopeFilter";
 import { CashScopeSummary } from "./_components/CashScopeSummary";
 import { OfdSalesOverview } from "./_components/OfdSalesOverview";
+import { loadOfdManagementOverview, ofdCardFields, computeManagementResult, type OfdCardFields } from "@/lib/analytics/ofd-management";
 import { openInStrategicScope } from "./strategic-actions";
 import {
   loadAnalyticsData,
@@ -77,6 +78,9 @@ type ClubCard = {
   oooRisk: "low" | "high" | "unknown";
   ipRisk: "low" | "high" | "unknown";
   companyName?: string; // shown on cards in the multi-Company strategic view
+  // ОФД management overlay (owner/GD/regional): real revenue by category so the
+  // cards are not stuck at 0 ₽ when only ОФД data exists.
+  ofd: OfdCardFields;
 };
 
 export default async function DashboardPage({
@@ -151,7 +155,7 @@ export default async function DashboardPage({
       byCompany.set(c.companyId, g);
     }
     const cardGroups = await Promise.all(
-      [...byCompany.entries()].map(([cid, g]) => loadCompanyClubCards(cid, g.name, g.clubs, period, financials, now)),
+      [...byCompany.entries()].map(([cid, g]) => loadCompanyClubCards(cid, g.name, g.clubs, period, financials, now, canSeeOfdSales)),
     );
     const cards = cardGroups
       .flat()
@@ -269,7 +273,7 @@ export default async function DashboardPage({
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {cards.map((c) => (
-              <ClubOverviewCard key={c.id} card={c} financials={financials} daysLeft={daysLeft} showCompany={multiCompany} />
+              <ClubOverviewCard key={c.id} card={c} financials={financials} showOfd={canSeeOfdSales} daysLeft={daysLeft} showCompany={multiCompany} />
             ))}
           </div>
         )}
@@ -379,6 +383,12 @@ export default async function DashboardPage({
   const riskFor = (balanceKopeks: number | null, obligationsKopeks: number) =>
     balanceRiskLevel(calculateBalanceForecast({ currentCashKopeks: balanceKopeks, obligationsKopeks }));
 
+  // ОФД management overlay (owner/GD/regional): real per-club revenue by category for
+  // the selected period, so the cards reflect ОФД instead of showing 0 ₽.
+  const ofdMgmt = canSeeOfdSales
+    ? await loadOfdManagementOverview(companyId, clubIds, period.start, period.end)
+    : null;
+
   const cards: ClubCard[] = clubs.map((c) => {
     const split = splitByClub.get(c.id);
     const bal = balancesByClub.get(c.id);
@@ -403,6 +413,7 @@ export default async function DashboardPage({
       ipKopeks,
       oooRisk,
       ipRisk,
+      ofd: ofdCardFields(ofdMgmt?.perClub.get(c.id)),
     };
   });
 
@@ -463,7 +474,7 @@ export default async function DashboardPage({
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {cards.map((c) => (
-            <ClubOverviewCard key={c.id} card={c} financials={financials} daysLeft={daysLeft} />
+            <ClubOverviewCard key={c.id} card={c} financials={financials} showOfd={canSeeOfdSales} daysLeft={daysLeft} />
           ))}
         </div>
       )}
@@ -507,9 +518,17 @@ function dailyTargetLabel(t: DailyTarget): { text: string; cls: string } {
   return { text: `${formatKopeks(t.perDayKopeks)} / день`, cls: "text-slate-700 dark:text-slate-200" };
 }
 
-function ClubOverviewCard({ card, financials, daysLeft, showCompany = false }: { card: ClubCard; financials: boolean; daysLeft: number; showCompany?: boolean }) {
-  const subsDaily = dailyTargetLabel(dailyTarget(card.subsPlan, card.subsFact, daysLeft));
-  const ptDaily = dailyTargetLabel(dailyTarget(card.ptPlan, card.ptFact, daysLeft));
+function ClubOverviewCard({ card, financials, showOfd, daysLeft, showCompany = false }: { card: ClubCard; financials: boolean; showOfd: boolean; daysLeft: number; showCompany?: boolean }) {
+  // Owner/GD/regional with ОФД data see the real ОФД revenue by category; other
+  // roles / clubs without ОФД keep the confirmed-report figures (may be 0).
+  const useOfd = showOfd && card.ofd.ofdHasData;
+  const subsFact = useOfd ? card.ofd.ofdSubscriptionsKopeks : card.subsFact;
+  const ptFact = useOfd ? card.ofd.ofdPersonalTrainingKopeks : card.ptFact;
+  const subsPct = useOfd ? (card.subsPlan > 0 ? (subsFact / card.subsPlan) * 100 : null) : card.subsPct;
+  const ptPct = useOfd ? (card.ptPlan > 0 ? (ptFact / card.ptPlan) * 100 : null) : card.ptPct;
+  const subsDaily = dailyTargetLabel(dailyTarget(card.subsPlan, subsFact, daysLeft));
+  const ptDaily = dailyTargetLabel(dailyTarget(card.ptPlan, ptFact, daysLeft));
+  const resultKopeks = useOfd ? computeManagementResult(card.ofd.ofdNetKopeks, card.expensesKopeks) : null;
   return (
     <form action={openClubAnalytics.bind(null, card.id)} className="h-full">
       <button
@@ -527,10 +546,21 @@ function ClubOverviewCard({ card, financials, daysLeft, showCompany = false }: {
           <span aria-hidden className="mt-1 shrink-0 text-slate-300 transition group-hover:text-brand-500 dark:text-slate-600">→</span>
         </div>
 
-        {/* Sales metrics + plan bars */}
+        {/* Выручка ОФД — headline (owner/GD/regional, when ОФД has data) */}
+        {useOfd ? (
+          <div className="mb-3">
+            <div className="text-xs text-slate-400 dark:text-slate-500">Выручка ОФД</div>
+            <div className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{formatKopeks(card.ofd.ofdRevenueKopeks)}</div>
+            <div className="text-[11px] text-slate-400 dark:text-slate-500">
+              {card.ofd.ofdReceipts} чеков{card.ofd.ofdReturnsKopeks > 0 ? ` · возвраты ${formatKopeks(card.ofd.ofdReturnsKopeks)}` : ""}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Sales metrics + plan bars (ОФД categories when available) */}
         <div className="grid grid-cols-2 gap-4">
-          <MetricBlock label="Продажи АБ" value={card.subsFact} pct={card.subsPct} accent="text-emerald-600 dark:text-emerald-400" />
-          <MetricBlock label="Продажи ПТ" value={card.ptFact} pct={card.ptPct} accent="text-sky-600 dark:text-sky-400" />
+          <MetricBlock label={useOfd ? "Абонементы" : "Продажи АБ"} value={subsFact} pct={subsPct} accent="text-emerald-600 dark:text-emerald-400" />
+          <MetricBlock label={useOfd ? "ПТ" : "Продажи ПТ"} value={ptFact} pct={ptPct} accent="text-sky-600 dark:text-sky-400" />
         </div>
 
         {/* Daily targets */}
@@ -554,10 +584,14 @@ function ClubOverviewCard({ card, financials, daysLeft, showCompany = false }: {
                 <div className="mt-0.5 text-base font-semibold text-rose-600 dark:text-rose-400">{formatKopeks(card.expensesKopeks)}</div>
               </div>
               <div>
-                <div className="text-xs text-slate-400 dark:text-slate-500">Окупаемость</div>
-                <div className="mt-0.5 text-base font-semibold text-slate-700 dark:text-slate-200">
-                  {card.breakEvenKopeks > 0 ? formatKopeks(card.breakEvenKopeks) : <span className="text-sm font-medium text-slate-400 dark:text-slate-500">Бюджет не задан</span>}
-                </div>
+                <div className="text-xs text-slate-400 dark:text-slate-500">{useOfd ? "Результат (ОФД − расходы)" : "Окупаемость"}</div>
+                {useOfd ? (
+                  <div className={`mt-0.5 text-base font-semibold ${(resultKopeks ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>{formatKopeks(resultKopeks ?? 0)}</div>
+                ) : (
+                  <div className="mt-0.5 text-base font-semibold text-slate-700 dark:text-slate-200">
+                    {card.breakEvenKopeks > 0 ? formatKopeks(card.breakEvenKopeks) : <span className="text-sm font-medium text-slate-400 dark:text-slate-500">Бюджет не задан</span>}
+                  </div>
+                )}
               </div>
             </div>
             {/* Finance Control — per-entity balance + risk (ООО / ИП kept separate) */}
