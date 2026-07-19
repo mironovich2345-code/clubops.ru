@@ -1567,6 +1567,50 @@ async function main() {
   check("SECURITY-OFD-MGMT1 нет секретов/raw JSON/cashier/ПДн/реквизитов в ОФД-выводе дашборда/аналитики/хелпера", ![mgmtLib, dashCardsLib].some((s) => /login|password|integrator|sessionToken|Bearer|rawJson|fiscalSign|ФПД|\bfpd\b|cashierName|cashierInn|\bphone\b|\bemail\b|buyer|customer|iban|\bбик\b|расчетный счет|\.stack|JSON\.stringify/i.test(s)) && mgmtLib.includes('provider: "taxcom"') && !/JSON\.stringify/.test(mgmtLib));
   check("DARK-OFD-MGMT1 ОФД-блоки в дашборде/аналитике читаемы в тёмной теме", dashPage.includes('Выручка ОФД</div>') && dashPage.includes("dark:text-slate-100") && analyticsPage.includes("KpiCard") && analyticsPage.includes("dark:bg-slate-900"));
 
+  // ===== Аудит: продажи из ОФД, прогноз, отключение ручного ввода ==============
+  const reportActions = readFileSync(new URL("../src/app/(app)/sales/report-actions.ts", import.meta.url), "utf8");
+  const salesPage = readFileSync(new URL("../src/app/(app)/sales/page.tsx", import.meta.url), "utf8");
+  const analyticsLibSrc = readFileSync(new URL("../src/lib/analytics.ts", import.meta.url), "utf8");
+  const forecastBlock = readFileSync(new URL("../src/components/MonthlyForecastBlock.tsx", import.meta.url), "utf8");
+  const createReportBody = reportActions.slice(reportActions.indexOf("export async function createSalesReport"), reportActions.indexOf("export async function uploadSalesReportDocuments"));
+  // Mirror of buildMonthlyForecast (only the fields under test).
+  const buildForecast = ({ salesFact, salesPlan, elapsedDays, totalDays }) => {
+    const hasPlan = salesPlan > 0;
+    const completionPercent = hasPlan ? (salesFact / salesPlan) * 100 : null;
+    const averagePerDay = elapsedDays > 0 ? Math.round(salesFact / elapsedDays) : 0;
+    const remainingAfterToday = Math.max(0, totalDays - elapsedDays);
+    const projectedMonthSales = elapsedDays > 0 ? salesFact + averagePerDay * remainingAfterToday : null;
+    let risk = "none";
+    if (hasPlan && projectedMonthSales !== null) risk = projectedMonthSales >= salesPlan ? "low" : projectedMonthSales >= salesPlan * 0.9 ? "medium" : "high";
+    return { hasPlan, completionPercent, averagePerDay, projectedMonthSales, risk };
+  };
+
+  check("NAV-SALES1 пункт «Продажи» удалён из навигации (NAV_ITEMS + NAV_SECTIONS)", !navSrc.includes('page: "sales", href: "/sales"') && !/\{\s*type:\s*"item",\s*page:\s*"sales"\s*\}/.test(navSrc) && navSrc.includes('page: "ofd_sales"'));
+  check("SALES-LEGACY1 createSalesReport не создаёт новый сменный отчёт (disabled, нет salesReport.create в теле)", createReportBody.includes("MANUAL_SALES_DISABLED_MESSAGE") && createReportBody.includes('auditBlockedFeature("sales_report.create")') && !createReportBody.includes("salesReport.create"));
+  check("SALES-LEGACY1b константа отключения задаёт корректное сообщение", readFileSync(new URL("../src/lib/disabled-features.ts", import.meta.url), "utf8").includes('MANUAL_SALES_DISABLED_MESSAGE = "Ручной ввод продаж отключён. Продажи поступают из ОФД."'));
+  check("SALES-LEGACY2 прямое открытие /sales показывает read-only сообщение и НЕ рендерит форму создания", salesPage.includes("Ручной ввод продаж отключён. Продажи поступают из ОФД.") && !salesPage.includes("<SalesReportForm") && salesPage.includes('requirePageAccess("sales")'));
+  check("ANALYTICS-CARD1 «Выручка ОФД» = OfdDailySalesSummary (через loadOfdManagementOverview за период)", analyticsPage.includes("loadOfdManagementOverview(aCompanyId, aClubIds, period.start, period.end)") && analyticsPage.includes("const ofdRevenueKopeks = ofd?.totals.incomeKopeks ?? 0") && mgmtLib.includes("ofdDailySalesSummary.findMany") && mgmtLib.includes("f.incomeKopeks += s.incomeTotalKopeks"));
+  check("ANALYTICS-CARD2 «Абонементы (ОФД)» = категория membership", analyticsPage.includes("const abValue = useOfd ? ofd!.totals.subscriptionsKopeks") && mgmtLib.includes('membership: "subscriptionsKopeks"'));
+  check("ANALYTICS-CARD3 «Персональные тренировки (ОФД)» = категория personal_training", analyticsPage.includes("const ptValue = useOfd ? ofd!.totals.personalTrainingKopeks") && mgmtLib.includes('personal_training: "personalTrainingKopeks"'));
+  check("ANALYTICS-CARD4 «Результат (ОФД − расходы)» = ОФД net − confirmed costs", analyticsPage.includes("computeManagementResult(ofd!.totals.netKopeks, s.expensesKopeks)"));
+  check("ANALYTICS-CARD5 «Фактические расходы» не включают pending (EXPENSE_REALIZED_STATUSES = confirmed/verified)", analyticsLibSrc.includes("EXPENSE_REALIZED_STATUSES") && analyticsLibSrc.includes('status: { in: [...EXPENSE_REALIZED_STATUSES] }') && /EXPENSE_REALIZED_STATUSES\s*=\s*\[\s*"confirmed",\s*"verified"\s*\]/.test(readFileSync(new URL("../src/lib/budgets.ts", import.meta.url), "utf8")));
+  check("ANALYTICS-FORECAST1 прогноз использует ОФД-факт, а не старые sales reports", analyticsPage.includes("const salesFact = useOfd ? ofdRevenueKopeks : s.subscriptionsKopeks + s.personalTrainingKopeks") && analyticsPage.includes("if (!useOfd && period.key === \"current_month\")"));
+  const fc = buildForecast({ salesFact: 917993, salesPlan: 1500000, elapsedDays: 19, totalDays: 31 });
+  check("ANALYTICS-FORECAST2 при ОФД-выручке 917 993 ₽ прогноз по темпу ≠ 0", fc.projectedMonthSales !== null && fc.projectedMonthSales > 0 && fc.averagePerDay === Math.round(917993 / 19) && fc.completionPercent > 0);
+  const fcNoPlan = buildForecast({ salesFact: 917993, salesPlan: 0, elapsedDays: 19, totalDays: 31 });
+  check("ANALYTICS-FORECAST3 без плана — «План не задан», не ложный 0%", fcNoPlan.hasPlan === false && fcNoPlan.completionPercent === null && forecastBlock.includes('value: "План не задан"'));
+  check("ANALYTICS-FORECAST4 риск от ОФД-прогноза (не высокий из-за старого 0); нет плана → none/«Недостаточно данных»", buildForecast({ salesFact: 1600000, salesPlan: 1500000, elapsedDays: 19, totalDays: 31 }).risk === "low" && fcNoPlan.risk === "none" && forecastBlock.includes("Недостаточно данных"));
+  check("DASHBOARD-CARD1 карточка дашборда показывает ОФД-выручку при наличии OfdDailySalesSummary", dashPage.includes("card.ofd.ofdHasData") && dashPage.includes("Выручка ОФД") && dashPage.includes("loadOfdManagementOverview(companyId, clubIds, period.start, period.end)"));
+  check("DASHBOARD-CARD2 плановые бары используют ОФД membership/PT факты", dashPage.includes("card.ofd.ofdSubscriptionsKopeks") && dashPage.includes("card.ofd.ofdPersonalTrainingKopeks") && dashPage.includes("subsFact / card.subsPlan"));
+  check("DASHBOARD-CARD3 результат карточки = ОФД net − confirmed costs", dashPage.includes("computeManagementResult(card.ofd.ofdNetKopeks, card.expensesKopeks)"));
+  check("DASHBOARD-LEGACY1 старый блок неподтверждённых ручных продаж убран (не главный сигнал дашборда)", !dashPage.includes("<UnconfirmedSalesBlock") && !dashPage.includes("UnconfirmedSalesBlock } from") && !dashPage.includes("getUnconfirmedReportsForMonth"));
+  check("FILTER-OFD1 фильтры месяц/компания/клуб применяются к OFD summary и категориям", mgmtLib.includes("date: { gte: startStr, lt: endStr }") && mgmtLib.includes("clubId: { in: clubIds }") && mgmtLib.includes("ofdRevenueCategoryDailySummary.findMany"));
+  check("FILTER-OFD2 regional видит только allowedClubIds во всей ОФД-аналитике", analyticsPage.includes("const aClubIds = groups ? groups.filteredClubIds : ctx.allowedClubIds") && dashPage.includes("loadOfdManagementOverview(companyId, clubIds") && mgmtLib.includes("if (clubIds.length === 0)"));
+  check("ROLE-SALES1 manager/accountant/marketer не видят ручной ввод продаж (сервер отключил создание для всех; форма и меню убраны)", createReportBody.includes("MANUAL_SALES_DISABLED_MESSAGE") && !salesPage.includes("<SalesReportForm") && !navSrc.includes('page: "sales", href: "/sales"'));
+  check("ROLE-OFD-ANALYTICS1 owner/GD/regional видят ОФД-аналитику по scope (гейт ofd_sales)", /owner:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && /general_director:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && /regional_director:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && analyticsPage.includes('canAnyRoleAccessPage(roles, "ofd_sales")') && dashPage.includes('canAnyRoleAccessPage(roles, "ofd_sales")'));
+  check("SECURITY-ANALYTICS1 нет секретов/raw JSON/cashier/ПДн/реквизитов в дашборде/аналитике/хелпере", ![analyticsPage, dashPage, mgmtLib].some((s) => /login|password|integrator|sessionToken|Bearer|rawJson|fiscalSign|ФПД|\bfpd\b|cashierName|cashierInn|\bphone\b|\bemail\b|\bbuyer\b|\bcustomer\b|iban|расчетный счет|\.stack/i.test(s)) && !/JSON\.stringify/.test(mgmtLib));
+  check("DARK-ANALYTICS1 карточки и прогноз аналитики читаемы в тёмной теме", analyticsPage.includes("dark:bg-slate-900") && analyticsPage.includes("dark:text-slate-100") && forecastBlock.includes("dark:"));
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();

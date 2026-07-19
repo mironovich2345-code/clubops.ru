@@ -10,7 +10,6 @@ import {
 import { canManageSalesPlans, canApproveMonthReopen, canAnyRoleAccessPage, isStrategicRole, type Role } from "@/lib/auth";
 import { resolveStrategicScope } from "@/lib/strategic-scope";
 import { loadCompanyClubCards } from "@/lib/dashboard-cards";
-import { getUnconfirmedReportsForScope } from "@/lib/sales-reports";
 import { getPendingReopenRequestsForCompanies } from "@/lib/month-reopen";
 import { StrategicScopeFilter } from "./_components/StrategicScopeFilter";
 import { CashScopeSummary } from "./_components/CashScopeSummary";
@@ -30,7 +29,6 @@ import {
 } from "@/lib/sales-plans";
 import { getLatestBalancesByClub, type ClubBalances } from "@/lib/balance-snapshots";
 import { getPendingReopenRequestsForCompany } from "@/lib/month-reopen";
-import { getUnconfirmedReportsForMonth } from "@/lib/sales-reports";
 import { loadPaymentObligationsForScope } from "@/lib/payment-obligations";
 import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
 import { dayStart, addDays } from "@/lib/payments";
@@ -38,7 +36,6 @@ import { SalesPlanForm } from "./_components/SalesPlanForm";
 import { SalesPlanImport } from "./_components/SalesPlanImport";
 import { OwnerReopenApprovals, type ReopenRow } from "./_components/OwnerReopenApprovals";
 import { DashboardMonthSelector } from "./_components/DashboardMonthSelector";
-import { UnconfirmedSalesBlock } from "./_components/UnconfirmedSalesBlock";
 import { DashboardForecast } from "./_components/DashboardForecast";
 import { openClubAnalytics } from "./actions";
 
@@ -108,7 +105,6 @@ export default async function DashboardPage({
   const roles = ctx?.effectiveRoles ?? [];
   const financials = roles.some((r) => FINANCIAL_ROLES.has(r));
   const canEditPlan = canManageSalesPlans(roles);
-  const canViewSales = canAnyRoleAccessPage(roles, "sales");
   const canApproveReopen = canApproveMonthReopen(roles);
   // Cash fact balances are a finance/operational surface: shown to any role that can
   // reach Инкассация (/collections) — owner/GD/regional/manager. A marketer has
@@ -171,14 +167,6 @@ export default async function DashboardPage({
     const planClubs = canEditPlan ? (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name })) : [];
 
     const filteredClubIds = strategic.filteredClubs.map((c) => c.id);
-    const unconfirmed = await getUnconfirmedReportsForScope(strategic.filteredCompanyIds, filteredClubIds, selectedMonth);
-    const unconfirmedTotalKopeks = unconfirmed.reduce((sum, r) => sum + r.totalKopeks, 0);
-    const unconfirmedClubs = new Set(unconfirmed.map((r) => r.clubId)).size;
-    const oldest = unconfirmed[0] ?? null;
-    const oldestAge = oldest
-      ? Math.max(0, Math.floor((dayStart(now).getTime() - dayStart(oldest.createdAt).getTime()) / 86_400_000))
-      : null;
-
     const companyNameById = new Map(strategic.accessibleCompanies.map((c) => [c.id, c.name]));
     const strategicReopenRows: ReopenRow[] = canApproveReopen
       ? (await getPendingReopenRequestsForCompanies(strategic.filteredCompanyIds)).map((r) => ({
@@ -232,35 +220,9 @@ export default async function DashboardPage({
           <OfdSalesOverview companyId={strategic.filteredCompanyIds[0]} clubIds={filteredClubIds} />
         ) : null}
 
-        {/* Priority: approvals, then unconfirmed sales, then club cards. */}
+        {/* Priority: approvals, then club cards. The legacy manual "Неподтверждённые
+            продажи" block is retired — sales come from ОФД, not manual shift reports. */}
         {canApproveReopen ? <OwnerReopenApprovals requests={strategicReopenRows} /> : null}
-
-        {canViewSales ? (
-          <UnconfirmedSalesBlock
-            rows={unconfirmed.slice(0, 5).map((r) => ({
-              id: r.id,
-              companyId: r.companyId,
-              companyName: r.companyName,
-              clubId: r.clubId,
-              clubName: r.clubName,
-              reportDate: r.reportDate.toISOString(),
-              createdAt: r.createdAt.toISOString(),
-              managerName: r.managerName,
-              createdByName: r.createdByName,
-              totalKopeks: r.totalKopeks,
-              oooKopeks: r.oooKopeks,
-              ipKopeks: r.ipKopeks,
-            }))}
-            count={unconfirmed.length}
-            totalKopeks={unconfirmedTotalKopeks}
-            clubsAffected={unconfirmedClubs}
-            oldestDate={oldest ? oldest.reportDate.toISOString() : null}
-            oldestAgeDays={oldestAge}
-            monthLabel={monthLabel}
-            showCompany={multiCompany}
-            safeOpenAction={openInStrategicScope}
-          />
-        ) : null}
 
         {strategic.accessibleClubs.length === 0 ? (
           <div className={`px-4 py-16 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
@@ -311,7 +273,6 @@ export default async function DashboardPage({
   // scope: owner/GD -> all company clubs; regional -> assigned; manager -> own.
   const clubs = await getUserClubs(user.id, companyId);
   const clubIds = clubs.map((c) => c.id);
-  const scopeForReports = { company: { id: companyId, name: companyName }, club: null, clubIds };
 
   // Per-club figures reuse the SAME source of truth as Analytics, for the
   // SELECTED month, so the cards match the Analytics page exactly.
@@ -320,24 +281,22 @@ export default async function DashboardPage({
 
   // Unconfirmed (pending_accountant) sales reports for the selected month, scoped.
   // Shown to dashboard viewers who may see sales (not marketer); read-only.
-  const unconfirmed = canViewSales ? await getUnconfirmedReportsForMonth(scopeForReports, selectedMonth) : [];
-  const unconfirmedTotalKopeks = unconfirmed.reduce((s, r) => s + r.totalKopeks, 0);
-  const unconfirmedClubs = new Set(unconfirmed.map((r) => r.clubId)).size;
-  const oldestUnconfirmed = unconfirmed[0] ?? null; // ordered reportDate asc
-  const oldestAgeDays = oldestUnconfirmed
-    ? Math.max(0, Math.floor((dayStart(now).getTime() - dayStart(oldestUnconfirmed.createdAt).getTime()) / 86_400_000))
-    : null;
-
-  // --- Company-level sales forecast for the selected month (NaN/Infinity-safe) ---
+  // --- Company-level sales forecast for the selected month (NaN/Infinity-safe).
+  // The month FACT is ОФД revenue (gross income) for owner/GD/regional when ОФД has
+  // data, so pace/plan/risk reflect ОФД instead of the retired manual reports. ---
   const s = report.summary;
-  const abFact = s.subscriptionsKopeks;
-  const ptFact = s.personalTrainingKopeks;
+  // ОФД management overlay (owner/GD/regional): real per-club + company revenue.
+  const ofdMgmt = canSeeOfdSales ? await loadOfdManagementOverview(companyId, clubIds, period.start, period.end) : null;
+  const useOfd = !!ofdMgmt && ofdMgmt.hasData;
+  const abFact = useOfd ? ofdMgmt!.totals.subscriptionsKopeks : s.subscriptionsKopeks;
+  const ptFact = useOfd ? ofdMgmt!.totals.personalTrainingKopeks : s.personalTrainingKopeks;
   const abPlan = report.planTotals.subscriptions.planKopeks;
   const ptPlan = report.planTotals.personal_training.planKopeks;
   const salesPlan = s.planTargetKopeks > 0 ? s.planTargetKopeks : abPlan + ptPlan;
-  // Previous-month pacing only applies to the live current month.
+  // Previous-month pacing only applies to the live current month AND the report-based
+  // fact (the ОФД overlay window covers one period only).
   let previousMonthRemainingSales: number | null = null;
-  if (period.key === "current_month") {
+  if (!useOfd && period.key === "current_month") {
     const prevRows = data.reportSplit.filter((r) => r.date >= period.prevStart && r.date < period.prevEnd);
     if (prevRows.length > 0) {
       const cutoffDay = now.getDate();
@@ -347,7 +306,7 @@ export default async function DashboardPage({
     }
   }
   const forecast = buildMonthlyForecast({
-    salesFact: abFact + ptFact,
+    salesFact: useOfd ? ofdMgmt!.totals.incomeKopeks : abFact + ptFact,
     salesPlan,
     expenseBudget: s.budgetTotalKopeks,
     periodStart: period.start,
@@ -382,12 +341,6 @@ export default async function DashboardPage({
   }
   const riskFor = (balanceKopeks: number | null, obligationsKopeks: number) =>
     balanceRiskLevel(calculateBalanceForecast({ currentCashKopeks: balanceKopeks, obligationsKopeks }));
-
-  // ОФД management overlay (owner/GD/regional): real per-club revenue by category for
-  // the selected period, so the cards reflect ОФД instead of showing 0 ₽.
-  const ofdMgmt = canSeeOfdSales
-    ? await loadOfdManagementOverview(companyId, clubIds, period.start, period.end)
-    : null;
 
   const cards: ClubCard[] = clubs.map((c) => {
     const split = splitByClub.get(c.id);
@@ -440,31 +393,7 @@ export default async function DashboardPage({
       {/* Priority order: critical approvals, then unconfirmed sales, then forecast + clubs. */}
       {canApproveReopen ? <OwnerReopenApprovals requests={reopenRows} /> : null}
 
-      {canViewSales ? (
-        <UnconfirmedSalesBlock
-          rows={unconfirmed.slice(0, 5).map((r) => ({
-            id: r.id,
-            companyId: r.companyId,
-            companyName: r.companyName,
-            clubId: r.clubId,
-            clubName: r.clubName,
-            reportDate: r.reportDate.toISOString(),
-            createdAt: r.createdAt.toISOString(),
-            managerName: r.managerName,
-            createdByName: r.createdByName,
-            totalKopeks: r.totalKopeks,
-            oooKopeks: r.oooKopeks,
-            ipKopeks: r.ipKopeks,
-          }))}
-          count={unconfirmed.length}
-          totalKopeks={unconfirmedTotalKopeks}
-          clubsAffected={unconfirmedClubs}
-          oldestDate={oldestUnconfirmed ? oldestUnconfirmed.reportDate.toISOString() : null}
-          oldestAgeDays={oldestAgeDays}
-          monthLabel={monthLabel}
-        />
-      ) : null}
-
+      {/* Legacy manual "Неподтверждённые продажи" block retired — sales come from ОФД. */}
       <DashboardForecast mode={monthMode} monthLabel={monthLabel} forecast={forecast} abFact={abFact} ptFact={ptFact} abPlan={abPlan} ptPlan={ptPlan} />
 
       {cards.length === 0 ? (

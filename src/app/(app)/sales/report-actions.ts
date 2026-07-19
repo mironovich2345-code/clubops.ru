@@ -29,6 +29,7 @@ import { SHIFT_MANAGER_POSITIONS } from "@/lib/club-employees";
 import { monthClosedError } from "@/lib/month-close";
 import { isUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { validateReportFile, storeReportFile, MAX_REPORT_FILES } from "@/lib/sales-report-storage";
+import { auditBlockedFeature, MANUAL_SALES_DISABLED_MESSAGE } from "@/lib/disabled-features";
 
 export type CreateReportState = {
   ok: boolean;
@@ -56,139 +57,11 @@ export async function createSalesReport(
   _prev: CreateReportState | undefined,
   formData: FormData,
 ): Promise<CreateReportState> {
-  const ctx = await getCurrentAccessContext();
-  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "sales")) {
-    return { ok: false, error: "Нет доступа" };
-  }
-  if (!canCreateOperational(ctx.effectiveRoles)) {
-    return { ok: false, error: "Создавать отчёты могут управляющие и региональные директора" };
-  }
-
-  const clubId = String(formData.get("clubId") ?? "").trim();
-  const reportDateRaw = String(formData.get("reportDate") ?? "").trim();
-  const managerEmployeeId = String(formData.get("managerEmployeeId") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim() || null;
-
-  const fieldErrors: CreateReportState["fieldErrors"] = {};
-  if (!clubId) fieldErrors.clubId = "Выберите клуб";
-  const reportDate = parseDateInput(reportDateRaw);
-  if (!reportDateRaw) fieldErrors.reportDate = "Укажите дату отчёта";
-  else if (!reportDate) fieldErrors.reportDate = "Неверная дата";
-  if (Object.keys(fieldErrors).length > 0) return { ok: false, error: "Проверьте поля формы", fieldErrors };
-
-  if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
-    return { ok: false, error: "Нет доступа к выбранному клубу" };
-  }
-  const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
-  if (!club || club.companyId !== ctx.selectedCompanyId) return { ok: false, error: "Клуб не найден" };
-
-  // Part 3 — shift manager is an active ClubEmployee (manager / night manager)
-  // belonging to the same company + club. managerName is denormalized so the
-  // report keeps a stable display name even if the employee is later renamed.
-  if (!managerEmployeeId) return { ok: false, error: "Выберите менеджера смены" };
-  const managerEmployee = await prisma.clubEmployee.findUnique({ where: { id: managerEmployeeId } });
-  if (
-    !managerEmployee ||
-    managerEmployee.companyId !== club.companyId ||
-    managerEmployee.clubId !== clubId ||
-    managerEmployee.status !== "active" ||
-    !SHIFT_MANAGER_POSITIONS.includes(managerEmployee.position as (typeof SHIFT_MANAGER_POSITIONS)[number])
-  ) {
-    return { ok: false, error: "Выберите менеджера смены" };
-  }
-  const managerName = managerEmployee.fullName;
-
-  const closed = await monthClosedError(club.companyId, clubId, reportDate!);
-  if (closed) return { ok: false, error: closed };
-
-  // One active report per club+date (a rejected/canceled report does not block a
-  // new one). Day window is computed in UTC to match the date parse above.
-  const dayStart = new Date(Date.UTC(reportDate!.getUTCFullYear(), reportDate!.getUTCMonth(), reportDate!.getUTCDate()));
-  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-  const duplicate = await prisma.salesReport.findFirst({
-    where: { clubId, reportDate: { gte: dayStart, lt: dayEnd }, status: { in: ACTIVE_REPORT_STATUSES } },
-    select: { id: true },
-  });
-  if (duplicate) {
-    return {
-      ok: false,
-      error: "За выбранную дату уже существует сменный отчёт для данного клуба.",
-      existingReportId: duplicate.id,
-    };
-  }
-
-  // Trust only the base rows from the client; recompute every calculated row on
-  // the server (client-sent calculated values are ignored / overwritten).
-  const baseKopeks: Record<string, number> = {};
-  for (const row of BASE_ROWS) {
-    const rub = parseAmount(String(formData.get(`amount_${row.key}`) ?? ""));
-    // Server is the source of truth: base amounts must be non-negative.
-    if (rub < 0) return { ok: false, error: "Сумма не может быть отрицательной" };
-    baseKopeks[row.key] = rublesToKopeks(rub);
-  }
-  const allKopeks = computeSalesReportTotals(baseKopeks);
-
-  // Part 3 — ООО revenue must equal Абонементы ООО + ПТ ООО (enforced at creation
-  // when both sides are known; also re-checked at confirmation).
-  const oooRevenue = allKopeks[REVENUE_OOO_KEY] ?? 0;
-  const oooByCategory = (allKopeks[SUBSCRIPTIONS_OOO_KEY] ?? 0) + (allKopeks[PERSONAL_TRAINING_OOO_KEY] ?? 0);
-  if (oooRevenue !== oooByCategory) {
-    return { ok: false, error: "Выручка ООО должна равняться сумме Абонементов ООО и ПТ ООО" };
-  }
-
-  // Map each row to the club's matching legal entity (ООО rows -> ООО, ИП rows
-  // -> ИП; totals span both -> null). Missing entity -> null (warning on detail).
-  const [oooEntity, ipEntity] = await Promise.all([
-    getClubEntityByType(clubId, "ooo"),
-    getClubEntityByType(clubId, "ip"),
-  ]);
-  const entityForSection = (section: string): string | null =>
-    section === "ooo" ? oooEntity?.id ?? null : section === "ip" ? ipEntity?.id ?? null : null;
-
-  const lines = SALES_REPORT_ROWS.map((row, i) => ({
-    key: row.key,
-    label: SALES_REPORT_ROW_LABELS[row.key] ?? row.label,
-    amountKopeks: allKopeks[row.key] ?? 0,
-    sortOrder: i,
-    legalEntityId: entityForSection(row.section),
-  }));
-
-  const report = await prisma.salesReport.create({
-    data: {
-      companyId: club.companyId,
-      clubId,
-      reportDate: reportDate!,
-      managerName,
-      managerEmployeeId,
-      notes,
-      createdByUserId: ctx.user.id,
-      status: "pending_accountant",
-      lines: { create: lines },
-    },
-  });
-
-  await recordAudit({
-    action: "sales_report.created",
-    entityType: "SalesReport",
-    entityId: report.id,
-    companyId: club.companyId,
-    clubId,
-    userId: ctx.user.id,
-    metadata: { reportDate: reportDateRaw, totalRevenueKopeks: allKopeks[REVENUE_LINE_KEY] ?? 0 },
-  });
-  await recordAudit({
-    action: "sales_report.manager_selected",
-    entityType: "SalesReport",
-    entityId: report.id,
-    companyId: club.companyId,
-    clubId,
-    userId: ctx.user.id,
-    metadata: { managerEmployeeId, managerName },
-  });
-
-  revalidatePath("/sales");
-  revalidatePath("/dashboard");
-  redirect(`/sales/reports/${report.id}`);
+  // Manual shift-report entry is retired — sales come from ОФД. Even a direct POST
+  // is refused here, so no NEW report can be created. Existing reports stay
+  // read-only (transition/upload actions are untouched). No hard delete.
+  await auditBlockedFeature("sales_report.create");
+  return { ok: false, error: MANUAL_SALES_DISABLED_MESSAGE };
 }
 
 export async function uploadSalesReportDocuments(formData: FormData): Promise<void> {

@@ -7,6 +7,9 @@ import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 
 export const BULK_MONTHLY_DISABLED_MESSAGE = "Массовые операции за месяц отключены";
 export const PUBLIC_IMPORT_DISABLED_MESSAGE = "Импорт доступен только через служебный контур";
+// Manual shift-report entry is retired — sales now come from ОФД. Historical
+// reports stay read-only; no NEW report can be created (server-enforced).
+export const MANUAL_SALES_DISABLED_MESSAGE = "Ручной ввод продаж отключён. Продажи поступают из ОФД.";
 
 /**
  * Records a sanitized audit event for a blocked attempt to call a disabled

@@ -20,7 +20,8 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "employees", href: "/employees", label: "Сотрудники" },
   { page: "refunds", href: "/refunds", label: "Возвраты" },
   { page: "budgets", href: "/budgets", label: "Бюджеты" },
-  { page: "sales", href: "/sales", label: "Продажи" },
+  // "sales" (ручной сменный отчёт) удалён из меню — продажи поступают из ОФД. Route
+  // /sales остаётся как read-only заглушка (ручной ввод отключён).
   { page: "documents", href: "/documents", label: "Документы" },
   { page: "activity", href: "/activity", label: "История действий" },
   { page: "users", href: "/users", label: "Пользователи" },
@@ -41,7 +42,6 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   { type: "item", page: "dashboard" },
   { type: "item", page: "analytics" },
   { type: "item", page: "ofd_sales" },
-  { type: "item", page: "sales" },
   { type: "group", id: "finance", label: "Финансы", pages: ["expenses", "collections", "invoices", "refunds"] },
   // "mandatory_payments" and "balances" routes stay accessible (ROLE_PAGE_ACCESS)
   // but are no longer separate menu items — mandatory payments live inside the

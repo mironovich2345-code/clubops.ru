@@ -10,12 +10,9 @@ import {
   SALE_STATUS_LABELS,
   type SaleSummary,
 } from "@/lib/sales";
-import { getCurrentCompanyAndClub, getClubsInScope } from "@/lib/access";
-import { canCreateOperational } from "@/lib/auth";
+import { getCurrentCompanyAndClub } from "@/lib/access";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { SaleRowActions } from "./_components/SaleRowActions";
-import { SalesReportForm } from "./_components/SalesReportForm";
-import { getActiveManagerCandidates } from "@/lib/club-employees";
 import {
   getSalesReportsForScope,
   SALES_REPORT_STATUS_LABELS,
@@ -63,13 +60,10 @@ export default async function SalesPage({
     return <NoCompanyState title="Продажи" description="Ручной учёт продаж и динамика выручки" />;
   }
 
-  const [clubs, sales, reports, managerCandidates] = await Promise.all([
-    getClubsInScope(scope),
+  const [sales, reports] = await Promise.all([
     getSalesForScope(scope),
     getSalesReportsForScope(scope),
-    getActiveManagerCandidates(scope.company.id, scope.clubIds),
   ]);
-  const canCreate = canCreateOperational(ctx.effectiveRoles);
 
   const now = new Date();
   // Revenue cards reflect only confirmed sales — pending/rejected are not revenue.
@@ -90,11 +84,15 @@ export default async function SalesPage({
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader title="Продажи" description="Сменные отчёты, ручной учёт продаж и динамика выручки" />
+        <PageHeader title="Продажи" description="Исторические сменные отчёты (только просмотр). Продажи поступают из ОФД." />
       </div>
 
-      {/* Daily sales reports (real-club report structure) */}
-      {canCreate ? <SalesReportForm clubs={clubs} employees={managerCandidates} /> : null}
+      {/* Manual shift-report entry is retired — the creation form is removed and the
+          server action refuses new reports. Sales now come from ОФД. */}
+      <div className="mb-8 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        Ручной ввод продаж отключён. Продажи поступают из ОФД.
+        <Link href="/analytics/ofd-sales" className="ml-1 font-medium text-brand-700 underline">Открыть ОФД-продажи</Link>
+      </div>
 
       <div className="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
@@ -158,15 +156,6 @@ export default async function SalesPage({
           <span className="font-semibold text-amber-800">Продажи на проверке</span>
           <span className="font-medium text-amber-900">{formatKopeks(pendingKopeks)}</span>
           <span className="text-amber-700">· {pendingSales.length} шт.</span>
-        </div>
-      ) : null}
-
-      {/* Pilot: legacy sale creation is disabled — the daily sales report is the
-          single source of truth for revenue (prevents double counting).
-          Historical sales below remain visible. */}
-      {canCreate ? (
-        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          Для пилотного запуска используется только сменный отчёт продаж.
         </div>
       ) : null}
 

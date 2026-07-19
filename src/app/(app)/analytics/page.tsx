@@ -201,16 +201,17 @@ export default async function AnalyticsPage({
   const ofdRevenueKopeks = ofd?.totals.incomeKopeks ?? 0;
   const ofdResultKopeks = useOfd ? computeManagementResult(ofd!.totals.netKopeks, s.expensesKopeks) : 0;
 
-  // --- Monthly forecast inputs (reusing the report's source-of-truth values) ---
-  const salesFact = s.subscriptionsKopeks + s.personalTrainingKopeks;
+  // --- Monthly forecast inputs. The month FACT is the ОФД revenue (gross income)
+  // for owner/GD/regional when ОФД has data, so pace/plan/risk reflect ОФД instead
+  // of the retired manual sales reports; otherwise the confirmed-report split. ---
+  const salesFact = useOfd ? ofdRevenueKopeks : s.subscriptionsKopeks + s.personalTrainingKopeks;
   // Total plan if set, otherwise subscriptions + personal-training plans.
   const splitPlan = report.planTotals.subscriptions.planKopeks + report.planTotals.personal_training.planKopeks;
   const salesPlan = s.planTargetKopeks > 0 ? s.planTargetKopeks : splitPlan;
-  // Previous-month forecast only makes sense for the current calendar month,
-  // where loadAnalyticsData already covers the previous month (period.prevStart
-  // → period.end). Sum the same day-of-month onward from last month.
+  // Previous-month forecast only makes sense for the current calendar month, and
+  // only for the report-based fact (the ОФД overlay window covers one period only).
   let previousMonthRemainingSales: number | null = null;
-  if (period.key === "current_month") {
+  if (!useOfd && period.key === "current_month") {
     const prevRows = data.reportSplit.filter((r) => r.date >= period.prevStart && r.date < period.prevEnd);
     if (prevRows.length > 0) {
       const cutoffDay = now.getDate();
