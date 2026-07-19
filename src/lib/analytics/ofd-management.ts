@@ -114,6 +114,63 @@ export function computeManagementResult(ofdNetKopeks: number, confirmedCostsKope
   return ofdNetKopeks - confirmedCostsKopeks;
 }
 
+// --- Продажи по дням недели (ОФД) ------------------------------------------
+// Groups OfdDailySalesSummary by weekday for the analytics "Продажи по дням недели"
+// block. Weekday is derived from the "YYYY-MM-DD" string as a LOCAL calendar date
+// (no UTC shift). Output is ordered Пн→Вс.
+export type OfdWeekdaySalesDay = { date: string; incomeTotalKopeks: number; receiptCount: number };
+export type OfdWeekdayRow = { weekday: number; label: string; revenueKopeks: number; receipts: number; dayCount: number; avgRevenueKopeks: number; isBest: boolean };
+
+const WEEKDAY_ORDER: { day: number; label: string }[] = [
+  { day: 1, label: "Пн" }, { day: 2, label: "Вт" }, { day: 3, label: "Ср" }, { day: 4, label: "Чт" }, { day: 5, label: "Пт" }, { day: 6, label: "Сб" }, { day: 0, label: "Вс" },
+];
+
+/** Local weekday (0=Sun..6=Sat) of a "YYYY-MM-DD" string — no UTC drift. */
+function weekdayOf(date: string): number {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1).getDay();
+}
+
+/** Build the ОФД weekday table for [startStr, endStr). Pure. */
+export function buildOfdWeekday(summaries: OfdWeekdaySalesDay[], startStr: string, endStr: string): OfdWeekdayRow[] {
+  const acc = new Map<number, { revenue: number; receipts: number; dates: Set<string> }>();
+  for (const s of summaries) {
+    if (!inWindow(s.date, startStr, endStr)) continue;
+    const wd = weekdayOf(s.date);
+    const a = acc.get(wd) ?? { revenue: 0, receipts: 0, dates: new Set<string>() };
+    a.revenue += s.incomeTotalKopeks;
+    a.receipts += s.receiptCount;
+    a.dates.add(s.date);
+    acc.set(wd, a);
+  }
+  const rows = WEEKDAY_ORDER.map(({ day, label }) => {
+    const a = acc.get(day);
+    const dayCount = a ? a.dates.size : 0;
+    const revenueKopeks = a ? a.revenue : 0;
+    return { weekday: day, label, revenueKopeks, receipts: a ? a.receipts : 0, dayCount, avgRevenueKopeks: dayCount > 0 ? Math.round(revenueKopeks / dayCount) : 0, isBest: false };
+  });
+  const bestAvg = Math.max(0, ...rows.map((r) => r.avgRevenueKopeks));
+  for (const r of rows) r.isBest = bestAvg > 0 && r.avgRevenueKopeks === bestAvg;
+  return rows;
+}
+
+function ymdLocalW(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Load the ОФД weekday table for a scope + window [start, end). Scoped by
+ * companyId + clubIds; empty scope → all-zero weekday rows. */
+export async function loadOfdWeekday(companyId: string, clubIds: string[], start: Date, end: Date): Promise<OfdWeekdayRow[]> {
+  const startStr = ymdLocalW(start);
+  const endStr = ymdLocalW(end);
+  if (clubIds.length === 0) return buildOfdWeekday([], startStr, endStr);
+  const summaries = await prisma.ofdDailySalesSummary.findMany({
+    where: { companyId, provider: "taxcom", clubId: { in: clubIds }, date: { gte: startStr, lt: endStr } },
+    select: { date: true, incomeTotalKopeks: true, receiptCount: true },
+  });
+  return buildOfdWeekday(summaries, startStr, endStr);
+}
+
 // Flat projection of one club's ОФД figures for the dashboard ClubCard. Keeps the
 // card construction identical in both dashboard code paths (inline + loader).
 export type OfdCardFields = {

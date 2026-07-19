@@ -15,7 +15,7 @@ import {
   getCurrentCompanyAndClub,
 } from "@/lib/access";
 import { isStrategicRole, canAnyRoleAccessPage, type Role } from "@/lib/auth";
-import { loadOfdManagementOverview, computeManagementResult } from "@/lib/analytics/ofd-management";
+import { loadOfdManagementOverview, computeManagementResult, loadOfdWeekday, type OfdWeekdayRow } from "@/lib/analytics/ofd-management";
 import { resolveStrategicGroups, type StrategicGroups } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
 import {
@@ -200,6 +200,8 @@ export default async function AnalyticsPage({
   const ptValue = useOfd ? ofd!.totals.personalTrainingKopeks : s.personalTrainingKopeks;
   const ofdRevenueKopeks = ofd?.totals.incomeKopeks ?? 0;
   const ofdResultKopeks = useOfd ? computeManagementResult(ofd!.totals.netKopeks, s.expensesKopeks) : 0;
+  // «Продажи по дням недели» from ОФД (replaces the retired SalesReport source).
+  const ofdWeekday = useOfd ? await loadOfdWeekday(aCompanyId, aClubIds, period.start, period.end) : null;
 
   // --- Monthly forecast inputs. The month FACT is the ОФД revenue (gross income)
   // for owner/GD/regional when ОФД has data, so pace/plan/risk reflect ОФД instead
@@ -413,8 +415,17 @@ export default async function AnalyticsPage({
       {/* Part 5 — lower analytics grid (managers + weekday; expenses for financial) */}
       <div className={`grid grid-cols-1 gap-4 ${financials ? "xl:grid-cols-2" : ""}`}>
         <div className="flex min-w-0 flex-col gap-4">
-          <ManagerSalesBlock rows={report.managerSales} />
-          <WeekdaySalesBlock rows={report.weekdaySales} />
+          {/* ОФД is the sales source: weekday sales come from OfdDailySalesSummary.
+              The manual manager/weekday reports are retired, so they are shown only
+              as a fallback when ОФД has no data for the scope/period. */}
+          {useOfd ? (
+            <OfdWeekdayBlock rows={ofdWeekday!} />
+          ) : (
+            <>
+              <ManagerSalesBlock rows={report.managerSales} />
+              <WeekdaySalesBlock rows={report.weekdaySales} />
+            </>
+          )}
         </div>
         {financials ? (
           <div className="flex min-w-0 flex-col gap-4">
@@ -560,6 +571,46 @@ function BestBadge({ text }: { text: string }) {
     <span className="ml-2 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20">
       {text}
     </span>
+  );
+}
+
+function OfdWeekdayBlock({ rows }: { rows: OfdWeekdayRow[] }) {
+  const hasData = rows.some((r) => r.dayCount > 0);
+  const dash = (k: number, count: number) => (count > 0 ? formatKopeks(k) : "—");
+  return (
+    <Panel title="Продажи по дням недели" hint="из чеков ОФД · лучший — по средней выручке">
+      {!hasData ? (
+        <EmptyRow />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+            <thead className="bg-slate-50 dark:bg-slate-800/50">
+              <tr>
+                <Th>День недели</Th>
+                <Th className="text-right">Выручка ОФД</Th>
+                <Th className="text-right">Чеков</Th>
+                <Th className="text-right">Средняя выручка</Th>
+                <Th className="text-right">Дней</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+              {rows.map((r) => (
+                <tr key={r.weekday} className={r.isBest ? "bg-emerald-50/60 dark:bg-emerald-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-800/40"}>
+                  <Td className="whitespace-nowrap font-medium text-slate-900 dark:text-slate-100">
+                    {r.label}
+                    {r.isBest ? <BestBadge text="Лучший день" /> : null}
+                  </Td>
+                  <Td className="text-right font-medium text-slate-900 dark:text-slate-100">{dash(r.revenueKopeks, r.dayCount)}</Td>
+                  <Td className="text-right">{r.dayCount > 0 ? r.receipts : "—"}</Td>
+                  <Td className="text-right">{dash(r.avgRevenueKopeks, r.dayCount)}</Td>
+                  <Td className="text-right">{r.dayCount > 0 ? r.dayCount : "—"}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
   );
 }
 

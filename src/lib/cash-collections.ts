@@ -70,6 +70,17 @@ export async function loadClubCashBalances(companyId: string, clubId: string, no
   return { balances, oooId, ipId, oooName: ooo?.name ?? null, ipName: ip?.name ?? null };
 }
 
+/** Sum the CURRENT ООО / ИП fact cash balances across a scope of clubs. Read-only
+ * aggregator over loadClubCashBalances — the balance math itself is unchanged. */
+export async function loadScopeCashFactTotals(companyId: string, clubIds: string[], now: Date = new Date()): Promise<{ oooKopeks: number; ipKopeks: number }> {
+  if (clubIds.length === 0) return { oooKopeks: 0, ipKopeks: 0 };
+  const per = await Promise.all(clubIds.map((id) => loadClubCashBalances(companyId, id, now)));
+  return {
+    oooKopeks: per.reduce((a, r) => a + r.balances.cashOooFactBalance, 0),
+    ipKopeks: per.reduce((a, r) => a + r.balances.cashIpFactBalance, 0),
+  };
+}
+
 export type PendingCashOp = {
   id: string;
   kind: "collection" | "withdrawal";
