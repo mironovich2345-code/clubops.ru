@@ -16,6 +16,7 @@ import {
 } from "@/lib/access";
 import { isStrategicRole, canAnyRoleAccessPage, type Role } from "@/lib/auth";
 import { loadOfdManagementOverview, computeManagementResult, loadOfdWeekday, type OfdWeekdayRow } from "@/lib/analytics/ofd-management";
+import { loadScopeCashFactTotals } from "@/lib/cash-collections";
 import { resolveStrategicGroups, type StrategicGroups } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
 import {
@@ -238,12 +239,17 @@ export default async function AnalyticsPage({
   // Part 6 — financial control cards (financial roles only): ООО and ИП forecasts
   // computed SEPARATELY (never merged). Scoped to allowedClubIds.
   let entityGaps: { ooo: EntityCashGap; ip: EntityCashGap } | null = null;
+  // Current ООО / ИП fact cash for the "Финансовый итог" card (loadClubCashBalances,
+  // the single source of truth) — replaces the retired SalesReport cash line.
+  let scopeCash = { oooKopeks: 0, ipKopeks: 0 };
   if (financials) {
     const horizon = addDays(dayStart(now), 30);
-    const [bal, { obligations: payObs }] = await Promise.all([
+    const [bal, { obligations: payObs }, cash] = await Promise.all([
       getLatestBalancesForScope(aCompanyId, aClubIds),
       loadPaymentObligationsForScope({ companyId: aCompanyId, clubIds: aClubIds, loadEnd: horizon }),
+      loadScopeCashFactTotals(aCompanyId, aClubIds, now),
     ]);
+    scopeCash = cash;
     const sums = sumObligationsByEntity(payObs, horizon);
     entityGaps = buildEntityCashGaps({
       ooo: { balanceKopeks: bal.ooo.kopeks, obligationsKopeks: sums.ooo },
@@ -404,9 +410,11 @@ export default async function AnalyticsPage({
         </div>
         {financials ? (
           <FinancialSummaryCard
-            profit={s.profitKopeks}
-            prevProfit={s.prevProfitKopeks}
-            oooKopeks={s.cashOooRemainingKopeks}
+            profit={useOfd ? ofdResultKopeks : s.profitKopeks}
+            prevProfit={useOfd ? 0 : s.prevProfitKopeks}
+            oooKopeks={scopeCash.oooKopeks}
+            ipKopeks={scopeCash.ipKopeks}
+            isOfd={useOfd}
             sub={rangeLabel}
           />
         ) : null}
@@ -514,16 +522,22 @@ function KpiCard({
   );
 }
 
-/** Part 6 — combined card replacing the separate Прибыль and Наличные cards. */
+/** Part 6 — combined financial summary. Прибыль/результат = ОФД net − подтверждённые
+ * расходы (управленческий результат) when ОФД has data; наличные ООО/ИП = фактический
+ * остаток из cash-balances (loadClubCashBalances) — never the retired SalesReport cash. */
 function FinancialSummaryCard({
   profit,
   prevProfit,
   oooKopeks,
+  ipKopeks,
+  isOfd,
   sub,
 }: {
   profit: number;
   prevProfit: number;
   oooKopeks: number;
+  ipKopeks: number;
+  isOfd: boolean;
   sub: string;
 }) {
   const profitAccent = profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400";
@@ -532,10 +546,10 @@ function FinancialSummaryCard({
       <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Финансовый итог</div>
       <div className="mt-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-xs text-slate-400 dark:text-slate-500">Прибыль</div>
+          <div className="text-xs text-slate-400 dark:text-slate-500">{isOfd ? "Результат (ОФД − расходы)" : "Прибыль"}</div>
           <div className={`truncate text-2xl font-semibold tracking-tight ${profitAccent}`}>{formatKopeks(profit)}</div>
         </div>
-        <TrendChip cur={profit} prev={prevProfit} goodWhenUp />
+        {isOfd ? null : <TrendChip cur={profit} prev={prevProfit} goodWhenUp />}
       </div>
       <dl className="mt-4 space-y-2.5 border-t border-slate-100 pt-3 dark:border-slate-800">
         <div className="flex items-baseline justify-between gap-2">
@@ -546,7 +560,9 @@ function FinancialSummaryCard({
         </div>
         <div className="flex items-baseline justify-between gap-2">
           <dt className="text-xs text-slate-400 dark:text-slate-500">Наличные ИП</dt>
-          <dd className="text-sm font-medium text-slate-400 dark:text-slate-500">скоро</dd>
+          <dd className={`text-sm font-semibold ${ipKopeks < 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100"}`}>
+            {formatKopeks(ipKopeks)}
+          </dd>
         </div>
       </dl>
       <div className="mt-3 text-xs text-slate-400 dark:text-slate-500">{sub}</div>
