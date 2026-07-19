@@ -331,6 +331,30 @@ async function main() {
   check("MIGRATION dev+prod add CashCollection/CashWithdrawal/CashOperationDocument (non-destructive CREATE TABLE)", /CREATE TABLE "CashCollection"/.test(rd("prisma/migrations/20260718000000_add_cash_collections_withdrawals/migration.sql")) && /CREATE TABLE "CashWithdrawal"/.test(rd("prisma/production/migrations/20260718000000_add_cash_collections_withdrawals/migration.sql")) && /CREATE TABLE "CashOperationDocument"/.test(rd("prisma/production/migrations/20260718000000_add_cash_collections_withdrawals/migration.sql")));
   check("LIB pure calc exports calculateCashBalances + opening-window fields; no I/O", lib.includes("export function calculateCashBalances") && lib.includes("cashOooOfdSinceOpening") && lib.includes("cashOooOpeningSet") && lib.includes("oooOpeningDate") && !lib.includes("import { prisma }"));
 
+  // ===== QA finance audit (2026-07-19): single-source, roles, security =========
+  const dashPageSrc = rd("src/app/(app)/dashboard/page.tsx");
+  // QA-CASH1: all four surfaces read the SAME source (loadClubCashBalances) and the
+  // same fact-balance fields — no divergent per-page balance.
+  check("QA-CASH1 /collections, /expenses, /expenses/cash и дашборд берут остаток из loadClubCashBalances (единый источник, одинаковые поля)", pageSrc.includes("loadClubCashBalances") && expSrc.includes("loadClubCashBalances") && oldCashSrc.includes("loadClubCashBalances") && dashSrc.includes("loadClubCashBalances") && [pageSrc, expSrc, oldCashSrc, dashSrc].every((s) => s.includes("cashIpFactBalance")) && [pageSrc, dashSrc].every((s) => s.includes("cashOooFactBalance")));
+  // QA-CASH2: no legacy confirmed-only wallet ledger feeds any working UI balance.
+  // Match CODE usage (calls / property access), not explanatory prose — oldCashSrc
+  // legitimately names the retired ledger in a comment to explain why it is gone.
+  check("QA-CASH2 рабочие остатки не используют старый confirmed-only CashWallet/CashMovement (loader читает CashOtherIncome; убраны getClubCashBreakdown/getClubCashCards)", !loader.includes("cashMovement.findMany") && !loader.includes("cashWallet") && loader.includes("cashOtherIncome.findMany") && ![pageSrc, expSrc, oldCashSrc, dashSrc].some((s) => /getClubCashBreakdown\(|getClubCashCards\(|cashMovement\.|cashWallet\./i.test(s)));
+  // QA-CASH3 / QA-CASH4 are covered as pure calc above (OPENING3/4/5/supersede cut
+  // stale movements; CASH-SPLIT1 keeps ООО/ИП apart) — re-assert the invariants here.
+  const qaCut = calc({ ...base, oooOpeningKopeks: 500000, ipOpeningKopeks: 100000, oooOpeningDate: "2026-07-15", ipOpeningDate: "2026-07-15",
+    ofdRows: [{ legalEntityType: "ooo", date: "2026-07-10", incomeCashKopeks: 999999, returnCashKopeks: 0 }, { legalEntityType: "ip", date: "2026-07-16", incomeCashKopeks: 30000, returnCashKopeks: 0 }],
+    collections: [{ status: "pending_accountant_review", amountKopeks: 111111, date: "2026-07-10" }] });
+  check("QA-CASH3 движения строго ДО контрольной точки не влияют; после — влияют", qaCut.cashOooFactBalance === 500000 && qaCut.cashOooPendingCollections === 0 && qaCut.cashIpFactBalance === 130000);
+  check("QA-CASH4 ООО и ИП не смешиваются (ОФД ИП не попал в ООО и наоборот)", qaCut.cashOooOfdSinceOpening === 0 && qaCut.cashIpOfdSinceOpening === 30000);
+  // QA-ROLE4 (bugfix): the dashboard cash summary is gated so a marketer (analytics-
+  // only, no /collections access) never sees ООО/ИП cash; manager/regional still do.
+  check("QA-ROLE4 дашборд скрывает наличные ООО/ИП от маркетолога (canSeeCash = доступ к /collections); маркетолог не имеет collections/expenses", dashPageSrc.includes('const canSeeCash = canAnyRoleAccessPage(roles, "collections")') && /canSeeCash \? <CashScopeSummary/.test(dashPageSrc) && /canSeeCash && strategic\.filteredCompanyIds\.length === 1/.test(dashPageSrc) && !/marketer:\s*\[[^\]]*"collections"/.test(authSrc) && !/marketer:\s*\[[^\]]*"expenses"/.test(authSrc) && /\bmanager:\s*\[[^\]]*"collections"/.test(authSrc));
+  // QA-DASHBOARD1: same source as /collections (alias of DASHBOARD-CASH-ALIGN1).
+  check("QA-DASHBOARD1 дашборд использует тот же источник остатков, что и /collections", dashSrc.includes("loadClubCashBalances") && dashSrc.includes("cashOooFactBalance") && dashSrc.includes("cashIpFactBalance") && dashPageSrc.includes("<CashScopeSummary"));
+  // QA-SECURITY1: dashboard page + cards leak no secrets / raw fiscal / PII.
+  check("QA-SECURITY1 дашборд (страница+карточки) не раскрывает секреты/raw JSON/ПДн", ![dashPageSrc, dashSrc].some((s) => /login|password|integratorId|sessionToken|Bearer|rawJson|fiscalSign|ФПД|cashierName|cashierInn|\bphone\b|\bemail\b|buyer|customer|\.stack/i.test(s)));
+
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
   await p.$disconnect();

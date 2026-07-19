@@ -105,6 +105,10 @@ export default async function DashboardPage({
   const canEditPlan = canManageSalesPlans(roles);
   const canViewSales = canAnyRoleAccessPage(roles, "sales");
   const canApproveReopen = canApproveMonthReopen(roles);
+  // Cash fact balances are a finance/operational surface: shown to any role that can
+  // reach Инкассация (/collections) — owner/GD/regional/manager. A marketer has
+  // dashboard+analytics only and must NOT see ООО/ИП cash, so gate on that access.
+  const canSeeCash = canAnyRoleAccessPage(roles, "collections");
 
   const now = new Date();
 
@@ -211,7 +215,7 @@ export default async function DashboardPage({
         ) : null}
 
         {/* Cash fact balances (single company in scope) — ООО/ИП + review counters. */}
-        {strategic.filteredCompanyIds.length === 1 ? (
+        {canSeeCash && strategic.filteredCompanyIds.length === 1 ? (
           <CashScopeSummary companyId={strategic.filteredCompanyIds[0]} clubIds={filteredClubIds} showPending={financials} />
         ) : null}
 
@@ -404,9 +408,10 @@ export default async function DashboardPage({
         <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
       </div>
 
-      {/* Cash fact balances — operational for everyone in scope; review counters
-          only for financial roles (a plain manager sees balances, not counters). */}
-      <CashScopeSummary companyId={companyId} clubIds={clubIds} showPending={financials} />
+      {/* Cash fact balances — operational for everyone in scope who can reach
+          Инкассация; review counters only for financial roles (a plain manager sees
+          balances, not counters). Marketer (analytics-only) never sees cash. */}
+      {canSeeCash ? <CashScopeSummary companyId={companyId} clubIds={clubIds} showPending={financials} /> : null}
 
       {/* Priority order: critical approvals, then unconfirmed sales, then forecast + clubs. */}
       {canApproveReopen ? <OwnerReopenApprovals requests={reopenRows} /> : null}
