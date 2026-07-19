@@ -1465,12 +1465,58 @@ async function main() {
   const ofdSalesPage = readFileSync(new URL("../src/app/(app)/analytics/ofd-sales/page.tsx", import.meta.url), "utf8");
   const authSrc = readFileSync(new URL("../src/lib/auth.ts", import.meta.url), "utf8");
   const navSrc = readFileSync(new URL("../src/lib/navigation.ts", import.meta.url), "utf8");
+  const overviewComp = readFileSync(new URL("../src/app/(app)/dashboard/_components/OfdSalesOverview.tsx", import.meta.url), "utf8");
+  const dashboardLib = readFileSync(new URL("../src/lib/ofd/dashboard.ts", import.meta.url), "utf8");
+  const dashPageSrc = readFileSync(new URL("../src/app/(app)/dashboard/page.tsx", import.meta.url), "utf8");
   check("ANALYTICS-LIB analytics lib exports pure aggregators + fixed category order", analyticsLib.includes("export function totalForRange") && analyticsLib.includes("export function aggByClub") && analyticsLib.includes("export function aggByLegalEntity") && analyticsLib.includes("export function aggCategories") && analyticsLib.includes("export function buildCategoryDetails") && analyticsLib.includes('"membership", "personal_training", "group_training", "extra_services", "other"'));
   check("ANALYTICS-OFD7 page scopes OFD queries by ctx.allowedClubIds (regional_director sees only their clubs) + provider taxcom", ofdSalesPage.includes("const clubIds = ctx.allowedClubIds") && ofdSalesPage.includes("clubId: { in: clubIds }") && ofdSalesPage.includes('provider: "taxcom"'));
   check("ANALYTICS-OFD8 ofd_sales access ONLY owner/general_director/regional_director (NOT manager/accountant/chief_accountant/marketer); page guarded", /owner:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && /general_director:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && /regional_director:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/\bmanager:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/\baccountant:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/chief_accountant:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/marketer:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && ofdSalesPage.includes('requirePageAccess("ofd_sales")'));
   check("ANALYTICS-OFD9 page has NO technical diagnostics (NewDocuments/DocumentInfo/inspect/ShiftList/DocumentList)", !/NewDocuments|DocumentInfo|inspect|ShiftList|DocumentList/i.test(ofdSalesPage));
   check("ANALYTICS-OFD reuse: page imports OfdRevenueTable + analytics lib; nav item ofd_sales present", ofdSalesPage.includes("OfdRevenueTable") && ofdSalesPage.includes('from "@/lib/ofd/analytics"') && navSrc.includes('page: "ofd_sales"') && navSrc.includes('href: "/analytics/ofd-sales"') && navSrc.includes('label: "ОФД-продажи"'));
   check("ANALYTICS-SECURITY page/lib render no secrets/technical fiscal internals (login/password/Integrator/SessionToken/ФПД/fpd/fiscalSign/ФН/PII/stack)", !/login|password|integrator|sessionToken|Bearer|rawJson|fiscalSign|ФПД|fpd|phone|email|buyer|customer|stack|ShiftList|DocumentInfo|NewDocuments/i.test(ofdSalesPage) && !ofdSalesPage.includes("ФН") && !/login|password|sessionToken|fiscalSign|ФПД/i.test(analyticsLib));
+
+  // ===== Dashboard ОФД-продажи overview (DASH-OFD) ============================
+  // Mirror of buildOfdDashboardOverview (reuses the analytics mirrors above).
+  const anAvgCheck = (a) => (a.receipts > 0 ? Math.round(a.net / a.receipts) : 0);
+  const D_OTHER_WARN = 0.05, D_OTHER_SIG = 0.1, D_RET_SIG = 0.05, D_AFTERNOON = 12;
+  const anDashboard = (i) => {
+    const today = anTotal(i.summaries, i.today, i.today), yesterday = anTotal(i.summaries, i.yesterday, i.yesterday), month = anTotal(i.summaries, i.monthFrom, i.monthTo);
+    const byClub = [...anByClub(i.summaries, i.monthFrom, i.monthTo).entries()].map(([clubId, agg]) => ({ clubId, name: i.clubNameById[clubId] ?? "—", agg, avgCheckKopeks: anAvgCheck(agg) })).sort((a, b) => b.agg.income - a.agg.income);
+    const byLegal = [...anByLegal(i.summaries, i.monthFrom, i.monthTo).entries()].map(([k, agg]) => ({ legalEntityId: k, name: k === "none" ? "Без юрлица" : (i.legalNameById[k] ?? "—"), agg })).sort((a, b) => b.agg.income - a.agg.income);
+    const catRows = anCats(i.categoryDays);
+    const catIncome = catRows.reduce((s, c) => s + c.income, 0);
+    const categories = catRows.map((c) => ({ ...c, share: catIncome > 0 ? c.income / catIncome : 0 }));
+    const otherShare = catIncome > 0 ? (catRows.find((c) => c.code === "other")?.income ?? 0) / catIncome : 0;
+    const daysPassed = Math.max(0, i.daysPassed), daysInMonth = Math.max(1, i.daysInMonth);
+    const avgPerDayKopeks = daysPassed > 0 ? Math.round(month.income / daysPassed) : 0;
+    const pace = { avgPerDayKopeks, forecastKopeks: avgPerDayKopeks * daysInMonth, daysPassed, daysLeft: Math.max(0, daysInMonth - daysPassed), daysInMonth };
+    const signals = [];
+    if (i.lastSyncFailed) signals.push({ code: "sync_failed", message: "ОФД-синхронизация завершилась с ошибкой. Проверьте подключение." });
+    if (today.receipts === 0 && month.receipts > 0 && i.nowHour >= D_AFTERNOON) signals.push({ code: "no_sales_today", message: "Сегодня пока нет продаж по ОФД. Если клубы работают — проверьте синхронизацию." });
+    if (otherShare > D_OTHER_SIG) signals.push({ code: "other_high", message: `Большая доля выручки в «Иное» (${Math.round(otherShare * 100)}%) — проверьте номенклатуру.` });
+    if (month.income > 0 && month.ret / month.income > D_RET_SIG) signals.push({ code: "returns_high", message: `Возвраты за месяц превышают ${Math.round(D_RET_SIG * 100)}% от прихода — проверьте причины.` });
+    if (yesterday.receipts > 0) { const yb = anByClub(i.summaries, i.yesterday, i.yesterday); for (const c of byClub) if (c.agg.receipts > 0 && (yb.get(c.clubId)?.receipts ?? 0) === 0) signals.push({ code: "club_no_sales_yesterday", message: `По клубу «${c.name}» вчера не было продаж по ОФД.` }); }
+    return { today, yesterday, month, pace, byClub, byLegal, categories, otherShare, otherWarn: otherShare > D_OTHER_WARN, signals, hasData: month.income > 0 || month.ret > 0 || byClub.length > 0 };
+  };
+  const dBase = { summaries: aRows, categoryDays: catRows, clubNameById: { club1: "Клуб 1", club2: "Клуб 2" }, legalNameById: { ooo: "ООО Икс", ip: "ИП Игрек" }, today: "2026-07-18", yesterday: "2026-07-17", monthFrom: "2026-07-01", monthTo: "2026-07-31", daysInMonth: 31, daysPassed: 18, nowHour: 15, lastSyncFailed: false };
+  const D = anDashboard(dBase);
+  check("DASH-OFD1 сводка Сегодня/Вчера/Месяц + темп из OfdDailySalesSummary", D.today.income === 300000 && D.yesterday.income === 150000 && D.month.income === 950000 && D.today.receipts === 3 && D.yesterday.receipts === 2 && D.month.receipts === 10 && D.pace.daysPassed === 18 && D.pace.daysLeft === 13 && D.pace.avgPerDayKopeks === Math.round(950000 / 18) && D.pace.forecastKopeks === Math.round(950000 / 18) * 31);
+  check("DASH-OFD2 разделяет наличные/безнал/возвраты/чеки", D.today.cash === 200000 && D.today.electronic === 100000 && D.today.ret === 0 && D.yesterday.ret === 50000 && D.month.cash === 350000 && D.month.electronic === 600000 && D.month.ret === 50000);
+  check("DASH-OFD3 группирует по клубам и сортирует по приходу убывание (+ ср. чек = net/receipts)", D.byClub.length === 2 && D.byClub[0].clubId === "club2" && D.byClub[0].agg.income === 500000 && D.byClub[1].clubId === "club1" && D.byClub[1].agg.income === 450000 && D.byClub[0].avgCheckKopeks === 100000);
+  const dScopeAll = anDashboard({ ...dBase }); const dScopeOne = anDashboard({ ...dBase, summaries: aRows.filter((r) => r.clubId === "club1") });
+  check("DASH-OFD4 regional (ограниченный scope) видит только свои клубы (loader фильтрует clubId in clubIds)", dScopeOne.byClub.length === 1 && dScopeOne.byClub[0].clubId === "club1" && dashboardLib.includes("clubId: { in: clubIds }") && dashboardLib.includes("if (clubIds.length === 0) return empty()"));
+  check("DASH-OFD5 owner/GD видит все клубы scope", dScopeAll.byClub.length === 2 && dashPageSrc.includes("<OfdSalesOverview companyId={companyId} clubIds={clubIds}") && dashPageSrc.includes("clubIds={filteredClubIds}"));
+  check("DASH-OFD6 manager/accountant/marketer не получают ОФД-блок (нет доступа к ofd_sales); гейт canSeeOfdSales", dashPageSrc.includes('const canSeeOfdSales = canAnyRoleAccessPage(roles, "ofd_sales")') && /canSeeOfdSales \? <OfdSalesOverview/.test(dashPageSrc) && !/\bmanager:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/\baccountant:\s*\[[^\]]*"ofd_sales"/.test(authSrc) && !/marketer:\s*\[[^\]]*"ofd_sales"/.test(authSrc));
+  check("DASH-OFD7 блок ООО/ИП агрегирует по legalEntityId", D.byLegal.length === 2 && D.byLegal.find((l) => l.legalEntityId === "ip").agg.income === 500000 && D.byLegal.find((l) => l.legalEntityId === "ooo").agg.income === 450000);
+  check("DASH-OFD8 статьи доходов: категории + доля от месячного прихода", D.categories.length === 4 && D.categories[0].code === "membership" && D.categories[0].share === 500000 / 950000 && Math.round(D.categories[0].share * 100) === 53);
+  const dOther = anDashboard({ ...dBase, categoryDays: [{ categoryCode: "membership", incomeTotalKopeks: 500000, returnTotalKopeks: 0, netTotalKopeks: 500000, itemCount: 5, receiptCount: 5 }, { categoryCode: "other", incomeTotalKopeks: 200000, returnTotalKopeks: 0, netTotalKopeks: 200000, itemCount: 3, receiptCount: 3 }] });
+  check("DASH-OFD9 «Иное» > 10% → предупреждение (otherWarn) + управленческий сигнал other_high", dOther.otherShare === 200000 / 700000 && dOther.otherWarn === true && dOther.signals.some((s) => s.code === "other_high") && dOther.signals.find((s) => s.code === "other_high").message.includes("проверьте номенклатуру"));
+  const dFail = anDashboard({ ...dBase, lastSyncFailed: true });
+  check("DASH-OFD10 failed sync → управленческий сигнал без raw-ошибки (нет DocumentList/stack)", dFail.signals.some((s) => s.code === "sync_failed") && dFail.signals.find((s) => s.code === "sync_failed").message === "ОФД-синхронизация завершилась с ошибкой. Проверьте подключение." && !/DocumentList|DocumentInfo|stack|failed sync|\.status/i.test(dFail.signals.map((s) => s.message).join(" ")) && dashboardLib.includes('lastSyncFailed: lastRun?.status === "failed"') && !dashboardLib.includes("safeErrorMessage"));
+  check("DASH-OFD11 ссылка «Открыть подробную аналитику ОФД-продаж» ведёт на /analytics/ofd-sales", overviewComp.includes('href="/analytics/ofd-sales"') && overviewComp.includes("Открыть подробную аналитику ОФД-продаж"));
+  check("DASH-OFD12 нет raw fiscal JSON / секретов / ПДн / cashier в dashboard output (компонент+loader+lib)", ![overviewComp, dashboardLib].some((s) => /login|password|integrator|sessionToken|Bearer|rawJson|fiscalSign|ФПД|\bfpd\b|cashierName|cashierInn|\bphone\b|\bemail\b|buyer|customer|\.stack|JSON\.stringify/i.test(s)) && dashboardLib.includes('provider: "taxcom"') && dashboardLib.includes("select:"));
+  check("DASH-OFD empty state: нет данных → hasData=false, дружелюбное пустое состояние", anDashboard({ ...dBase, summaries: [], categoryDays: [] }).hasData === false && overviewComp.includes("Пока нет продаж по ОФД"));
+  check("DARK-DASH-OFD1 блок ОФД-продаж читаем в тёмной теме (dark: варианты для карточек/панелей/сигналов; не белый на тёмном)", overviewComp.includes("dark:bg-slate-900") && overviewComp.includes("dark:border-slate-800") && overviewComp.includes("dark:text-slate-200") && overviewComp.includes("dark:bg-amber-950/40") && overviewComp.includes("dark:text-slate-400"));
 
   await cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

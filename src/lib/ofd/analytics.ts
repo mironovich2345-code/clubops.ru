@@ -168,3 +168,110 @@ export function clampMonth(month: string | undefined, current: string): string {
 export function monthBounds(month: string): { from: string; to: string } {
   return { from: `${month}-01`, to: `${month}-31` };
 }
+
+// --- Dashboard overview (managerial ОФД snapshot) --------------------------
+// A compact, fully-pure summary for the main dashboard block. Consumes the same
+// SAFE projections as the analytics page (OfdDailySalesSummary / category-day
+// rows). Never touches raw fiscal data, secrets or personal data.
+export type OfdClubRow = { clubId: string; name: string; agg: OfdMoneyAgg; avgCheckKopeks: number };
+export type OfdLegalRow = { legalEntityId: string; name: string; agg: OfdMoneyAgg };
+export type OfdCategoryShareRow = OfdCategoryRow & { share: number };
+export type OfdMonthPace = { avgPerDayKopeks: number; forecastKopeks: number; daysPassed: number; daysLeft: number; daysInMonth: number };
+export type OfdAttentionSignal = { code: string; message: string };
+export type OfdDashboardOverview = {
+  today: OfdMoneyAgg;
+  yesterday: OfdMoneyAgg;
+  month: OfdMoneyAgg;
+  pace: OfdMonthPace;
+  byClub: OfdClubRow[];
+  byLegal: OfdLegalRow[];
+  categories: OfdCategoryShareRow[];
+  otherShare: number; // «Иное» income / month income (0..1)
+  otherWarn: boolean; // soft warning threshold (> 5%)
+  signals: OfdAttentionSignal[];
+  hasData: boolean;
+};
+
+export type OfdDashboardInput = {
+  summaries: OfdSalesDay[];
+  categoryDays: OfdCategoryDay[];
+  clubNameById: Record<string, string>;
+  legalNameById: Record<string, string>;
+  today: string; // "YYYY-MM-DD"
+  yesterday: string;
+  monthFrom: string; // "YYYY-MM-01"
+  monthTo: string; // "YYYY-MM-31"
+  daysInMonth: number;
+  daysPassed: number; // 1..daysInMonth for the live month
+  nowHour: number; // 0..23 — used to soften the "no sales today" signal
+  lastSyncFailed: boolean;
+};
+
+const OTHER_WARN_SHARE = 0.05; // soft "проверьте номенклатуру" hint on the category block
+const OTHER_SIGNAL_SHARE = 0.1; // «Требует внимания» signal
+const RETURNS_SIGNAL_SHARE = 0.05; // returns > 5% of month income
+const AFTERNOON_HOUR = 12; // only warn about "no sales today" once the day is well underway
+
+const avgCheck = (a: OfdMoneyAgg) => (a.receipts > 0 ? Math.round(a.net / a.receipts) : 0);
+
+/** Build the managerial ОФД dashboard overview. Pure + deterministic. */
+export function buildOfdDashboardOverview(input: OfdDashboardOverviewInput): OfdDashboardOverview {
+  const { summaries, categoryDays, clubNameById, legalNameById, today, yesterday, monthFrom, monthTo } = input;
+  const todayAgg = totalForRange(summaries, today, today);
+  const yesterdayAgg = totalForRange(summaries, yesterday, yesterday);
+  const monthAgg = totalForRange(summaries, monthFrom, monthTo);
+
+  const byClub: OfdClubRow[] = [...aggByClub(summaries, monthFrom, monthTo).entries()]
+    .map(([clubId, agg]) => ({ clubId, name: clubNameById[clubId] ?? "—", agg, avgCheckKopeks: avgCheck(agg) }))
+    .sort((a, b) => b.agg.income - a.agg.income); // приход убывание
+
+  const byLegal: OfdLegalRow[] = [...aggByLegalEntity(summaries, monthFrom, monthTo).entries()]
+    .map(([key, agg]) => ({ legalEntityId: key, name: key === "none" ? "Без юрлица" : legalNameById[key] ?? "—", agg }))
+    .sort((a, b) => b.agg.income - a.agg.income);
+
+  const catRows = aggCategories(categoryDays);
+  const catIncome = catRows.reduce((s, c) => s + c.income, 0);
+  const categories: OfdCategoryShareRow[] = catRows.map((c) => ({ ...c, share: catIncome > 0 ? c.income / catIncome : 0 }));
+  const otherIncome = catRows.find((c) => c.code === "other")?.income ?? 0;
+  const otherShare = catIncome > 0 ? otherIncome / catIncome : 0;
+
+  const daysPassed = Math.max(0, input.daysPassed);
+  const daysInMonth = Math.max(1, input.daysInMonth);
+  const avgPerDayKopeks = daysPassed > 0 ? Math.round(monthAgg.income / daysPassed) : 0;
+  const pace: OfdMonthPace = {
+    avgPerDayKopeks,
+    forecastKopeks: avgPerDayKopeks * daysInMonth,
+    daysPassed,
+    daysLeft: Math.max(0, daysInMonth - daysPassed),
+    daysInMonth,
+  };
+
+  // --- «Требует внимания» — simple rule-based managerial signals -------------
+  const signals: OfdAttentionSignal[] = [];
+  if (input.lastSyncFailed) {
+    signals.push({ code: "sync_failed", message: "ОФД-синхронизация завершилась с ошибкой. Проверьте подключение." });
+  }
+  if (todayAgg.receipts === 0 && monthAgg.receipts > 0 && input.nowHour >= AFTERNOON_HOUR) {
+    signals.push({ code: "no_sales_today", message: "Сегодня пока нет продаж по ОФД. Если клубы работают — проверьте синхронизацию." });
+  }
+  if (otherShare > OTHER_SIGNAL_SHARE) {
+    signals.push({ code: "other_high", message: `Большая доля выручки в «Иное» (${Math.round(otherShare * 100)}%) — проверьте номенклатуру.` });
+  }
+  if (monthAgg.income > 0 && monthAgg.ret / monthAgg.income > RETURNS_SIGNAL_SHARE) {
+    signals.push({ code: "returns_high", message: `Возвраты за месяц превышают ${Math.round(RETURNS_SIGNAL_SHARE * 100)}% от прихода — проверьте причины.` });
+  }
+  // Club with month sales but nothing yesterday — only when the network DID sell
+  // yesterday (so we know the sync ran and it is not simply a missing-data day).
+  if (yesterdayAgg.receipts > 0) {
+    const yByClub = aggByClub(summaries, yesterday, yesterday);
+    for (const c of byClub) {
+      if (c.agg.receipts > 0 && (yByClub.get(c.clubId)?.receipts ?? 0) === 0) {
+        signals.push({ code: "club_no_sales_yesterday", message: `По клубу «${c.name}» вчера не было продаж по ОФД.` });
+      }
+    }
+  }
+
+  const hasData = monthAgg.income > 0 || monthAgg.ret > 0 || byClub.length > 0;
+  return { today: todayAgg, yesterday: yesterdayAgg, month: monthAgg, pace, byClub, byLegal, categories, otherShare, otherWarn: otherShare > OTHER_WARN_SHARE, signals, hasData };
+}
+export type OfdDashboardOverviewInput = OfdDashboardInput;

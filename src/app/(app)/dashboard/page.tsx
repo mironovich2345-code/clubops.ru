@@ -14,6 +14,7 @@ import { getUnconfirmedReportsForScope } from "@/lib/sales-reports";
 import { getPendingReopenRequestsForCompanies } from "@/lib/month-reopen";
 import { StrategicScopeFilter } from "./_components/StrategicScopeFilter";
 import { CashScopeSummary } from "./_components/CashScopeSummary";
+import { OfdSalesOverview } from "./_components/OfdSalesOverview";
 import { openInStrategicScope } from "./strategic-actions";
 import {
   loadAnalyticsData,
@@ -109,6 +110,9 @@ export default async function DashboardPage({
   // reach Инкассация (/collections) — owner/GD/regional/manager. A marketer has
   // dashboard+analytics only and must NOT see ООО/ИП cash, so gate on that access.
   const canSeeCash = canAnyRoleAccessPage(roles, "collections");
+  // Managerial ОФД-продажи overview: owner / general_director / regional_director
+  // (the ofd_sales page-access grant). Manager / accountant / marketer never see it.
+  const canSeeOfdSales = canAnyRoleAccessPage(roles, "ofd_sales");
 
   const now = new Date();
 
@@ -217,6 +221,11 @@ export default async function DashboardPage({
         {/* Cash fact balances (single company in scope) — ООО/ИП + review counters. */}
         {canSeeCash && strategic.filteredCompanyIds.length === 1 ? (
           <CashScopeSummary companyId={strategic.filteredCompanyIds[0]} clubIds={filteredClubIds} showPending={financials} />
+        ) : null}
+
+        {/* ОФД-продажи overview (single company in scope) — owner / GD. */}
+        {canSeeOfdSales && strategic.filteredCompanyIds.length === 1 ? (
+          <OfdSalesOverview companyId={strategic.filteredCompanyIds[0]} clubIds={filteredClubIds} />
         ) : null}
 
         {/* Priority: approvals, then unconfirmed sales, then club cards. */}
@@ -412,6 +421,10 @@ export default async function DashboardPage({
           Инкассация; review counters only for financial roles (a plain manager sees
           balances, not counters). Marketer (analytics-only) never sees cash. */}
       {canSeeCash ? <CashScopeSummary companyId={companyId} clubIds={clubIds} showPending={financials} /> : null}
+
+      {/* ОФД-продажи overview — owner / GD / regional_director (ofd_sales access),
+          scoped to their clubs. Manager / accountant / marketer never see it. */}
+      {canSeeOfdSales ? <OfdSalesOverview companyId={companyId} clubIds={clubIds} /> : null}
 
       {/* Priority order: critical approvals, then unconfirmed sales, then forecast + clubs. */}
       {canApproveReopen ? <OwnerReopenApprovals requests={reopenRows} /> : null}
