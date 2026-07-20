@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Invoice } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DataScope, AccessContext } from "@/lib/access";
@@ -274,24 +275,131 @@ export function canEditInvoice(status: string, roles: readonly Role[]): boolean 
 }
 
 /** LOW recognition confidence — "low" (or unknown/null) confidence blocks payment
- * until the accountant/owner reviews and saves the extracted "Данные счёта".
- * medium / high pass. Categorical (invoice.confidence is low | medium | high). */
+ * until the accountant reviews and saves the extracted "Данные счёта". medium / high
+ * pass this specific check. Categorical (invoice.confidence is low | medium | high). */
 export function isLowConfidence(confidence: string | null | undefined): boolean {
   return confidence !== "high" && confidence !== "medium";
 }
 
-// Statuses in which the AI-extracted data may still be reviewed/corrected before or
-// after payment. rejected / canceled are terminal — nothing to review.
+// Statuses in which the AI-extracted data may still be reviewed/corrected. A PAID
+// invoice's financial data is immutable (post-payment corrections are out of scope),
+// so `paid` is intentionally excluded. rejected / canceled are terminal.
 export const INVOICE_REVIEW_DATA_STATUSES = [
   "draft", "needs_review", "needs_correction", "approved_by_regional",
-  "approved_by_chief_accountant", "approved_by_owner", "paid",
+  "approved_by_chief_accountant", "approved_by_owner",
+] as const;
+
+/** Approved-but-not-yet-paid statuses. Editing the financial data of an invoice in
+ * one of these invalidates the approval (→ needs_review). Legacy approved_by_owner
+ * is kept payable/approved. Mirrors INVOICE_PAYABLE. */
+export const INVOICE_APPROVED_UNPAID_STATUSES = [
+  "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner",
 ] as const;
 
 /** Who may edit + mark-reviewed the AI-extracted invoice data ("Данные счёта"): the
- * accounting contour (accountant / chief accountant) and the owner. NOT manager,
- * regional director, general director or marketer — no new edit rights are granted. */
+ * accounting contour ONLY (accountant + chief accountant, since chief expands to
+ * accountant). Owner is strategic read-only — it may VIEW the data but never edit it,
+ * save the review, or stamp aiDataReviewedAt. Manager / regional / GD / marketer get
+ * no rights here either. */
 export function canReviewInvoiceData(roles: readonly Role[]): boolean {
-  return has(roles, "accountant") || roles.includes("owner");
+  return has(roles, "accountant");
+}
+
+// --- Financial fingerprint + payment guard (link review → approval → payment) ---
+// The financially-significant fields whose change after approval requires a fresh
+// approval and resets the AI review. A stable sha256 over their NORMALIZED values
+// (trim + collapse whitespace + lowercase; dates as ISO day; amount as integer) so
+// formatting/order never produce a false mismatch. Server-only source of truth.
+export type InvoiceFinancialSnapshot = {
+  counterpartyName: string | null; counterpartyInn: string | null; counterpartyKpp: string | null;
+  counterpartyBankName: string | null; counterpartyBankBik: string | null;
+  counterpartyAccount: string | null; counterpartyCorrAccount: string | null;
+  payerName: string | null; payerInn: string | null; payerKpp: string | null;
+  amountKopeks: number; invoiceNumber: string | null;
+  invoiceDate: Date | null; dueDate: Date | null;
+  subject: string | null; legalEntityId: string | null;
+};
+
+export function invoiceFinancialSnapshot(inv: {
+  counterpartyName?: string | null; counterpartyInn?: string | null; counterpartyKpp?: string | null;
+  counterpartyBankName?: string | null; counterpartyBankBik?: string | null;
+  counterpartyAccount?: string | null; counterpartyCorrAccount?: string | null;
+  payerName?: string | null; payerInn?: string | null; payerKpp?: string | null;
+  amountKopeks: number; invoiceNumber?: string | null;
+  invoiceDate?: Date | null; dueDate?: Date | null;
+  subject?: string | null; legalEntityId?: string | null;
+}): InvoiceFinancialSnapshot {
+  return {
+    counterpartyName: inv.counterpartyName ?? null, counterpartyInn: inv.counterpartyInn ?? null,
+    counterpartyKpp: inv.counterpartyKpp ?? null, counterpartyBankName: inv.counterpartyBankName ?? null,
+    counterpartyBankBik: inv.counterpartyBankBik ?? null, counterpartyAccount: inv.counterpartyAccount ?? null,
+    counterpartyCorrAccount: inv.counterpartyCorrAccount ?? null, payerName: inv.payerName ?? null,
+    payerInn: inv.payerInn ?? null, payerKpp: inv.payerKpp ?? null, amountKopeks: inv.amountKopeks,
+    invoiceNumber: inv.invoiceNumber ?? null, invoiceDate: inv.invoiceDate ?? null, dueDate: inv.dueDate ?? null,
+    subject: inv.subject ?? null, legalEntityId: inv.legalEntityId ?? null,
+  };
+}
+
+const fpNorm = (v: string | null | undefined): string => (v ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+const fpDay = (d: Date | null | undefined): string => (d ? d.toISOString().slice(0, 10) : "");
+
+export function invoiceFinancialFingerprint(s: InvoiceFinancialSnapshot): string {
+  const parts = [
+    fpNorm(s.counterpartyName), fpNorm(s.counterpartyInn), fpNorm(s.counterpartyKpp),
+    fpNorm(s.counterpartyBankName), fpNorm(s.counterpartyBankBik), fpNorm(s.counterpartyAccount), fpNorm(s.counterpartyCorrAccount),
+    fpNorm(s.payerName), fpNorm(s.payerInn), fpNorm(s.payerKpp),
+    String(s.amountKopeks ?? 0), fpNorm(s.invoiceNumber), fpDay(s.invoiceDate), fpDay(s.dueDate),
+    fpNorm(s.subject), fpNorm(s.legalEntityId),
+  ];
+  return createHash("sha256").update(parts.join("")).digest("hex");
+}
+
+export function invoiceFinancialFieldsChanged(a: InvoiceFinancialSnapshot, b: InvoiceFinancialSnapshot): boolean {
+  return invoiceFinancialFingerprint(a) !== invoiceFinancialFingerprint(b);
+}
+
+/** The CRITICAL payment fields for the medium-confidence guard: counterparty, ИНН,
+ * amount, payer, БИК, расчётный счёт. A structured gap here (empty / non-positive)
+ * is the reliable signal that medium-confidence doubt touches a critical field. */
+export function invoiceHasCriticalPaymentGap(inv: {
+  amountKopeks: number; counterpartyName: string | null; counterpartyInn: string | null;
+  payerName: string | null; counterpartyBankBik: string | null; counterpartyAccount: string | null;
+}): boolean {
+  const empty = (s: string | null | undefined) => !s || s.trim() === "";
+  return empty(inv.counterpartyName) || empty(inv.counterpartyInn) || inv.amountKopeks <= 0
+    || empty(inv.payerName) || empty(inv.counterpartyBankBik) || empty(inv.counterpartyAccount);
+}
+
+/**
+ * The single server-side source of truth for whether an invoice's DATA blocks
+ * payment (role/status/scope/CAS are enforced separately by the action). The UI
+ * uses the same function so the reason shown always matches the server. Returns a
+ * human message or null. `currentFingerprint` is computed by the caller from the
+ * invoice's current financial fields.
+ */
+export function invoicePaymentBlockedReason(inv: {
+  confidence: string | null;
+  aiDataReviewedAt: Date | null;
+  amountKopeks: number;
+  counterpartyName: string | null; counterpartyInn: string | null;
+  payerName: string | null; counterpartyBankBik: string | null; counterpartyAccount: string | null;
+  approvedDataFingerprint: string | null;
+  currentFingerprint: string;
+}): string | null {
+  if (inv.amountKopeks <= 0) return "Сумма счёта должна быть положительной для оплаты.";
+  // Data changed after approval (defence-in-depth; the edit path also moves the
+  // invoice back to needs_review). Legacy approvals without a fingerprint skip this.
+  if (inv.approvedDataFingerprint && inv.approvedDataFingerprint !== inv.currentFingerprint) {
+    return "Данные счёта изменились после согласования — требуется повторное согласование.";
+  }
+  const reviewed = Boolean(inv.aiDataReviewedAt);
+  if (isLowConfidence(inv.confidence) && !reviewed) {
+    return "Перед оплатой проверьте и сохраните данные счёта.";
+  }
+  if (inv.confidence === "medium" && !reviewed && invoiceHasCriticalPaymentGap(inv)) {
+    return "Проверьте критичные поля счёта (контрагент, ИНН, сумма, плательщик, БИК, счёт) перед оплатой.";
+  }
+  return null;
 }
 
 /** Extract ONLY the human-readable AI warnings from the stored raw extraction blob.

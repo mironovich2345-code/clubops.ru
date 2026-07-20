@@ -236,6 +236,11 @@ export async function updateRefund(
   const refundId = String(formData.get("refundId") ?? "").trim();
   const existing = await getRefundForContext(ctx, refundId);
   if (!existing) return { ok: false, error: "Возврат не найден или нет доступа" };
+  // Legacy (v1) actions must NEVER touch a v2 refund — v2 has its own workflow,
+  // documents and calculation governance (refund-document-actions). Server-enforced.
+  if (existing.entryVersion !== 1) {
+    return { ok: false, error: "Этот возврат оформляется по новому процессу и недоступен для старого редактирования." };
+  }
   if (!canEditApproval(existing.status, ctx.effectiveRoles)) {
     return { ok: false, error: "Оплаченный возврат может редактировать только бухгалтер" };
   }
@@ -274,6 +279,12 @@ export async function transitionRefund(formData: FormData): Promise<void> {
 
   const existing = await getRefundForContext(ctx, refundId);
   if (!existing) throw new Error("Возврат не найден или нет доступа");
+  // Legacy (v1) approval workflow applies ONLY to v1 refunds. A v2 refund can never
+  // be sent/approved/rejected/paid through this legacy path (it would skip the v2
+  // regional review, document set and server calculation). Server-enforced.
+  if (existing.entryVersion !== 1) {
+    throw new Error("Действие недоступно: возврат оформляется по новому процессу (v2).");
+  }
 
   const closedTx = await monthClosedError(existing.companyId, existing.clubId, existing.paidAt ?? existing.refundDate ?? existing.createdAt);
   if (closedTx) throw new Error(closedTx);

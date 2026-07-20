@@ -8,9 +8,11 @@ import { formatUserDisplayName } from "@/lib/user-display";
 import {
   getRefundForContext,
   getActiveRefundDocuments,
+  getClubActiveLegalEntities,
   parseRefundDocuments,
   REFUND_DOC_TYPE_LABELS,
 } from "@/lib/refunds";
+import { RefundPayForm } from "../_components/RefundPayForm";
 import {
   availableApprovalActions,
   canEditApproval,
@@ -63,6 +65,17 @@ export default async function RefundDetailPage({
     ]);
     const isManagerAuthor = ctx.effectiveRoles.includes("manager") && refund.createdByUserId === ctx.user.id;
     const statusLabel = REFUND_V2_STATUS_LABELS[refund.status] ?? refund.status;
+
+    // The accounting contour (accountant/chief) marks an approved refund paid.
+    const canPay = ctx.effectiveRoles.includes("accountant") && refund.status === "accounting_in_progress";
+    const legalEntities = canPay ? await getClubActiveLegalEntities(refund.clubId, refund.companyId) : [];
+    // Paid summary (any viewer in scope): who paid, when, from which legal entity.
+    const [paidByName, paidLegalEntity] = refund.status === "paid"
+      ? await Promise.all([
+          refund.paidByUserId ? getUserName(refund.paidByUserId) : Promise.resolve(null),
+          refund.legalEntityId ? getLegalEntityName(refund.legalEntityId) : Promise.resolve(null),
+        ])
+      : [null, null];
 
     return (
       <div className="max-w-3xl">
@@ -158,10 +171,32 @@ export default async function RefundDetailPage({
 
         {/* Regional decision (only a regional director of this club, only while pending). */}
         {refund.status === "pending_regional_review" && isRegionalForClub ? <RegionalReview refundId={id} /> : null}
-        {refund.status === "accounting_in_progress" ? (
+
+        {/* Accountant pays; everyone else in scope sees the awaiting-payment notice. */}
+        {refund.status === "accounting_in_progress" && canPay ? (
+          <RefundPayForm
+            refundId={id}
+            amountLabel={money(refund.refundResultAmountKopeks ?? refund.amountKopeks)}
+            legalEntities={legalEntities}
+            todayIso={isoDay(new Date())}
+          />
+        ) : refund.status === "accounting_in_progress" ? (
           <div className="mt-6 rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Возврат согласован и находится в работе у бухгалтера. Оплата будет реализована на следующем этапе.
+            Возврат согласован и ожидает оплаты бухгалтером.
           </div>
+        ) : null}
+
+        {/* Paid summary (read-only) — visible to any viewer in scope. */}
+        {refund.status === "paid" ? (
+          <Section title="Оплата">
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
+              <Row label="Статус" value="Оплачено" />
+              <Row label="Дата оплаты" value={fmtD(refund.paidAt)} />
+              <Row label="Юридическое лицо" value={paidLegalEntity ?? "—"} />
+              <Row label="Отметил оплату" value={paidByName ?? "—"} />
+              {refund.paymentComment ? <Row label="Комментарий" value={refund.paymentComment} /> : null}
+            </dl>
+          </Section>
         ) : null}
       </div>
     );
@@ -206,6 +241,11 @@ async function getUserName(userId: string): Promise<string | null> {
   const { prisma } = await import("@/lib/prisma");
   const u = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, firstName: true, lastName: true, deletedAt: true } });
   return u ? formatUserDisplayName(u) : null;
+}
+async function getLegalEntityName(legalEntityId: string): Promise<string | null> {
+  const { prisma } = await import("@/lib/prisma");
+  const le = await prisma.legalEntity.findUnique({ where: { id: legalEntityId }, select: { name: true, shortName: true } });
+  return le ? (le.shortName || le.name) : null;
 }
 const money = (k: number | null | undefined) => (k != null ? formatKopeks(k) : "—");
 

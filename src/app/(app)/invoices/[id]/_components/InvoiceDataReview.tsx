@@ -33,7 +33,8 @@ export type InvoiceReviewView = {
   warnings: string[];
   reviewedAtLabel: string; // "" when never reviewed
   reviewedByName: string; // "" when unknown / never reviewed
-  payBlocked: boolean; // low confidence AND not yet reviewed
+  payBlocked: boolean; // server payment guard is armed
+  payBlockReason: string; // exact server reason ("" when not blocked)
 };
 
 type SaveState = { ok: boolean; error?: string; invoiceId?: string };
@@ -87,10 +88,10 @@ export function InvoiceDataReview({
         )}
       </div>
 
-      {/* Payment guard notice */}
+      {/* Payment guard notice — the exact reason the server would refuse payment. */}
       {invoice.payBlocked ? (
         <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          Перед оплатой проверьте и сохраните данные счёта.
+          {invoice.payBlockReason || "Оплата заблокирована до проверки данных счёта."}
         </div>
       ) : null}
 

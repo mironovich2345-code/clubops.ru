@@ -627,7 +627,7 @@ async function main() {
   // file keys — so an edit can never replace the stored document.
   const pif = actions.slice(actions.indexOf("function parseInvoiceFields"), actions.indexOf("async function clubInCompany"));
   check("358a edit parser exposes no file fields (file cannot be replaced via edit)", pif.length > 0 && !pif.includes("originalFileStorageKey") && !pif.includes("originalFileName") && !pif.includes("storageKey"));
-  check("358b updateInvoice writes only the parsed business fields", actions.includes("prisma.invoice.update({ where: { id: invoiceId }, data: parsed.data })"));
+  check("358b updateInvoice writes parsed business fields (+ resets AI review on financial change)", actions.includes("const data: Record<string, unknown> = { ...parsed.data };") && actions.includes("await prisma.invoice.update({ where: { id: invoiceId }, data });") && actions.includes("data.aiDataReviewedAt = null"));
   check("359 invoice file route is download-only (no POST/PUT/PATCH)", fileRouteSrc.includes("export async function GET") && !/export async function (POST|PUT|PATCH)/.test(fileRouteSrc));
 
   // === Secure invoice file replacement (360–395) ===========================

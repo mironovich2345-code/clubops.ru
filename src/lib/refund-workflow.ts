@@ -14,7 +14,8 @@ export const REFUND_V2_STATUS_LABELS: Record<string, string> = {
   draft: "Черновик",
   pending_regional_review: "На проверке у регионального директора",
   needs_correction: "Требует исправления",
-  accounting_in_progress: "В работе у бухгалтера",
+  accounting_in_progress: "Согласован, ожидает оплаты",
+  paid: "Оплачено",
   // Soft-cancelled draft (refund-document-actions cancelRefundDraft) — a v2 refund
   // never hard-deletes, so this terminal status needs a readable label.
   canceled: "Отменён",
@@ -64,4 +65,42 @@ export function refundSubmissionReadiness(refund: RefundReadinessInput, activeDo
     return { ok: false, error: "Сумма возврата равна 0 ₽. Такой возврат нельзя отправить на согласование." };
   }
   return { ok: true };
+}
+
+// --- Calculation-operand fingerprint (staleness guard) -----------------------
+// A canonical string over the NORMALIZED calculation OPERANDS (not derived values).
+// Captured when the refund is calculated; recomputed at submit — if it differs, the
+// operands were edited after calculation and the stored result is stale. Pure and
+// client-safe (no crypto); server compares it, it is never a security token.
+export type RefundCalcOperands = {
+  returnType: string | null;
+  serviceStartDate: Date | null;
+  serviceEndDate: Date | null;
+  applicationDate: Date | null;
+  contractAmountKopeks: number | null;
+  serviceNotProvided: boolean;
+  ptContractSessionCount: number | null;
+  ptUsedSessionCount: number | null;
+  ptTerminationSessionPriceKopeks: number | null;
+  ptCalculationMethod: string | null;
+  ptAlternativeCalculationReason: string | null;
+  ptTrainerEmployeeId: string | null;
+};
+
+const rcDay = (d: Date | null | undefined): string => (d ? d.toISOString().slice(0, 10) : "");
+const rcNum = (n: number | null | undefined): string => (n == null ? "" : String(n));
+const rcStr = (s: string | null | undefined): string => (s ?? "").trim().toLowerCase();
+
+export function refundCalculationFingerprint(r: RefundCalcOperands): string {
+  if (r.returnType === "membership") {
+    return ["m", rcDay(r.serviceStartDate), rcDay(r.serviceEndDate), rcDay(r.applicationDate), rcNum(r.contractAmountKopeks), r.serviceNotProvided ? "1" : "0"].join("|");
+  }
+  if (r.returnType === "personal_training") {
+    return [
+      "p", rcDay(r.applicationDate), rcNum(r.contractAmountKopeks), rcNum(r.ptTerminationSessionPriceKopeks),
+      rcNum(r.ptContractSessionCount), rcNum(r.ptUsedSessionCount), r.serviceNotProvided ? "1" : "0",
+      rcStr(r.ptCalculationMethod), rcStr(r.ptAlternativeCalculationReason), rcStr(r.ptTrainerEmployeeId),
+    ].join("|");
+  }
+  return "";
 }

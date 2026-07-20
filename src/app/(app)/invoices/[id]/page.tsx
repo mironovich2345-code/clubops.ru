@@ -10,6 +10,9 @@ import {
   canReviewInvoiceData,
   isLowConfidence,
   parseInvoiceWarnings,
+  invoiceFinancialSnapshot,
+  invoiceFinancialFingerprint,
+  invoicePaymentBlockedReason,
   invoiceExpensePeriod,
   formatExpensePeriod,
   INVOICE_ACTION_LABELS,
@@ -116,11 +119,26 @@ export default async function InvoiceDetailPage({
   };
 
   // --- AI data review block ("Данные счёта") ---------------------------------
-  // Low confidence + not yet reviewed → the low-confidence payment guard is armed:
-  // the "Отметить оплачено" action is hidden here (and refused server-side).
+  // The server-side payment guard (invoicePaymentBlockedReason) is the single source
+  // of truth: it links AI review, approval version (fingerprint) and confidence to
+  // payment. The UI reuses it verbatim so the reason shown always matches the server
+  // and the "Отметить оплачено" action is hidden exactly when the server would refuse.
   const reviewed = Boolean(invoice.aiDataReviewedAt);
   const isLow = isLowConfidence(invoice.confidence);
-  const payBlocked = isLow && !reviewed;
+  const currentFingerprint = invoiceFinancialFingerprint(invoiceFinancialSnapshot(invoice));
+  const payBlockReason = invoicePaymentBlockedReason({
+    confidence: invoice.confidence,
+    aiDataReviewedAt: invoice.aiDataReviewedAt,
+    amountKopeks: invoice.amountKopeks,
+    counterpartyName: invoice.counterpartyName,
+    counterpartyInn: invoice.counterpartyInn,
+    payerName: invoice.payerName,
+    counterpartyBankBik: invoice.counterpartyBankBik,
+    counterpartyAccount: invoice.counterpartyAccount,
+    approvedDataFingerprint: invoice.approvedDataFingerprint,
+    currentFingerprint,
+  });
+  const payBlocked = Boolean(payBlockReason);
   const canReviewData = canReviewInvoiceData(ctx.effectiveRoles);
   const reviewer = invoice.aiDataReviewedById
     ? await prisma.user.findUnique({ where: { id: invoice.aiDataReviewedById }, select: { name: true } })
@@ -157,6 +175,7 @@ export default async function InvoiceDetailPage({
     reviewedAtLabel: invoice.aiDataReviewedAt ? isoDay(invoice.aiDataReviewedAt).split("-").reverse().join(".") : "",
     reviewedByName: reviewer?.name ?? "",
     payBlocked,
+    payBlockReason: payBlockReason ?? "",
   };
 
   return (

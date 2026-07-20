@@ -341,7 +341,11 @@ export function buildActivityWhere(
   const companyId = ctx.selectedCompanyId;
   if (!companyId) return null;
   const role = highestRole(ctx.effectiveRoles);
-  if (!role || role === "marketer") return null;
+  // Manager and marketer have NO access to the action history (activity log). Manager
+  // deliberately does not appear in ROLE_PAGE_ACCESS for "activity" either, so the
+  // page redirects them; this closes the loader too (defence in depth) — a manager
+  // never receives an AuditLog row, not even for their own club or their own actions.
+  if (!role || role === "marketer" || role === "manager") return null;
 
   const and: Prisma.AuditLogWhereInput[] = [{ companyId }];
 
@@ -350,8 +354,6 @@ export function buildActivityWhere(
     // All company activity (every club + company-level events).
   } else if (role === "regional_director") {
     and.push({ clubId: { in: ctx.allowedClubIds } });
-  } else if (role === "manager") {
-    and.push({ OR: [{ clubId: { in: ctx.allowedClubIds } }, { userId: ctx.user.id }] });
   } else if (role === "accountant") {
     and.push({ OR: [{ clubId: { in: ctx.allowedClubIds } }, { clubId: null }, { userId: ctx.user.id }] });
   } else {

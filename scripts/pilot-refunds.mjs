@@ -590,7 +590,15 @@ async function main() {
   check("W-detail v2 review + regional action + legacy kept", detSrc.includes("RegionalReview") && detSrc.includes("accounting_in_progress") && detSrc.includes("RefundEditForm"));
   check("W-actions wired", actSrc.includes("submitRefundToRegional") && actSrc.includes("approveRefundByRegional") && actSrc.includes("returnRefundForCorrection"));
   check("W-audit events wired", ["refund.submitted_to_regional", "refund.resubmitted_to_regional", "refund.returned_for_correction", "refund.approved_by_regional", "refund.sent_to_accounting"].every((a) => actSrc.includes(a)));
-  check("W-no Expense/CashMovement/paidAt in workflow actions", !/\bprisma\.expense\.create|\bprisma\.cashMovement\.create|paidAt:/.test(actSrc.slice(actSrc.indexOf("submitRefundToRegional"))));
+  check("W-no Expense/CashMovement in v2 actions; paidAt only in payRefundV2 (payment stage)", (() => {
+    const tail = actSrc.slice(actSrc.indexOf("submitRefundToRegional"));
+    // The review workflow (submit → approve → return) still writes no payment fields;
+    // only the dedicated payRefundV2 action sets paidAt. No Expense/CashMovement ever.
+    const reviewWf = actSrc.slice(actSrc.indexOf("submitRefundToRegional"), actSrc.indexOf("export async function payRefundV2"));
+    const noLedger = !/\bprisma\.expense\.create|\bprisma\.cashMovement\.create/.test(tail);
+    const noPayInReview = !/paidAt:/.test(reviewWf);
+    return noLedger && noPayInReview;
+  })());
   check("W-regional guard re-checks club access on server", actSrc.includes('userHasClubRole(ctx.user.id, refund.clubId, ["regional_director"])'));
   check("W-conditional updates guard status (races)", actSrc.includes('status: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW') && actSrc.includes("res.count === 0"));
 

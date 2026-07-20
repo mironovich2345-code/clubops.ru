@@ -123,6 +123,22 @@ export async function getClubTrainers(clubId: string): Promise<RefundTrainer[]> 
   });
 }
 
+// --- Legal entities available for a refund payment --------------------------
+
+export type ClubLegalEntityOption = { id: string; name: string; type: string };
+
+/** Active legal entities linked to THIS club (via an active ClubLegalEntity) within
+ * the company. Drives the payment legal-entity picker; the pay action re-validates
+ * the chosen id against the same constraint. */
+export async function getClubActiveLegalEntities(clubId: string, companyId: string): Promise<ClubLegalEntityOption[]> {
+  const rows = await prisma.clubLegalEntity.findMany({
+    where: { clubId, isActive: true, legalEntity: { isActive: true, companyId } },
+    select: { legalEntity: { select: { id: true, name: true, shortName: true, type: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  return rows.map((r) => ({ id: r.legalEntity.id, name: r.legalEntity.shortName || r.legalEntity.name, type: r.legalEntity.type }));
+}
+
 /** Validate a chosen trainer belongs to the club (any status) + is a trainer. */
 export async function getClubTrainer(clubId: string, employeeId: string): Promise<RefundTrainer | null> {
   const e = await prisma.clubEmployee.findFirst({

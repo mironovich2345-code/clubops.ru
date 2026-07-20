@@ -17,11 +17,15 @@ import {
   canEditInvoice,
   canAddPaidInvoice,
   invoiceSubmitBlockedReason,
-  isLowConfidence,
   canReviewInvoiceData,
+  invoiceFinancialSnapshot,
+  invoiceFinancialFingerprint,
+  invoiceFinancialFieldsChanged,
+  invoicePaymentBlockedReason,
   INVOICE_ACTION_AUDIT,
   INVOICE_EDITABLE_STATUSES,
   INVOICE_REVIEW_DATA_STATUSES,
+  INVOICE_APPROVED_UNPAID_STATUSES,
   INVOICE_RETURN_REASON_MIN,
   type InvoiceAction,
 } from "@/lib/invoices";
@@ -614,19 +618,50 @@ export async function updateInvoice(
   const parsed = parseInvoiceFields(formData);
   if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
 
-  await prisma.invoice.update({ where: { id: invoiceId }, data: parsed.data });
+  const before = invoiceFinancialSnapshot(existing);
+  const after = invoiceFinancialSnapshot({ ...existing, ...parsed.data });
+  const changed = invoiceFinancialFieldsChanged(before, after);
 
-  await recordAudit({
-    action: "invoice.updated",
-    entityType: "Invoice",
-    entityId: invoiceId,
-    companyId: existing.companyId,
-    clubId: existing.clubId,
-    userId: ctx.user.id,
-  });
+  // A PAID invoice's financial fields (amount, counterparty, payer, legal entity,
+  // bank requisites) are immutable — post-payment corrections are out of scope for
+  // this change. Non-financial edits (notes) remain allowed.
+  if (existing.status === "paid" && changed) {
+    return { ok: false, error: "Оплаченный счёт: сумму, контрагента, плательщика, юрлицо и банковские реквизиты изменять нельзя." };
+  }
+
+  const data: Record<string, unknown> = { ...parsed.data };
+  // Any financial change invalidates a prior manual AI review (server-side reset).
+  if (changed && existing.aiDataReviewedAt) {
+    data.aiDataReviewedAt = null;
+    data.aiDataReviewedById = null;
+  }
+  await prisma.invoice.update({ where: { id: invoiceId }, data });
+
+  if (changed) {
+    await recordAudit({
+      action: "invoice.financial_data_changed",
+      entityType: "Invoice", entityId: invoiceId,
+      companyId: existing.companyId, clubId: existing.clubId, userId: ctx.user.id,
+      metadata: invoiceChangeMetadata(existing, after),
+    });
+    if (existing.aiDataReviewedAt) {
+      await recordAudit({
+        action: "invoice.ai_review_invalidated", entityType: "Invoice", entityId: invoiceId,
+        companyId: existing.companyId, clubId: existing.clubId, userId: ctx.user.id,
+        metadata: { reason: "financial_data_changed" },
+      });
+    }
+  } else {
+    await recordAudit({
+      action: "invoice.updated", entityType: "Invoice", entityId: invoiceId,
+      companyId: existing.companyId, clubId: existing.clubId, userId: ctx.user.id,
+    });
+  }
 
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/analytics");
   return { ok: true, invoiceId };
 }
 
@@ -636,6 +671,50 @@ function digits(value: string | null): string | null {
   if (!value) return null;
   const d = value.replace(/\D+/g, "");
   return d || null;
+}
+
+// Mask a bank account/requisite for the audit — only the last 4 digits survive.
+// Never store a full расчётный/корр. счёт in the audit payload.
+function maskAccount(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = String(value).replace(/\D+/g, "");
+  if (!d) return null;
+  return d.length <= 4 ? `••${d}` : `••••${d.slice(-4)}`;
+}
+
+type InvoiceFinancialLike = Parameters<typeof invoiceFinancialSnapshot>[0];
+
+// Safe before/after payload for a financial-data change audit. Accounts are masked
+// (last 4 only); no raw AI JSON / prompts / documents / secrets are ever included.
+function invoiceChangeMetadata(beforeInv: InvoiceFinancialLike, after: ReturnType<typeof invoiceFinancialSnapshot>) {
+  const before = invoiceFinancialSnapshot(beforeInv);
+  const changedFields: string[] = [];
+  const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+  const track = (key: string, bv: unknown, av: unknown) => { if (String(bv ?? "") !== String(av ?? "")) changedFields.push(key); };
+  track("amountKopeks", before.amountKopeks, after.amountKopeks);
+  track("counterpartyName", before.counterpartyName, after.counterpartyName);
+  track("counterpartyInn", before.counterpartyInn, after.counterpartyInn);
+  track("counterpartyKpp", before.counterpartyKpp, after.counterpartyKpp);
+  track("payerName", before.payerName, after.payerName);
+  track("counterpartyBankName", before.counterpartyBankName, after.counterpartyBankName);
+  track("counterpartyBankBik", before.counterpartyBankBik, after.counterpartyBankBik);
+  track("counterpartyAccount", before.counterpartyAccount, after.counterpartyAccount);
+  track("counterpartyCorrAccount", before.counterpartyCorrAccount, after.counterpartyCorrAccount);
+  track("invoiceNumber", before.invoiceNumber, after.invoiceNumber);
+  track("invoiceDate", day(before.invoiceDate), day(after.invoiceDate));
+  track("dueDate", day(before.dueDate), day(after.dueDate));
+  track("subject", before.subject, after.subject);
+  track("legalEntityId", before.legalEntityId, after.legalEntityId);
+  return {
+    changedFields,
+    amount: { from: before.amountKopeks, to: after.amountKopeks },
+    counterparty: { from: before.counterpartyName, to: after.counterpartyName },
+    inn: { from: before.counterpartyInn, to: after.counterpartyInn },
+    payer: { from: before.payerName, to: after.payerName },
+    bik: { from: before.counterpartyBankBik, to: after.counterpartyBankBik },
+    account: { from: maskAccount(before.counterpartyAccount), to: maskAccount(after.counterpartyAccount) },
+    corrAccount: { from: maskAccount(before.counterpartyCorrAccount), to: maskAccount(after.counterpartyCorrAccount) },
+  };
 }
 
 /**
@@ -657,10 +736,11 @@ export async function reviewInvoiceData(
   if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
     return { ok: false, error: "Нет доступа" };
   }
-  // Only the accountant / chief accountant / owner review the extracted data —
-  // a manager (author) prepares the invoice but does not sign off on it here.
+  // Only the accountant / chief accountant review the extracted data. Owner is
+  // strategic read-only (views the data but never edits/signs off); a manager
+  // (author) prepares the invoice but does not sign off on it here.
   if (!canReviewInvoiceData(ctx.effectiveRoles)) {
-    return { ok: false, error: "Проверять данные счёта может бухгалтер или владелец" };
+    return { ok: false, error: "Проверять и сохранять данные счёта может только бухгалтер." };
   }
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
@@ -685,27 +765,56 @@ export async function reviewInvoiceData(
     return { ok: false, error: "Срок оплаты не может быть раньше даты счёта" };
   }
 
-  await prisma.invoice.update({
-    where: { id: invoiceId },
-    data: {
-      ...parsed.data,
-      // Requisites soft-normalized to digits-only (spread above is overridden).
-      counterpartyInn: digits(parsed.data.counterpartyInn),
-      counterpartyKpp: digits(parsed.data.counterpartyKpp),
-      counterpartyBankBik: digits(parsed.data.counterpartyBankBik),
-      counterpartyAccount: digits(parsed.data.counterpartyAccount),
-      counterpartyCorrAccount: digits(parsed.data.counterpartyCorrAccount),
-      // Payer (Плательщик) + Назначение — not part of parseInvoiceFields.
-      payerName: str(formData, "payerName"),
-      payerInn: digits(str(formData, "payerInn")),
-      payerKpp: digits(str(formData, "payerKpp")),
-      subject: str(formData, "subject"),
-      aiDataReviewedAt: new Date(),
-      aiDataReviewedById: ctx.user.id,
-      aiDataReviewNote: str(formData, "aiDataReviewNote"),
-    },
-  });
+  // The fields being written (payer/subject + digits-normalized requisites).
+  const writtenFields = {
+    ...parsed.data,
+    counterpartyInn: digits(parsed.data.counterpartyInn),
+    counterpartyKpp: digits(parsed.data.counterpartyKpp),
+    counterpartyBankBik: digits(parsed.data.counterpartyBankBik),
+    counterpartyAccount: digits(parsed.data.counterpartyAccount),
+    counterpartyCorrAccount: digits(parsed.data.counterpartyCorrAccount),
+    payerName: str(formData, "payerName"),
+    payerInn: digits(str(formData, "payerInn")),
+    payerKpp: digits(str(formData, "payerKpp")),
+    subject: str(formData, "subject"),
+  };
 
+  const after = invoiceFinancialSnapshot({ ...existing, ...writtenFields });
+  const changed = invoiceFinancialFieldsChanged(invoiceFinancialSnapshot(existing), after);
+  // Editing an approved-but-unpaid invoice's financial data voids the approval — it
+  // must be re-approved (and re-fingerprinted) before it can be paid again.
+  const invalidateApproval = changed && (INVOICE_APPROVED_UNPAID_STATUSES as readonly string[]).includes(existing.status);
+
+  const data: Record<string, unknown> = {
+    ...writtenFields,
+    // The reviewer signs off on the (possibly corrected) values saved NOW.
+    aiDataReviewedAt: new Date(),
+    aiDataReviewedById: ctx.user.id,
+    aiDataReviewNote: str(formData, "aiDataReviewNote"),
+  };
+  if (invalidateApproval) {
+    data.status = "needs_review";
+    data.approvedDataFingerprint = null;
+  }
+
+  // Compare-and-set on the current status so a concurrent transition is never lost.
+  const updated = await prisma.invoice.updateMany({ where: { id: invoiceId, status: existing.status }, data });
+  if (updated.count === 0) return { ok: false, error: "Статус счёта изменился. Обновите страницу." };
+
+  if (changed) {
+    await recordAudit({
+      action: "invoice.financial_data_changed", entityType: "Invoice", entityId: invoiceId,
+      companyId: existing.companyId, clubId: existing.clubId, userId: ctx.user.id,
+      metadata: invoiceChangeMetadata(existing, after),
+    });
+  }
+  if (invalidateApproval) {
+    await recordAudit({
+      action: "invoice.approval_invalidated", entityType: "Invoice", entityId: invoiceId,
+      companyId: existing.companyId, clubId: existing.clubId, userId: ctx.user.id,
+      metadata: { from: existing.status, to: "needs_review", reason: "financial_data_changed" },
+    });
+  }
   await recordAudit({
     action: "invoice.ai_data_reviewed",
     entityType: "Invoice",
@@ -713,11 +822,12 @@ export async function reviewInvoiceData(
     companyId: existing.companyId,
     clubId: existing.clubId,
     userId: ctx.user.id,
-    metadata: { confidence: existing.confidence, wasReviewed: Boolean(existing.aiDataReviewedAt) },
+    metadata: { confidence: existing.confidence, wasReviewed: Boolean(existing.aiDataReviewedAt), fieldsChanged: changed, approvalInvalidated: invalidateApproval },
   });
 
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/dashboard");
   return { ok: true, invoiceId };
 }
 
@@ -804,6 +914,10 @@ export async function replaceInvoiceFile(
       originalFileName: stored.fileName,
       originalFileMime: stored.mime,
       originalFileSize: stored.size,
+      // A replaced document may change the invoice content → any prior manual AI
+      // review no longer applies to the new file (server-side reset).
+      aiDataReviewedAt: null,
+      aiDataReviewedById: null,
     },
   });
 
@@ -984,11 +1098,26 @@ export async function transitionInvoice(
     return { ok: false, error: result.error };
   }
 
-  // Payment guard (server-side): a LOW-confidence invoice cannot be marked paid
-  // until the accountant/owner has reviewed & saved the extracted "Данные счёта".
-  // The UI also hides the button; this is the enforcement (defence in depth).
-  if (action === "pay" && isLowConfidence(existing.confidence) && !existing.aiDataReviewedAt) {
-    return { ok: false, error: "Перед оплатой проверьте и сохраните данные счёта." };
+  // Payment guard (server-side single source of truth, shared with the UI): links
+  // AI review + approval version + confidence to payment. Blocks pay when the data
+  // changed after approval (fingerprint mismatch), when a low- (or medium-with-
+  // critical-gap) confidence invoice wasn't reviewed, or when the amount is
+  // non-positive. Role/status/scope/CAS are enforced above and below.
+  if (action === "pay") {
+    const currentFingerprint = invoiceFinancialFingerprint(invoiceFinancialSnapshot(existing));
+    const blockedReason = invoicePaymentBlockedReason({
+      confidence: existing.confidence,
+      aiDataReviewedAt: existing.aiDataReviewedAt,
+      amountKopeks: existing.amountKopeks,
+      counterpartyName: existing.counterpartyName,
+      counterpartyInn: existing.counterpartyInn,
+      payerName: existing.payerName,
+      counterpartyBankBik: existing.counterpartyBankBik,
+      counterpartyAccount: existing.counterpartyAccount,
+      approvedDataFingerprint: existing.approvedDataFingerprint,
+      currentFingerprint,
+    });
+    if (blockedReason) return { ok: false, error: blockedReason };
   }
 
   // Conditional (compare-and-set) update on the exact current status: only one
@@ -997,11 +1126,18 @@ export async function transitionInvoice(
   const data: {
     status: string; paidAt: Date | null;
     correctionComment?: string; correctionRequestedAt?: Date; correctionRequestedByUserId?: string;
+    approvedDataFingerprint?: string;
   } = { status: result.to, paidAt: result.to === "paid" ? new Date() : null };
   if (action === "return_for_correction") {
     data.correctionComment = returnReason;
     data.correctionRequestedAt = new Date();
     data.correctionRequestedByUserId = ctx.user.id;
+  }
+  if (action === "approve") {
+    // Bind the approval to the EXACT financial data approved. Any later edit moves
+    // the invoice back to needs_review AND clears/changes this, so a stale approval
+    // can never authorize a payment of changed data (defence-in-depth at pay time).
+    data.approvedDataFingerprint = invoiceFinancialFingerprint(invoiceFinancialSnapshot(existing));
   }
   const updated = await prisma.invoice.updateMany({
     where: { id: invoiceId, status: existing.status },
@@ -1124,9 +1260,21 @@ export async function saveAndResubmitInvoice(
     return { ok: false, error: blocked };
   }
 
+  // A financial-field change OR a replaced file means the previously-reviewed data
+  // no longer matches — the manual AI review is reset (re-verified after review).
+  const fieldsChanged = invoiceFinancialFieldsChanged(
+    invoiceFinancialSnapshot(existing),
+    invoiceFinancialSnapshot({ ...existing, ...parsed.data }),
+  );
+  const contentChanged = fieldsChanged || Boolean(newStored);
+
   // Single compare-and-set: fields + (optional) file metadata + status flip, only
   // while STILL this author's needs_correction invoice. No partial state.
   const data: Record<string, unknown> = { ...parsed.data, status: "needs_review" };
+  if (contentChanged && existing.aiDataReviewedAt) {
+    data.aiDataReviewedAt = null;
+    data.aiDataReviewedById = null;
+  }
   if (newStored) {
     data.originalFileStorageKey = newStored.storageKey;
     data.originalFileName = newStored.fileName;
@@ -1168,6 +1316,20 @@ export async function saveAndResubmitInvoice(
     userId: ctx.user.id,
     metadata: { from: "needs_correction", to: "needs_review" },
   });
+  if (fieldsChanged) {
+    await recordAudit({
+      action: "invoice.financial_data_changed", entityType: "Invoice", entityId: invoiceId,
+      companyId: existing.companyId, clubId: existing.clubId, userId: ctx.user.id,
+      metadata: invoiceChangeMetadata(existing, invoiceFinancialSnapshot({ ...existing, ...parsed.data })),
+    });
+  }
+  if (contentChanged && existing.aiDataReviewedAt) {
+    await recordAudit({
+      action: "invoice.ai_review_invalidated", entityType: "Invoice", entityId: invoiceId,
+      companyId: existing.companyId, clubId: existing.clubId, userId: ctx.user.id,
+      metadata: { reason: fieldsChanged ? "financial_data_changed" : "file_replaced" },
+    });
+  }
 
   // Notify the regional director(s) that a corrected invoice was resubmitted.
   await notifyRegionalReview({ resourceType: "invoice", resourceId: invoiceId, companyId: existing.companyId, clubId: existing.clubId, amountKopeks: parsed.data.amountKopeks, actorUserId: ctx.user.id, isResubmit: true });

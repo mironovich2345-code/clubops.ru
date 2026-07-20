@@ -20,7 +20,8 @@ import {
   parseDateOnly, toLocalMidnight, parseContractAmountKopeks, computeMembershipRefund, REFUND_CALC_VERSION, diffDays, fromDate,
 } from "@/lib/refund-membership";
 import { computePersonalTrainingRefund, isPtMethod, PT_MIN_REASON_LEN, type PtMethod } from "@/lib/refund-personal-training";
-import { REFUND_V2_STATUS, refundSubmissionReadiness, validateCorrectionComment } from "@/lib/refund-workflow";
+import { REFUND_V2_STATUS, refundSubmissionReadiness, validateCorrectionComment, refundCalculationFingerprint } from "@/lib/refund-workflow";
+import { monthClosedError } from "@/lib/month-close";
 
 type State = { ok: boolean; error?: string; refundId?: string };
 
@@ -315,6 +316,15 @@ export async function calculateMembershipRefund(_prev: State | undefined, formDa
       amountKopeks: calc.resultAmountKopeks,
       baseRefundDueDate: toLocalMidnight(calc.base), plannedRefundDate: toLocalMidnight(calc.planned),
       dueDateAdjustmentReason: calc.adjustmentReason, calculationVersion: REFUND_CALC_VERSION,
+      // Fingerprint of the operands this result was computed from — submit recomputes
+      // it and blocks if the operands were edited afterwards (stale result).
+      calculationInputHash: refundCalculationFingerprint({
+        returnType: "membership",
+        serviceStartDate: toLocalMidnight(start), serviceEndDate: toLocalMidnight(end), applicationDate: toLocalMidnight(application),
+        contractAmountKopeks: amount, serviceNotProvided,
+        ptContractSessionCount: null, ptUsedSessionCount: null, ptTerminationSessionPriceKopeks: null,
+        ptCalculationMethod: null, ptAlternativeCalculationReason: null, ptTrainerEmployeeId: null,
+      }),
     },
   });
   if (res.count === 0) return { ok: false, error: "Данные изменились в другой вкладке. Обновите страницу." };
@@ -448,6 +458,16 @@ export async function calculatePersonalTrainingRefund(_prev: State | undefined, 
       amountKopeks: calc.unavailable ? 0 : (calc.resultAmountKopeks ?? 0),
       baseRefundDueDate: toLocalMidnight(calc.base), plannedRefundDate: toLocalMidnight(calc.planned),
       dueDateAdjustmentReason: calc.adjustmentReason, calculationVersion: calc.calculationVersion,
+      // Fingerprint of the operands this result was computed from — submit recomputes
+      // it and blocks if the operands were edited afterwards (stale result).
+      calculationInputHash: refundCalculationFingerprint({
+        returnType: "personal_training",
+        serviceStartDate: null, serviceEndDate: null, applicationDate: toLocalMidnight(application),
+        contractAmountKopeks: X, serviceNotProvided,
+        ptContractSessionCount: N, ptUsedSessionCount: serviceNotProvided ? 0 : E, ptTerminationSessionPriceKopeks: V,
+        ptCalculationMethod: calc.mode, ptAlternativeCalculationReason: calc.mode === "average_rate" ? reason.slice(0, 2000) : null,
+        ptTrainerEmployeeId: trainer.id,
+      }),
     },
   });
   if (res.count === 0) return { ok: false, error: "Данные возврата изменились. Обновите страницу и повторите расчёт." };
@@ -486,6 +506,15 @@ export async function submitRefundToRegional(_prev: State | undefined, formData:
   const active = await getActiveRefundDocuments(refundId);
   const ready = refundSubmissionReadiness(refund, active.map((d) => d.documentType));
   if (!ready.ok) return { ok: false, error: ready.error };
+
+  // Staleness guard: the stored result must match the CURRENT operands. If the
+  // manager edited an operand (e.g. via "Сохранить черновик") after calculating,
+  // the fingerprint recomputed from the row no longer matches the one captured at
+  // calculation → the result is stale and must be recomputed before submitting.
+  // Skipped only for legacy calculations made before this fingerprint existed (null).
+  if (refund.calculationInputHash && refund.calculationInputHash !== refundCalculationFingerprint(refund)) {
+    return { ok: false, error: "Данные изменились. Выполните расчёт повторно." };
+  }
 
   const wasCorrection = refund.status === REFUND_V2_STATUS.NEEDS_CORRECTION;
   const now = new Date();
@@ -573,5 +602,92 @@ export async function returnRefundForCorrection(_prev: State | undefined, formDa
   revalidatePath("/refunds");
   revalidatePath(`/refunds/${refundId}`);
   revalidatePath(`/refunds/new/${refundId}/details`);
+  return { ok: true, refundId };
+}
+
+// --- Phase 3B: accountant marks a regional-approved v2 refund PAID ------------
+
+const parsePaidAt = (raw: string): Date => {
+  const t = raw.trim();
+  if (!t) return new Date();
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+};
+
+/**
+ * The single financial button for a v2 refund: the accountant (or chief accountant)
+ * marks a regional-approved refund PAID, choosing the legal entity that pays it and
+ * the payment date. Server-enforced: role (accountant/chief only), scope + object
+ * ownership, entryVersion=2, status=accounting_in_progress, a complete document set
+ * and a finished positive calculation, a legal entity that is ACTIVE and linked to
+ * THIS club, and the closed-month guard. Compare-and-set makes a double click a
+ * no-op (0 rows). No Expense row is created — analytics reads paid refunds directly.
+ */
+export async function payRefundV2(_prev: State | undefined, formData: FormData): Promise<State> {
+  const refundId = String(formData.get("refundId") ?? "").trim();
+  const ctx = await getCurrentAccessContext();
+  if (!ctx) return { ok: false, error: "Нет доступа." };
+  // Accounting contour ONLY (accountant + chief, since chief expands to accountant).
+  // Owner / GD / regional / manager / marketer can never pay.
+  if (!ctx.effectiveRoles.includes("accountant")) {
+    return { ok: false, error: "Отметить возврат оплаченным может только бухгалтер." };
+  }
+  const refund = await getRefundForContext(ctx, refundId); // company + club + manager-own scope
+  if (!refund) return { ok: false, error: "Возврат не найден или нет доступа." };
+  if (refund.entryVersion !== 2) return { ok: false, error: "Оплата доступна только для нового процесса возврата." };
+  if (refund.status !== REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS) {
+    return { ok: false, error: refund.status === "paid" ? "Возврат уже оплачен." : "Возврат ещё не согласован для оплаты." };
+  }
+
+  // Legal entity: chosen by the accountant, validated to be ACTIVE, of THIS company,
+  // and linked to THIS club via an active ClubLegalEntity. No foreign/archived LE.
+  const legalEntityId = String(formData.get("legalEntityId") ?? "").trim();
+  if (!legalEntityId) return { ok: false, error: "Выберите юридическое лицо для оплаты." };
+  const linked = await prisma.clubLegalEntity.findFirst({
+    where: { clubId: refund.clubId, legalEntityId, isActive: true, legalEntity: { isActive: true, companyId: refund.companyId } },
+    select: { id: true },
+  });
+  if (!linked) return { ok: false, error: "Выберите активное юрлицо, привязанное к этому клубу." };
+
+  // Payment date (defaults to today) — same closed-month guard as everywhere else.
+  const paidAt = parsePaidAt(String(formData.get("paidAt") ?? ""));
+  const closed = await monthClosedError(refund.companyId, refund.clubId, paidAt);
+  if (closed) return { ok: false, error: closed };
+
+  // Defence-in-depth: the document set + calculation must still be complete/positive.
+  const active = await getActiveRefundDocuments(refundId);
+  if (!refund.returnType || !isRefundDocumentSetComplete(refund.returnType, active.map((d) => d.documentType))) {
+    return { ok: false, error: "Набор документов неполон — оплата невозможна." };
+  }
+  if (!refund.calculationVersion || refund.refundResultAmountKopeks == null || refund.refundResultAmountKopeks <= 0 || refund.amountKopeks <= 0) {
+    return { ok: false, error: "Расчёт возврата не завершён или равен нулю." };
+  }
+
+  const paymentComment = String(formData.get("paymentComment") ?? "").trim().slice(0, 500) || null;
+
+  // Compare-and-set: only a still-accounting_in_progress v2 refund flips to paid; a
+  // duplicate/parallel request updates 0 rows → no second payment.
+  const res = await prisma.refund.updateMany({
+    where: { id: refundId, status: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, entryVersion: 2 },
+    data: { status: "paid", paidAt, legalEntityId, paidByUserId: ctx.user.id, paymentComment },
+  });
+  if (res.count === 0) return { ok: false, error: "Возврат уже оплачен или его статус изменился." };
+
+  await recordAudit({
+    action: "refund.paid",
+    entityType: "Refund", entityId: refundId, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id,
+    metadata: {
+      previousStatus: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, newStatus: "paid", entryVersion: 2,
+      amountKopeks: refund.amountKopeks, legalEntityId, paidAt: paidAt.toISOString(), returnType: refund.returnType,
+    },
+  });
+
+  // Paid refund now counts as an expense (category "refunds") via the existing
+  // status:"paid" analytics/budget filters — refresh those views. No Expense row.
+  revalidatePath("/refunds");
+  revalidatePath(`/refunds/${refundId}`);
+  revalidatePath("/analytics");
+  revalidatePath("/dashboard");
+  revalidatePath("/budgets");
   return { ok: true, refundId };
 }

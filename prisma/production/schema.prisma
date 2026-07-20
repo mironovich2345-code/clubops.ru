@@ -445,6 +445,19 @@ model Refund {
   rawExtractedJson String?
   notes            String?
 
+  // v2 actual-payment stage (accountant/chief marks a regional-approved refund
+  // paid). All nullable → legacy/unpaid rows unaffected. legalEntityId is a plain
+  // scalar (no FK relation) validated server-side against ClubLegalEntity so the
+  // additive migration stays a simple ADD COLUMN (no table rebuild).
+  legalEntityId  String?
+  paidByUserId   String?
+  paymentComment String?
+  // Canonical fingerprint of the calculation OPERANDS captured when the v2 refund
+  // is calculated. Submit recomputes it from the current operands and blocks if it
+  // differs (operands edited after calculation → stale result). Nullable = not yet
+  // calculated. Never destructive.
+  calculationInputHash String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -700,6 +713,12 @@ model Invoice {
   aiDataReviewedAt   DateTime?
   aiDataReviewedById String?
   aiDataReviewNote   String?
+
+  // Fingerprint (sha256 of the normalized financially-significant fields) captured
+  // when the invoice is APPROVED. Payment recomputes it and refuses to pay if the
+  // data changed after approval. Nullable — legacy approved rows have no fingerprint
+  // and are never blocked by it. Never destructive.
+  approvedDataFingerprint String?
 
   notes     String?
   comment   String?
