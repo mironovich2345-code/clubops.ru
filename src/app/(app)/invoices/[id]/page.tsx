@@ -7,16 +7,21 @@ import {
   getInvoiceForContext,
   availableInvoiceActions,
   canEditInvoice,
+  canReviewInvoiceData,
+  isLowConfidence,
+  parseInvoiceWarnings,
   invoiceExpensePeriod,
   formatExpensePeriod,
   INVOICE_ACTION_LABELS,
   INVOICE_STATUS_LABELS,
   INVOICE_CONFIDENCE_LABELS,
 } from "@/lib/invoices";
+import { prisma } from "@/lib/prisma";
 import { resolveInvoiceFileStatus } from "@/lib/invoice-storage";
 import { EXPENSE_CATEGORY_OPTIONS } from "@/lib/expenses";
 import { safeBackLink } from "@/lib/strategic-return";
 import { InvoiceEditForm } from "./_components/InvoiceEditForm";
+import { InvoiceDataReview, type InvoiceReviewView } from "./_components/InvoiceDataReview";
 import { CancelInvoiceForm } from "./_components/CancelInvoiceForm";
 
 const INVOICE_CANCELABLE = ["draft", "needs_review", "approved_by_regional", "approved_by_owner", "paid"];
@@ -110,6 +115,50 @@ export default async function InvoiceDetailPage({
     canDownload: canDownloadDocuments(ctx.effectiveRoles),
   };
 
+  // --- AI data review block ("Данные счёта") ---------------------------------
+  // Low confidence + not yet reviewed → the low-confidence payment guard is armed:
+  // the "Отметить оплачено" action is hidden here (and refused server-side).
+  const reviewed = Boolean(invoice.aiDataReviewedAt);
+  const isLow = isLowConfidence(invoice.confidence);
+  const payBlocked = isLow && !reviewed;
+  const canReviewData = canReviewInvoiceData(ctx.effectiveRoles);
+  const reviewer = invoice.aiDataReviewedById
+    ? await prisma.user.findUnique({ where: { id: invoice.aiDataReviewedById }, select: { name: true } })
+    : null;
+  const availableActions = availableInvoiceActions(invoice.status, ctx.effectiveRoles, approvalOpts).filter(
+    (a) => !(a === "pay" && payBlocked),
+  );
+
+  const reviewView: InvoiceReviewView = {
+    id: invoice.id,
+    counterpartyName: view.counterpartyName,
+    counterpartyInn: view.counterpartyInn,
+    counterpartyKpp: view.counterpartyKpp,
+    counterpartyBankName: view.counterpartyBankName,
+    counterpartyBankBik: view.counterpartyBankBik,
+    counterpartyAccount: view.counterpartyAccount,
+    counterpartyCorrAccount: view.counterpartyCorrAccount,
+    payerName: invoice.payerName ?? "",
+    payerInn: invoice.payerInn ?? "",
+    payerKpp: invoice.payerKpp ?? "",
+    subject: invoice.subject ?? "",
+    amount: view.amount,
+    currency: view.currency,
+    expenseCategory: view.expenseCategory,
+    expensePeriod: view.expensePeriod,
+    invoiceNumber: view.invoiceNumber,
+    invoiceDate: view.invoiceDate,
+    dueDate: view.dueDate,
+    aiDataReviewNote: invoice.aiDataReviewNote ?? "",
+    confidence: invoice.confidence,
+    confidenceLabel: INVOICE_CONFIDENCE_LABELS[invoice.confidence] ?? invoice.confidence,
+    isLowConfidence: isLow,
+    warnings: parseInvoiceWarnings(invoice.rawExtractedJson),
+    reviewedAtLabel: invoice.aiDataReviewedAt ? isoDay(invoice.aiDataReviewedAt).split("-").reverse().join(".") : "",
+    reviewedByName: reviewer?.name ?? "",
+    payBlocked,
+  };
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between gap-4">
@@ -143,7 +192,7 @@ export default async function InvoiceDetailPage({
       <InvoiceEditForm
         invoice={view}
         categories={EXPENSE_CATEGORY_OPTIONS}
-        availableActions={availableInvoiceActions(invoice.status, ctx.effectiveRoles, approvalOpts)}
+        availableActions={availableActions}
         actionLabels={INVOICE_ACTION_LABELS}
         statusLabel={INVOICE_STATUS_LABELS[invoice.status] ?? invoice.status}
         canEdit={
@@ -161,6 +210,14 @@ export default async function InvoiceDetailPage({
           (invoice.status === "draft" || invoice.status === "needs_correction")
         }
       />
+
+      <div className="mt-6">
+        <InvoiceDataReview
+          invoice={reviewView}
+          categories={EXPENSE_CATEGORY_OPTIONS}
+          canReview={canReviewData}
+        />
+      </div>
 
       {canCancel ? (
         <div className="mt-6 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">

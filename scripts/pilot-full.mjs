@@ -57,6 +57,7 @@ const pilots = [
   ["Refunds phase 1", "pilot-refunds.mjs"],
   ["Manager own-only visibility", "pilot-manager-visibility.mjs"],
   ["Invoice AI pipeline", "pilot-invoice-ai.mjs"],
+  ["Invoice AI data review", "pilot-invoice-ai-review.mjs"],
   ["Health / deployment version", "pilot-health.mjs"],
   ["Account settings", "pilot-account-settings.mjs"],
   ["Employee role management", "pilot-employee-role-management.mjs"],

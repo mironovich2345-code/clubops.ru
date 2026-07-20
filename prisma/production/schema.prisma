@@ -696,6 +696,11 @@ model Invoice {
   originalFileStorageKey String?
   rawExtractedJson       String?
 
+  // Accountant/owner manual review of the AI-extracted fields (see dev schema).
+  aiDataReviewedAt   DateTime?
+  aiDataReviewedById String?
+  aiDataReviewNote   String?
+
   notes     String?
   comment   String?
   fileUrl   String?

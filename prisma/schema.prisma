@@ -693,6 +693,13 @@ model Invoice {
   originalFileStorageKey String?
   rawExtractedJson       String?
 
+  // Accountant/owner manual review of the AI-extracted fields. Set when the
+  // reviewer saves the "Данные счёта" block; required (with the payment guard)
+  // before a LOW-confidence invoice can be marked paid. Nullable — never destructive.
+  aiDataReviewedAt   DateTime?
+  aiDataReviewedById String?
+  aiDataReviewNote   String?
+
   notes     String?
   comment   String?
   fileUrl   String?

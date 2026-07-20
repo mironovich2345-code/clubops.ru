@@ -17,8 +17,11 @@ import {
   canEditInvoice,
   canAddPaidInvoice,
   invoiceSubmitBlockedReason,
+  isLowConfidence,
+  canReviewInvoiceData,
   INVOICE_ACTION_AUDIT,
   INVOICE_EDITABLE_STATUSES,
+  INVOICE_REVIEW_DATA_STATUSES,
   INVOICE_RETURN_REASON_MIN,
   type InvoiceAction,
 } from "@/lib/invoices";
@@ -627,6 +630,97 @@ export async function updateInvoice(
   return { ok: true, invoiceId };
 }
 
+// Digits-only soft normalization for requisites (ИНН/КПП/БИК/счёт). Empty → null.
+// Soft: strips separators/spaces but never rejects the save.
+function digits(value: string | null): string | null {
+  if (!value) return null;
+  const d = value.replace(/\D+/g, "");
+  return d || null;
+}
+
+/**
+ * Accountant / chief_accountant / owner review of the AI-extracted invoice fields
+ * ("Данные счёта"). Saves the (possibly corrected) fields and stamps
+ * aiDataReviewedAt / aiDataReviewedById — which lifts the low-confidence payment
+ * guard in transitionInvoice. Does NOT change the invoice status.
+ *
+ * Distinct from updateInvoice: allowed for the reviewer roles across the working
+ * lifecycle (not just the author in draft / needs_correction), so a paid or
+ * approved invoice's data can still be verified. Scope + role + status enforced
+ * server-side; requisites are digits-normalized; the amount stays non-negative.
+ */
+export async function reviewInvoiceData(
+  _prev: SaveState | undefined,
+  formData: FormData,
+): Promise<SaveState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) {
+    return { ok: false, error: "Нет доступа" };
+  }
+  // Only the accountant / chief accountant / owner review the extracted data —
+  // a manager (author) prepares the invoice but does not sign off on it here.
+  if (!canReviewInvoiceData(ctx.effectiveRoles)) {
+    return { ok: false, error: "Проверять данные счёта может бухгалтер или владелец" };
+  }
+
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  // Scoped loader: enforces selectedCompanyId + allowedClubIds. A foreign or
+  // out-of-scope invoiceId resolves to null → no cross-company edit / id spoof.
+  const existing = await getInvoiceForContext(ctx, invoiceId);
+  if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
+
+  // Review is possible across the working lifecycle but not on rejected/canceled.
+  if (!(INVOICE_REVIEW_DATA_STATUSES as readonly string[]).includes(existing.status)) {
+    return { ok: false, error: "Данные этого счёта нельзя редактировать" };
+  }
+
+  const closed = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
+  if (closed) return { ok: false, error: closed };
+
+  const parsed = parseInvoiceFields(formData);
+  if (parsed.error || !parsed.data) return { ok: false, error: parsed.error ?? "Ошибка данных" };
+
+  // A payment due date shouldn't precede the invoice date (both are optional).
+  if (parsed.data.invoiceDate && parsed.data.dueDate && parsed.data.dueDate < parsed.data.invoiceDate) {
+    return { ok: false, error: "Срок оплаты не может быть раньше даты счёта" };
+  }
+
+  await prisma.invoice.update({
+    where: { id: invoiceId },
+    data: {
+      ...parsed.data,
+      // Requisites soft-normalized to digits-only (spread above is overridden).
+      counterpartyInn: digits(parsed.data.counterpartyInn),
+      counterpartyKpp: digits(parsed.data.counterpartyKpp),
+      counterpartyBankBik: digits(parsed.data.counterpartyBankBik),
+      counterpartyAccount: digits(parsed.data.counterpartyAccount),
+      counterpartyCorrAccount: digits(parsed.data.counterpartyCorrAccount),
+      // Payer (Плательщик) + Назначение — not part of parseInvoiceFields.
+      payerName: str(formData, "payerName"),
+      payerInn: digits(str(formData, "payerInn")),
+      payerKpp: digits(str(formData, "payerKpp")),
+      subject: str(formData, "subject"),
+      aiDataReviewedAt: new Date(),
+      aiDataReviewedById: ctx.user.id,
+      aiDataReviewNote: str(formData, "aiDataReviewNote"),
+    },
+  });
+
+  await recordAudit({
+    action: "invoice.ai_data_reviewed",
+    entityType: "Invoice",
+    entityId: invoiceId,
+    companyId: existing.companyId,
+    clubId: existing.clubId,
+    userId: ctx.user.id,
+    metadata: { confidence: existing.confidence, wasReviewed: Boolean(existing.aiDataReviewedAt) },
+  });
+
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${invoiceId}`);
+  return { ok: true, invoiceId };
+}
+
 // --- secure file replacement (draft / needs_correction only) ----------------
 
 type ReplaceFileState = { ok: boolean; error?: string; invoiceId?: string };
@@ -888,6 +982,13 @@ export async function transitionInvoice(
       });
     }
     return { ok: false, error: result.error };
+  }
+
+  // Payment guard (server-side): a LOW-confidence invoice cannot be marked paid
+  // until the accountant/owner has reviewed & saved the extracted "Данные счёта".
+  // The UI also hides the button; this is the enforcement (defence in depth).
+  if (action === "pay" && isLowConfidence(existing.confidence) && !existing.aiDataReviewedAt) {
+    return { ok: false, error: "Перед оплатой проверьте и сохраните данные счёта." };
   }
 
   // Conditional (compare-and-set) update on the exact current status: only one

@@ -42,6 +42,7 @@
     "docker:build": "docker build -t club-ops:latest .",
     "docker:prod": "docker compose -f docker-compose.production.yml up -d --build",
     "pilot:invoice-ai": "node scripts/pilot-invoice-ai.mjs",
+    "pilot:invoice-ai-review": "node scripts/pilot-invoice-ai-review.mjs",
     "pilot:health": "node scripts/pilot-health.mjs",
     "pilot:account-settings": "node scripts/pilot-account-settings.mjs",
     "pilot:employee-role-management": "node scripts/pilot-employee-role-management.mjs",

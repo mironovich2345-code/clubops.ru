@@ -273,6 +273,41 @@ export function canEditInvoice(status: string, roles: readonly Role[]): boolean 
   return (INVOICE_EDITABLE_STATUSES as readonly string[]).includes(status);
 }
 
+/** LOW recognition confidence — "low" (or unknown/null) confidence blocks payment
+ * until the accountant/owner reviews and saves the extracted "Данные счёта".
+ * medium / high pass. Categorical (invoice.confidence is low | medium | high). */
+export function isLowConfidence(confidence: string | null | undefined): boolean {
+  return confidence !== "high" && confidence !== "medium";
+}
+
+// Statuses in which the AI-extracted data may still be reviewed/corrected before or
+// after payment. rejected / canceled are terminal — nothing to review.
+export const INVOICE_REVIEW_DATA_STATUSES = [
+  "draft", "needs_review", "needs_correction", "approved_by_regional",
+  "approved_by_chief_accountant", "approved_by_owner", "paid",
+] as const;
+
+/** Who may edit + mark-reviewed the AI-extracted invoice data ("Данные счёта"): the
+ * accounting contour (accountant / chief accountant) and the owner. NOT manager,
+ * regional director, general director or marketer — no new edit rights are granted. */
+export function canReviewInvoiceData(roles: readonly Role[]): boolean {
+  return has(roles, "accountant") || roles.includes("owner");
+}
+
+/** Extract ONLY the human-readable AI warnings from the stored raw extraction blob.
+ * Never exposes any other raw content (no prompt, no model text, no other keys).
+ * Returns a safe, trimmed, deduped string[] (bounded). */
+export function parseInvoiceWarnings(rawExtractedJson: string | null | undefined): string[] {
+  if (!rawExtractedJson) return [];
+  try {
+    const obj = JSON.parse(rawExtractedJson) as { warnings?: unknown };
+    if (!Array.isArray(obj?.warnings)) return [];
+    return [...new Set(obj.warnings.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((s) => s.trim()))].slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
 export type InvoiceWithClub = Invoice & {
   club: { id: string; name: string; city: string };
 };
