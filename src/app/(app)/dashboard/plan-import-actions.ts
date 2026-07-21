@@ -8,6 +8,7 @@ import { normalizeMonth } from "@/lib/sales-plans";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import { PUBLIC_IMPORT_DISABLED_MESSAGE, auditBlockedFeature } from "@/lib/disabled-features";
 import { parsePlanSheet, buildPlanPreview, type PlanPreviewRow } from "@/lib/imports/plan-import";
+import { WorkbookLimitError } from "@/lib/excel-import";
 
 // The old public bulk import stays disabled; the owner/GD template import below is
 // the supported flow (download template → upload → preview → confirm).
@@ -43,7 +44,13 @@ export async function previewPlanImport(_prev: PlanImportState | undefined, form
   if (!isUploadedFile(file)) return { ok: false, error: "Прикрепите файл шаблона (XLSX/CSV)." };
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const { rows: raw, missing } = parsePlanSheet(buffer);
+  let raw: ReturnType<typeof parsePlanSheet>["rows"];
+  let missing: string[];
+  try {
+    ({ rows: raw, missing } = parsePlanSheet(buffer));
+  } catch (e) {
+    return { ok: false, error: e instanceof WorkbookLimitError ? e.message : "Не удалось прочитать файл.", month };
+  }
   if (missing.length) return { ok: false, error: `В файле нет колонок: ${missing.join(", ")}.`, month };
   if (raw.length === 0) return { ok: false, error: "В файле нет строк с данными.", month };
 

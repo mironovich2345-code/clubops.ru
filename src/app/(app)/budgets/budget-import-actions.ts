@@ -7,10 +7,20 @@ import { canImportPlansAndBudgets } from "@/lib/auth";
 import { normalizeMonth } from "@/lib/sales-plans";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import { BUDGET_CATEGORIES, budgetCategoryLabel } from "@/lib/budgets";
+import { getCompanyOwnedExpenseCategories } from "@/lib/expense-categories";
 import { parseBudgetSheet, buildBudgetPreview, type BudgetPreviewRow } from "@/lib/imports/budget-import";
+import { WorkbookLimitError } from "@/lib/excel-import";
 
-const CATEGORIES = BUDGET_CATEGORIES.map((c) => ({ key: c.key, label: budgetCategoryLabel(c.key) }));
-const CATEGORY_KEYS = new Set(CATEGORIES.map((c) => c.key));
+// System (code-defined) budget categories — shared by every company.
+const SYSTEM_CATEGORIES = BUDGET_CATEGORIES.map((c) => ({ key: c.key, label: budgetCategoryLabel(c.key) }));
+
+// The categories a company may import budgets for = SYSTEM categories + the
+// company's OWN active custom categories. A category from another company is never
+// included, so budget import can never accept a foreign category (test isolation).
+async function importableCategories(companyId: string): Promise<{ key: string; label: string }[]> {
+  const own = (await getCompanyOwnedExpenseCategories(companyId)).map((c) => ({ key: c.key, label: c.name }));
+  return [...SYSTEM_CATEGORIES, ...own];
+}
 
 export type BudgetImportState = {
   ok: boolean;
@@ -38,13 +48,20 @@ export async function previewBudgetImport(_prev: BudgetImportState | undefined, 
   if (!isUploadedFile(file)) return { ok: false, error: "Прикрепите файл шаблона (XLSX/CSV)." };
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const { rows: raw, missing } = parseBudgetSheet(buffer);
+  let raw: ReturnType<typeof parseBudgetSheet>["rows"];
+  let missing: string[];
+  try {
+    ({ rows: raw, missing } = parseBudgetSheet(buffer));
+  } catch (e) {
+    return { ok: false, error: e instanceof WorkbookLimitError ? e.message : "Не удалось прочитать файл.", month };
+  }
   if (missing.length) return { ok: false, error: `В файле нет колонок: ${missing.join(", ")}.`, month };
   if (raw.length === 0) return { ok: false, error: "В файле нет строк с данными.", month };
 
   const clubs = await scopeClubs(ctx.selectedCompanyId, ctx.allowedClubIds);
   const budgets = await prisma.budget.findMany({ where: { companyId: ctx.selectedCompanyId, month, clubId: { in: clubs.map((c) => c.id) } }, select: { clubId: true, category: true, limitAmountKopeks: true } });
-  const { rows, anyError } = buildBudgetPreview({ rawRows: raw, scopeClubs: clubs, categories: CATEGORIES, currentBudgets: budgets.map((b) => ({ clubId: b.clubId, category: b.category, limitKopeks: b.limitAmountKopeks })), month });
+  const categories = await importableCategories(ctx.selectedCompanyId);
+  const { rows, anyError } = buildBudgetPreview({ rawRows: raw, scopeClubs: clubs, categories, currentBudgets: budgets.map((b) => ({ clubId: b.clubId, category: b.category, limitKopeks: b.limitAmountKopeks })), month });
   return { ok: true, month, preview: rows, anyError };
 }
 
@@ -68,9 +85,11 @@ export async function applyBudgetImport(_prev: BudgetImportState | undefined, fo
   if (payload.length === 0) return { ok: false, error: "Нет строк для применения." };
 
   const allowed = new Set(ctx.allowedClubIds);
+  // Accept only SYSTEM categories or THIS company's own — never another company's.
+  const categoryKeys = new Set((await importableCategories(companyId)).map((c) => c.key));
   for (const r of payload) {
     if (!r || typeof r.clubId !== "string" || !allowed.has(r.clubId)) return { ok: false, error: "Клуб вне вашего доступа." };
-    if (typeof r.category !== "string" || !CATEGORY_KEYS.has(r.category)) return { ok: false, error: "Неверная статья бюджета." };
+    if (typeof r.category !== "string" || !categoryKeys.has(r.category)) return { ok: false, error: "Неверная статья бюджета." };
     if (!Number.isInteger(r.kopeks) || r.kopeks < 0) return { ok: false, error: "Некорректная сумма." };
   }
   const validClubIds = new Set((await prisma.club.findMany({ where: { companyId, id: { in: payload.map((r) => r.clubId) } }, select: { id: true } })).map((c) => c.id));

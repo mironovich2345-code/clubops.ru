@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getCurrentAccessContext, userHasClubRole } from "@/lib/access";
+import { getCurrentAccessContext, userHasClubRole, userHasDirectClubRole } from "@/lib/access";
 import { canCreateOperational } from "@/lib/auth";
 import { monthClosedError } from "@/lib/month-close";
 import { resolveActiveIpForClub } from "@/lib/expense-simplified";
@@ -200,9 +200,12 @@ export async function confirmTransferAction(_p: State | undefined, formData: For
       return { ok: false, error: "Подтвердить получение может только адресат перевода." };
     }
   } else if (m.toWallet?.type === WALLET_CLUB) {
-    // Директор → Клуб: only a manager of THIS club (a regional cannot confirm).
-    if (!(await userHasClubRole(c.ctx.user.id, c.clubId, ["manager"]))) {
-      return { ok: false, error: "Подтвердить получение клубом может только управляющий." };
+    // Директор → Клуб: only a DIRECT manager of THIS club may confirm receipt. A
+    // regional director — even the one who created the transfer, and even though
+    // ROLE_IMPLICATIONS makes regional imply manager — is NOT a direct manager and
+    // cannot self-confirm. userHasDirectClubRole ignores role implications.
+    if (!(await userHasDirectClubRole(c.ctx.user.id, c.clubId, "manager"))) {
+      return { ok: false, error: "Получение денег может подтвердить только управляющий соответствующего клуба." };
     }
   } else {
     return { ok: false, error: "Неверное направление." };

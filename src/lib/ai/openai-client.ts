@@ -26,34 +26,53 @@ export function aiTimeoutMs(): number {
 // "mock"  — safe default, no external calls.
 export type AiProvider = "yandex" | "openai" | "ru_ai" | "mock";
 
-let warnedOpenAiInProd = false;
-
-/** Logs the legal-basis warning once when OpenAI is enabled in production. */
-function warnOpenAiInProduction(): void {
-  if (warnedOpenAiInProd) return;
-  if (process.env.NODE_ENV === "production") {
-    console.warn("OpenAI is enabled. Do not process personal data without legal basis.");
-    warnedOpenAiInProd = true;
-  }
+export function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production";
 }
 
 /**
- * Selects the AI provider from the environment:
- *  - "openai" only when AI_PROVIDER=openai and OPENAI_API_KEY is set (dev/test).
- *  - "ru_ai"  when AI_PROVIDER=ru_ai with RU_AI_ENDPOINT + RU_AI_API_KEY set
- *    (production target; currently a placeholder — see ru-ai-client notes).
+ * POLICY: OpenAI is FORBIDDEN in production (RU data-residency). It is a dev/test
+ * provider only. This is true precisely when an operator has misconfigured
+ * AI_PROVIDER=openai in production — surfaced by health/diagnostics via a safe
+ * code, and enforced by selectedAiProvider() (never returns "openai" in prod) AND
+ * by the OpenAI HTTP client (unreachable in prod). No key/document is ever sent.
+ */
+export function openAiForbiddenInProduction(): boolean {
+  return isProductionRuntime() && process.env.AI_PROVIDER === "openai";
+}
+
+/** Safe diagnostic code for /api/health — never a key, secret or document. */
+export function aiProviderDiagnostic(): string | null {
+  if (openAiForbiddenInProduction()) return "openai_forbidden_in_production";
+  return null;
+}
+
+let warnedOpenAiBlocked = false;
+function warnOpenAiBlockedOnce(): void {
+  if (warnedOpenAiBlocked) return;
+  warnedOpenAiBlocked = true;
+  console.warn("[ai-policy] AI_PROVIDER=openai is not permitted in production — using mock (no data leaves RU). Set AI_PROVIDER=yandex.");
+}
+
+/**
+ * Selects the AI provider from the environment with the production OpenAI ban:
+ *  - "yandex" when AI_PROVIDER=yandex and its key + folder id are set (RU prod).
+ *  - "openai" only OUTSIDE production and when AI_PROVIDER=openai + OPENAI_API_KEY.
+ *    In production this is NEVER selected — it degrades to "mock" (documents stay
+ *    in RU; the analyzer surfaces manual/unavailable, no OpenAI HTTP call).
+ *  - "ru_ai"  when AI_PROVIDER=ru_ai with RU_AI_ENDPOINT + RU_AI_API_KEY set.
  *  - "mock"   otherwise (safe default).
  */
 export function selectedAiProvider(): AiProvider {
-  // Yandex (RU production): requires the API key AND the folder id. When
-  // AI_PROVIDER=yandex but these are missing, this falls through to "mock" so the
-  // app never crashes — the analyzer surfaces a clear "not configured" outcome in
-  // production and a plain mock in dev/test.
   if (process.env.AI_PROVIDER === "yandex" && process.env.YANDEX_AI_API_KEY && process.env.YANDEX_FOLDER_ID) {
     return "yandex";
   }
   if (process.env.AI_PROVIDER === "openai" && process.env.OPENAI_API_KEY) {
-    warnOpenAiInProduction();
+    if (isProductionRuntime()) {
+      // Fail-closed: OpenAI is never selected in production.
+      warnOpenAiBlockedOnce();
+      return "mock";
+    }
     return "openai";
   }
   if (process.env.AI_PROVIDER === "ru_ai" && process.env.RU_AI_ENDPOINT && process.env.RU_AI_API_KEY) {
@@ -80,6 +99,13 @@ export type VisionCall =
  * warning (bad JSON), or fall back to the mock (network/HTTP errors).
  */
 async function chatCompletion(messages: unknown[], model: string, timeoutMs: number): Promise<VisionCall> {
+  // HARD fail-closed: the OpenAI HTTP client is UNREACHABLE in production. No network
+  // request is made, no document / image / OCR text / key ever leaves the process.
+  // Defence-in-depth beyond selectedAiProvider() (which also never returns "openai"
+  // in prod). RU data-residency: OpenAI is a dev/test provider only.
+  if (isProductionRuntime()) {
+    return { ok: false, reason: "config", raw: "", message: "openai_forbidden_in_production" };
+  }
   const key = process.env.OPENAI_API_KEY;
   if (!key) return { ok: false, reason: "config", raw: "", message: "OPENAI_API_KEY missing" };
 

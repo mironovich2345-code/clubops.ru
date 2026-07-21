@@ -1,23 +1,24 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { resolveSecret } from "@/lib/env-secrets";
 
 // Email OTP crypto + policy. The plaintext code is NEVER stored or logged; only
 // an HMAC digest keyed by OTP_SECRET is persisted. A 6-digit code has low
 // entropy, so the digest is salted by the per-challenge token hash and the key
 // is a dedicated secret (not SESSION_SECRET / SMTP password / DB password).
+// Production requires OTP_SECRET to be present AND >= 32 chars.
 
 export const OTP_LENGTH = 6;
 export const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 export const OTP_MAX_ATTEMPTS = 5;
 export const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
 export const OTP_MAX_SENDS_PER_HOUR = 5;
+export const OTP_SECRET_MIN_LENGTH = 32;
 
 function otpSecret(): string {
-  const secret = process.env.OTP_SECRET;
-  if (secret) return secret;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("OTP_SECRET is required in production");
-  }
-  return "dev-insecure-otp-secret";
+  return resolveSecret("OTP_SECRET", {
+    minLength: OTP_SECRET_MIN_LENGTH,
+    devFallback: "dev-insecure-otp-secret-not-for-production-use-only-x",
+  });
 }
 
 /** Cryptographically secure numeric OTP (leading zeroes preserved). */

@@ -1,4 +1,8 @@
-# Production-like stack for self-hosted / RU deployment.
+# NON-CANONICAL local/self-hosted convenience stack. NOT for internet-facing
+# production — it does not front the app with a hardened TLS reverse proxy by
+# default. The CANONICAL, hardened production stack is deploy/docker-compose.prod.yml
+# (Caddy-only ingress on 80/443, app + postgres are internal-only, one-shot migrate
+# service). Use THIS file only for a local run or behind your own trusted proxy.
 #
 #   cp .env.production.example .env.production   # fill in real values
 #   docker compose -f docker-compose.production.yml up -d --build
@@ -47,8 +51,11 @@ services:
     # uploads/ persists only when STORAGE_PROVIDER=local. Prefer S3 in prod.
     volumes:
       - club_ops_uploads:/app/uploads
+    # Bound to LOCALHOST only — never published on all interfaces. Public ingress
+    # must go through a TLS reverse proxy (Caddy in the canonical stack / the nginx
+    # profile here), not by exposing the app port to the internet.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1"]
       interval: 30s

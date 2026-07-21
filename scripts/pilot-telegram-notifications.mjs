@@ -246,14 +246,14 @@ async function main() {
   const health = readFileSync(new URL("../src/app/api/health/route.ts", import.meta.url), "utf8");
 
   check("S1 raw code never stored — only hashToken(code)", linking.includes("hashToken(code)") && linking.includes("codeHash") && !linking.includes("data: { userId, code,"));
-  check("S13 webhook checks X-Telegram-Bot-Api-Secret-Token and 403s", webhook.includes('req.headers.get("x-telegram-bot-api-secret-token")') && webhook.includes("status: 403") && webhook.includes("!secret || header !== secret"));
+  check("S13 webhook checks X-Telegram-Bot-Api-Secret-Token (timing-safe) and 403s", webhook.includes('req.headers.get("x-telegram-bot-api-secret-token")') && webhook.includes("status: 403") && webhook.includes('secretEquals(req.headers.get("x-telegram-bot-api-secret-token")'));
   check("S14 webhook handles /start [code] and /help only, never logs payload", webhook.includes("consumeLinkCode(code") && webhook.includes("/help") && !webhook.includes("console."));
   check("S15 linking audit carries no raw code/hash/payload", linking.includes('action: "telegram.linked"') && linking.includes('action: "telegram.link_failed"') && !/metadata:\s*\{[^}]*(code|Hash|payload)/i.test(linking));
   check("S-client Telegram client plain-text, no Markdown, token never logged", client.includes("disable_web_page_preview") && !client.includes("parse_mode") && !client.includes("console.") && client.includes("AbortSignal.timeout"));
   check("S-client status mapping (400/403/429/5xx)", client.includes('code: "http_400"') && client.includes('code: "blocked"') && client.includes('code: "rate_limited"') && client.includes("retry_after"));
   check("S-outbox drain no-op when not configured + console-free", outbox.includes("if (!telegramConfigured()) return counts") && !outbox.includes("console."));
   check("S-outbox 403→blocked, 400→failed, retry backoff + max attempts", outbox.includes("blockedAt: new Date()") && outbox.includes("NOTIFICATION_MAX_ATTEMPTS") && outbox.includes("backoffMs"));
-  check("S-drain endpoint requires Bearer secret + returns counts only", drainRoute.includes("Bearer ${secret}") && drainRoute.includes("status: 401") && drainRoute.includes("drainNotificationOutbox") && !drainRoute.includes("chatId"));
+  check("S-drain endpoint requires Bearer secret (timing-safe) + returns counts only", drainRoute.includes('bearerEquals(req.headers.get("authorization")') && drainRoute.includes("status: 401") && drainRoute.includes("drainNotificationOutbox") && !drainRoute.includes("chatId"));
   check("S-payload builder safe (APP_URL link, no requisite field refs)", tgmsg.includes("absoluteUrlSafe") && !tgmsg.includes("bankAccount") && !tgmsg.includes("clientName") && !tgmsg.includes("correctionReason") && !tgmsg.includes("regionalCorrectionComment"));
   check("S-events never throw + telegramEnabled gate + self-exclusion", events.includes("if (!telegramEnabled()) return") && events.includes("authorUserId === params.actorUserId") && events.includes("catch"));
   check("S-events safe payload only (resourceType/clubName/amountKopeks)", events.includes("payload: { resourceType: params.resourceType, clubName: name, amountKopeks:"));

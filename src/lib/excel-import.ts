@@ -34,19 +34,63 @@ export const DUPLICATE_ROW_ISSUE = "Похоже, такая запись уже
 export const norm = (v: unknown) =>
   String(v ?? "").trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
 
+// Hard bounds around the xlsx parser (defence against prototype-pollution / ReDoS /
+// decompression-bomb inputs — see docs/audits security review of `xlsx` 0.18.5).
+// A file exceeding any bound is rejected with a controlled, stack-trace-free error.
+export const MAX_WORKBOOK_BYTES = 5 * 1024 * 1024; // 5 MB
+export const MAX_WORKBOOK_SHEETS = 8;
+export const MAX_WORKBOOK_ROWS = 5000;
+export const MAX_WORKBOOK_COLS = 64;
+
+/** Thrown when an uploaded workbook is too large/complex or cannot be parsed.
+ * The message is user-safe (no stack trace, no library internals). */
+export class WorkbookLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkbookLimitError";
+  }
+}
+
 /**
- * Read the first worksheet as an array-of-arrays (header row included).
- * Handles .xlsx/.xls (ZIP archives, magic "PK") and .csv (UTF-8 text, so
- * Cyrillic headers survive).
+ * Read the first worksheet as an array-of-arrays (header row included), bounded.
+ * Handles .xlsx/.xls (ZIP archives, magic "PK") and .csv (UTF-8 text). Throws a
+ * WorkbookLimitError on an oversized/too-complex/malformed file — never a raw
+ * parser error/stack trace.
  */
 export function readSheetRows(buffer: Buffer): unknown[][] {
+  if (buffer.length > MAX_WORKBOOK_BYTES) {
+    throw new WorkbookLimitError("Файл слишком большой для импорта (максимум 5 МБ).");
+  }
   const isZip = buffer.length > 1 && buffer[0] === 0x50 && buffer[1] === 0x4b;
-  const wb = isZip
-    ? XLSX.read(buffer, { type: "buffer", cellDates: true })
-    : XLSX.read(buffer.toString("utf8"), { type: "string", cellDates: true });
+  let wb: XLSX.WorkBook;
+  try {
+    wb = isZip
+      ? XLSX.read(buffer, { type: "buffer", cellDates: true, sheetRows: MAX_WORKBOOK_ROWS + 1 })
+      : XLSX.read(buffer.toString("utf8"), { type: "string", cellDates: true, sheetRows: MAX_WORKBOOK_ROWS + 1 });
+  } catch {
+    throw new WorkbookLimitError("Не удалось прочитать файл. Проверьте формат (XLSX или CSV).");
+  }
+  if (wb.SheetNames.length > MAX_WORKBOOK_SHEETS) {
+    throw new WorkbookLimitError("В файле слишком много листов.");
+  }
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) return [];
-  return XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, blankrows: false });
+  // Bound the declared range BEFORE materializing rows (guards a huge !ref).
+  const ref = ws["!ref"];
+  if (ref) {
+    try {
+      const range = XLSX.utils.decode_range(ref);
+      const rows = range.e.r - range.s.r + 1;
+      const cols = range.e.c - range.s.c + 1;
+      if (rows > MAX_WORKBOOK_ROWS) throw new WorkbookLimitError("В файле слишком много строк (максимум 5000).");
+      if (cols > MAX_WORKBOOK_COLS) throw new WorkbookLimitError("В файле слишком много колонок.");
+    } catch (e) {
+      if (e instanceof WorkbookLimitError) throw e;
+      throw new WorkbookLimitError("Не удалось прочитать структуру файла.");
+    }
+  }
+  const out = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, blankrows: false });
+  return out.slice(0, MAX_WORKBOOK_ROWS);
 }
 
 const EXCEL_EPOCH = Date.UTC(1899, 11, 30);

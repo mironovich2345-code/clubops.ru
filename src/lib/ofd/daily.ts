@@ -7,6 +7,7 @@
 // the others continue. The HTTP wrapper lives in the route; the auth check and
 // the run loop are pure/injectable here so they are unit-testable.
 import { prisma } from "@/lib/prisma";
+import { bearerEquals, secretEquals } from "@/lib/secure-compare";
 import { importTaxcomSalesForPeriod } from "@/lib/ofd/importer";
 
 /** CRON_SECRET (never the value in any response). */
@@ -51,7 +52,7 @@ export function authorizeOfdCron(p: OfdCronAuthInput): OfdCronAuthResult {
   if (p.method !== "POST") return { ok: false, status: 405, error: "method_not_allowed" };
   if (!p.enabled) return { ok: false, status: 503, error: "ofd_integrations_disabled" };
   if (!p.secret) return { ok: false, status: 503, error: "cron_secret_not_configured" };
-  const matches = p.authorization === `Bearer ${p.secret}` || p.cronHeader === p.secret;
+  const matches = bearerEquals(p.authorization, p.secret) || secretEquals(p.cronHeader, p.secret);
   if (!matches) return { ok: false, status: 401, error: "unauthorized" };
   return { ok: true };
 }

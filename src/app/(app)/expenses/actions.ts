@@ -30,6 +30,7 @@ import {
   type UploadErrorCode,
   type UploadStage,
 } from "@/lib/upload-errors";
+import { isRateLimited } from "@/lib/rate-limit";
 
 type AnalyzeState = {
   ok: boolean;
@@ -158,6 +159,11 @@ export async function uploadAndAnalyzeExpense(
       // Manual entry (no file): return empty structure to fill by hand.
       return { ok: true, clubId, extraction: manualExpenseExtraction() };
     }
+
+    // Cost-abuse guard: cap AI document-analysis per user AND per company before any
+    // external AI call (a file IS attached here).
+    if (await isRateLimited("ai_analyze", "user", ctx.user.id)) return fail("RATE_LIMITED", "validate");
+    if (ctx.selectedCompanyId && (await isRateLimited("ai_analyze_company", "company", ctx.selectedCompanyId))) return fail("RATE_LIMITED", "validate");
 
     const fileCode = validateExpenseFile(file);
     if (fileCode) return fail(fileCode, "validate");

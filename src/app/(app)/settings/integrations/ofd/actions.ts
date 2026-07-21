@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
+import { isRateLimited } from "@/lib/rate-limit";
 import { ofdEnabled, ofdSecretPresent } from "@/lib/ofd/config";
 import { encryptOfdSecret, decryptOfdSecret } from "@/lib/ofd/crypto";
 import { importTaxcomSalesForPeriod, reclassifyOfdReceiptItemsForCompany, type ImportMode } from "@/lib/ofd/importer";
@@ -397,6 +398,13 @@ export async function runOfdImport(_p: State | undefined, formData: FormData): P
 export async function syncOfdNowAction(_p: State | undefined, _formData: FormData): Promise<State> {
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
+
+  // Manual-sync cooldown: at most one per company per 5 minutes. The importer's
+  // per-connection concurrency guard still applies; the daily CRON is NOT limited
+  // (it uses the secret-gated route, not this user action).
+  if (await isRateLimited("ofd_sync_now", "company", g.companyId)) {
+    return { ok: false, error: "Синхронизация запускалась недавно. Повторите через несколько минут." };
+  }
 
   const result = await runSyncNowForCompany(g.companyId);
   await recordAudit({ action: "ofd.sync_now", entityType: "OfdConnection", companyId: g.companyId, userId: g.userId, metadata: { date: result.date, processedConnections: result.processedConnections, succeeded: result.succeeded, failed: result.failed, found: result.totals.foundReceipts, imported: result.totals.importedReceipts, skipped: result.totals.skippedReceipts } });

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage } from "@/lib/auth";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
+import { getCurrentSystemAdmin } from "@/lib/system-role";
 import {
   assertLegalEntityAvailableForClub,
   type LegalEntityType,
@@ -58,28 +59,33 @@ export async function createCompany(
   _prev: State | undefined,
   formData: FormData,
 ): Promise<State> {
-  const ctx = await getCurrentAccessContext();
-  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "settings")) {
-    return { ok: false, error: "Нет доступа" };
+  // Creating a NEW Company from the working app is a SYSTEM-ADMIN-ONLY operation.
+  // Tenant roles — including an owner of an existing company — must never create
+  // additional companies here (a direct action call / role or companyId spoof is
+  // rejected server-side). First-time customer onboarding is a separate, self-
+  // limiting path (completeOnboarding, only for a user with no access yet).
+  const admin = await getCurrentSystemAdmin();
+  if (!admin) {
+    return { ok: false, error: "Создание новой организации доступно только администратору платформы." };
   }
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { ok: false, error: "Укажите название организации" };
 
-  // New company -> the creator becomes its owner.
+  // The system admin bootstraps the company + its first owner grant.
   const company = await prisma.$transaction(async (tx) => {
     const c = await tx.company.create({ data: { name } });
     await tx.companyUserAccess.create({
-      data: { companyId: c.id, userId: ctx.user.id, role: "owner" },
+      data: { companyId: c.id, userId: admin.id, role: "owner" },
     });
     return c;
   });
 
   await recordAudit({
-    action: "company.created",
+    action: "company.created_by_system_admin",
     entityType: "Company",
     entityId: company.id,
     companyId: company.id,
-    userId: ctx.user.id,
+    userId: admin.id,
     metadata: { name },
   });
 

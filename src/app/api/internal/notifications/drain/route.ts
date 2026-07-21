@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { notificationDrainSecret } from "@/lib/telegram/config";
+import { bearerEquals } from "@/lib/secure-compare";
 import { drainNotificationOutbox } from "@/lib/notifications/outbox";
 
 export const dynamic = "force-dynamic";
@@ -9,8 +10,8 @@ export const dynamic = "force-dynamic";
 // notification text or chat ids. Without a configured secret it refuses access.
 export async function POST(req: Request) {
   const secret = notificationDrainSecret();
-  const auth = req.headers.get("authorization") ?? "";
-  if (!secret || auth !== `Bearer ${secret}`) {
+  // Fail-closed + constant-time: a missing server secret or wrong Bearer → 401.
+  if (!bearerEquals(req.headers.get("authorization"), secret)) {
     return new NextResponse("unauthorized", { status: 401 });
   }
   const counts = await drainNotificationOutbox(50);

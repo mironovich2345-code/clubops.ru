@@ -77,13 +77,15 @@ async function loadForAction(expenseId: string) {
 // an error. The payer is NOT read here — it is the authenticated user (set by
 // the create action). No "shopping list" field anymore (legacy column kept, not
 // required for new cash expenses).
-async function parseFields(formData: FormData) {
+async function parseFields(formData: FormData, companyId: string) {
   const categoryKey = String(formData.get("category") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "");
   const dateRaw = String(formData.get("expenseDate") ?? "").trim();
   const comment = String(formData.get("comment") ?? "").trim();
 
-  if (!categoryKey || !(await isActiveExpenseCategoryKey(categoryKey))) return { error: E.CATEGORY_DISABLED };
+  // Category must be a SYSTEM category or THIS company's own active category — a
+  // key from another company (or a disabled/foreign one) is rejected.
+  if (!categoryKey || !(await isActiveExpenseCategoryKey(categoryKey, companyId))) return { error: E.CATEGORY_DISABLED };
   // Stable-key gate: taxes/rent/builders are never paid in cash (v2 form only).
   if (isCashForbiddenCategory(categoryKey)) return { error: E.CATEGORY_NOT_CASH };
   const amt = parseRublesToKopeks(amountRaw);
@@ -107,7 +109,7 @@ export async function createSimplifiedExpenseDraft(_prev: CreateState | undefine
   const clubId = ctx.selectedClubId ?? (ctx.allowedClubIds.length === 1 ? ctx.allowedClubIds[0] : null);
   if (!companyId || !clubId || !ctx.allowedClubIds.includes(clubId)) return { ok: false, error: "Выберите клуб." };
 
-  const fields = await parseFields(formData);
+  const fields = await parseFields(formData, companyId);
   if ("error" in fields) return { ok: false, error: fields.error };
 
   const closed = await monthClosedError(companyId, clubId, fields.expenseDate);
@@ -153,7 +155,7 @@ export async function updateSimplifiedExpense(_prev: State | undefined, formData
   const closed = await monthClosedError(expense.companyId, expense.clubId, expense.expenseDate);
   if (closed) return { ok: false, error: E.MONTH_CLOSED };
 
-  const fields = await parseFields(formData);
+  const fields = await parseFields(formData, expense.companyId);
   if ("error" in fields) return { ok: false, error: fields.error };
   const closedNew = await monthClosedError(expense.companyId, expense.clubId, fields.expenseDate);
   if (closedNew) return { ok: false, error: E.MONTH_CLOSED };
@@ -182,7 +184,7 @@ export async function submitExpense(_prev: State | undefined, formData: FormData
   if (!canSubmitExpense(expense, actor)) return { ok: false, error: E.NOT_EDITABLE };
   const closed = await monthClosedError(expense.companyId, expense.clubId, expense.expenseDate);
   if (closed) return { ok: false, error: E.MONTH_CLOSED };
-  if (!(await isActiveExpenseCategoryKey(expense.category))) return { ok: false, error: E.CATEGORY_DISABLED };
+  if (!(await isActiveExpenseCategoryKey(expense.category, expense.companyId))) return { ok: false, error: E.CATEGORY_DISABLED };
   // v2 cash defense: never submit a cash expense in a non-cash category.
   if (expense.entryVersion === 2 && isCashForbiddenCategory(expense.category)) return { ok: false, error: E.CATEGORY_NOT_CASH };
   if ((await activeDocumentCount(expenseId)) < 1) return { ok: false, error: E.NO_DOC };

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { deploymentVersion } from "@/lib/deployment-version";
 import { storageProviderName } from "@/lib/storage";
 import { emailConfigured } from "@/lib/email";
-import { selectedAiProvider } from "@/lib/ai/openai-client";
+import { selectedAiProvider, aiProviderDiagnostic } from "@/lib/ai/openai-client";
 import { telegramHealth } from "@/lib/telegram/config";
 import { ofdHealth } from "@/lib/ofd/config";
 
@@ -23,7 +23,9 @@ export function GET() {
   // provider is fully wired (or when none was requested).
   const requested = process.env.AI_PROVIDER || "mock";
   const effective = selectedAiProvider();
-  const ai = { requested, effective, configured: requested === "mock" ? true : requested === effective };
+  // `policy` is a SAFE config-issue code (never a key/secret/document), e.g.
+  // "openai_forbidden_in_production" when an operator set AI_PROVIDER=openai in prod.
+  const ai = { requested, effective, configured: requested === "mock" ? true : requested === effective, policy: aiProviderDiagnostic() };
 
   return NextResponse.json(
     { status: "ok", service: "club-ops", time: new Date().toISOString(), ...deploymentVersion(), storage: storageProviderName(), email: emailConfigured() ? "configured" : "absent", ai, telegram: telegramHealth(), ofd: ofdHealth() },

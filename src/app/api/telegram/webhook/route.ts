@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { telegramWebhookSecret } from "@/lib/telegram/config";
+import { secretEquals } from "@/lib/secure-compare";
 import { consumeLinkCode } from "@/lib/telegram/linking";
 import { answerTelegramWebhookMessage } from "@/lib/telegram/client";
 
@@ -11,8 +12,8 @@ export const dynamic = "force-dynamic";
 // and /help are handled — anything else gets a short hint.
 export async function POST(req: Request) {
   const secret = telegramWebhookSecret();
-  const header = req.headers.get("x-telegram-bot-api-secret-token");
-  if (!secret || header !== secret) {
+  // Fail-closed + constant-time: no server secret or wrong header → 403.
+  if (!secretEquals(req.headers.get("x-telegram-bot-api-secret-token"), secret)) {
     return new NextResponse("forbidden", { status: 403 });
   }
 

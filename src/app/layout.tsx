@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { getAppUrlSafe } from "@/lib/app-url";
 import "./globals.css";
 
@@ -32,11 +33,14 @@ export const viewport: Viewport = {
 // light | dark | system (default system → follows the OS). Never touches auth/session.
 const THEME_INIT = `(function(){try{var t=localStorage.getItem('theme')||'system';var m=window.matchMedia('(prefers-color-scheme: dark)').matches;var d=t==='dark'||(t==='system'&&m);var e=document.documentElement;e.classList.toggle('dark',d);e.setAttribute('data-theme',d?'dark':'light');e.style.colorScheme=d?'dark':'light';}catch(e){}})();`;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Per-request CSP nonce (set by src/middleware.ts). Applying it to the static
+  // theme-init script lets us drop 'unsafe-inline' from script-src.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="ru" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
       </head>
       <body>{children}</body>
     </html>

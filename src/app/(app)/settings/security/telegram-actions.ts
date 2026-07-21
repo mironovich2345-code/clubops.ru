@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { createLinkCodeForUser, unlinkTelegramForUser } from "@/lib/telegram/linking";
 import { telegramBotUsername, telegramEnabled } from "@/lib/telegram/config";
+import { isRateLimited, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
 
 type LinkState = { ok: boolean; error?: string; code?: string; startUrl?: string; expiresAt?: string };
 
@@ -11,6 +12,9 @@ type LinkState = { ok: boolean; error?: string; code?: string; startUrl?: string
 export async function createTelegramLinkCode(_prev: LinkState | undefined): Promise<LinkState> {
   const user = await requireUser();
   if (!telegramEnabled()) return { ok: false, error: "Telegram-уведомления сейчас недоступны." };
+  // Cap link-code creation per user (5/hour). The single-active-code + TTL invariant
+  // in linking.ts is preserved.
+  if (await isRateLimited("telegram_link", "user", user.id)) return { ok: false, error: RATE_LIMIT_MESSAGE };
   try {
     const { code, expiresAt } = await createLinkCodeForUser(user.id);
     const username = telegramBotUsername();

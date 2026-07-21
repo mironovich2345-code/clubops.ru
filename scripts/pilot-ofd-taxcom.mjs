@@ -591,7 +591,10 @@ async function main() {
   const localYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const ofdYesterday = (now) => localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
   const ofdToday = (now) => localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
-  const authorizeOfdCron = new Function("p", dailySrc.match(/export function authorizeOfdCron\(p: OfdCronAuthInput\): OfdCronAuthResult \{([\s\S]*?)\n\}/)[1]);
+  // The real body now calls the timing-safe helpers (secure-compare.ts); inject
+  // correctness-equivalent mirrors so the extracted body runs standalone.
+  const cmpHelpers = 'const bearerEquals=(h,e)=>typeof e==="string"&&e.length>0&&typeof h==="string"&&h==="Bearer "+e; const secretEquals=(p,e)=>typeof e==="string"&&e.length>0&&p===e;';
+  const authorizeOfdCron = new Function("p", cmpHelpers + dailySrc.match(/export function authorizeOfdCron\(p: OfdCronAuthInput\): OfdCronAuthResult \{([\s\S]*?)\n\}/)[1]);
   const SECRET = "cron-secret-xyz";
   const authOk = { method: "POST", authorization: `Bearer ${SECRET}`, cronHeader: null, enabled: true, secret: SECRET };
   check("CR1 non-POST → 405 method_not_allowed", authorizeOfdCron({ ...authOk, method: "GET" }).status === 405 && authorizeOfdCron({ ...authOk, method: "PUT" }).status === 405);
@@ -1294,7 +1297,7 @@ async function main() {
   check("T-S11d mapping_check runs BEFORE the ShiftList loop (fail fast)", importer.indexOf('"mapping_check"') < importer.indexOf("client.listShifts(") && importer.indexOf("mappings.length === 0") < importer.indexOf("for (const m of mappings)"));
   // --- Daily auto-import cron (real source) ---
   check("T-S12 route POST /api/cron/ofd/daily: authorizeOfdCron + runDailyOfdImport, no-store, only POST exported", cronRoute.includes("export async function POST") && !cronRoute.includes("export async function GET") && cronRoute.includes("authorizeOfdCron") && cronRoute.includes("runDailyOfdImport") && cronRoute.includes('req.headers.get("authorization")') && cronRoute.includes('req.headers.get("x-cron-secret")') && cronRoute.includes("Cache-Control"));
-  check("T-S12b daily lib: auth order method(405)/disabled(503)/no-secret(503)/wrong(401); Bearer or X-Cron-Secret", dailyLib.includes('status: 405, error: "method_not_allowed"') && dailyLib.includes('status: 503, error: "ofd_integrations_disabled"') && dailyLib.includes('status: 503, error: "cron_secret_not_configured"') && dailyLib.includes('status: 401, error: "unauthorized"') && dailyLib.includes("`Bearer ${p.secret}`") && dailyLib.includes("p.cronHeader === p.secret"));
+  check("T-S12b daily lib: auth order method(405)/disabled(503)/no-secret(503)/wrong(401); Bearer or X-Cron-Secret", dailyLib.includes('status: 405, error: "method_not_allowed"') && dailyLib.includes('status: 503, error: "ofd_integrations_disabled"') && dailyLib.includes('status: 503, error: "cron_secret_not_configured"') && dailyLib.includes('status: 401, error: "unauthorized"') && dailyLib.includes("bearerEquals(p.authorization, p.secret)") && dailyLib.includes("secretEquals(p.cronHeader, p.secret)"));
   check("T-S12c daily import selects active taxcom connections + mode auto_daily + safe aggregate result", dailyLib.includes('where: { provider: "taxcom", isActive: true }') && dailyLib.includes('mode: "auto_daily"') && dailyLib.includes("processedConnections") && dailyLib.includes("succeeded") && dailyLib.includes("failed") && dailyLib.includes("safeErrorCode"));
   const dailyCode = dailyLib.split("\n").filter((l) => { const t = l.trim(); return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*"); }).join("\n");
   check("T-S12d cron CODE handles no secrets/raw (no decrypt/loginEncrypted/sessionToken/.stack); logs are aggregate-only", !/decryptOfdSecret|loginEncrypted|passwordEncrypted|integratorIdEncrypted|sessionToken|serverBaseUrl|\.stack|rawJson/i.test(dailyCode) && dailyLib.includes("] batch_start") && dailyLib.includes("] connection_done") && dailyLib.includes("] batch_done") && dailyLib.includes('logTag: "ofd-cron"') && !cronRoute.includes("decryptOfdSecret"));

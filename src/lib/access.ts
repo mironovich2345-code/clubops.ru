@@ -396,6 +396,32 @@ export async function userHasCompanyRole(
   return anyRoleSatisfies(rows.map((r) => r.role), roles);
 }
 
+/**
+ * DIRECT role check: does the user hold `role` EXPLICITLY on this club (a
+ * ClubUserAccess row) or company-wide (a CompanyUserAccess row) — WITHOUT any
+ * ROLE_IMPLICATIONS expansion. Use this where an implied capability must NOT count,
+ * e.g. confirming a "Директор → Клуб" cash transfer requires a real club manager,
+ * so a regional_director (who is implied-manager via ROLE_IMPLICATIONS) is rejected.
+ */
+export async function userHasDirectClubRole(
+  userId: string,
+  clubId: string,
+  role: string,
+): Promise<boolean> {
+  const clubRow = await prisma.clubUserAccess.findFirst({
+    where: { userId, clubId, role },
+    select: { id: true },
+  });
+  if (clubRow) return true;
+  const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
+  if (!club) return false;
+  const companyRow = await prisma.companyUserAccess.findFirst({
+    where: { userId, companyId: club.companyId, role },
+    select: { id: true },
+  });
+  return companyRow !== null;
+}
+
 export async function userHasClubRole(
   userId: string,
   clubId: string,

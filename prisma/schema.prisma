@@ -908,12 +908,21 @@ model ExpenseCategory {
   key       String   @unique
   name      String
   isActive  Boolean  @default(true)
+  // Ownership scope. SYSTEM categories (isSystem=true, companyId=null) are the
+  // platform-wide taxonomy: visible to every company, never editable by tenants.
+  // COMPANY categories (isSystem=false, companyId set) are private to that company.
+  // `key` stays globally unique (stable analytics id, keeps historical Expense rows
+  // labelled); cross-tenant visibility is scoped in server code, so a company key
+  // never collides with or reveals another company's category.
+  isSystem  Boolean  @default(false)
+  companyId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   nameHistory ExpenseCategoryNameHistory[]
 
   @@index([isActive])
+  @@index([companyId])
 }
 
 model ExpenseCategoryNameHistory {
@@ -926,6 +935,25 @@ model ExpenseCategoryNameHistory {
   category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([categoryId])
+}
+
+// Fixed-window rate limiting for abusable/expensive surfaces (login, registration,
+// OTP send, AI analyze, OFD sync-now, Telegram link). Only NON-reversible hashes of
+// the identifier (IP / email / userId) are stored — never the raw value. bucketKey =
+// HMAC(action | idType | idHash | windowIndex); an atomic upsert-increment per window
+// is race-safe (unique bucketKey). Rows are short-lived and pruned by expiresAt.
+model RateLimitBucket {
+  id          String   @id @default(cuid())
+  bucketKey   String   @unique
+  action      String
+  windowStart DateTime
+  count       Int      @default(0)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@index([action])
 }
 
 // Cash wallets: physical cash held for a Club's active ИП, separated by holder.

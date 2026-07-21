@@ -12,6 +12,8 @@ import { startLoginChallenge } from "@/lib/login-challenge";
 import { recordAudit } from "@/lib/access";
 import { isFirstUser, setupDemoCompanyForOwner } from "@/lib/seed";
 import { safeNextPath } from "@/lib/safe-redirect";
+import { checkRateLimit, peekRateLimit, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/request-ip";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -29,9 +31,23 @@ export async function loginAction(
   if (!EMAIL_RE.test(email)) return { ok: false, error: "Введите корректный email" };
   if (!password) return { ok: false, error: "Введите пароль" };
 
+  // Rate limiting (fail-closed on abuse, generic message — no account enumeration):
+  //  - per-IP: caps ALL login attempts (records this attempt);
+  //  - per-account: caps FAILED attempts only (peeked here, recorded on failure),
+  //    so a legitimate repeated login never locks the account.
+  const ip = await getClientIp();
+  const ipLimit = await checkRateLimit("login", "ip", ip);
+  if (!ipLimit.allowed) return { ok: false, error: RATE_LIMIT_MESSAGE };
+  const emailFailures = await peekRateLimit("login", "email", email);
+  if (emailFailures.limited) return { ok: false, error: RATE_LIMIT_MESSAGE };
+
   // STEP 1: password only — never creates a Session.
   const result = await verifyLoginPassword(email, password);
-  if (!result.ok) return { ok: false, error: result.error };
+  if (!result.ok) {
+    // Count the failure toward the per-account cap (never logs the raw email).
+    await checkRateLimit("login", "email", email);
+    return { ok: false, error: result.error };
+  }
   await recordAudit({ action: "auth.password_verified", entityType: "User", entityId: result.user.id, userId: result.user.id });
 
   // STEP 2: create + email an OTP challenge; the Session is created only after
@@ -58,6 +74,13 @@ export async function registerAction(
   if (!EMAIL_RE.test(email)) return { ok: false, error: "Введите корректный email" };
   if (password.length < MIN_PASSWORD_LENGTH) {
     return { ok: false, error: `Пароль должен быть не короче ${MIN_PASSWORD_LENGTH} символов` };
+  }
+
+  // Per-IP registration cap — bounds mass account creation + OTP-email amplification
+  // BEFORE any DB write or email is triggered. Generic message (no enumeration).
+  const ip = await getClientIp();
+  if (!(await checkRateLimit("register", "ip", ip)).allowed) {
+    return { ok: false, error: RATE_LIMIT_MESSAGE };
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });

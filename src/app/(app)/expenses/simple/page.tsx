@@ -20,7 +20,8 @@ export default async function SimpleExpensePage() {
 
   await ensureExpenseCategoriesSeeded();
   const [categories, payer] = await Promise.all([
-    getActiveExpenseCategories(),
+    // System categories + THIS company's own active categories only.
+    getActiveExpenseCategories(companyId),
     // Payer is always the authenticated user — fetch only their display name.
     prisma.user.findUnique({ where: { id: ctx.user.id }, select: { name: true, firstName: true, lastName: true, deletedAt: true } }),
   ]);

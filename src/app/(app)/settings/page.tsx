@@ -9,7 +9,7 @@ import {
   getActiveClubLegalEntities,
   normalizeEntityType,
 } from "@/lib/legal-entities";
-import { AddCompanyForm, CompanyEditor } from "./_components/SettingsClient";
+import { CompanyEditor } from "./_components/SettingsClient";
 import { LegalEntities } from "./_components/LegalEntities";
 
 export const dynamic = "force-dynamic";
@@ -126,9 +126,8 @@ export default async function SettingsPage() {
         </div>
       ) : null}
 
-      <div className="mb-6">
-        <AddCompanyForm />
-      </div>
+      {/* Creating a new organization is a system-admin-only operation and is not
+          exposed to tenant users here; the createCompany server action enforces it. */}
 
       <div className="mb-3 text-sm font-semibold text-slate-700">Компании</div>
       {companies.length === 0 ? (

@@ -47,6 +47,7 @@ import {
   logUploadFailure,
   type UploadErrorCode,
 } from "@/lib/upload-errors";
+import { isRateLimited } from "@/lib/rate-limit";
 
 type AnalyzeState = {
   ok: boolean;
@@ -180,6 +181,11 @@ export async function uploadAndAnalyzeInvoice(
     if (!ctx.allowedClubIds.includes(clubId) || !(await canAccessClub(ctx.user.id, clubId))) {
       return fail("ACCESS_DENIED");
     }
+
+    // Cost-abuse guard: cap AI document-analysis per user AND per company BEFORE any
+    // external AI call. Exceeding never charges a Yandex/OpenAI request.
+    if (await isRateLimited("ai_analyze", "user", ctx.user.id)) return fail("RATE_LIMITED");
+    if (ctx.selectedCompanyId && (await isRateLimited("ai_analyze_company", "company", ctx.selectedCompanyId))) return fail("RATE_LIMITED");
 
     if (!file) return fail("FILE_INVALID");
     const fileCode = validateInvoiceFile(file);

@@ -1,37 +1,19 @@
 /** @type {import('next').NextConfig} */
 
-const isProd = process.env.NODE_ENV === "production";
-
-// Conservative, app-compatible Content-Security-Policy. Allows: same-origin
-// assets/API (documents, file downloads), Tailwind/Next inline styles, Next's
-// inline bootstrap scripts, and image previews via data:/blob: URLs. Dev adds
-// 'unsafe-eval' + ws: for React Fast Refresh / HMR (prod stays stricter).
-const csp = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "frame-src 'self'",
-  "object-src 'none'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "style-src 'self' 'unsafe-inline'",
-  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
-  `connect-src 'self'${isProd ? "" : " ws: wss:"}`,
-  "worker-src 'self' blob:",
-  "media-src 'self'",
-  "manifest-src 'self'",
-].join("; ");
-
+// The Content-Security-Policy is now set PER REQUEST with a nonce in
+// src/middleware.ts (so 'unsafe-inline' is dropped from script-src) — it must NOT
+// also be set here or the two would conflict. These are the static headers that
+// don't need a nonce; Permissions-Policy is added by the middleware, HSTS by Caddy.
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Content-Security-Policy", value: csp },
 ];
 
 const nextConfig = {
   reactStrictMode: true,
+  // Do not advertise the framework (X-Powered-By).
+  poweredByHeader: false,
   // Standalone server output: `.next/standalone/server.js` bundles only the
   // traced runtime deps, so the production Docker image stays small and does not
   // need the full node_modules or `next start`. Backward-compatible — `next

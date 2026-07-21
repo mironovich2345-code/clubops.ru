@@ -12,10 +12,12 @@ export type UploadErrorCode =
   | "AI_INVALID_RESPONSE"
   | "ACCESS_DENIED"
   | "CLUB_REQUIRED"
+  | "RATE_LIMITED"
   | "UNKNOWN_ERROR";
 
 export const UPLOAD_ERROR_MESSAGES: Record<UploadErrorCode, string> = {
   CLUB_REQUIRED: "Выберите клуб",
+  RATE_LIMITED: "Слишком много попыток. Повторите позже.",
   FILE_INVALID: "Файл не поддерживается",
   FILE_TOO_LARGE: "Файл слишком большой",
   FILE_READ_FAILED: "Не удалось прочитать файл",
