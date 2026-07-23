@@ -1176,6 +1176,232 @@ model PayrollStatementRow {
   @@index([clubId])
 }
 
+// ---------------------------------------------------------------------------
+// Payroll module (calculation + workflow + payments + debts). All scoped by
+// companyId+clubId; ownership validated in server code (scalar ids, like AuditLog,
+// so this is a purely additive migration). Money = kopeks, percents = basis points.
+// Enums/params/formulas live in src/lib/payroll/*.
+// ---------------------------------------------------------------------------
+
+// Many-to-many: an employee may work in several clubs, each with its own position
+// and (optionally) an earning-share split for shared bases.
+model EmployeeClubAssignment {
+  id                     String    @id @default(cuid())
+  companyId              String
+  employeeId             String
+  clubId                 String
+  position               String
+  earningShareBasisPoints Int?     // optional split of a shared base across clubs (bp)
+  startDate              DateTime?
+  endDate                DateTime?
+  isActive               Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([employeeId, clubId, position])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+}
+
+// Historical pay scheme. A change opens a new row (effectiveTo set on the previous),
+// so closed months keep their exact scheme via the calculation snapshot. paramsJson
+// is validated by src/lib/payroll/scheme.ts (never eval'd).
+model EmployeePayScheme {
+  id              String    @id @default(cuid())
+  companyId       String
+  clubId          String
+  employeeId      String?   // null → applies to a whole position
+  position        String?
+  schemeType      String
+  paramsJson      String    // validated structured params
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+  @@index([clubId, effectiveFrom])
+}
+
+// One payroll period per club per month.
+model PayrollPeriod {
+  id                   String    @id @default(cuid())
+  companyId            String
+  clubId               String
+  year                 Int
+  month                Int
+  status               String    @default("draft")
+  submittedAt          DateTime?
+  regionalApprovedAt   DateTime?
+  accountingApprovedAt DateTime?
+  closedAt             DateTime?
+  createdByUserId      String
+  version              Int       @default(1)
+  totalsJson           String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([clubId, year, month])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([status])
+}
+
+// Per-employee calculation within a period (with immutable snapshots).
+model PayrollCalculation {
+  id                  String    @id @default(cuid())
+  companyId           String
+  payrollPeriodId     String
+  employeeId          String
+  clubId              String
+  legalEntityId       String?
+  roleSnapshot        String?
+  schemeSnapshotJson  String?
+  baseSalaryKopeks    Int       @default(0)
+  shifts              Int?
+  hours               Int?
+  salesBaseKopeks     Int       @default(0)
+  revenueBaseKopeks   Int       @default(0)
+  profitBaseKopeks    Int       @default(0)
+  planKopeks          Int?
+  actualKopeks        Int?
+  completionBp        Int?
+  automaticAmountKopeks Int     @default(0)
+  bonusesKopeks       Int       @default(0)
+  deductionsKopeks    Int       @default(0)
+  advancesKopeks      Int       @default(0)
+  grossAccruedKopeks  Int       @default(0)
+  netPayableKopeks    Int       @default(0)
+  paidKopeks          Int       @default(0)
+  remainingKopeks     Int       @default(0)
+  employeeDebtKopeks  Int       @default(0)
+  companyDebtKopeks   Int       @default(0)
+  status              String    @default("draft")
+  detailsJson         String?
+  manualOverrideKopeks Int?
+  manualOverrideReason String?
+  calculatedAt        DateTime?
+  approvedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([payrollPeriodId, employeeId])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+  @@index([payrollPeriodId])
+}
+
+// Bonus / penalty / recovery / correction. Reason required (enforced in code).
+model PayrollAdjustment {
+  id                   String    @id @default(cuid())
+  companyId            String
+  payrollCalculationId String
+  employeeId           String
+  clubId               String
+  type                 String
+  direction            String    // credit (+payable) | debit (−payable)
+  amountKopeks         Int       @default(0)
+  reason               String
+  comment              String?
+  documentKey          String?
+  status               String    @default("pending")
+  createdByUserId      String
+  approvedByUserId     String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([payrollCalculationId])
+  @@index([employeeId])
+}
+
+// Advance (one per employee per month; ≤ earned-to-date). Cash advance reduces the
+// wallet at payment; counted as part of the paid salary (never double-counted).
+model PayrollAdvance {
+  id              String    @id @default(cuid())
+  companyId       String
+  employeeId      String
+  clubId          String
+  periodYear      Int
+  periodMonth     Int
+  earnedToDateKopeks Int    @default(0)
+  amountKopeks    Int       @default(0)
+  paymentMethod   String?
+  cashSource      String?
+  documentKey     String?
+  status          String    @default("requested")
+  requestedAt     DateTime  @default(now())
+  approvedByUserId String?
+  paidByUserId    String?
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([employeeId, clubId, periodYear, periodMonth])
+  @@index([companyId])
+  @@index([clubId])
+}
+
+// Actual payment (partial / cash / bank). A cash payment settles via the existing
+// cash-movement plumbing so the wallet is reduced once (wired in Stage 5).
+model PayrollPayment {
+  id                   String    @id @default(cuid())
+  companyId            String
+  payrollCalculationId String
+  employeeId           String
+  clubId               String
+  legalEntityId        String?
+  amountKopeks         Int       @default(0)
+  paymentDate          DateTime
+  paymentMethod        String    // cash | bank
+  sourceType           String    // club_cash | regional_cash | bank_account
+  sourceId             String?
+  status               String    @default("pending")
+  documentKey          String?
+  statementId          String?   // → PayrollStatement (signed ведомость)
+  bankTransactionId    String?
+  cashMovementId       String?   // link to the cash ledger movement (single-source)
+  comment              String?
+  paidByUserId         String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+  @@index([payrollCalculationId])
+}
+
+// Unified employee ↔ company obligations (debts). A repayment settles a SPECIFIC
+// obligation — never a faceless "Приход Иное".
+model EmployeeFinancialObligation {
+  id                   String    @id @default(cuid())
+  companyId            String
+  employeeId           String
+  clubId               String?
+  payrollPeriodId      String?
+  direction            String    // employee_owes_company | company_owes_employee
+  reason               String
+  originalAmountKopeks Int       @default(0)
+  outstandingAmountKopeks Int    @default(0)
+  status               String    @default("open")
+  createdByUserId      String
+  approvedByUserId     String?
+  dueDate              DateTime?
+  closedAt             DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+}
+
 // Monthly sales target (план продаж) set by the general director. clubId null =
 // company-wide plan; a club id = per-club plan. month = "YYYY-MM".
 model SalesPlan {
@@ -1251,12 +1477,20 @@ model ClubEmployee {
   companyId   String
   clubId      String
   fullName    String
-  // manager | administrator | gym_trainer | group_trainer | night_manager
+  // manager | administrator | gym_trainer | group_trainer | night_manager |
+  // head_gym_trainer | senior_group_trainer | regional_director (see payroll/enums.ts)
   position    String
   // active | dismissed
   status      String    @default("active")
   dismissedAt DateTime?
   comment     String?
+  // Payroll module (additive, all nullable → legacy rows unaffected). The home club
+  // is `clubId`; multi-club work is via EmployeeClubAssignment. `preferredPaymentMethod`
+  // = cash | bank; `isOfficial` = officially employed vs management accounting only.
+  hireDate                DateTime?
+  preferredPaymentMethod  String?
+  isOfficial              Boolean   @default(false)
+  defaultLegalEntityId    String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

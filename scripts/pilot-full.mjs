@@ -65,6 +65,7 @@ const pilots = [
   ["Health / deployment version", "pilot-health.mjs"],
   ["Account settings", "pilot-account-settings.mjs"],
   ["Employee role management", "pilot-employee-role-management.mjs"],
+  ["Payroll calc engine + status machine", "pilot-payroll.mjs"],
   ["Deploy config", "pilot-deploy-config.mjs"],
   ["Document security", "pilot-document-security.mjs"],
   ["Dark mode toggle", "pilot-theme.mjs"],

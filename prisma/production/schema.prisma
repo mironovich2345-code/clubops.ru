@@ -1174,6 +1174,216 @@ model PayrollStatementRow {
   @@index([clubId])
 }
 
+// ---------------------------------------------------------------------------
+// Payroll module (calculation + workflow + payments + debts). Scalar-id tables
+// (ownership validated in server code) → purely additive migration. Kopeks + bp.
+// ---------------------------------------------------------------------------
+
+model EmployeeClubAssignment {
+  id                     String    @id @default(cuid())
+  companyId              String
+  employeeId             String
+  clubId                 String
+  position               String
+  earningShareBasisPoints Int?
+  startDate              DateTime?
+  endDate                DateTime?
+  isActive               Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([employeeId, clubId, position])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+}
+
+model EmployeePayScheme {
+  id              String    @id @default(cuid())
+  companyId       String
+  clubId          String
+  employeeId      String?
+  position        String?
+  schemeType      String
+  paramsJson      String
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+  @@index([clubId, effectiveFrom])
+}
+
+model PayrollPeriod {
+  id                   String    @id @default(cuid())
+  companyId            String
+  clubId               String
+  year                 Int
+  month                Int
+  status               String    @default("draft")
+  submittedAt          DateTime?
+  regionalApprovedAt   DateTime?
+  accountingApprovedAt DateTime?
+  closedAt             DateTime?
+  createdByUserId      String
+  version              Int       @default(1)
+  totalsJson           String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([clubId, year, month])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([status])
+}
+
+model PayrollCalculation {
+  id                  String    @id @default(cuid())
+  companyId           String
+  payrollPeriodId     String
+  employeeId          String
+  clubId              String
+  legalEntityId       String?
+  roleSnapshot        String?
+  schemeSnapshotJson  String?
+  baseSalaryKopeks    Int       @default(0)
+  shifts              Int?
+  hours               Int?
+  salesBaseKopeks     Int       @default(0)
+  revenueBaseKopeks   Int       @default(0)
+  profitBaseKopeks    Int       @default(0)
+  planKopeks          Int?
+  actualKopeks        Int?
+  completionBp        Int?
+  automaticAmountKopeks Int     @default(0)
+  bonusesKopeks       Int       @default(0)
+  deductionsKopeks    Int       @default(0)
+  advancesKopeks      Int       @default(0)
+  grossAccruedKopeks  Int       @default(0)
+  netPayableKopeks    Int       @default(0)
+  paidKopeks          Int       @default(0)
+  remainingKopeks     Int       @default(0)
+  employeeDebtKopeks  Int       @default(0)
+  companyDebtKopeks   Int       @default(0)
+  status              String    @default("draft")
+  detailsJson         String?
+  manualOverrideKopeks Int?
+  manualOverrideReason String?
+  calculatedAt        DateTime?
+  approvedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([payrollPeriodId, employeeId])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+  @@index([payrollPeriodId])
+}
+
+model PayrollAdjustment {
+  id                   String    @id @default(cuid())
+  companyId            String
+  payrollCalculationId String
+  employeeId           String
+  clubId               String
+  type                 String
+  direction            String
+  amountKopeks         Int       @default(0)
+  reason               String
+  comment              String?
+  documentKey          String?
+  status               String    @default("pending")
+  createdByUserId      String
+  approvedByUserId     String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([payrollCalculationId])
+  @@index([employeeId])
+}
+
+model PayrollAdvance {
+  id              String    @id @default(cuid())
+  companyId       String
+  employeeId      String
+  clubId          String
+  periodYear      Int
+  periodMonth     Int
+  earnedToDateKopeks Int    @default(0)
+  amountKopeks    Int       @default(0)
+  paymentMethod   String?
+  cashSource      String?
+  documentKey     String?
+  status          String    @default("requested")
+  requestedAt     DateTime  @default(now())
+  approvedByUserId String?
+  paidByUserId    String?
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([employeeId, clubId, periodYear, periodMonth])
+  @@index([companyId])
+  @@index([clubId])
+}
+
+model PayrollPayment {
+  id                   String    @id @default(cuid())
+  companyId            String
+  payrollCalculationId String
+  employeeId           String
+  clubId               String
+  legalEntityId        String?
+  amountKopeks         Int       @default(0)
+  paymentDate          DateTime
+  paymentMethod        String
+  sourceType           String
+  sourceId             String?
+  status               String    @default("pending")
+  documentKey          String?
+  statementId          String?
+  bankTransactionId    String?
+  cashMovementId       String?
+  comment              String?
+  paidByUserId         String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+  @@index([payrollCalculationId])
+}
+
+model EmployeeFinancialObligation {
+  id                   String    @id @default(cuid())
+  companyId            String
+  employeeId           String
+  clubId               String?
+  payrollPeriodId      String?
+  direction            String
+  reason               String
+  originalAmountKopeks Int       @default(0)
+  outstandingAmountKopeks Int    @default(0)
+  status               String    @default("open")
+  createdByUserId      String
+  approvedByUserId     String?
+  dueDate              DateTime?
+  closedAt             DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+}
+
 // Monthly sales target (план продаж) set by the general director. clubId null =
 // company-wide plan; a club id = per-club plan. month = "YYYY-MM".
 model SalesPlan {
@@ -1249,12 +1459,18 @@ model ClubEmployee {
   companyId   String
   clubId      String
   fullName    String
-  // manager | administrator | gym_trainer | group_trainer | night_manager
+  // manager | administrator | gym_trainer | group_trainer | night_manager |
+  // head_gym_trainer | senior_group_trainer | regional_director (see payroll/enums.ts)
   position    String
   // active | dismissed
   status      String    @default("active")
   dismissedAt DateTime?
   comment     String?
+  // Payroll module (additive, all nullable → legacy rows unaffected).
+  hireDate                DateTime?
+  preferredPaymentMethod  String?
+  isOfficial              Boolean   @default(false)
+  defaultLegalEntityId    String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
