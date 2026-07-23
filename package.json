@@ -51,6 +51,7 @@
     "pilot:account-settings": "node scripts/pilot-account-settings.mjs",
     "pilot:employee-role-management": "node scripts/pilot-employee-role-management.mjs",
     "pilot:payroll": "node scripts/pilot-payroll.mjs",
+    "pilot:payroll-setup": "node scripts/pilot-payroll-setup.mjs",
     "pilot:deploy-config": "node scripts/pilot-deploy-config.mjs",
     "pilot:document-security": "node scripts/pilot-document-security.mjs"
   },

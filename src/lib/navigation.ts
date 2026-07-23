@@ -18,6 +18,7 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "mandatory_payments", href: "/mandatory-payments", label: "Обязательные платежи" },
   { page: "balances", href: "/balances", label: "Остатки ДС" },
   { page: "employees", href: "/employees", label: "Сотрудники" },
+  { page: "payroll", href: "/payroll", label: "Зарплата (ФОТ)" },
   { page: "refunds", href: "/refunds", label: "Возвраты" },
   { page: "budgets", href: "/budgets", label: "Бюджеты" },
   // "sales" (ручной сменный отчёт) удалён из меню — продажи поступают из ОФД. Route
@@ -48,6 +49,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // payment calendar and balances are surfaced in dashboard cards.
   { type: "group", id: "planning", label: "Планирование", pages: ["payments", "budgets"] },
   { type: "item", page: "employees" },
+  { type: "item", page: "payroll" },
   { type: "item", page: "documents" },
   { type: "group", id: "admin", label: "Администрирование", pages: ["users", "activity", "settings"] },
 ];
