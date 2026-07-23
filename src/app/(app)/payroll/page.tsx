@@ -38,10 +38,18 @@ export default async function PayrollPage() {
 
   return (
     <div className="mx-auto max-w-[1440px]">
-      <PageHeader
-        title="Зарплата (ФОТ)"
-        description="Схемы оплаты, начисления и выплаты сотрудникам. Настройте закрепления и схемы, затем формируйте расчётные периоды по клубам."
-      />
+      <div className="mb-4 flex items-center justify-between">
+        <PageHeader
+          title="Зарплата (ФОТ)"
+          description="Схемы оплаты, начисления и выплаты сотрудникам. Настройте закрепления и схемы, затем формируйте расчётные периоды по клубам."
+        />
+        <Link
+          href="/payroll/periods"
+          className="shrink-0 inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
+        >
+          Расчётные периоды →
+        </Link>
+      </div>
 
       {!canManagePaySchemes(ctx.effectiveRoles) ? (
         <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
