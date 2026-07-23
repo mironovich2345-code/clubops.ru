@@ -68,6 +68,7 @@ const pilots = [
   ["Payroll calc engine + status machine", "pilot-payroll.mjs"],
   ["Payroll setup (assignments + schemes)", "pilot-payroll-setup.mjs"],
   ["Payroll periods + calculations", "pilot-payroll-periods.mjs"],
+  ["Payroll workflow + adjustments", "pilot-payroll-workflow.mjs"],
   ["Deploy config", "pilot-deploy-config.mjs"],
   ["Document security", "pilot-document-security.mjs"],
   ["Dark mode toggle", "pilot-theme.mjs"],

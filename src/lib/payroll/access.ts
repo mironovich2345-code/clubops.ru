@@ -23,3 +23,16 @@ export function canManagePaySchemes(roles: readonly Role[]): boolean {
     (r) => r === "owner" || r === "general_director" || r === "regional_director" || r === "chief_accountant",
   );
 }
+
+/**
+ * Add/cancel a PayrollAdjustment (bonus / penalty / correction). Before the period is
+ * locked (approved), the operational band may add bonuses/penalties. AFTER approval the
+ * period is locked for direct edits and ONLY the accounting band may post corrections
+ * (spec §5) — a manager can no longer change an approved calculation. A closed period is
+ * rejected by the caller before this gate.
+ */
+export function canAddPayrollAdjustment(roles: readonly Role[], opts: { locked: boolean }): boolean {
+  const accounting = roles.some((r) => r === "accountant" || r === "chief_accountant");
+  if (opts.locked) return accounting;
+  return accounting || roles.some((r) => r === "manager" || r === "regional_director");
+}

@@ -5,12 +5,14 @@ import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { getPeriodForScope, getCalculations, periodTotals, periodLabel, periodStatusLabel } from "@/lib/payroll/periods";
-import { isPayrollPeriodLocked } from "@/lib/payroll/period";
-import { canManagePayrollAssignments } from "@/lib/payroll/access";
+import { isPayrollPeriodLocked, isPayrollPeriodClosed, availablePayrollActions, PAYROLL_ACTION_LABELS } from "@/lib/payroll/period";
+import { canManagePayrollAssignments, canAddPayrollAdjustment } from "@/lib/payroll/access";
 import { PAYROLL_POSITION_LABELS, PAYROLL_SCHEME_LABELS } from "@/lib/payroll/enums";
 import { formatKopeks } from "@/lib/money";
 import { GeneratePeriodButton } from "../../_components/GeneratePeriodButton";
 import { CalculationCard, type BreakdownLine } from "../../_components/CalculationCard";
+import { PeriodWorkflowBar } from "../../_components/PeriodWorkflowBar";
+import { AdjustmentsSection, type AdjustmentRow } from "../../_components/AdjustmentsSection";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,23 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
   const nameBy = new Map(employees.map((e) => [e.id, e.fullName]));
   const totals = periodTotals(calcs);
   const locked = isPayrollPeriodLocked(period.status);
+  const closed = isPayrollPeriodClosed(period.status);
   const canManage = canManagePayrollAssignments(ctx.effectiveRoles);
+  const canAdjust = !closed && canAddPayrollAdjustment(ctx.effectiveRoles, { locked });
+  const workflowActions = availablePayrollActions(period.status, ctx.effectiveRoles).map((a) => ({ action: a, label: PAYROLL_ACTION_LABELS[a] }));
+
+  const allAdjustments = calcs.length
+    ? await prisma.payrollAdjustment.findMany({
+        where: { payrollCalculationId: { in: calcs.map((c) => c.id) }, status: "approved" },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+  const adjBy = new Map<string, AdjustmentRow[]>();
+  for (const a of allAdjustments) {
+    const list = adjBy.get(a.payrollCalculationId) ?? [];
+    list.push({ id: a.id, type: a.type, direction: a.direction, amountKopeks: a.amountKopeks, comment: a.comment });
+    adjBy.set(a.payrollCalculationId, list);
+  }
 
   return (
     <div className="mx-auto max-w-[1100px]">
@@ -56,6 +74,13 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
         <Stat label="К выплате" value={formatKopeks(totals.netPayableKopeks)} />
         <Stat label="Требуют решения" value={String(totals.needsReview)} accent={totals.needsReview > 0} />
       </div>
+
+      {workflowActions.length > 0 ? (
+        <div className={`mb-6 p-5 ${CARD}`}>
+          <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Согласование</div>
+          <PeriodWorkflowBar periodId={period.id} actions={workflowActions} />
+        </div>
+      ) : null}
 
       {canManage && !locked ? (
         <div className="mb-6">
@@ -81,20 +106,25 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
             if (c.salesBaseKopeks) { initial.sales = rubStr(c.salesBaseKopeks); initial.netPersonalSales = rubStr(c.salesBaseKopeks); }
             if (c.profitBaseKopeks) initial.cityProfit = rubStr(c.profitBaseKopeks);
             return (
-              <CalculationCard
-                key={c.id}
-                calculationId={c.id}
-                employeeName={nameBy.get(c.employeeId) ?? c.employeeId}
-                roleLabel={PAYROLL_POSITION_LABELS[c.roleSnapshot ?? ""] ?? c.roleSnapshot ?? "—"}
-                schemeType={snap?.schemeType ?? null}
-                schemeLabel={snap ? PAYROLL_SCHEME_LABELS[snap.schemeType] ?? snap.schemeType : "Схема не задана"}
-                status={c.status}
-                automaticKopeks={c.automaticAmountKopeks}
-                breakdown={details.breakdown}
-                warnings={details.warnings}
-                locked={locked || !canManage}
-                initial={initial}
-              />
+              <div key={c.id} className={`overflow-hidden ${CARD}`}>
+                <div className="p-4">
+                  <CalculationCard
+                    calculationId={c.id}
+                    employeeName={nameBy.get(c.employeeId) ?? c.employeeId}
+                    roleLabel={PAYROLL_POSITION_LABELS[c.roleSnapshot ?? ""] ?? c.roleSnapshot ?? "—"}
+                    schemeType={snap?.schemeType ?? null}
+                    schemeLabel={snap ? PAYROLL_SCHEME_LABELS[snap.schemeType] ?? snap.schemeType : "Схема не задана"}
+                    status={c.status}
+                    automaticKopeks={c.automaticAmountKopeks}
+                    grossKopeks={c.grossAccruedKopeks}
+                    breakdown={details.breakdown}
+                    warnings={details.warnings}
+                    locked={locked || !canManage}
+                    initial={initial}
+                  />
+                  <AdjustmentsSection calculationId={c.id} adjustments={adjBy.get(c.id) ?? []} canAdd={canAdjust} />
+                </div>
+              </div>
             );
           })}
         </div>

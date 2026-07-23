@@ -57,6 +57,7 @@ export function CalculationCard({
   schemeLabel,
   status,
   automaticKopeks,
+  grossKopeks,
   breakdown,
   warnings,
   locked,
@@ -69,6 +70,7 @@ export function CalculationCard({
   schemeLabel: string;
   status: string;
   automaticKopeks: number;
+  grossKopeks: number;
   breakdown: BreakdownLine[];
   warnings: string[];
   locked: boolean;
@@ -86,7 +88,10 @@ export function CalculationCard({
           <div className="text-xs text-slate-500 dark:text-slate-400">{roleLabel} · {schemeLabel}</div>
         </div>
         <div className="text-right">
-          <div className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">{formatKopeks(automaticKopeks)}</div>
+          <div className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">{formatKopeks(grossKopeks)}</div>
+          {grossKopeks !== automaticKopeks ? (
+            <div className="text-xs text-slate-400">авто {formatKopeks(automaticKopeks)}</div>
+          ) : null}
           <div className="text-xs text-slate-400">{status}</div>
         </div>
       </div>

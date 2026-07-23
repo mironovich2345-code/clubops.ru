@@ -5,12 +5,19 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, getUserClubs, canAccessClub, recordAudit } from "@/lib/access";
 import { monthClosedError } from "@/lib/month-close";
 import { rublesToKopeks } from "@/lib/money";
-import { canManagePayrollAssignments } from "@/lib/payroll/access";
+import { canManagePayrollAssignments, canAddPayrollAdjustment } from "@/lib/payroll/access";
 import { getEffectiveSchemeForEmployee } from "@/lib/payroll/schemes";
 import { makeSchemeSnapshot, snapshotToSchemeParams, getPeriodForScope } from "@/lib/payroll/periods";
 import { computeScheme, type PeriodInput } from "@/lib/payroll/compute";
-import { isPayrollPeriodLocked } from "@/lib/payroll/period";
-import { BP_PER_100_PERCENT } from "@/lib/payroll/enums";
+import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
+import { applyPayrollAction, isPayrollPeriodLocked, isPayrollPeriodClosed, PAYROLL_ACTION_AUDIT, type PayrollAction } from "@/lib/payroll/period";
+import {
+  BP_PER_100_PERCENT,
+  PAYROLL_ADJUSTMENT_TYPES,
+  ADJUSTMENT_DIRECTIONS,
+  isKnown,
+  type PayrollAdjustmentType,
+} from "@/lib/payroll/enums";
 
 export type PayrollPeriodFormState = { ok: boolean; error?: string; fieldErrors?: Record<string, string>; periodId?: string };
 
@@ -234,17 +241,13 @@ export async function saveCalculationInputs(
       actualKopeks,
       completionBp,
       automaticAmountKopeks: automatic,
-      grossAccruedKopeks: automatic,
-      netPayableKopeks: automatic,
-      paidKopeks: 0,
-      remainingKopeks: automatic,
-      employeeDebtKopeks: 0,
-      companyDebtKopeks: automatic > 0 ? automatic : 0,
       status: "calculated",
       calculatedAt: new Date(),
       detailsJson: JSON.stringify({ breakdown: result.breakdown, flags: result.flags, warnings: result.warnings }),
     },
   });
+  // Fold the new automatic amount together with any existing adjustments/payments.
+  await recomputeCalculationTotals(calc.id);
   try {
     await recordAudit({
       action: "payroll.calculation_computed",
@@ -260,4 +263,184 @@ export async function saveCalculationInputs(
   }
   revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
   return { ok: true, periodId: calc.payrollPeriodId };
+}
+
+// --- workflow transitions (spec §5) -----------------------------------------
+export type PayrollWorkflowState = { ok: boolean; error?: string };
+
+const TS_FIELD: Partial<Record<string, "submittedAt" | "regionalApprovedAt" | "accountingApprovedAt" | "closedAt">> = {
+  manager_submitted: "submittedAt",
+  regional_approved: "regionalApprovedAt",
+  approved: "accountingApprovedAt",
+  closed: "closedAt",
+};
+
+/**
+ * Move a period through the status machine. The pure guard (applyPayrollAction) checks
+ * role + legal transition; here we add business guards: a period cannot be approved
+ * while any calculation is still a draft (no unapproved calculations). On approval the
+ * calculations are locked (status → approved) — direct edits are blocked thereafter.
+ */
+export async function transitionPeriod(
+  _prev: PayrollWorkflowState | undefined,
+  formData: FormData,
+): Promise<PayrollWorkflowState> {
+  const periodId = String(formData.get("periodId") ?? "").trim();
+  const action = String(formData.get("action") ?? "").trim() as PayrollAction;
+  const comment = String(formData.get("comment") ?? "").trim() || null;
+  const scope = await resolvePeriodScope(periodId);
+  if (!scope.ok) return { ok: false, error: scope.error };
+
+  const decision = applyPayrollAction(action, scope.period.status, scope.ctx.effectiveRoles);
+  if (!decision.ok) return { ok: false, error: decision.error };
+
+  if (action === "regional_approve" || action === "accounting_approve") {
+    const drafts = await prisma.payrollCalculation.count({ where: { payrollPeriodId: periodId, status: "draft" } });
+    if (drafts > 0) return { ok: false, error: "Нельзя согласовать: есть нерассчитанные позиции. Сначала рассчитайте всех сотрудников." };
+  }
+
+  const data: Record<string, unknown> = { status: decision.to };
+  const tsField = TS_FIELD[decision.to];
+  if (tsField) data[tsField] = new Date();
+
+  await prisma.payrollPeriod.update({ where: { id: periodId }, data });
+  if (decision.to === "approved") {
+    await prisma.payrollCalculation.updateMany({
+      where: { payrollPeriodId: periodId, status: "calculated" },
+      data: { status: "approved", approvedAt: new Date() },
+    });
+  }
+  try {
+    await recordAudit({
+      action: PAYROLL_ACTION_AUDIT[action],
+      entityType: "PayrollPeriod",
+      entityId: periodId,
+      companyId: scope.companyId,
+      clubId: scope.period.clubId,
+      userId: scope.ctx.user.id,
+      metadata: { from: scope.period.status, to: decision.to, comment },
+    });
+  } catch {
+    /* ignore */
+  }
+  revalidatePath(`/payroll/periods/${periodId}`);
+  return { ok: true };
+}
+
+// --- adjustments (bonus / penalty / correction — spec §4/§5) ----------------
+export type PayrollAdjustmentState = { ok: boolean; error?: string };
+
+/** Direction is fixed for typed adjustments; correction/other take it from the form. */
+function adjustmentDirection(type: PayrollAdjustmentType, raw: string): "credit" | "debit" | null {
+  switch (type) {
+    case "bonus":
+      return "credit";
+    case "penalty":
+    case "overpayment_recovery":
+    case "shortage_recovery":
+    case "trainer_credit_recovery":
+      return "debit";
+    case "correction":
+    case "other":
+      return raw === "credit" || raw === "debit" ? raw : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Add an adjustment to a calculation. Comment is REQUIRED (spec). Before approval the
+ * operational band may post bonuses/penalties; after approval only the accounting band
+ * may post corrections (period is locked). A closed period is immutable.
+ */
+export async function addAdjustment(
+  _prev: PayrollAdjustmentState | undefined,
+  formData: FormData,
+): Promise<PayrollAdjustmentState> {
+  const calculationId = String(formData.get("calculationId") ?? "").trim();
+  const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });
+  if (!calc) return { ok: false, error: "Расчёт не найден" };
+  const scope = await resolvePeriodScope(calc.payrollPeriodId);
+  if (!scope.ok) return { ok: false, error: scope.error };
+  if (isPayrollPeriodClosed(scope.period.status)) return { ok: false, error: "Период закрыт — изменения невозможны" };
+  const locked = isPayrollPeriodLocked(scope.period.status);
+  if (!canAddPayrollAdjustment(scope.ctx.effectiveRoles, { locked })) {
+    return { ok: false, error: locked ? "После утверждения корректировки вносит только бухгалтер" : "Недостаточно прав" };
+  }
+
+  const type = String(formData.get("type") ?? "").trim();
+  if (!isKnown(PAYROLL_ADJUSTMENT_TYPES, type)) return { ok: false, error: "Выберите тип корректировки" };
+  const direction = adjustmentDirection(type, String(formData.get("direction") ?? "").trim());
+  if (!direction) return { ok: false, error: "Укажите направление (начисление или удержание)" };
+  const amountRaw = String(formData.get("amount") ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  const amountKopeks = amountRaw === "" ? 0 : rublesToKopeks(Number(amountRaw));
+  if (!Number.isFinite(amountKopeks) || amountKopeks <= 0) return { ok: false, error: "Сумма должна быть больше нуля" };
+  const commentText = String(formData.get("comment") ?? "").trim();
+  if (!commentText) return { ok: false, error: "Комментарий обязателен" };
+
+  const accounting = scope.ctx.effectiveRoles.some((r) => r === "accountant" || r === "chief_accountant");
+  await prisma.payrollAdjustment.create({
+    data: {
+      companyId: scope.companyId,
+      payrollCalculationId: calc.id,
+      employeeId: calc.employeeId,
+      clubId: calc.clubId,
+      type,
+      direction,
+      amountKopeks,
+      reason: type,
+      comment: commentText,
+      status: "approved", // applied immediately; recorded with author
+      createdByUserId: scope.ctx.user.id,
+      approvedByUserId: accounting ? scope.ctx.user.id : null,
+    },
+  });
+  await recomputeCalculationTotals(calc.id);
+  try {
+    await recordAudit({
+      action: "payroll.adjustment_added",
+      entityType: "PayrollCalculation",
+      entityId: calc.id,
+      companyId: scope.companyId,
+      clubId: calc.clubId,
+      userId: scope.ctx.user.id,
+      metadata: { type, direction, amountKopeks, afterApproval: locked },
+    });
+  } catch {
+    /* ignore */
+  }
+  revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
+  return { ok: true };
+}
+
+/** Cancel an adjustment (soft — status canceled) and recompute. Same permission gate. */
+export async function cancelAdjustment(formData: FormData): Promise<void> {
+  const adjustmentId = String(formData.get("adjustmentId") ?? "").trim();
+  if (!adjustmentId) return;
+  const adj = await prisma.payrollAdjustment.findUnique({ where: { id: adjustmentId } });
+  if (!adj || adj.status !== "approved") return;
+  const calc = await prisma.payrollCalculation.findUnique({ where: { id: adj.payrollCalculationId } });
+  if (!calc) return;
+  const scope = await resolvePeriodScope(calc.payrollPeriodId);
+  if (!scope.ok) return;
+  if (isPayrollPeriodClosed(scope.period.status)) return;
+  const locked = isPayrollPeriodLocked(scope.period.status);
+  if (!canAddPayrollAdjustment(scope.ctx.effectiveRoles, { locked })) return;
+
+  await prisma.payrollAdjustment.update({ where: { id: adjustmentId }, data: { status: "canceled" } });
+  await recomputeCalculationTotals(calc.id);
+  try {
+    await recordAudit({
+      action: "payroll.adjustment_canceled",
+      entityType: "PayrollCalculation",
+      entityId: calc.id,
+      companyId: scope.companyId,
+      clubId: calc.clubId,
+      userId: scope.ctx.user.id,
+      metadata: { adjustmentId },
+    });
+  } catch {
+    /* ignore */
+  }
+  revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
 }
