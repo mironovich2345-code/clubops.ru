@@ -10,6 +10,17 @@ import { getEffectiveSchemeForEmployee } from "@/lib/payroll/schemes";
 import { makeSchemeSnapshot, snapshotToSchemeParams, getPeriodForScope } from "@/lib/payroll/periods";
 import { computeScheme, type PeriodInput } from "@/lib/payroll/compute";
 import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
+import { resolveActiveIpForClub } from "@/lib/expense-simplified";
+import { ensureClubCashWallet, ensureRegionalCashWallet } from "@/lib/cash-wallets";
+import {
+  advanceWithinEarned,
+  postCashOutflow,
+  reverseCashOutflow,
+  PAYROLL_PAYMENT_SOURCE,
+  PAYROLL_PAYMENT_REVERSAL_SOURCE,
+  PAYROLL_ADVANCE_SOURCE,
+  PAYROLL_ADVANCE_REVERSAL_SOURCE,
+} from "@/lib/payroll/payments";
 import { applyPayrollAction, isPayrollPeriodLocked, isPayrollPeriodClosed, PAYROLL_ACTION_AUDIT, type PayrollAction } from "@/lib/payroll/period";
 import {
   BP_PER_100_PERCENT,
@@ -443,4 +454,323 @@ export async function cancelAdjustment(formData: FormData): Promise<void> {
     /* ignore */
   }
   revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
+}
+
+// --- advances & payments (spec §6/§8) ---------------------------------------
+export type PayrollPaymentState = { ok: boolean; error?: string };
+
+// Money may only move once the accounting has approved the period (locked) and it is
+// not yet closed.
+const PAYABLE_STATUSES = new Set(["approved", "partially_paid", "paid"]);
+const isAccounting = (roles: readonly string[]) => roles.some((r) => r === "accountant" || r === "chief_accountant");
+const isOperational = (roles: readonly string[]) => roles.some((r) => r === "manager" || r === "regional_director");
+
+function rublesFromForm(fd: FormData, name: string): number {
+  const raw = String(fd.get(name) ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  return raw === "" ? 0 : rublesToKopeks(Number(raw));
+}
+
+/** Resolve the paying ИП + the correct wallet for a CASH payout (regional pays from
+ * their own wallet; manager/others from the club desk). Never chosen by the client. */
+async function resolveCashWallet(companyId: string, clubId: string, userId: string, roles: readonly string[]) {
+  const ip = await resolveActiveIpForClub(clubId);
+  if (!ip.ok) return { ok: false as const, error: ip.error };
+  const walletId = roles.includes("regional_director")
+    ? await ensureRegionalCashWallet(companyId, clubId, ip.legalEntityId, userId)
+    : await ensureClubCashWallet(companyId, clubId, ip.legalEntityId);
+  return { ok: true as const, legalEntityId: ip.legalEntityId, walletId };
+}
+
+/**
+ * Record a salary payment against a calculation (partial allowed; multiple per salary).
+ * Cash → manager/regional, reduces the cash wallet ONCE via a CashMovement outflow.
+ * Bank → accounting, no wallet movement (manual confirmation until bank integration).
+ */
+export async function recordPayment(
+  _prev: PayrollPaymentState | undefined,
+  formData: FormData,
+): Promise<PayrollPaymentState> {
+  const calculationId = String(formData.get("calculationId") ?? "").trim();
+  const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });
+  if (!calc) return { ok: false, error: "Расчёт не найден" };
+  const scope = await resolvePeriodScope(calc.payrollPeriodId);
+  if (!scope.ok) return { ok: false, error: scope.error };
+  if (!PAYABLE_STATUSES.has(scope.period.status)) return { ok: false, error: "Выплаты возможны только после утверждения периода" };
+
+  const method = String(formData.get("method") ?? "").trim();
+  if (method !== "cash" && method !== "bank") return { ok: false, error: "Выберите способ выплаты" };
+  const roles = scope.ctx.effectiveRoles;
+  if (method === "cash" && !isOperational(roles)) return { ok: false, error: "Наличную выплату проводит управляющий или регионал" };
+  if (method === "bank" && !isAccounting(roles)) return { ok: false, error: "Безналичную выплату проводит бухгалтер" };
+
+  const amountKopeks = rublesFromForm(formData, "amount");
+  if (!Number.isFinite(amountKopeks) || amountKopeks <= 0) return { ok: false, error: "Сумма должна быть больше нуля" };
+  const comment = String(formData.get("comment") ?? "").trim() || null;
+  const documentKey = String(formData.get("documentKey") ?? "").trim() || null;
+  const paymentDate = new Date();
+
+  const closed = await monthClosedError(scope.companyId, calc.clubId, paymentDate);
+  if (closed) return { ok: false, error: closed };
+
+  // For cash we must resolve the wallet up front (also validates the club's active ИП).
+  let cash: { legalEntityId: string; walletId: string } | null = null;
+  if (method === "cash") {
+    const w = await resolveCashWallet(scope.companyId, calc.clubId, scope.ctx.user.id, roles);
+    if (!w.ok) return { ok: false, error: w.error };
+    cash = { legalEntityId: w.legalEntityId, walletId: w.walletId };
+  }
+
+  const payment = await prisma.payrollPayment.create({
+    data: {
+      companyId: scope.companyId,
+      payrollCalculationId: calc.id,
+      employeeId: calc.employeeId,
+      clubId: calc.clubId,
+      legalEntityId: cash?.legalEntityId ?? calc.legalEntityId ?? null,
+      amountKopeks,
+      paymentDate,
+      paymentMethod: method,
+      sourceType: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : "bank_account",
+      status: "confirmed",
+      documentKey,
+      comment,
+      paidByUserId: scope.ctx.user.id,
+    },
+  });
+
+  if (method === "cash" && cash) {
+    const movementId = await postCashOutflow({
+      companyId: scope.companyId,
+      clubId: calc.clubId,
+      legalEntityId: cash.legalEntityId,
+      walletId: cash.walletId,
+      amountKopeks,
+      occurredAt: paymentDate,
+      sourceType: PAYROLL_PAYMENT_SOURCE,
+      sourceId: payment.id,
+      userId: scope.ctx.user.id,
+      comment: `Выплата зарплаты · ${calc.employeeId}`,
+    });
+    await prisma.payrollPayment.update({ where: { id: payment.id }, data: { cashMovementId: movementId } });
+  }
+
+  await recomputeCalculationTotals(calc.id);
+  try {
+    await recordAudit({
+      action: "payroll.payment_recorded",
+      entityType: "PayrollCalculation",
+      entityId: calc.id,
+      companyId: scope.companyId,
+      clubId: calc.clubId,
+      userId: scope.ctx.user.id,
+      metadata: { paymentId: payment.id, method, amountKopeks },
+    });
+  } catch {
+    /* ignore */
+  }
+  revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
+  return { ok: true };
+}
+
+/** Cancel a payment. A confirmed cash movement is reversed with a compensating inflow
+ * (the balance is restored once); the payment is marked canceled and totals recomputed. */
+export async function cancelPayment(formData: FormData): Promise<void> {
+  const paymentId = String(formData.get("paymentId") ?? "").trim();
+  if (!paymentId) return;
+  const payment = await prisma.payrollPayment.findUnique({ where: { id: paymentId } });
+  if (!payment || payment.status !== "confirmed") return;
+  const calc = await prisma.payrollCalculation.findUnique({ where: { id: payment.payrollCalculationId } });
+  if (!calc) return;
+  const scope = await resolvePeriodScope(calc.payrollPeriodId);
+  if (!scope.ok || isPayrollPeriodClosed(scope.period.status)) return;
+  const roles = scope.ctx.effectiveRoles;
+  if (payment.paymentMethod === "cash" ? !isOperational(roles) : !isAccounting(roles)) return;
+
+  if (payment.paymentMethod === "cash" && payment.cashMovementId && payment.legalEntityId) {
+    const mv = await prisma.cashMovement.findUnique({ where: { id: payment.cashMovementId }, select: { fromWalletId: true } });
+    if (mv?.fromWalletId) {
+      await reverseCashOutflow({
+        companyId: scope.companyId,
+        clubId: calc.clubId,
+        legalEntityId: payment.legalEntityId,
+        walletId: mv.fromWalletId,
+        amountKopeks: payment.amountKopeks,
+        occurredAt: new Date(),
+        reversalSourceType: PAYROLL_PAYMENT_REVERSAL_SOURCE,
+        sourceId: payment.id,
+        userId: scope.ctx.user.id,
+      });
+    }
+  }
+  await prisma.payrollPayment.update({ where: { id: payment.id }, data: { status: "canceled" } });
+  await recomputeCalculationTotals(calc.id);
+  try {
+    await recordAudit({
+      action: "payroll.payment_canceled",
+      entityType: "PayrollCalculation",
+      entityId: calc.id,
+      companyId: scope.companyId,
+      clubId: calc.clubId,
+      userId: scope.ctx.user.id,
+      metadata: { paymentId: payment.id },
+    });
+  } catch {
+    /* ignore */
+  }
+  revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
+}
+
+/**
+ * Record an advance for a calculation's employee+month (one per month — unique). Cash
+ * reduces the wallet immediately; counted as part of paid (never double-counted). The
+ * amount may not exceed the earned-to-date (net payable so far).
+ */
+export async function recordAdvance(
+  _prev: PayrollPaymentState | undefined,
+  formData: FormData,
+): Promise<PayrollPaymentState> {
+  const calculationId = String(formData.get("calculationId") ?? "").trim();
+  const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });
+  if (!calc) return { ok: false, error: "Расчёт не найден" };
+  const scope = await resolvePeriodScope(calc.payrollPeriodId);
+  if (!scope.ok) return { ok: false, error: scope.error };
+  if (!PAYABLE_STATUSES.has(scope.period.status)) return { ok: false, error: "Аванс возможен только после утверждения расчёта" };
+
+  const method = String(formData.get("method") ?? "").trim();
+  if (method !== "cash" && method !== "bank") return { ok: false, error: "Выберите способ выплаты" };
+  const roles = scope.ctx.effectiveRoles;
+  if (method === "cash" && !isOperational(roles)) return { ok: false, error: "Наличный аванс проводит управляющий или регионал" };
+  if (method === "bank" && !isAccounting(roles)) return { ok: false, error: "Безналичный аванс проводит бухгалтер" };
+
+  const amountKopeks = rublesFromForm(formData, "amount");
+  const earnedToDate = calc.netPayableKopeks;
+  if (!advanceWithinEarned(amountKopeks, earnedToDate)) {
+    return { ok: false, error: "Аванс должен быть больше нуля и не превышать заработанное к дате" };
+  }
+  const comment = String(formData.get("comment") ?? "").trim() || null;
+  const documentKey = String(formData.get("documentKey") ?? "").trim() || null;
+  const now = new Date();
+  const closed = await monthClosedError(scope.companyId, calc.clubId, now);
+  if (closed) return { ok: false, error: closed };
+
+  const existing = await prisma.payrollAdvance.findFirst({
+    where: { employeeId: calc.employeeId, clubId: calc.clubId, periodYear: scope.period.year, periodMonth: scope.period.month, status: { in: ["paid", "approved", "requested"] } },
+    select: { id: true },
+  });
+  if (existing) return { ok: false, error: "Аванс за этот месяц уже оформлен" };
+
+  let cash: { legalEntityId: string; walletId: string } | null = null;
+  if (method === "cash") {
+    const w = await resolveCashWallet(scope.companyId, calc.clubId, scope.ctx.user.id, roles);
+    if (!w.ok) return { ok: false, error: w.error };
+    cash = { legalEntityId: w.legalEntityId, walletId: w.walletId };
+  }
+
+  const advance = await prisma.payrollAdvance.create({
+    data: {
+      companyId: scope.companyId,
+      employeeId: calc.employeeId,
+      clubId: calc.clubId,
+      periodYear: scope.period.year,
+      periodMonth: scope.period.month,
+      earnedToDateKopeks: earnedToDate,
+      amountKopeks,
+      paymentMethod: method,
+      cashSource: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : null,
+      documentKey,
+      status: "paid",
+      approvedByUserId: scope.ctx.user.id,
+      paidByUserId: scope.ctx.user.id,
+      paidAt: now,
+    },
+  });
+
+  if (method === "cash" && cash) {
+    await postCashOutflow({
+      companyId: scope.companyId,
+      clubId: calc.clubId,
+      legalEntityId: cash.legalEntityId,
+      walletId: cash.walletId,
+      amountKopeks,
+      occurredAt: now,
+      sourceType: PAYROLL_ADVANCE_SOURCE,
+      sourceId: advance.id,
+      userId: scope.ctx.user.id,
+      comment: comment ?? "Аванс",
+    });
+  }
+
+  await recomputeCalculationTotals(calc.id);
+  try {
+    await recordAudit({
+      action: "payroll.advance_recorded",
+      entityType: "PayrollCalculation",
+      entityId: calc.id,
+      companyId: scope.companyId,
+      clubId: calc.clubId,
+      userId: scope.ctx.user.id,
+      metadata: { advanceId: advance.id, method, amountKopeks },
+    });
+  } catch {
+    /* ignore */
+  }
+  revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
+  return { ok: true };
+}
+
+/** Cancel an advance (compensating inflow if cash) and recompute. */
+export async function cancelAdvance(formData: FormData): Promise<void> {
+  const advanceId = String(formData.get("advanceId") ?? "").trim();
+  if (!advanceId) return;
+  const advance = await prisma.payrollAdvance.findUnique({ where: { id: advanceId } });
+  if (!advance || advance.status !== "paid") return;
+  // Find the calculation via the period matching the advance month.
+  const period = await prisma.payrollPeriod.findFirst({
+    where: { companyId: advance.companyId, clubId: advance.clubId, year: advance.periodYear, month: advance.periodMonth },
+    select: { id: true, status: true },
+  });
+  if (!period) return;
+  const scope = await resolvePeriodScope(period.id);
+  if (!scope.ok || isPayrollPeriodClosed(scope.period.status)) return;
+  const roles = scope.ctx.effectiveRoles;
+  if (advance.paymentMethod === "cash" ? !isOperational(roles) : !isAccounting(roles)) return;
+
+  if (advance.paymentMethod === "cash") {
+    const mv = await prisma.cashMovement.findFirst({
+      where: { sourceType: PAYROLL_ADVANCE_SOURCE, sourceId: advance.id },
+      select: { fromWalletId: true, legalEntityId: true },
+    });
+    if (mv?.fromWalletId) {
+      await reverseCashOutflow({
+        companyId: scope.companyId,
+        clubId: advance.clubId,
+        legalEntityId: mv.legalEntityId,
+        walletId: mv.fromWalletId,
+        amountKopeks: advance.amountKopeks,
+        occurredAt: new Date(),
+        reversalSourceType: PAYROLL_ADVANCE_REVERSAL_SOURCE,
+        sourceId: advance.id,
+        userId: scope.ctx.user.id,
+      });
+    }
+  }
+  await prisma.payrollAdvance.update({ where: { id: advance.id }, data: { status: "canceled" } });
+  const target = await prisma.payrollCalculation.findFirst({
+    where: { payrollPeriodId: period.id, employeeId: advance.employeeId },
+    select: { id: true },
+  });
+  if (target) await recomputeCalculationTotals(target.id);
+  try {
+    await recordAudit({
+      action: "payroll.advance_canceled",
+      entityType: "PayrollAdvance",
+      entityId: advance.id,
+      companyId: scope.companyId,
+      clubId: advance.clubId,
+      userId: scope.ctx.user.id,
+    });
+  } catch {
+    /* ignore */
+  }
+  revalidatePath(`/payroll/periods/${period.id}`);
 }

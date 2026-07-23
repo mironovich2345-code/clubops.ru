@@ -13,6 +13,7 @@ import { GeneratePeriodButton } from "../../_components/GeneratePeriodButton";
 import { CalculationCard, type BreakdownLine } from "../../_components/CalculationCard";
 import { PeriodWorkflowBar } from "../../_components/PeriodWorkflowBar";
 import { AdjustmentsSection, type AdjustmentRow } from "../../_components/AdjustmentsSection";
+import { PaymentsSection, type PaymentRow, type AdvanceRow } from "../../_components/PaymentsSection";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,30 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
     list.push({ id: a.id, type: a.type, direction: a.direction, amountKopeks: a.amountKopeks, comment: a.comment });
     adjBy.set(a.payrollCalculationId, list);
   }
+
+  // Payments (confirmed) per calc + paid advances (per employee for this month).
+  const allPayments = calcs.length
+    ? await prisma.payrollPayment.findMany({
+        where: { payrollCalculationId: { in: calcs.map((c) => c.id) }, status: "confirmed" },
+        orderBy: { paymentDate: "asc" },
+      })
+    : [];
+  const payBy = new Map<string, PaymentRow[]>();
+  for (const p of allPayments) {
+    const list = payBy.get(p.payrollCalculationId) ?? [];
+    list.push({ id: p.id, amountKopeks: p.amountKopeks, method: p.paymentMethod, status: p.status });
+    payBy.set(p.payrollCalculationId, list);
+  }
+  const paidAdvances = await prisma.payrollAdvance.findMany({
+    where: { companyId, clubId: period.clubId, periodYear: period.year, periodMonth: period.month, status: "paid" },
+  });
+  const advByEmployee = new Map<string, AdvanceRow>(
+    paidAdvances.map((a) => [a.employeeId, { id: a.id, amountKopeks: a.amountKopeks, method: a.paymentMethod ?? "cash" }]),
+  );
+
+  const payable = !closed && ["approved", "partially_paid", "paid"].includes(period.status);
+  const canPayCash = canManagePayrollAssignments(ctx.effectiveRoles);
+  const canPayBank = ctx.effectiveRoles.some((r) => r === "accountant" || r === "chief_accountant");
 
   return (
     <div className="mx-auto max-w-[1100px]">
@@ -123,6 +148,17 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
                     initial={initial}
                   />
                   <AdjustmentsSection calculationId={c.id} adjustments={adjBy.get(c.id) ?? []} canAdd={canAdjust} />
+                  <PaymentsSection
+                    calculationId={c.id}
+                    advance={advByEmployee.get(c.employeeId) ?? null}
+                    payments={payBy.get(c.id) ?? []}
+                    netPayableKopeks={c.netPayableKopeks}
+                    paidKopeks={c.paidKopeks}
+                    remainingKopeks={c.remainingKopeks}
+                    payable={payable}
+                    canPayCash={canPayCash}
+                    canPayBank={canPayBank}
+                  />
                 </div>
               </div>
             );

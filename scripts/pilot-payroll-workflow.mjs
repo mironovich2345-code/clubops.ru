@@ -95,7 +95,8 @@ function main() {
   check("S29 adjustment/payment change recomputes totals", actions.includes("recomputeCalculationTotals(calc.id)") && aggregateSrc.includes("export async function recomputeCalculationTotals"));
   check("S30 lock-after-approval gate in access layer", access.includes("export function canAddPayrollAdjustment") && access.includes("if (opts.locked) return accounting"));
   check("S31 transitions audited with the canonical action code", actions.includes("PAYROLL_ACTION_AUDIT[action]"));
-  check("S32 aggregate never double-counts advance (paid = advance + other)", aggregateSrc.includes("Math.max(0, calc.paidKopeks - advance)"));
+  check("S32 aggregate never double-counts advance (advance + payments summed separately)",
+    aggregateSrc.includes("advanceKopeks: advance") && aggregateSrc.includes("otherPaymentsKopeks: otherPayments") && aggregateSrc.includes("paidKopeks: agg.paidKopeks"));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
