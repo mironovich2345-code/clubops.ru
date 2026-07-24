@@ -1346,6 +1346,10 @@ model PayrollAdvance {
   amountKopeks    Int       @default(0)
   paymentMethod   String?
   cashSource      String?
+  legalEntityId   String?   // paying legal entity (ИП/ООО)
+  source          String?   // источник аванса: regional | owner | general_director | other
+  earnedToDateSource String? // auto (from calc) | manual (manager-entered)
+  comment         String?
   documentKey     String?
   expenseId       String?   // linked salary Expense (advance is part of the actual payout)
   status          String    @default("requested")

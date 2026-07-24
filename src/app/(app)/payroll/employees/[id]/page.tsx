@@ -15,6 +15,8 @@ import { PayrollProfileForm } from "../../_components/PayrollProfileForm";
 import { AssignmentForm } from "../../_components/AssignmentForm";
 import { RemoveAssignmentButton } from "../../_components/RemoveAssignmentButton";
 import { PaySchemeForm } from "../../_components/PaySchemeForm";
+import { EmployeeAdvancePanel, type EmployeeAdvanceRow } from "../../_components/EmployeeAdvancePanel";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +48,14 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
   const effective = resolveEffectiveScheme(schemes, new Date());
   const canAssign = canManagePayrollAssignments(ctx.effectiveRoles);
   const canScheme = canManagePaySchemes(ctx.effectiveRoles);
+
+  // Advances (pre-period) for this employee — recent months.
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const advanceRows: EmployeeAdvanceRow[] = (
+    await prisma.payrollAdvance.findMany({ where: { companyId, employeeId: employee.id }, orderBy: [{ periodYear: "desc" }, { periodMonth: "desc" }], take: 12 })
+  ).map((a) => ({ id: a.id, periodYear: a.periodYear, periodMonth: a.periodMonth, amountKopeks: a.amountKopeks, method: a.paymentMethod, status: a.status, earnedToDateSource: a.earnedToDateSource, comment: a.comment }));
+  const canApproveAdvance = ctx.effectiveRoles.includes("regional_director");
 
   return (
     <div className="mx-auto max-w-[1100px]">
@@ -146,6 +156,19 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
             Настройка схем доступна региональному директору, главному бухгалтеру или собственнику.
           </div>
         )}
+      </section>
+
+      {/* Advances (pre-period — открытый текущий месяц до расчётного периода) */}
+      <section className={`mb-6 p-5 ${CARD}`}>
+        <h2 className="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-200">Авансы</h2>
+        <EmployeeAdvancePanel
+          employeeId={employee.id}
+          clubId={employee.clubId}
+          currentMonth={currentMonth}
+          canManage={canAssign}
+          canApprove={canApproveAdvance}
+          advances={advanceRows}
+        />
       </section>
 
       {/* Obligations (survive dismissal — never auto-written-off) */}
