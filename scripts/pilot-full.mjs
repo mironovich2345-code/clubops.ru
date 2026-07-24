@@ -43,6 +43,7 @@ const pilots = [
   ["OFD Taxcom sales", "pilot-ofd-taxcom.mjs"],
   ["OFD dashboard quick-sync", "pilot-ofd-sync-dashboard.mjs"],
   ["OFD Astral provider foundation", "pilot-ofd-astral.mjs"],
+  ["OFD auto-sync diagnostics", "pilot-ofd-sync-diagnostics.mjs"],
   ["Email OTP", "pilot-otp.mjs"],
   ["Sessions / revocation", "pilot-sessions.mjs"],
   ["Club / LegalEntity", "pilot-club-legal-entity.mjs"],

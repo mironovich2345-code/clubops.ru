@@ -36,6 +36,7 @@
     "pilot:settings-pin": "node scripts/pilot-settings-pin.mjs",
     "pilot:ofd-astral": "node scripts/pilot-ofd-astral.mjs",
     "pilot:refund-upload-errors": "node scripts/pilot-refund-upload-errors.mjs",
+    "pilot:ofd-sync-diagnostics": "node scripts/pilot-ofd-sync-diagnostics.mjs",
     "pilot:invoices": "node scripts/pilot-invoices.mjs",
     "pilot:invites": "node scripts/pilot-invites.mjs",
     "pilot:telegram-notifications": "node scripts/pilot-telegram-notifications.mjs",
