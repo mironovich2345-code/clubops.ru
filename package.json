@@ -62,6 +62,7 @@
     "pilot:payroll-workflow": "node scripts/pilot-payroll-workflow.mjs",
     "pilot:payroll-payments": "node scripts/pilot-payroll-payments.mjs",
     "pilot:payroll-obligations": "node scripts/pilot-payroll-obligations.mjs",
+    "pilot:payroll-finance": "node scripts/pilot-payroll-finance.mjs",
     "pilot:payroll-surface": "node scripts/pilot-payroll-surface.mjs",
     "pilot:payroll-integration": "node scripts/pilot-payroll-integration.mjs",
     "pilot:deploy-config": "node scripts/pilot-deploy-config.mjs",

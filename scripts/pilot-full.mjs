@@ -76,6 +76,7 @@ const pilots = [
   ["Payroll periods + calculations", "pilot-payroll-periods.mjs"],
   ["Payroll workflow + adjustments", "pilot-payroll-workflow.mjs"],
   ["Payroll advances + payments + cash", "pilot-payroll-payments.mjs"],
+  ["Payroll → finance (salary expense)", "pilot-payroll-finance.mjs"],
   ["Payroll debts + settlement", "pilot-payroll-obligations.mjs"],
   ["Payroll summary + notifications + activity", "pilot-payroll-surface.mjs"],
   ["Payroll OFD/sales integration", "pilot-payroll-integration.mjs"],

@@ -1347,6 +1347,7 @@ model PayrollAdvance {
   paymentMethod   String?
   cashSource      String?
   documentKey     String?
+  expenseId       String?   // linked salary Expense (advance is part of the actual payout)
   status          String    @default("requested")
   requestedAt     DateTime  @default(now())
   approvedByUserId String?
@@ -1379,6 +1380,7 @@ model PayrollPayment {
   statementId          String?   // → PayrollStatement (signed ведомость)
   bankTransactionId    String?
   cashMovementId       String?   // link to the cash ledger movement (single-source)
+  expenseId            String?   // linked salary Expense (P&L + ИП/ООО fact balance) — the ONE money record
   comment              String?
   paidByUserId         String
   createdAt            DateTime  @default(now())

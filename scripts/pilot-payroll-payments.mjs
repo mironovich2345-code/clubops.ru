@@ -72,7 +72,7 @@ function main() {
   check("S36 cash payment resolves the club's active ИП + correct wallet server-side",
     actions.includes("resolveActiveIpForClub") && actions.includes("ensureRegionalCashWallet") && actions.includes("ensureClubCashWallet"));
   check("S37 bank payments do NOT touch a cash wallet",
-    actions.includes('if (method === "cash" && cash)') && actions.includes("bank_account"));
+    src("../src/lib/payroll/salary-expense.ts").includes('if (params.method === "cash")') && actions.includes("bank_account"));
   check("S38 payments only after approval (locked) and never when closed",
     actions.includes("PAYABLE_STATUSES") && actions.includes('"approved", "partially_paid", "paid"'));
   check("S39 cash payer role gate (manager/regional cash; accountant bank)",
