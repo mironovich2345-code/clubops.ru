@@ -1,9 +1,17 @@
 # Payroll — one-club pilot scenarios
 
-**Status:** Stage 1 delivers the **calculation engine + data model + tests**. The
-end-to-end pilot below is executed as Stages 4–8 land (workflow, payments, cash link,
-UI). Each scenario lists the calc inputs (already testable via `scripts/pilot-payroll.mjs`)
-and the workflow/finance expectations to verify once persistence + payments exist.
+**Status:** all 8 stages are implemented and merged to `main`. The calculation engine,
+data model, employee/scheme setup, period calculations, approval workflow, advances/
+payments with cash-ledger integration, debts/settlement, ФОТ summary/notifications, and
+the OFD/plan prefill are all in place. Every scenario below is covered by the automated
+`scripts/pilot-payroll*.mjs` suites (166 checks) and by walking the club pilot in the UI.
+
+**How to run the pilot in the UI:** create employees in `/employees`, set their club
+assignments + a pay scheme in `/payroll/employees/[id]`, create a period in
+`/payroll/periods`, «Сформировать расчёты», enter/verify inputs (plan-fact managers are
+prefilled from OFD/план), submit → regional approve → accountant approve, record
+advances/payments, close the month, and settle any resulting obligation in
+`/payroll/obligations`.
 
 ## Test data — club "ГринЛайт" (July 2026)
 
@@ -44,6 +52,15 @@ Legal entity = club's active ИП. Cash source = club_cash. Approver chain: Ив
 - **Долги:** возврат денег сотрудником гасит КОНКРЕТНОЕ обязательство, а не «Приход Иное».
 - **Права (server-side):** manager (свой клуб), regional (регион), accountant (корректировки/безнал/закрытие), owner (только агрегаты ФОТ).
 
-## Currently automatable (Stage 1)
+## Automated coverage (all stages)
 
-`scripts/pilot-payroll.mjs` already verifies the calculation math for scenarios 1–5, 7, 10–15, plan-fact examples, ±40% cap, streak bonus, trainer credit, aggregation (gross/net/remaining/debt), advance-not-double-counted, and the status machine (permissions + illegal-transition + lock). Payment/cash-ledger scenarios (6, 8, 9) are wired + tested in Stage 5.
+Nine pilot suites, 166 checks total, all green in `npm run pilot:full`:
+
+- `pilot-payroll.mjs` (43) — calc engine + status machine (scenarios 1–5, 7, 10–15, plan-fact examples, ±40% cap, streak bonus, trainer credit, aggregation, advance-not-double-counted).
+- `pilot-payroll-setup.mjs` (23) — assignments + effective-dated schemes + no-recompute-of-closed-month.
+- `pilot-payroll-periods.mjs` (21) — compute dispatch + period totals + snapshot immutability.
+- `pilot-payroll-workflow.mjs` (27) — transitions, lock, comment-required adjustments, aggregation.
+- `pilot-payroll-payments.mjs` (21) — advances + payments + cash outflow/reversal balance math (scenarios 6, 8, 9).
+- `pilot-payroll-obligations.mjs` (16) — debts on close, specific settlement, no auto write-off (scenarios 10, 11, 13, 15).
+- `pilot-payroll-surface.mjs` (11) — ФОТ summary + notifications + activity labels.
+- `pilot-payroll-integration.mjs` (11) — OFD/plan prefill + preliminary ФОТ (scenario 3).

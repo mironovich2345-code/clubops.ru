@@ -72,6 +72,7 @@ const pilots = [
   ["Payroll advances + payments + cash", "pilot-payroll-payments.mjs"],
   ["Payroll debts + settlement", "pilot-payroll-obligations.mjs"],
   ["Payroll summary + notifications + activity", "pilot-payroll-surface.mjs"],
+  ["Payroll OFD/sales integration", "pilot-payroll-integration.mjs"],
   ["Deploy config", "pilot-deploy-config.mjs"],
   ["Document security", "pilot-document-security.mjs"],
   ["Dark mode toggle", "pilot-theme.mjs"],

@@ -88,7 +88,7 @@ function main() {
   check("S19 locked period blocks generation AND input edits",
     (actions.match(/isPayrollPeriodLocked\(scope\.period\.status\)/g) ?? []).length >= 2);
   check("S20 re-generate never overwrites entered inputs",
-    actions.includes("Never overwrite inputs on re-generate"));
+    actions.includes("keeps its entered inputs") && actions.includes('existing.status === "draft"'));
   check("S21 period creation guards a closed month",
     actions.includes("monthClosedError(companyId, clubId, firstDay)"));
   check("S22 compute bridge is pure (no eval, no db import)",

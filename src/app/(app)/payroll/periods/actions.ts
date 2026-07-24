@@ -11,6 +11,7 @@ import { makeSchemeSnapshot, snapshotToSchemeParams, getPeriodForScope } from "@
 import { computeScheme, type PeriodInput } from "@/lib/payroll/compute";
 import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
 import { obligationFromRemaining } from "@/lib/payroll/obligations";
+import { getClubPlanFactBases } from "@/lib/payroll/sales-bases";
 import { notifyRegionalReview, notifyAuthor } from "@/lib/notifications/events";
 import { resolveActiveIpForClub } from "@/lib/expense-simplified";
 import { ensureClubCashWallet, ensureRegionalCashWallet } from "@/lib/cash-wallets";
@@ -132,6 +133,9 @@ export async function generateCalculations(formData: FormData): Promise<void> {
   const byEmployee = new Map<string, string>();
   for (const a of assignments) if (!byEmployee.has(a.employeeId)) byEmployee.set(a.employeeId, a.position);
 
+  // Club-level plan/fact from OFD + sales plans (spec §13). Shared across employees.
+  const bases = await getClubPlanFactBases(companyId, period.clubId, period.year, period.month);
+
   let created = 0;
   for (const [employeeId, position] of byEmployee) {
     const employee = await prisma.clubEmployee.findUnique({ where: { id: employeeId } });
@@ -139,25 +143,61 @@ export async function generateCalculations(formData: FormData): Promise<void> {
 
     const scheme = await getEffectiveSchemeForEmployee(companyId, period.clubId, employeeId, firstDay);
     const snapshot = scheme ? makeSchemeSnapshot(scheme) : null;
-    const details = { breakdown: [] as unknown[], flags: {}, warnings: scheme ? [] : ["Схема оплаты не задана на этот месяц."] };
 
-    await prisma.payrollCalculation.upsert({
+    // Idempotent: an existing calculation keeps its entered inputs; only the scheme
+    // snapshot is refreshed while it is still a draft. New calculations are created and,
+    // for the club-level schemes, PRE-FILLED from sales data (preliminary ФОТ).
+    const existing = await prisma.payrollCalculation.findUnique({
       where: { payrollPeriodId_employeeId: { payrollPeriodId: period.id, employeeId } },
-      create: {
-        companyId,
-        payrollPeriodId: period.id,
-        employeeId,
-        clubId: period.clubId,
-        legalEntityId: employee.defaultLegalEntityId ?? null,
-        roleSnapshot: position,
-        schemeSnapshotJson: snapshot ? JSON.stringify(snapshot) : null,
-        status: "draft",
-        detailsJson: JSON.stringify(details),
-      },
-      // Never overwrite inputs on re-generate; only refresh the scheme snapshot while
-      // still a draft (keeps historical calcs stable, refreshes newly-set schemes).
-      update: scheme ? { schemeSnapshotJson: JSON.stringify(snapshot) } : {},
+      select: { id: true, status: true },
     });
+    if (existing) {
+      if (scheme && existing.status === "draft") {
+        await prisma.payrollCalculation.update({ where: { id: existing.id }, data: { schemeSnapshotJson: JSON.stringify(snapshot) } });
+      }
+      created += 1;
+      continue;
+    }
+
+    const typed = snapshot ? snapshotToSchemeParams(JSON.stringify(snapshot)) : null;
+    const prefill = typed && (typed.type === "plan_adjusted_salary" || typed.type === "revenue_percentage") && (bases.hasPlan || bases.hasFact);
+
+    let data: Record<string, unknown> = {
+      companyId,
+      payrollPeriodId: period.id,
+      employeeId,
+      clubId: period.clubId,
+      legalEntityId: employee.defaultLegalEntityId ?? null,
+      roleSnapshot: position,
+      schemeSnapshotJson: snapshot ? JSON.stringify(snapshot) : null,
+      status: "draft",
+      detailsJson: JSON.stringify({ breakdown: [], flags: {}, warnings: scheme ? [] : ["Схема оплаты не задана на этот месяц."] }),
+    };
+
+    if (prefill && typed) {
+      const input =
+        typed.type === "plan_adjusted_salary"
+          ? { subscriptions: bases.subscriptions, personalTraining: bases.personalTraining }
+          : { subscriptionsRevenueKopeks: bases.subscriptions.factKopeks, ptRevenueKopeks: bases.personalTraining.factKopeks };
+      const result = computeScheme(typed, input);
+      const planKopeks = bases.subscriptions.planKopeks + bases.personalTraining.planKopeks;
+      const actualKopeks = bases.subscriptions.factKopeks + bases.personalTraining.factKopeks;
+      data = {
+        ...data,
+        status: "calculated",
+        calculatedAt: new Date(),
+        automaticAmountKopeks: result.amountKopeks,
+        salesBaseKopeks: bases.personalTraining.factKopeks,
+        revenueBaseKopeks: actualKopeks,
+        planKopeks: typed.type === "plan_adjusted_salary" ? planKopeks : null,
+        actualKopeks: typed.type === "plan_adjusted_salary" ? actualKopeks : null,
+        completionBp: typed.type === "plan_adjusted_salary" && planKopeks > 0 ? Math.round((actualKopeks / planKopeks) * BP_PER_100_PERCENT) : null,
+        detailsJson: JSON.stringify({ breakdown: result.breakdown, flags: result.flags, warnings: [...result.warnings, "Данные подставлены из ОФД/плана продаж — проверьте перед согласованием."] }),
+      };
+    }
+
+    const createdCalc = await prisma.payrollCalculation.create({ data: data as never });
+    if (prefill) await recomputeCalculationTotals(createdCalc.id);
     created += 1;
   }
   try {
