@@ -10,6 +10,7 @@ import { getEffectiveSchemeForEmployee } from "@/lib/payroll/schemes";
 import { makeSchemeSnapshot, snapshotToSchemeParams, getPeriodForScope } from "@/lib/payroll/periods";
 import { computeScheme, type PeriodInput } from "@/lib/payroll/compute";
 import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
+import { obligationFromRemaining } from "@/lib/payroll/obligations";
 import { resolveActiveIpForClub } from "@/lib/expense-simplified";
 import { ensureClubCashWallet, ensureRegionalCashWallet } from "@/lib/cash-wallets";
 import {
@@ -309,6 +310,11 @@ export async function transitionPeriod(
     const drafts = await prisma.payrollCalculation.count({ where: { payrollPeriodId: periodId, status: "draft" } });
     if (drafts > 0) return { ok: false, error: "Нельзя согласовать: есть нерассчитанные позиции. Сначала рассчитайте всех сотрудников." };
   }
+  if (action === "close") {
+    // No unconfirmed cash payments may be left dangling before closing.
+    const pendingPay = await prisma.payrollPayment.count({ where: { payrollCalculationId: { in: (await prisma.payrollCalculation.findMany({ where: { payrollPeriodId: periodId }, select: { id: true } })).map((c) => c.id) }, status: "pending" } });
+    if (pendingPay > 0) return { ok: false, error: "Есть неподтверждённые выплаты. Подтвердите или отмените их перед закрытием." };
+  }
 
   const data: Record<string, unknown> = { status: decision.to };
   const tsField = TS_FIELD[decision.to];
@@ -320,6 +326,35 @@ export async function transitionPeriod(
       where: { payrollPeriodId: periodId, status: "calculated" },
       data: { status: "approved", approvedAt: new Date() },
     });
+  }
+  if (decision.to === "closed") {
+    // Turn every remainder / overpayment into a SPECIFIC obligation (spec §8): unpaid →
+    // company_owes_employee, overpaid → employee_owes_company. Never auto-written-off.
+    const closeCalcs = await prisma.payrollCalculation.findMany({ where: { payrollPeriodId: periodId } });
+    for (const c of closeCalcs) {
+      const o = obligationFromRemaining(c.remainingKopeks);
+      if (!o) continue;
+      const dup = await prisma.employeeFinancialObligation.findFirst({
+        where: { companyId: scope.companyId, employeeId: c.employeeId, payrollPeriodId: periodId, reason: o.reason, status: { in: ["open", "partially_settled"] } },
+        select: { id: true },
+      });
+      if (dup) continue;
+      await prisma.employeeFinancialObligation.create({
+        data: {
+          companyId: scope.companyId,
+          employeeId: c.employeeId,
+          clubId: c.clubId,
+          payrollPeriodId: periodId,
+          direction: o.direction,
+          reason: o.reason,
+          originalAmountKopeks: o.amountKopeks,
+          outstandingAmountKopeks: o.amountKopeks,
+          status: "open",
+          createdByUserId: scope.ctx.user.id,
+        },
+      });
+      await prisma.payrollCalculation.update({ where: { id: c.id }, data: { status: "closed" } });
+    }
   }
   try {
     await recordAudit({

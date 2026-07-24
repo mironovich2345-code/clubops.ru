@@ -43,12 +43,20 @@ export default async function PayrollPage() {
           title="Зарплата (ФОТ)"
           description="Схемы оплаты, начисления и выплаты сотрудникам. Настройте закрепления и схемы, затем формируйте расчётные периоды по клубам."
         />
-        <Link
-          href="/payroll/periods"
-          className="shrink-0 inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
-        >
-          Расчётные периоды →
-        </Link>
+        <div className="flex shrink-0 gap-2">
+          <Link
+            href="/payroll/obligations"
+            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            Долги
+          </Link>
+          <Link
+            href="/payroll/periods"
+            className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
+          >
+            Расчётные периоды →
+          </Link>
+        </div>
       </div>
 
       {!canManagePaySchemes(ctx.effectiveRoles) ? (

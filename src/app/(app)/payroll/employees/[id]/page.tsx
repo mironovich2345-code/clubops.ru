@@ -6,6 +6,7 @@ import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/
 import { getEmployeeForScope } from "@/lib/club-employees";
 import { getClubLegalEntities } from "@/lib/legal-entities";
 import { getAssignmentsForEmployee } from "@/lib/payroll/assignments";
+import { getObligationsForEmployee, OBLIGATION_DIRECTION_LABELS, OBLIGATION_STATUS_LABELS } from "@/lib/payroll/obligations";
 import { getSchemesForEmployee, resolveEffectiveScheme } from "@/lib/payroll/schemes";
 import { canManagePayrollAssignments, canManagePaySchemes } from "@/lib/payroll/access";
 import { PAYROLL_POSITION_LABELS, PAYROLL_SCHEME_LABELS } from "@/lib/payroll/enums";
@@ -35,10 +36,11 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
   if (!employee) notFound();
 
   const clubName = (cid: string) => clubs.find((c) => c.id === cid)?.name ?? cid;
-  const [assignments, schemes, legalEntities] = await Promise.all([
+  const [assignments, schemes, legalEntities, obligations] = await Promise.all([
     getAssignmentsForEmployee(companyId, employee.id),
     getSchemesForEmployee(companyId, employee.id),
     getClubLegalEntities(employee.clubId),
+    getObligationsForEmployee(companyId, employee.id),
   ]);
   const legalOptions = legalEntities.map((e) => ({ id: e.id, name: e.name }));
   const effective = resolveEffectiveScheme(schemes, new Date());
@@ -143,6 +145,38 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
           <div className="text-sm text-slate-500 dark:text-slate-400">
             Настройка схем доступна региональному директору, главному бухгалтеру или собственнику.
           </div>
+        )}
+      </section>
+
+      {/* Obligations (survive dismissal — never auto-written-off) */}
+      <section className={`mb-6 p-5 ${CARD}`}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Долги и обязательства</h2>
+          <Link href="/payroll/obligations" className="text-xs text-brand-600 hover:text-brand-700">Погашение →</Link>
+        </div>
+        {employee.status === "dismissed" ? (
+          <p className="mb-3 text-xs text-amber-600 dark:text-amber-400">
+            Сотрудник уволен. Обязательства сохраняются и не списываются автоматически.
+          </p>
+        ) : null}
+        {obligations.length === 0 ? (
+          <div className="text-sm text-slate-500 dark:text-slate-400">Обязательств нет.</div>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {obligations.map((o) => (
+              <li key={o.id} className="flex items-center justify-between">
+                <span className="text-slate-600 dark:text-slate-300">
+                  {OBLIGATION_DIRECTION_LABELS[o.direction] ?? o.direction} · {o.reason}
+                </span>
+                <span className="tabular-nums">
+                  <span className={o.direction === "employee_owes_company" ? "text-rose-600" : "text-emerald-600"}>
+                    {formatKopeks(o.outstandingAmountKopeks)}
+                  </span>
+                  <span className="ml-2 text-xs text-slate-400">{OBLIGATION_STATUS_LABELS[o.status] ?? o.status}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
     </div>

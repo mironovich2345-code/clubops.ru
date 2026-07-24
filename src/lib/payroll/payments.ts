@@ -72,6 +72,40 @@ export async function postCashOutflow(p: OutflowParams): Promise<string | null> 
   }
 }
 
+/** Create a confirmed INFLOW movement (money enters the wallet) — used when an employee
+ * repays a debt in cash. Idempotent on (sourceType, sourceId). */
+export async function postCashInflow(p: OutflowParams): Promise<string | null> {
+  try {
+    const mv = await prisma.cashMovement.create({
+      data: {
+        companyId: p.companyId,
+        clubId: p.clubId,
+        legalEntityId: p.legalEntityId,
+        type: "payroll_repayment",
+        amountKopeks: p.amountKopeks,
+        fromWalletId: null,
+        toWalletId: p.walletId,
+        status: MSTATUS.CONFIRMED,
+        occurredAt: p.occurredAt,
+        confirmedAt: new Date(),
+        createdByUserId: p.userId,
+        confirmedByUserId: p.userId,
+        sourceType: p.sourceType,
+        sourceId: p.sourceId,
+        comment: p.comment ?? null,
+      },
+      select: { id: true },
+    });
+    return mv.id;
+  } catch (e) {
+    if (isUniqueClash(e)) {
+      const existing = await prisma.cashMovement.findFirst({ where: { sourceType: p.sourceType, sourceId: p.sourceId }, select: { id: true } });
+      return existing?.id ?? null;
+    }
+    throw e;
+  }
+}
+
 type ReversalParams = {
   companyId: string;
   clubId: string;

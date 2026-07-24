@@ -55,6 +55,7 @@
     "pilot:payroll-periods": "node scripts/pilot-payroll-periods.mjs",
     "pilot:payroll-workflow": "node scripts/pilot-payroll-workflow.mjs",
     "pilot:payroll-payments": "node scripts/pilot-payroll-payments.mjs",
+    "pilot:payroll-obligations": "node scripts/pilot-payroll-obligations.mjs",
     "pilot:deploy-config": "node scripts/pilot-deploy-config.mjs",
     "pilot:document-security": "node scripts/pilot-document-security.mjs"
   },
