@@ -33,6 +33,7 @@
     "pilot:cash-wallets": "node scripts/pilot-cash-wallets.mjs",
     "pilot:cash-reconciliation": "node scripts/pilot-cash-reconciliation.mjs",
     "pilot:ofd-sync-dashboard": "node scripts/pilot-ofd-sync-dashboard.mjs",
+    "pilot:settings-pin": "node scripts/pilot-settings-pin.mjs",
     "pilot:invoices": "node scripts/pilot-invoices.mjs",
     "pilot:invites": "node scripts/pilot-invites.mjs",
     "pilot:telegram-notifications": "node scripts/pilot-telegram-notifications.mjs",

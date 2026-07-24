@@ -64,6 +64,7 @@ const pilots = [
   ["Security hardening phase 1", "pilot-security-hardening.mjs"],
   ["Expense category isolation", "pilot-category-isolation.mjs"],
   ["Rate limiting", "pilot-rate-limit.mjs"],
+  ["Settings PIN protection", "pilot-settings-pin.mjs"],
   ["Health / deployment version", "pilot-health.mjs"],
   ["Account settings", "pilot-account-settings.mjs"],
   ["Employee role management", "pilot-employee-role-management.mjs"],

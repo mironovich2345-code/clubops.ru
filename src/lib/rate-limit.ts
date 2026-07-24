@@ -20,7 +20,8 @@ export type RateLimitAction =
   | "ai_analyze"
   | "ai_analyze_company"
   | "ofd_sync_now"
-  | "telegram_link";
+  | "telegram_link"
+  | "settings_pin";
 
 export type IdentifierType = "ip" | "email" | "user" | "company";
 
@@ -39,6 +40,8 @@ export const RATE_LIMITS: Record<string, RateLimitRule> = {
   "ai_analyze_company:company": { limit: 100, windowMs: HOUR },
   "ofd_sync_now:company": { limit: 1, windowMs: 5 * MIN },
   "telegram_link:user": { limit: 5, windowMs: HOUR },
+  "settings_pin:user": { limit: 10, windowMs: 15 * MIN },
+  "settings_pin:company": { limit: 30, windowMs: HOUR },
 };
 
 export function ruleFor(action: RateLimitAction, idType: IdentifierType): RateLimitRule | null {

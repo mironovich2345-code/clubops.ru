@@ -1,6 +1,9 @@
 import { PageHeader } from "@/components/PageHeader";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
+import { getSettingsPinStatus } from "@/lib/settings-pin";
+import { SettingsPinPanel } from "./_components/SettingsPinPanel";
 import { maskEmail } from "@/lib/otp";
 import { emailConfigured } from "@/lib/email";
 import { getCurrentSessionId, listActiveSessionsForUser } from "@/lib/session";
@@ -28,6 +31,12 @@ export default async function SecurityPage() {
   const others = sessions.filter((s) => s.id !== currentId).length;
   const emailEnabled = emailConfigured();
   const maskedEmail = profile ? maskEmail(profile.email) : "";
+
+  // Company settings-PIN panel (owners only, current company scope).
+  const ctx = await getCurrentAccessContext();
+  const companyId = ctx?.selectedCompanyId ?? null;
+  const isOwner = companyId ? await userHasCompanyRole(user.id, companyId, ["owner"]) : false;
+  const pinStatus = isOwner && companyId ? await getSettingsPinStatus(companyId, user.id) : null;
 
   return (
     <div className="max-w-3xl">
@@ -124,6 +133,16 @@ export default async function SecurityPage() {
       <p className="mt-4 text-xs text-slate-500">
         Завершение текущей сессии выполнит выход. Завершение всех сессий потребует повторного входа на всех устройствах.
       </p>
+
+      {pinStatus ? (
+        <SettingsPinPanel
+          isOwner={isOwner}
+          configured={pinStatus.configured}
+          isPrimaryOwner={pinStatus.isPrimaryOwner}
+          verified={pinStatus.verified}
+          lockedUntilIso={pinStatus.lockedUntil ? pinStatus.lockedUntil.toISOString() : null}
+        />
+      ) : null}
 
       <DeleteAccountFlow />
     </div>

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
 import { isRateLimited } from "@/lib/rate-limit";
+import { requireSettingsPin } from "@/lib/settings-pin";
 import { ofdEnabled, ofdSecretPresent } from "@/lib/ofd/config";
 import { encryptOfdSecret, decryptOfdSecret } from "@/lib/ofd/crypto";
 import { importTaxcomSalesForPeriod, reclassifyOfdReceiptItemsForCompany, type ImportMode } from "@/lib/ofd/importer";
@@ -38,6 +39,10 @@ function str(fd: FormData, k: string): string | null {
 export async function saveOfdConnection(_p: State | undefined, formData: FormData): Promise<State> {
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
+  // Critical settings (ОФД-подключения хранят секреты) требуют подтверждения ПИН —
+  // только если ПИН задан для компании (иначе поведение не меняется).
+  const pin = await requireSettingsPin(g.companyId, g.userId);
+  if (!pin.ok) return { ok: false, error: "Требуется подтверждение ПИН настроек. Откройте «Настройки → Безопасность» и введите ПИН." };
 
   const displayName = str(formData, "displayName");
   const serverBaseUrl = str(formData, "serverBaseUrl");

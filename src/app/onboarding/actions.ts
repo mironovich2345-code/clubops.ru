@@ -37,7 +37,7 @@ export async function completeOnboarding(
 
   // The first user of a new tenant becomes its owner (company + club level).
   const { companyId, clubId } = await prisma.$transaction(async (tx) => {
-    const company = await tx.company.create({ data: { name: companyName } });
+    const company = await tx.company.create({ data: { name: companyName, primaryOwnerUserId: user.id } });
     const club = await tx.club.create({
       data: { name: clubName, city: city || "—", companyId: company.id },
     });

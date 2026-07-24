@@ -73,7 +73,7 @@ export async function createCompany(
 
   // The system admin bootstraps the company + its first owner grant.
   const company = await prisma.$transaction(async (tx) => {
-    const c = await tx.company.create({ data: { name } });
+    const c = await tx.company.create({ data: { name, primaryOwnerUserId: admin.id } });
     await tx.companyUserAccess.create({
       data: { companyId: c.id, userId: admin.id, role: "owner" },
     });

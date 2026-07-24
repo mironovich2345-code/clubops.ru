@@ -27,6 +27,16 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Settings-security ПИН критических настроек (additive, all nullable → legacy rows
+  // unaffected; ПИН опционален, пока не задан). primaryOwnerUserId — первичный
+  // собственник (задаёт/меняет ПИН). Хэш — bcrypt (одно­сторонний), НЕ пароль юзера.
+  primaryOwnerUserId        String?
+  settingsPinHash           String?
+  settingsPinSetAt          DateTime?
+  settingsPinSetByUserId    String?
+  settingsPinFailedAttempts Int       @default(0)
+  settingsPinLockedUntil    DateTime?
+
   clubs         Club[]
   legalEntities LegalEntity[]
   userAccess    CompanyUserAccess[]
@@ -2085,4 +2095,19 @@ model DailyCashReconciliation {
   @@index([clubId])
   @@index([status])
   @@index([businessDate])
+}
+
+/// Короткоживущая server-side сессия подтверждения ПИН критических настроек. Хранится
+/// только HMAC токена (в cookie — сырой токен). Привязка к userId + companyId, TTL 15 мин.
+model SettingsPinSession {
+  id        String    @id @default(cuid())
+  userId    String
+  companyId String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, companyId])
+  @@index([expiresAt])
 }
