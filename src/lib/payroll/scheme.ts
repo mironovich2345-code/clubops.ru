@@ -35,6 +35,7 @@ export type SchemeParams =
   | { type: "plan_adjusted_salary"; params: PlanAdjustedParams }
   | { type: "revenue_percentage"; params: RevenuePercentageParams }
   | { type: "profit_percentage"; params: ProfitPercentageParams }
+  | { type: "gym_trainer"; params: GymTrainerParams }
   | { type: "mixed"; params: Record<string, unknown> };
 
 // --- validation --------------------------------------------------------------
@@ -105,6 +106,13 @@ export function validateSchemeParams(schemeType: string, raw: unknown): Validate
       const percentBp = bp(p.percentBp);
       if (percentBp == null) return err("Укажите процент от прибыли.");
       return { ok: true, scheme: { type: "profit_percentage", params: { percentBp } } };
+    }
+    case "gym_trainer": {
+      const lowRateBp = bp(p.lowRateBp) ?? DEFAULT_GYM_LOW_RATE_BP;
+      const highRateBp = bp(p.highRateBp) ?? DEFAULT_GYM_HIGH_RATE_BP;
+      const thresholdKopeks = nonNegInt(p.thresholdKopeks) ?? DEFAULT_GYM_THRESHOLD_KOPEKS;
+      const planThresholdBp = bp(p.planThresholdBp) ?? DEFAULT_TRAINER_PLAN_THRESHOLD_BP;
+      return { ok: true, scheme: { type: "gym_trainer", params: { lowRateBp, highRateBp, thresholdKopeks, planThresholdBp } } };
     }
     case "mixed":
       return { ok: true, scheme: { type: "mixed", params: p } };

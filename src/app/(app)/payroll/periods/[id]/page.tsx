@@ -14,6 +14,7 @@ import { CalculationCard, type BreakdownLine } from "../../_components/Calculati
 import { PeriodWorkflowBar } from "../../_components/PeriodWorkflowBar";
 import { AdjustmentsSection, type AdjustmentRow } from "../../_components/AdjustmentsSection";
 import { PaymentsSection, type PaymentRow, type AdvanceRow } from "../../_components/PaymentsSection";
+import { TrainerPackages, type TrainerSummaryVM, type TrainerPackageVM } from "../../_components/TrainerPackages";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +37,22 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
   const clubName = clubs.find((c) => c.id === period.clubId)?.name ?? period.clubId;
   const calcs = await getCalculations(period.id);
   const employees = calcs.length
-    ? await prisma.clubEmployee.findMany({ where: { id: { in: calcs.map((c) => c.employeeId) } }, select: { id: true, fullName: true } })
+    ? await prisma.clubEmployee.findMany({ where: { id: { in: calcs.map((c) => c.employeeId) } }, select: { id: true, fullName: true, status: true } })
     : [];
   const nameBy = new Map(employees.map((e) => [e.id, e.fullName]));
+  const dismissedBy = new Map(employees.map((e) => [e.id, e.status === "dismissed"]));
+
+  // Trainer packages for gym-trainer calculations, grouped by calculation.
+  const gymCalcIds = calcs.filter((c) => parseSnapshot(c.schemeSnapshotJson)?.schemeType === "gym_trainer").map((c) => c.id);
+  const allPackages = gymCalcIds.length
+    ? await prisma.payrollTrainerPackage.findMany({ where: { payrollCalculationId: { in: gymCalcIds } }, orderBy: { createdAt: "asc" } })
+    : [];
+  const pkgBy = new Map<string, TrainerPackageVM[]>();
+  for (const p of allPackages) {
+    const list = pkgBy.get(p.payrollCalculationId) ?? [];
+    list.push({ id: p.id, clientRef: p.clientRef, contractNumber: p.contractNumber, contractAmountKopeks: p.contractAmountKopeks, sessionCount: p.sessionCount, providedSessions: p.providedSessions, refundKopeks: p.refundKopeks, trainerRateBp: p.trainerRateBp, seniorTrainerConfirmed: p.seniorTrainerConfirmed });
+    pkgBy.set(p.payrollCalculationId, list);
+  }
   const totals = periodTotals(calcs);
   const locked = isPayrollPeriodLocked(period.status);
   const closed = isPayrollPeriodClosed(period.status);
@@ -148,6 +162,18 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
                     initial={initial}
                   />
                   <AdjustmentsSection calculationId={c.id} adjustments={adjBy.get(c.id) ?? []} canAdd={canAdjust} />
+                  {snap?.schemeType === "gym_trainer" ? (
+                    <TrainerPackages
+                      calculationId={c.id}
+                      summary={details.trainer}
+                      paidKopeks={c.paidKopeks}
+                      employeeDebtKopeks={c.employeeDebtKopeks}
+                      packages={pkgBy.get(c.id) ?? []}
+                      canManage={canManage}
+                      locked={locked}
+                      employeeDismissed={dismissedBy.get(c.employeeId) ?? false}
+                    />
+                  ) : null}
                   <PaymentsSection
                     calculationId={c.id}
                     advance={advByEmployee.get(c.employeeId) ?? null}
@@ -187,12 +213,12 @@ function parseSnapshot(json: string | null): { schemeType: string } | null {
     return null;
   }
 }
-function parseDetails(json: string | null): { breakdown: BreakdownLine[]; warnings: string[] } {
-  if (!json) return { breakdown: [], warnings: [] };
+function parseDetails(json: string | null): { breakdown: BreakdownLine[]; warnings: string[]; trainer: TrainerSummaryVM | null } {
+  if (!json) return { breakdown: [], warnings: [], trainer: null };
   try {
-    const d = JSON.parse(json) as { breakdown?: BreakdownLine[]; warnings?: string[] };
-    return { breakdown: Array.isArray(d.breakdown) ? d.breakdown : [], warnings: Array.isArray(d.warnings) ? d.warnings : [] };
+    const d = JSON.parse(json) as { breakdown?: BreakdownLine[]; warnings?: string[]; trainer?: TrainerSummaryVM };
+    return { breakdown: Array.isArray(d.breakdown) ? d.breakdown : [], warnings: Array.isArray(d.warnings) ? d.warnings : [], trainer: d.trainer ?? null };
   } catch {
-    return { breakdown: [], warnings: [] };
+    return { breakdown: [], warnings: [], trainer: null };
   }
 }

@@ -18,6 +18,7 @@ import { ensureClubCashWallet, ensureRegionalCashWallet } from "@/lib/cash-walle
 import { getActiveClubLegalEntities } from "@/lib/legal-entities";
 import { advanceWithinEarned } from "@/lib/payroll/payments";
 import { createSalaryExpense, cancelSalaryExpense } from "@/lib/payroll/salary-expense";
+import { recomputeGymTrainerCalculation } from "@/app/(app)/payroll/periods/trainer-actions";
 import { applyPayrollAction, isPayrollPeriodLocked, isPayrollPeriodClosed, PAYROLL_ACTION_AUDIT, type PayrollAction } from "@/lib/payroll/period";
 import {
   BP_PER_100_PERCENT,
@@ -260,6 +261,19 @@ export async function saveCalculationInputs(
 
   const scheme = snapshotToSchemeParams(calc.schemeSnapshotJson);
   if (!scheme) return fail("Схема оплаты не зафиксирована для этого расчёта. Сначала задайте схему и пересоздайте расчёт.");
+
+  // Gym trainer: inputs are the per-package rows (entered separately) + the this-month
+  // plan-completion gate (70%). Persist the gate, then recompute from packages.
+  if (scheme.type === "gym_trainer") {
+    const planCompletionBp = Math.max(0, Math.round(Number(String(formData.get("planCompletionPercent") ?? "").replace(",", ".")) * 100) || 0);
+    await prisma.payrollCalculation.update({ where: { id: calc.id }, data: { completionBp: planCompletionBp } });
+    await recomputeGymTrainerCalculation(calc.id);
+    try {
+      await recordAudit({ action: "payroll.calculation_computed", entityType: "PayrollCalculation", entityId: calc.id, companyId: scope.companyId, clubId: calc.clubId, userId: scope.ctx.user.id, metadata: { schemeType: "gym_trainer", planCompletionBp } });
+    } catch { /* ignore */ }
+    revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
+    return { ok: true, periodId: calc.payrollPeriodId };
+  }
 
   const input = collectPeriodInput(scheme.type, formData);
   const result = computeScheme(scheme, input);

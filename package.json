@@ -58,6 +58,7 @@
     "pilot:employee-role-management": "node scripts/pilot-employee-role-management.mjs",
     "pilot:payroll": "node scripts/pilot-payroll.mjs",
     "pilot:payroll-setup": "node scripts/pilot-payroll-setup.mjs",
+    "pilot:payroll-trainer": "node scripts/pilot-payroll-trainer.mjs",
     "pilot:payroll-periods": "node scripts/pilot-payroll-periods.mjs",
     "pilot:payroll-workflow": "node scripts/pilot-payroll-workflow.mjs",
     "pilot:payroll-payments": "node scripts/pilot-payroll-payments.mjs",

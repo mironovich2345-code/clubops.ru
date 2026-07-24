@@ -39,6 +39,7 @@ export const PAYROLL_SCHEME_TYPES = [
   "plan_adjusted_salary", // manager plan-fact (Scheme A)
   "revenue_percentage", // manager Scheme B / senior group trainer / regional revenue %
   "profit_percentage", // regional profit %
+  "gym_trainer", // тренер ТЗ: per-package 40/50% + trainer credit (spec §4.2)
   "mixed",
 ] as const;
 export type PayrollSchemeType = (typeof PAYROLL_SCHEME_TYPES)[number];
@@ -52,6 +53,7 @@ export const PAYROLL_SCHEME_LABELS: Record<string, string> = {
   plan_adjusted_salary: "Оклад по плану-факту",
   revenue_percentage: "Процент от выручки",
   profit_percentage: "Процент от прибыли",
+  gym_trainer: "Тренер ТЗ (пакеты 40/50%)",
   mixed: "Смешанная",
 };
 

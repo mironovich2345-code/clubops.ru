@@ -73,6 +73,7 @@ const pilots = [
   ["Employee role management", "pilot-employee-role-management.mjs"],
   ["Payroll calc engine + status machine", "pilot-payroll.mjs"],
   ["Payroll setup (assignments + schemes)", "pilot-payroll-setup.mjs"],
+  ["Payroll trainer (gym packages + credit)", "pilot-payroll-trainer.mjs"],
   ["Payroll periods + calculations", "pilot-payroll-periods.mjs"],
   ["Payroll workflow + adjustments", "pilot-payroll-workflow.mjs"],
   ["Payroll advances + payments + cash", "pilot-payroll-payments.mjs"],

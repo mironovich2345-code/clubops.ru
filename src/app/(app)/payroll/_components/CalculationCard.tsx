@@ -31,6 +31,8 @@ const INPUT_FIELDS: Record<string, InputField[]> = {
     { name: "ptRevenue", label: "Выручка ПТ, ₽", kind: "rub" },
   ],
   profit_percentage: [{ name: "cityProfit", label: "Прибыль города, ₽", kind: "rub" }],
+  // The 70% payout gate (this month's sales-plan completion). Packages are entered below.
+  gym_trainer: [{ name: "planCompletionPercent", label: "Выполнение плана продаж месяца, %", kind: "int" }],
   mixed: [{ name: "manualAmount", label: "Сумма (ручной ввод), ₽", kind: "rub" }],
 };
 

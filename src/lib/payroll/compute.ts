@@ -2,7 +2,7 @@
 // in calc.ts. Dispatches on scheme type and returns the automatic amount + breakdown.
 // No DB, no eval. This is what a PayrollCalculation snapshots and re-runs.
 import * as calc from "@/lib/payroll/calc";
-import type { CalcResult } from "@/lib/payroll/calc";
+import type { CalcResult, GymPackage } from "@/lib/payroll/calc";
 import type { SchemeParams } from "@/lib/payroll/scheme";
 
 export type PeriodInput = {
@@ -17,6 +17,10 @@ export type PeriodInput = {
   ptRevenueKopeks?: number;
   cityProfitKopeks?: number;
   manualAmountKopeks?: number;
+  // Gym trainer (spec §4.2): per-package inputs + this-month plan completion (the 70%
+  // payout gate — SEPARATE from the trainer credit, which is provided-vs-paid sessions).
+  gymPackages?: GymPackage[];
+  planCompletionBp?: number;
 };
 
 const zeroPart = { planKopeks: 0, factKopeks: 0 };
@@ -55,6 +59,8 @@ export function computeScheme(scheme: SchemeParams, input: PeriodInput): CalcRes
       });
     case "profit_percentage":
       return calc.calcProfitPercentage(scheme.params, { cityProfitKopeks: input.cityProfitKopeks ?? 0 });
+    case "gym_trainer":
+      return calc.calcGymTrainer(scheme.params, { packages: input.gymPackages ?? [], planCompletionBp: input.planCompletionBp ?? 0 });
     case "mixed":
       return {
         amountKopeks: Math.max(0, input.manualAmountKopeks ?? 0),

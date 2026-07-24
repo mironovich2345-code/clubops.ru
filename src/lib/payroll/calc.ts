@@ -106,12 +106,13 @@ export function calcSeniorGroup(p: SeniorGroupParams, input: { salesKopeks: numb
 }
 
 // --- gym trainer (spec §4.2): per-package rate by threshold ------------------
-export type GymPackage = { contractAmountKopeks: number; sessionCount: number; refundKopeks?: number };
+// `rateBp` overrides the threshold rule (индивидуальная ставка) when provided.
+export type GymPackage = { contractAmountKopeks: number; sessionCount: number; refundKopeks?: number; rateBp?: number | null };
 
-/** Trainer income for one package: sessionPrice × rate; rate by contract-amount threshold. */
+/** Trainer income for one package: net contract × rate; rate = custom override else by threshold. */
 export function calcGymPackage(p: GymTrainerParams, pkg: GymPackage): { incomeKopeks: number; sessionPriceKopeks: number; rateBp: number } {
   const net = Math.max(0, pkg.contractAmountKopeks - (pkg.refundKopeks ?? 0));
-  const rateBp = pkg.contractAmountKopeks <= p.thresholdKopeks ? p.lowRateBp : p.highRateBp;
+  const rateBp = pkg.rateBp != null ? pkg.rateBp : pkg.contractAmountKopeks <= p.thresholdKopeks ? p.lowRateBp : p.highRateBp;
   const sessionPrice = pkg.sessionCount > 0 ? Math.round(pkg.contractAmountKopeks / pkg.sessionCount) : 0;
   const income = applyBp(net, rateBp);
   return { incomeKopeks: income, sessionPriceKopeks: sessionPrice, rateBp };

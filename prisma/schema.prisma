@@ -2113,3 +2113,36 @@ model SettingsPinSession {
   @@index([userId, companyId])
   @@index([expiresAt])
 }
+
+/// Пакет тренировок тренера ТЗ (spec §4.2). Вводится по тренеру за расчёт: ставка
+/// 40/50%/индивидуальная, проведённые/возвращённые занятия, кредит тренера. Скалярные
+/// id (без relation) — аддитивно.
+model PayrollTrainerPackage {
+  id                   String    @id @default(cuid())
+  companyId            String
+  clubId               String
+  employeeId           String
+  payrollCalculationId String
+  clientRef            String?   // клиент или текстовый идентификатор
+  contractNumber       String?
+  saleDate             DateTime?
+  contractAmountKopeks Int       @default(0)
+  sessionCount         Int       @default(0)
+  sessionPriceKopeks   Int       @default(0) // contract / sessions (информационно)
+  trainerRateBp        Int?      // индивидуальная ставка; null → по порогу схемы
+  providedSessions     Int       @default(0)
+  returnedSessions     Int       @default(0)
+  refundKopeks         Int       @default(0)
+  seniorTrainerConfirmed Boolean @default(false)
+  seniorTrainerUserId  String?
+  documentKey          String?
+  source               String    @default("manual") // manual | import | integration
+  createdByUserId      String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([payrollCalculationId])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+}
