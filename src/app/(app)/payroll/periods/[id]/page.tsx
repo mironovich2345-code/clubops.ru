@@ -13,7 +13,8 @@ import { GeneratePeriodButton } from "../../_components/GeneratePeriodButton";
 import { CalculationCard, type BreakdownLine } from "../../_components/CalculationCard";
 import { PeriodWorkflowBar } from "../../_components/PeriodWorkflowBar";
 import { AdjustmentsSection, type AdjustmentRow } from "../../_components/AdjustmentsSection";
-import { PaymentsSection, type PaymentRow, type AdvanceRow } from "../../_components/PaymentsSection";
+import { PaymentsSection, type PaymentRow, type AdvanceRow, type LegalEntityOption } from "../../_components/PaymentsSection";
+import { getActiveClubLegalEntities } from "@/lib/legal-entities";
 import { TrainerPackages, type TrainerSummaryVM, type TrainerPackageVM } from "../../_components/TrainerPackages";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +97,13 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
   const payable = !closed && ["approved", "partially_paid", "paid"].includes(period.status);
   const canPayCash = canManagePayrollAssignments(ctx.effectiveRoles);
   const canPayBank = ctx.effectiveRoles.some((r) => r === "accountant" || r === "chief_accountant");
+
+  // Active club legal entities for the per-payment legal-entity choice (item 5).
+  const { ooo, ip } = await getActiveClubLegalEntities(period.clubId);
+  const legalEntityOptions: LegalEntityOption[] = [
+    ip ? { id: ip.id, name: ip.name, type: "ip" as const } : null,
+    ooo ? { id: ooo.id, name: ooo.name, type: "ooo" as const } : null,
+  ].filter((x): x is LegalEntityOption => x !== null);
 
   return (
     <div className="mx-auto max-w-[1100px]">
@@ -184,6 +192,7 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
                     payable={payable}
                     canPayCash={canPayCash}
                     canPayBank={canPayBank}
+                    legalEntities={legalEntityOptions}
                   />
                 </div>
               </div>

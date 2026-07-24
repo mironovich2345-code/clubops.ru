@@ -29,6 +29,8 @@ function MethodSelect({ canCash, canBank }: { canCash: boolean; canBank: boolean
   );
 }
 
+export type LegalEntityOption = { id: string; name: string; type: "ooo" | "ip" };
+
 export function PaymentsSection({
   calculationId,
   advance,
@@ -39,6 +41,7 @@ export function PaymentsSection({
   payable,
   canPayCash,
   canPayBank,
+  legalEntities,
 }: {
   calculationId: string;
   advance: AdvanceRow | null;
@@ -49,6 +52,7 @@ export function PaymentsSection({
   payable: boolean;
   canPayCash: boolean;
   canPayBank: boolean;
+  legalEntities: LegalEntityOption[];
 }) {
   const [payState, payAction] = useFormState(recordPayment, initial);
   const [advState, advAction] = useFormState(recordAdvance, initial);
@@ -105,6 +109,15 @@ export function PaymentsSection({
           <form action={payAction} className="flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-2 dark:bg-slate-800/40">
             <input type="hidden" name="calculationId" value={calculationId} />
             <MethodSelect canCash={canPayCash} canBank={canPayBank} />
+            {legalEntities.length > 1 ? (
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-slate-500">Юрлицо</span>
+                <select name="legalEntityId" defaultValue="" className="input text-sm">
+                  <option value="">Авто</option>
+                  {legalEntities.map((le) => <option key={le.id} value={le.id}>{le.type.toUpperCase()} · {le.name}</option>)}
+                </select>
+              </label>
+            ) : null}
             <label className="block">
               <span className="mb-1 block text-[11px] text-slate-500">Сумма, ₽</span>
               <input name="amount" type="number" min="0" step="0.01" className="input w-24 text-sm" />

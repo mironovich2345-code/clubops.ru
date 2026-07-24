@@ -575,6 +575,36 @@ async function resolveBankLegalEntity(clubId: string): Promise<string | null> {
   return ooo?.id ?? ip?.id ?? null;
 }
 
+/**
+ * Pick + validate the paying legal entity for one payment (item 5). Cash must be the
+ * club's active ИП (and resolves its wallet); bank may be the ООО or the ИП. A chosen
+ * id must be an active legal entity of THIS club (belongs to company/club). Returns the
+ * legal entity + (cash) wallet, or a user-safe error.
+ */
+async function pickPaymentLegalEntity(
+  companyId: string,
+  clubId: string,
+  method: string,
+  chosenId: string | null,
+  roles: readonly string[],
+  userId: string,
+): Promise<{ legalEntityId: string; walletId: string | null } | { error: string }> {
+  const { ooo, ip } = await getActiveClubLegalEntities(clubId);
+  if (method === "cash") {
+    if (!ip) return { error: "У клуба нет активного ИП для наличной выплаты." };
+    if (chosenId && chosenId !== ip.id) return { error: "Наличная выплата возможна только из ИП." };
+    const walletId = roles.includes("regional_director")
+      ? await ensureRegionalCashWallet(companyId, clubId, ip.id, userId)
+      : await ensureClubCashWallet(companyId, clubId, ip.id);
+    return { legalEntityId: ip.id, walletId };
+  }
+  // bank: ООО or ИП of the club
+  const allowed = [ooo?.id, ip?.id].filter((x): x is string => Boolean(x));
+  if (allowed.length === 0) return { error: "У клуба нет активного юрлица для безналичной выплаты." };
+  if (chosenId && !allowed.includes(chosenId)) return { error: "Выбранное юрлицо не относится к клубу." };
+  return { legalEntityId: chosenId ?? ooo?.id ?? ip!.id, walletId: null };
+}
+
 /** Resolve the paying ИП + the correct wallet for a CASH payout (regional pays from
  * their own wallet; manager/others from the club desk). Never chosen by the client. */
 async function resolveCashWallet(companyId: string, clubId: string, userId: string, roles: readonly string[]) {
@@ -617,20 +647,14 @@ export async function recordPayment(
   const closed = await monthClosedError(scope.companyId, calc.clubId, paymentDate);
   if (closed) return { ok: false, error: closed };
 
-  // Resolve the legal entity + (for cash) the wallet server-side. Cash pays from the
-  // club's active ИП wallet; bank from the club's active ООО (fallback ИП).
-  let cash: { legalEntityId: string; walletId: string } | null = null;
-  let legalEntityId: string;
-  if (method === "cash") {
-    const w = await resolveCashWallet(scope.companyId, calc.clubId, scope.ctx.user.id, roles);
-    if (!w.ok) return { ok: false, error: w.error };
-    cash = { legalEntityId: w.legalEntityId, walletId: w.walletId };
-    legalEntityId = w.legalEntityId;
-  } else {
-    const bankLe = calc.legalEntityId ?? (await resolveBankLegalEntity(calc.clubId));
-    if (!bankLe) return { ok: false, error: "Не удалось определить юрлицо для безналичной выплаты." };
-    legalEntityId = bankLe;
-  }
+  // Item 5: the payer MAY choose the legal entity per payment (validated). Cash must be
+  // the club's ИП (and its wallet); bank may be the ООО or the ИП. This supports one
+  // accrual paid part-cash (ИП) + part-bank (ООО) without double aggregation.
+  const chosenLe = String(formData.get("legalEntityId") ?? "").trim() || null;
+  const picked = await pickPaymentLegalEntity(scope.companyId, calc.clubId, method, chosenLe, roles, scope.ctx.user.id);
+  if ("error" in picked) return { ok: false, error: picked.error };
+  const legalEntityId = picked.legalEntityId;
+  const cash = method === "cash" ? { legalEntityId, walletId: picked.walletId as string } : null;
 
   const employeeName = (await prisma.clubEmployee.findUnique({ where: { id: calc.employeeId }, select: { fullName: true } }))?.fullName ?? calc.employeeId;
 
