@@ -41,6 +41,7 @@ const pilots = [
   ["Invitations / email access", "pilot-invites.mjs"],
   ["Telegram notifications", "pilot-telegram-notifications.mjs"],
   ["OFD Taxcom sales", "pilot-ofd-taxcom.mjs"],
+  ["OFD dashboard quick-sync", "pilot-ofd-sync-dashboard.mjs"],
   ["Email OTP", "pilot-otp.mjs"],
   ["Sessions / revocation", "pilot-sessions.mjs"],
   ["Club / LegalEntity", "pilot-club-legal-entity.mjs"],

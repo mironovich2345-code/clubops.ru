@@ -108,7 +108,11 @@ export type Capability =
   | "month.reopen.request"
   | "month.reopen.approve"
   | "month.reopen.execute"
-  | "shared_expenses.manage";
+  | "shared_expenses.manage"
+  // Trigger a manual OFD sync from the dashboard (broader than the owner/GD-only
+  // settings gate). Server-enforced; company-scoped; the sync service itself keeps
+  // its per-connection lock + rate limit.
+  | "ofd.sync.trigger";
 
 const ACCOUNTING_BASE: ReadonlyArray<Capability> = [
   "accounting.workspace.view",
@@ -118,15 +122,15 @@ const ACCOUNTING_BASE: ReadonlyArray<Capability> = [
 ];
 
 const ROLE_CAPABILITIES: Record<Role, ReadonlyArray<Capability>> = {
-  owner: ["budget.manage", "mandatory_payment.manage", "month.reopen.approve"],
-  general_director: ["sales_plan.manage", "budget.manage", "mandatory_payment.manage"],
-  regional_director: ["operational.create"],
+  owner: ["budget.manage", "mandatory_payment.manage", "month.reopen.approve", "ofd.sync.trigger"],
+  general_director: ["sales_plan.manage", "budget.manage", "mandatory_payment.manage", "ofd.sync.trigger"],
+  regional_director: ["operational.create", "ofd.sync.trigger"],
   manager: ["operational.create"],
   // Ordinary accountant: accounting operations + documents, but NO month control.
-  accountant: [...ACCOUNTING_BASE],
+  accountant: [...ACCOUNTING_BASE, "ofd.sync.trigger"],
   // Chief accountant: accounting base + the full month-close / controlled-reopen
   // workflow. shared_expenses.manage is intentionally NOT granted yet.
-  chief_accountant: [...ACCOUNTING_BASE, "month.close", "month.reopen.request", "month.reopen.execute"],
+  chief_accountant: [...ACCOUNTING_BASE, "month.close", "month.reopen.request", "month.reopen.execute", "ofd.sync.trigger"],
   marketer: [],
 };
 

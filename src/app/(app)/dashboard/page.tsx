@@ -7,7 +7,9 @@ import {
   getCurrentAccessContext,
   getUserClubs,
 } from "@/lib/access";
-import { canManageSalesPlans, canImportPlansAndBudgets, canApproveMonthReopen, canAnyRoleAccessPage, isStrategicRole, type Role } from "@/lib/auth";
+import { canManageSalesPlans, canImportPlansAndBudgets, canApproveMonthReopen, canAnyRoleAccessPage, isStrategicRole, can, type Role } from "@/lib/auth";
+import { loadOfdSyncStatus } from "@/lib/ofd/health";
+import { OfdSyncCard } from "./_components/OfdSyncCard";
 import { resolveStrategicScope } from "@/lib/strategic-scope";
 import { loadCompanyClubCards } from "@/lib/dashboard-cards";
 import { getPendingReopenRequestsForCompanies } from "@/lib/month-reopen";
@@ -234,12 +236,32 @@ export default async function DashboardPage({
   const daysInSelMonth = new Date(period.start.getFullYear(), period.start.getMonth() + 1, 0).getDate();
   const daysLeftMonth = monthMode === "past" ? 0 : monthMode === "future" ? daysInSelMonth : daysInSelMonth - now.getDate() + 1;
 
+  // Compact OFD data + sync block. Visible to OFD viewers or anyone who may trigger a
+  // sync (accountant may trigger without the ofd_sales page). Company-scoped.
+  const canTriggerSync = can(roles, "ofd.sync.trigger");
+  const showOfdSyncCard = canSeeOfdSales || canTriggerSync;
+  const ofdStatus = showOfdSyncCard ? await loadOfdSyncStatus(companyId, now) : null;
+
   return (
     <div className="mx-auto max-w-[1440px]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <PageHeader title="Дашборд" description="Обзор клубов" />
         <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
       </div>
+
+      {ofdStatus && ofdStatus.state !== "disabled" ? (
+        <OfdSyncCard
+          state={ofdStatus.state}
+          provider={ofdStatus.provider}
+          connectionCount={ofdStatus.connectionCount}
+          lastSuccessAt={ofdStatus.lastSuccessAt ? ofdStatus.lastSuccessAt.toISOString() : null}
+          lastRunAt={ofdStatus.lastRunAt ? ofdStatus.lastRunAt.toISOString() : null}
+          lastRunStatus={ofdStatus.lastRunStatus}
+          imported={ofdStatus.imported}
+          found={ofdStatus.found}
+          canTrigger={canTriggerSync}
+        />
+      ) : null}
 
       {/* Обзор клубов карточками. Подробные ОФД-таблицы — в Аналитике и ОФД-сверке. */}
       <ClubCardsGrid
