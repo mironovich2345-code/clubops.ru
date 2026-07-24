@@ -31,6 +31,7 @@
     "pilot:expense-workflow": "node scripts/pilot-expense-workflow.mjs",
     "pilot:expense-cards": "node scripts/pilot-expense-cards.mjs",
     "pilot:cash-wallets": "node scripts/pilot-cash-wallets.mjs",
+    "pilot:cash-reconciliation": "node scripts/pilot-cash-reconciliation.mjs",
     "pilot:invoices": "node scripts/pilot-invoices.mjs",
     "pilot:invites": "node scripts/pilot-invites.mjs",
     "pilot:telegram-notifications": "node scripts/pilot-telegram-notifications.mjs",

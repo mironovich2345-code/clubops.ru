@@ -5,7 +5,7 @@
 import { absoluteUrlSafe } from "@/lib/app-url";
 
 export type NotificationPayload = {
-  resourceType: "expense" | "invoice" | "refund" | "payroll";
+  resourceType: "expense" | "invoice" | "refund" | "payroll" | "reconciliation";
   clubName: string;
   amountKopeks: number;
 };
@@ -27,6 +27,8 @@ const TITLES: Record<string, string> = {
   "payroll.resubmitted_review": "Зарплатный период повторно отправлен на проверку",
   "payroll.returned": "Зарплатный период вернули на исправление",
   "payroll.approved": "Зарплатный период утверждён",
+  "reconciliation.discrepancy": "Расхождение по фактическим наличным",
+  "reconciliation.overdue": "Не подтверждены фактические наличные",
 };
 
 /** Compact rubles: "21 356 ₽" (no kopecks, no PII). */
@@ -37,6 +39,7 @@ function rub(kopeks: number): string {
 
 function pathFor(resourceType: NotificationPayload["resourceType"], resourceId: string): string {
   if (resourceType === "payroll") return `/payroll/periods/${resourceId}`;
+  if (resourceType === "reconciliation") return `/collections`;
   return `/${resourceType}s/${resourceId}`;
 }
 

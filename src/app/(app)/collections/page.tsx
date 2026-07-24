@@ -7,7 +7,18 @@ import { canCreateOperational, type Role } from "@/lib/auth";
 import { legalEntityTypeLabel } from "@/lib/legal-entities";
 import { loadClubCashBalances, loadCashOpsHistory, loadClubOpeningHistory } from "@/lib/cash-collections";
 import type { CashBalances } from "@/lib/cash-balances";
+import {
+  buildReconciliationTargets,
+  getReconciliationsForScope,
+  canSubmitReconciliation,
+  canRegionalReview,
+  canAccountingReview,
+  displayReconStatus,
+  isReconciliationOverdue,
+} from "@/lib/cash-reconciliation";
 import { CashSyncButtons, CollectionForm, WithdrawalForm, OtherIncomeForm, ReviewButtons, CancelButton, OpeningBalanceForm } from "./_components/CollectionForms";
+import { ReconciliationForm, type ReconEntity } from "./_components/ReconciliationForm";
+import { ReconciliationReview } from "./_components/ReconciliationReview";
 
 export const dynamic = "force-dynamic";
 
@@ -44,14 +55,21 @@ export default async function CollectionsPage() {
 
   const clubs = clubIds.length ? await prisma.club.findMany({ where: { companyId, id: { in: clubIds } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
   const clubName = new Map(clubs.map((c) => [c.id, c.name]));
-  const [perClub, history, openingHistory] = await Promise.all([
+  const now = new Date();
+  const [perClub, history, openingHistory, reconTargets, reconHistory] = await Promise.all([
     Promise.all(clubs.map(async (c) => ({ club: c, res: await loadClubCashBalances(companyId, c.id) }))),
     loadCashOpsHistory(companyId, clubIds, 50),
     clubs.length ? Promise.all(clubs.map((c) => loadClubOpeningHistory(c.id, 10))).then((r) => r.flat()) : Promise.resolve([]),
+    canSubmitReconciliation(roles) && clubs.length
+      ? Promise.all(clubs.map(async (c) => ({ club: c, ...(await buildReconciliationTargets(companyId, c.id, now)) })))
+      : Promise.resolve([]),
+    getReconciliationsForScope(companyId, clubIds, { limit: 40 }),
   ]);
+  const mayRegionalRecon = canRegionalReview(roles);
+  const mayAccountingRecon = canAccountingReview(roles);
 
   // Author names for the history tables (SAFE: display name only, no personal data).
-  const authorIds = [...new Set([...history.map((h) => h.createdByUserId), ...openingHistory.map((o) => o.createdById)])];
+  const authorIds = [...new Set([...history.map((h) => h.createdByUserId), ...openingHistory.map((o) => o.createdById), ...reconHistory.map((r) => r.submittedById).filter((x): x is string => Boolean(x))])];
   const authors = authorIds.length ? await prisma.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, name: true } }) : [];
   const authorName = new Map(authors.map((a) => [a.id, a.name]));
 
@@ -102,6 +120,70 @@ export default async function CollectionsPage() {
             </div>
           </div>
         ) : null}
+      </Collapsible>
+
+      <Collapsible title="Фактические деньги (сверка наличных)" subtitle="Ежедневное подтверждение пересчитанных наличных до 12:00 следующего дня">
+        {canSubmitReconciliation(roles) && reconTargets.length > 0 ? (
+          <div className="mb-5 space-y-5">
+            {reconTargets.map(({ club, businessDate, entities }) => {
+              const reconEntities: ReconEntity[] = entities.map((e) => ({
+                legalEntityType: e.legalEntityType,
+                name: e.name,
+                ofdCashRevenueKopeks: e.ofdCashRevenueKopeks,
+                expectedCashBalanceKopeks: e.expectedCashBalanceKopeks,
+                actualKopeks: e.existing ? e.existing.actualCashBalanceKopeks : null,
+                status: e.existing?.status ?? null,
+              }));
+              return (
+                <div key={club.id}>
+                  {clubs.length > 1 ? <div className="mb-2 text-xs font-semibold text-slate-600">Клуб: {club.name}</div> : null}
+                  <ReconciliationForm clubId={club.id} businessDateLabel={dfmt.format(businessDate)} entities={reconEntities} />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">История сверок</div>
+        {reconHistory.length === 0 ? (
+          <div className="mt-2 text-sm text-slate-500">Сверок пока нет.</div>
+        ) : (
+          <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Клуб</Th><Th>Юрлицо</Th><Th>Ожидалось</Th><Th>Факт</Th><Th>Расхожд.</Th><Th>Статус</Th><Th>Кто</Th><Th>Действия</Th></tr></thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {reconHistory.map((r) => {
+                  const overdue = isReconciliationOverdue(r.status, r.businessDate, now);
+                  const needsRegional = r.differenceKopeks !== 0 && !r.regionalReviewedById && r.status !== "closed";
+                  const needsAccounting = r.status !== "closed" && (r.differenceKopeks === 0 || Boolean(r.regionalReviewedById));
+                  return (
+                    <tr key={r.id} className={overdue ? "bg-amber-50" : r.differenceKopeks !== 0 && r.status !== "closed" ? "bg-rose-50/40" : undefined}>
+                      <Td>{dfmt.format(r.businessDate)}</Td>
+                      <Td>{clubName.get(r.clubId) ?? "—"}</Td>
+                      <Td>{r.legalEntityType.toUpperCase()}</Td>
+                      <Td>{formatKopeks(r.expectedCashBalanceKopeks)}</Td>
+                      <Td>{formatKopeks(r.actualCashBalanceKopeks)}</Td>
+                      <Td><span className={r.differenceKopeks !== 0 ? "font-semibold text-rose-600" : "text-emerald-600"}>{formatKopeks(r.differenceKopeks)}</span></Td>
+                      <Td>{displayReconStatus(r, now)}</Td>
+                      <Td>{authorName.get(r.submittedById ?? "") ?? "—"}</Td>
+                      <Td>
+                        {(mayRegionalRecon || mayAccountingRecon) && r.status !== "closed" && r.status !== "awaiting_input" ? (
+                          <ReconciliationReview
+                            reconciliationId={r.id}
+                            canRegional={mayRegionalRecon}
+                            canAccounting={mayAccountingRecon}
+                            needsRegional={needsRegional}
+                            needsAccounting={needsAccounting}
+                          />
+                        ) : "—"}
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Collapsible>
 
       {mayCreate ? (

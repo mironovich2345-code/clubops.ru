@@ -2050,3 +2050,39 @@ model CashOperationDocument {
   @@index([otherIncomeId])
   @@index([companyId, clubId])
 }
+
+/// Ежедневная сверка фактических наличных управляющим ("Фактические деньги"). Запись-
+/// ПОДТВЕРЖДЕНИЕ, а не хранилище остатка: ожидаемый остаток и OFD-наличные берутся из
+/// loadClubCashBalances, деньги НЕ двигаются. Скалярные id (без relation) — аддитивно.
+model DailyCashReconciliation {
+  id                     String    @id @default(cuid())
+  companyId              String
+  clubId                 String
+  legalEntityId          String
+  legalEntityType        String    // ooo | ip (снапшот для истории)
+  businessDate           DateTime  // локальный календарный день (начало дня)
+  ofdCashRevenueKopeks   Int       @default(0)
+  expectedCashBalanceKopeks Int    @default(0)
+  actualCashBalanceKopeks   Int    @default(0)
+  differenceKopeks       Int       @default(0)
+  reasonCode             String?
+  comment                String?
+  status                 String    @default("awaiting_input")
+  resolution             String?
+  submittedById          String?
+  submittedAt            DateTime?
+  submittedOnTime        Boolean?
+  regionalReviewedById   String?
+  regionalReviewedAt     DateTime?
+  accountingReviewedById String?
+  accountingReviewedAt   DateTime?
+  closedAt               DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([clubId, legalEntityId, businessDate])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([status])
+  @@index([businessDate])
+}

@@ -448,7 +448,7 @@ model Refund {
   // v2 actual-payment stage (accountant/chief marks a regional-approved refund
   // paid). All nullable → legacy/unpaid rows unaffected. legalEntityId is a plain
   // scalar (no FK relation) validated server-side against ClubLegalEntity so the
-  // additive migration stays a simple ADD COLUMN (no table rebuild).
+  // additive migration stays a simple ADD COLUMN (no SQLite table rebuild).
   legalEntityId  String?
   paidByUserId   String?
   paymentComment String?
@@ -709,7 +709,9 @@ model Invoice {
   originalFileStorageKey String?
   rawExtractedJson       String?
 
-  // Accountant/owner manual review of the AI-extracted fields (see dev schema).
+  // Accountant/owner manual review of the AI-extracted fields. Set when the
+  // reviewer saves the "Данные счёта" block; required (with the payment guard)
+  // before a LOW-confidence invoice can be marked paid. Nullable — never destructive.
   aiDataReviewedAt   DateTime?
   aiDataReviewedById String?
   aiDataReviewNote   String?
@@ -913,7 +915,8 @@ model ExpenseCategory {
   // platform-wide taxonomy: visible to every company, never editable by tenants.
   // COMPANY categories (isSystem=false, companyId set) are private to that company.
   // `key` stays globally unique (stable analytics id, keeps historical Expense rows
-  // labelled); cross-tenant visibility is scoped in server code.
+  // labelled); cross-tenant visibility is scoped in server code, so a company key
+  // never collides with or reveals another company's category.
   isSystem  Boolean  @default(false)
   companyId String?
   createdAt DateTime @default(now())
@@ -937,9 +940,11 @@ model ExpenseCategoryNameHistory {
   @@index([categoryId])
 }
 
-// Fixed-window rate limiting for abusable/expensive surfaces. Only NON-reversible
-// hashes of the identifier (IP / email / userId) are stored — never the raw value.
-// Atomic upsert-increment per window (unique bucketKey). Pruned by expiresAt.
+// Fixed-window rate limiting for abusable/expensive surfaces (login, registration,
+// OTP send, AI analyze, OFD sync-now, Telegram link). Only NON-reversible hashes of
+// the identifier (IP / email / userId) are stored — never the raw value. bucketKey =
+// HMAC(action | idType | idHash | windowIndex); an atomic upsert-increment per window
+// is race-safe (unique bucketKey). Rows are short-lived and pruned by expiresAt.
 model RateLimitBucket {
   id          String   @id @default(cuid())
   bucketKey   String   @unique
@@ -1175,17 +1180,21 @@ model PayrollStatementRow {
 }
 
 // ---------------------------------------------------------------------------
-// Payroll module (calculation + workflow + payments + debts). Scalar-id tables
-// (ownership validated in server code) → purely additive migration. Kopeks + bp.
+// Payroll module (calculation + workflow + payments + debts). All scoped by
+// companyId+clubId; ownership validated in server code (scalar ids, like AuditLog,
+// so this is a purely additive migration). Money = kopeks, percents = basis points.
+// Enums/params/formulas live in src/lib/payroll/*.
 // ---------------------------------------------------------------------------
 
+// Many-to-many: an employee may work in several clubs, each with its own position
+// and (optionally) an earning-share split for shared bases.
 model EmployeeClubAssignment {
   id                     String    @id @default(cuid())
   companyId              String
   employeeId             String
   clubId                 String
   position               String
-  earningShareBasisPoints Int?
+  earningShareBasisPoints Int?     // optional split of a shared base across clubs (bp)
   startDate              DateTime?
   endDate                DateTime?
   isActive               Boolean   @default(true)
@@ -1198,14 +1207,17 @@ model EmployeeClubAssignment {
   @@index([employeeId])
 }
 
+// Historical pay scheme. A change opens a new row (effectiveTo set on the previous),
+// so closed months keep their exact scheme via the calculation snapshot. paramsJson
+// is validated by src/lib/payroll/scheme.ts (never eval'd).
 model EmployeePayScheme {
   id              String    @id @default(cuid())
   companyId       String
   clubId          String
-  employeeId      String?
+  employeeId      String?   // null → applies to a whole position
   position        String?
   schemeType      String
-  paramsJson      String
+  paramsJson      String    // validated structured params
   effectiveFrom   DateTime
   effectiveTo     DateTime?
   createdByUserId String
@@ -1218,6 +1230,7 @@ model EmployeePayScheme {
   @@index([clubId, effectiveFrom])
 }
 
+// One payroll period per club per month.
 model PayrollPeriod {
   id                   String    @id @default(cuid())
   companyId            String
@@ -1241,6 +1254,7 @@ model PayrollPeriod {
   @@index([status])
 }
 
+// Per-employee calculation within a period (with immutable snapshots).
 model PayrollCalculation {
   id                  String    @id @default(cuid())
   companyId           String
@@ -1285,6 +1299,7 @@ model PayrollCalculation {
   @@index([payrollPeriodId])
 }
 
+// Bonus / penalty / recovery / correction. Reason required (enforced in code).
 model PayrollAdjustment {
   id                   String    @id @default(cuid())
   companyId            String
@@ -1292,7 +1307,7 @@ model PayrollAdjustment {
   employeeId           String
   clubId               String
   type                 String
-  direction            String
+  direction            String    // credit (+payable) | debit (−payable)
   amountKopeks         Int       @default(0)
   reason               String
   comment              String?
@@ -1308,6 +1323,8 @@ model PayrollAdjustment {
   @@index([employeeId])
 }
 
+// Advance (one per employee per month; ≤ earned-to-date). Cash advance reduces the
+// wallet at payment; counted as part of the paid salary (never double-counted).
 model PayrollAdvance {
   id              String    @id @default(cuid())
   companyId       String
@@ -1333,6 +1350,8 @@ model PayrollAdvance {
   @@index([clubId])
 }
 
+// Actual payment (partial / cash / bank). A cash payment settles via the existing
+// cash-movement plumbing so the wallet is reduced once (wired in Stage 5).
 model PayrollPayment {
   id                   String    @id @default(cuid())
   companyId            String
@@ -1342,14 +1361,14 @@ model PayrollPayment {
   legalEntityId        String?
   amountKopeks         Int       @default(0)
   paymentDate          DateTime
-  paymentMethod        String
-  sourceType           String
+  paymentMethod        String    // cash | bank
+  sourceType           String    // club_cash | regional_cash | bank_account
   sourceId             String?
   status               String    @default("pending")
   documentKey          String?
-  statementId          String?
+  statementId          String?   // → PayrollStatement (signed ведомость)
   bankTransactionId    String?
-  cashMovementId       String?
+  cashMovementId       String?   // link to the cash ledger movement (single-source)
   comment              String?
   paidByUserId         String
   createdAt            DateTime  @default(now())
@@ -1361,13 +1380,15 @@ model PayrollPayment {
   @@index([payrollCalculationId])
 }
 
+// Unified employee ↔ company obligations (debts). A repayment settles a SPECIFIC
+// obligation — never a faceless "Приход Иное".
 model EmployeeFinancialObligation {
   id                   String    @id @default(cuid())
   companyId            String
   employeeId           String
   clubId               String?
   payrollPeriodId      String?
-  direction            String
+  direction            String    // employee_owes_company | company_owes_employee
   reason               String
   originalAmountKopeks Int       @default(0)
   outstandingAmountKopeks Int    @default(0)
@@ -1466,7 +1487,9 @@ model ClubEmployee {
   status      String    @default("active")
   dismissedAt DateTime?
   comment     String?
-  // Payroll module (additive, all nullable → legacy rows unaffected).
+  // Payroll module (additive, all nullable → legacy rows unaffected). The home club
+  // is `clubId`; multi-club work is via EmployeeClubAssignment. `preferredPaymentMethod`
+  // = cash | bank; `isOfficial` = officially employed vs management accounting only.
   hireDate                DateTime?
   preferredPaymentMethod  String?
   isOfficial              Boolean   @default(false)
@@ -2029,4 +2052,40 @@ model CashOperationDocument {
   @@index([withdrawalId])
   @@index([otherIncomeId])
   @@index([companyId, clubId])
+}
+
+/// Ежедневная сверка фактических наличных управляющим ("Фактические деньги"). Запись-
+/// ПОДТВЕРЖДЕНИЕ, а не хранилище остатка: ожидаемый остаток и OFD-наличные берутся из
+/// loadClubCashBalances, деньги НЕ двигаются. Скалярные id (без relation) — аддитивно.
+model DailyCashReconciliation {
+  id                     String    @id @default(cuid())
+  companyId              String
+  clubId                 String
+  legalEntityId          String
+  legalEntityType        String    // ooo | ip (снапшот для истории)
+  businessDate           DateTime  // локальный календарный день (начало дня)
+  ofdCashRevenueKopeks   Int       @default(0)
+  expectedCashBalanceKopeks Int    @default(0)
+  actualCashBalanceKopeks   Int    @default(0)
+  differenceKopeks       Int       @default(0)
+  reasonCode             String?
+  comment                String?
+  status                 String    @default("awaiting_input")
+  resolution             String?
+  submittedById          String?
+  submittedAt            DateTime?
+  submittedOnTime        Boolean?
+  regionalReviewedById   String?
+  regionalReviewedAt     DateTime?
+  accountingReviewedById String?
+  accountingReviewedAt   DateTime?
+  closedAt               DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([clubId, legalEntityId, businessDate])
+  @@index([companyId])
+  @@index([clubId])
+  @@index([status])
+  @@index([businessDate])
 }

@@ -11,7 +11,7 @@ import { buildTelegramMessage, type NotificationPayload } from "@/lib/notificati
 export type EnqueueParams = {
   type: string;
   recipientUserId: string;
-  resourceType: "expense" | "invoice" | "refund" | "payroll";
+  resourceType: "expense" | "invoice" | "refund" | "payroll" | "reconciliation";
   resourceId: string;
   companyId: string;
   clubId: string | null;

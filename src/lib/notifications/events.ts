@@ -9,6 +9,44 @@ import { enqueueNotification } from "@/lib/notifications/outbox";
 
 type ResourceType = "expense" | "invoice" | "refund" | "payroll";
 
+/**
+ * Notify a club's regional director(s) about a daily-cash discrepancy or overdue
+ * confirmation. Best-effort: swallows its own errors, never blocks the caller.
+ */
+export async function notifyReconciliation(params: {
+  event: "discrepancy" | "overdue";
+  clubId: string;
+  companyId: string;
+  amountKopeks: number;
+  actorUserId: string;
+  extraRecipientUserIds?: string[];
+}): Promise<void> {
+  if (!telegramEnabled()) return;
+  try {
+    const regionals = await getRegionalRecipientUserIds(params.companyId, params.clubId, params.actorUserId);
+    const recipients = [...new Set([...regionals, ...(params.extraRecipientUserIds ?? [])])].filter((id) => id !== params.actorUserId);
+    if (recipients.length === 0) {
+      notifLog({ event: `reconciliation_${params.event}`, result: "no_recipient" });
+      return;
+    }
+    const name = await clubName(params.clubId);
+    for (const recipientUserId of recipients) {
+      await enqueueNotification({
+        type: `reconciliation.${params.event}`,
+        recipientUserId,
+        resourceType: "reconciliation",
+        resourceId: params.clubId,
+        companyId: params.companyId,
+        clubId: params.clubId,
+        payload: { resourceType: "reconciliation", clubName: name, amountKopeks: params.amountKopeks },
+      });
+    }
+    notifLog({ event: `reconciliation_${params.event}`, recipients: recipients.length });
+  } catch (error) {
+    notifLog({ event: `reconciliation_${params.event}`, result: "error", code: (error as { code?: string })?.code });
+  }
+}
+
 /** Safe, structured log line (no chatId / PII / message text). */
 function notifLog(fields: Record<string, unknown>): void {
   try {
