@@ -2150,3 +2150,54 @@ model PayrollTrainerPackage {
   @@index([clubId])
   @@index([employeeId])
 }
+
+/// Единый расчёт зарплаты регионала по городу за месяц (spec item 4). Одно начисление
+/// на город+месяц (не по каждому клубу). База — выручка или чистая прибыль города; %
+/// утверждает собственник. Выплаты идут частями из клубов города (RegionalCityPayment).
+model RegionalCityPayroll {
+  id                 String    @id @default(cuid())
+  companyId          String
+  city               String
+  year               Int
+  month              Int
+  regionalEmployeeId String?
+  regionalName       String
+  baseType           String    // revenue | profit
+  baseKopeks         Int       @default(0)
+  percentBp          Int       @default(0)
+  accruedKopeks      Int       @default(0)
+  status             String    @default("draft") // draft | approved
+  ownerApprovedById  String?
+  ownerApprovedAt    DateTime?
+  createdByUserId    String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([companyId, city, year, month])
+  @@index([companyId])
+  @@index([status])
+}
+
+/// Частичная выплата регионалу из конкретного клуба города. Источник-клуб + юрлицо +
+/// способ + сумма; связана с одной salary Expense (item 2). Касса клуба уменьшается один раз.
+model RegionalCityPayment {
+  id                    String    @id @default(cuid())
+  companyId             String
+  regionalCityPayrollId String
+  clubId                String    // источник-клуб
+  legalEntityId         String
+  amountKopeks          Int       @default(0)
+  paymentMethod         String    // cash | bank
+  sourceType            String    // club_cash | regional_cash | bank_account
+  status                String    @default("confirmed")
+  expenseId             String?
+  comment               String?
+  paymentDate           DateTime  @default(now())
+  paidByUserId          String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([regionalCityPayrollId])
+  @@index([clubId])
+}

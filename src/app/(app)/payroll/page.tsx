@@ -51,6 +51,12 @@ export default async function PayrollPage() {
             Сводка ФОТ
           </Link>
           <Link
+            href="/payroll/regional"
+            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            Регионал
+          </Link>
+          <Link
             href="/payroll/obligations"
             className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
           >

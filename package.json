@@ -66,6 +66,7 @@
     "pilot:payroll-finance": "node scripts/pilot-payroll-finance.mjs",
     "pilot:payroll-preadvance": "node scripts/pilot-payroll-preadvance.mjs",
     "pilot:payroll-legalentity": "node scripts/pilot-payroll-legalentity.mjs",
+    "pilot:payroll-regional": "node scripts/pilot-payroll-regional.mjs",
     "pilot:payroll-surface": "node scripts/pilot-payroll-surface.mjs",
     "pilot:payroll-integration": "node scripts/pilot-payroll-integration.mjs",
     "pilot:deploy-config": "node scripts/pilot-deploy-config.mjs",
