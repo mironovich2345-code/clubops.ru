@@ -14,8 +14,10 @@ import {
 } from "@/lib/refund-documents";
 import {
   MAX_REFUND_DOC_AGGREGATE, validateDeclaredRefundDoc, validateRefundSignature,
-  storeRefundDocument, safeFilename, sha256Hex, refundDocError,
+  storeRefundDocument, safeFilename, sha256Hex, refundDocError, classifyStorageError,
 } from "@/lib/refund-document-storage";
+import { Prisma } from "@prisma/client";
+import { randomBytes } from "node:crypto";
 import {
   parseDateOnly, toLocalMidnight, parseContractAmountKopeks, computeMembershipRefund, REFUND_CALC_VERSION, diffDays, fromDate,
 } from "@/lib/refund-membership";
@@ -97,7 +99,27 @@ export async function changeRefundType(_prev: State | undefined, formData: FormD
   return { ok: true, refundId };
 }
 
-type UploadState = { ok: boolean; error?: string };
+type UploadState = { ok: boolean; error?: string; code?: string; ref?: string };
+
+/**
+ * Structured, safe server log for an upload failure (NO document content). Emits a
+ * short reference id that is also shown to the user for support.
+ */
+function logUploadFailure(code: string, meta: Record<string, unknown>): string {
+  const ref = randomBytes(4).toString("hex");
+  try {
+    console.warn(JSON.stringify({ scope: "refund_upload", code, ref, storageProvider: process.env.STORAGE_PROVIDER ?? "local", ...meta }));
+  } catch {
+    /* logging must never throw */
+  }
+  return ref;
+}
+
+/** Attach a reference id to a user-facing error for support. */
+function uploadError(code: string, ref?: string): UploadState {
+  const base = refundDocError(code);
+  return { ok: false, code, ref, error: ref ? `${base} (код: ${ref})` : base };
+}
 
 /** Upload exactly one document into a slot (replaces any current active one). */
 export async function uploadRefundDocument(_prev: UploadState | undefined, formData: FormData): Promise<UploadState> {
@@ -124,13 +146,30 @@ export async function uploadRefundDocument(_prev: UploadState | undefined, formD
   // Aggregate cap: replacing the same slot frees its current bytes.
   const active = await getActiveRefundDocuments(refundId);
   const aggregateExcludingSlot = active.filter((d) => d.documentType !== documentType).reduce((s, d) => s + d.sizeBytes, 0);
-  if (aggregateExcludingSlot + buffer.length > MAX_REFUND_DOC_AGGREGATE) return { ok: false, error: refundDocError("AGGREGATE_EXCEEDED") };
+  if (aggregateExcludingSlot + buffer.length > MAX_REFUND_DOC_AGGREGATE) return uploadError("AGGREGATE_EXCEEDED");
+
+  // Reject the exact same file already attached in a DIFFERENT slot of this refund.
+  const digest = sha256Hex(buffer);
+  const dup = await prisma.refundDocument.findFirst({
+    where: { refundId, removedAt: null, sha256: digest, documentType: { not: documentType } },
+    select: { id: true },
+  });
+  if (dup) return uploadError("DUPLICATE_FILE");
+
+  const logMeta = { userId: ctx.user.id, companyId: refund.companyId, refundId, documentType, filename: safeFilename(file.name), mime: file.type, size: buffer.length };
 
   let stored;
-  try { stored = await storeRefundDocument(buffer, file.type); } catch { return { ok: false, error: refundDocError("STORAGE_FAILED") }; }
+  try {
+    stored = await storeRefundDocument(buffer, file.type);
+  } catch (e) {
+    const code = classifyStorageError(e);
+    const ref = logUploadFailure(code, { ...logMeta, cause: e instanceof Error ? e.message : String(e) });
+    return uploadError(code, ref);
+  }
 
   const activeSlotKey = `${refundId}:${documentType}`;
   let created: { id: string } | null = null;
+  let dbError: unknown = null;
   try {
     created = await prisma.$transaction(async (tx) => {
       // Soft-remove any current active file in this slot, then create the new
@@ -141,15 +180,20 @@ export async function uploadRefundDocument(_prev: UploadState | undefined, formD
         data: {
           refundId, companyId: refund.companyId, clubId: refund.clubId, documentType,
           storageKey: stored!.storageKey, originalFilename: file.name.slice(0, 255), safeFilename: safeFilename(file.name),
-          mimeType: file.type, sizeBytes: stored!.sizeBytes, sha256: sha256Hex(buffer), uploadedByUserId: ctx.user.id, activeSlotKey,
+          mimeType: file.type, sizeBytes: stored!.sizeBytes, sha256: digest, uploadedByUserId: ctx.user.id, activeSlotKey,
         },
         select: { id: true },
       });
     });
-  } catch { created = null; }
+  } catch (e) { created = null; dbError = e; }
   if (!created) {
     await getStorage().delete(stored.storageKey).catch(() => {}); // orphan cleanup
-    return { ok: false, error: refundDocError("SLOT_CONFLICT") };
+    // A unique clash (concurrent upload into the same slot) is a real conflict; any
+    // other DB failure is an infrastructure error, not a slot conflict.
+    const isConflict = dbError instanceof Prisma.PrismaClientKnownRequestError && dbError.code === "P2002";
+    const code = isConflict ? "SLOT_CONFLICT" : "DATABASE_WRITE_FAILED";
+    const ref = isConflict ? undefined : logUploadFailure(code, { ...logMeta, cause: dbError instanceof Error ? dbError.message : String(dbError) });
+    return uploadError(code, ref);
   }
   await recordAudit({ action: "refund.document_uploaded", entityType: "RefundDocument", entityId: created.id, companyId: refund.companyId, clubId: refund.clubId, userId: ctx.user.id, metadata: { refundId, returnType: refund.returnType, documentType, sizeBytes: stored.sizeBytes, mimeCategory: file.type.split("/")[0] } });
   revalidatePath(`/refunds/new/${refundId}`);

@@ -35,21 +35,34 @@ export function validateDeclaredRefundDoc(file: unknown): DocValidation {
   return { ok: true };
 }
 
-/** Magic-byte signature → canonical MIME, or null. */
+/** Magic-byte signature → canonical MIME, or null. Detects HEIC/HEIF by ISO-BMFF brand
+ * so a HEIC that slipped past the name/type check gets a precise error, not FILE_INVALID. */
 export function detectSignatureMime(buf: Buffer): string | null {
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
   if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
   if (buf.length >= 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-") return "application/pdf";
   if (buf.length >= 12 && buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  if (buf.length >= 12 && buf.subarray(4, 8).toString("latin1") === "ftyp") {
+    const brand = buf.subarray(8, 12).toString("latin1").toLowerCase();
+    if (["heic", "heix", "heif", "mif1", "hevc", "hevx"].includes(brand)) return "image/heic";
+  }
   return null;
 }
 
 /** Validate the file SIGNATURE against the declared MIME (anti-spoof). */
 export function validateRefundSignature(buf: Buffer, declaredMime: string): DocValidation {
   const detected = detectSignatureMime(buf);
+  if (detected === "image/heic") return { ok: false, code: "HEIC_UNSUPPORTED" };
   if (!detected) return { ok: false, code: "FILE_INVALID" };
   if (detected !== declaredMime) return { ok: false, code: "MIME_MISMATCH" };
   return { ok: true };
+}
+
+/** Classify a storage-layer failure into a precise code (config/unavailable vs write). */
+export function classifyStorageError(e: unknown): "STORAGE_UNAVAILABLE" | "STORAGE_WRITE_FAILED" {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/not configured|missing|ENOTFOUND|ECONNREFUSED|AccessDenied|credentials|endpoint/i.test(msg)) return "STORAGE_UNAVAILABLE";
+  return "STORAGE_WRITE_FAILED";
 }
 
 export function sha256Hex(buf: Buffer): string {
@@ -98,10 +111,19 @@ export const REFUND_DOC_ERRORS: Record<string, string> = {
   SLOT_INVALID: "Этот документ не относится к выбранному типу возврата.",
   SLOT_CONFLICT: "В этот слот уже загружается файл. Обновите страницу.",
   STORAGE_FAILED: "Не удалось сохранить файл. Повторите попытку позже.",
+  STORAGE_UNAVAILABLE: "Хранилище файлов временно недоступно. Повторите позже или обратитесь в поддержку.",
+  STORAGE_WRITE_FAILED: "Не удалось записать файл в хранилище. Повторите попытку.",
+  DATABASE_WRITE_FAILED: "Не удалось сохранить запись о документе. Повторите попытку.",
+  HEIC_UNSUPPORTED: "Формат HEIC (фото с iPhone) не поддерживается. Сохраните файл как JPG или PDF и загрузите снова.",
+  DUPLICATE_FILE: "Этот файл уже загружен в этом возврате.",
+  REQUEST_TOO_LARGE: "Файл слишком большой для загрузки (максимум 10 МБ).",
+  UPLOAD_TIMEOUT: "Загрузка заняла слишком много времени. Проверьте соединение и повторите.",
+  NETWORK_ERROR: "Ошибка сети при загрузке. Проверьте соединение и повторите.",
   ACCESS_DENIED: "Нет доступа к этому возврату.",
   NOT_EDITABLE: "Возврат больше нельзя редактировать.",
   NOT_FOUND: "Документ не найден.",
   REASON_REQUIRED: "Укажите причину удаления.",
+  UNKNOWN_UPLOAD_ERROR: "Не удалось загрузить документ. Повторите попытку.",
   UNKNOWN: "Не удалось обработать документ.",
 };
 export function refundDocError(code: string): string {

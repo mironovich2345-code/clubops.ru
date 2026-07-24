@@ -22,6 +22,13 @@ const nextConfig = {
   // Keep the AWS SDK (used only by the S3 storage provider, server-side) out of
   // the bundle — it is required at runtime only when STORAGE_PROVIDER=s3.
   serverExternalPackages: ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "unpdf"],
+  // Server Actions body limit. The default (~1 MB) is BELOW the 10 MB per-file upload
+  // cap, so a 1–10 MB document was rejected by Next BEFORE the handler ran — surfacing
+  // as a thrown transport error and the generic "Ошибка загрузки". Raise it above the
+  // single-file cap (+ multipart overhead). The reverse proxy stays the outer gate.
+  experimental: {
+    serverActions: { bodySizeLimit: "20mb" },
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

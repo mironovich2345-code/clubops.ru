@@ -58,6 +58,7 @@ const pilots = [
   ["Daily cash reconciliation", "pilot-cash-reconciliation.mjs"],
   ["Invoices phase 1", "pilot-invoices.mjs"],
   ["Refunds phase 1", "pilot-refunds.mjs"],
+  ["Refund upload error diagnostics", "pilot-refund-upload-errors.mjs"],
   ["Manager own-only visibility", "pilot-manager-visibility.mjs"],
   ["Invoice AI pipeline", "pilot-invoice-ai.mjs"],
   ["Invoice AI data review", "pilot-invoice-ai-review.mjs"],

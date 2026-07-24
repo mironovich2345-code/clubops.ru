@@ -51,7 +51,18 @@ function SlotCard({ refundId, slot, busy, setBusy }: { refundId: string; slot: S
       const res = await uploadRefundDocument(undefined, fd);
       if (!res.ok) setError(res.error ?? "Не удалось загрузить файл.");
       else router.refresh();
-    } catch { setError("Ошибка загрузки."); }
+    } catch (err) {
+      // A THROWN error here is a transport/body-limit/network failure (not the
+      // structured {ok:false} returns above). Surface an actionable message instead
+      // of swallowing it silently; log for diagnostics (no file content).
+      console.error("refund upload transport error", err);
+      const tooLarge = f.size > MAX_FILE_BYTES;
+      setError(
+        tooLarge
+          ? `Файл ${f.name} слишком большой (${(f.size / (1024 * 1024)).toFixed(1)} МБ). Максимум — 10 МБ.`
+          : "Не удалось загрузить файл: проблема соединения или размер запроса. Проверьте интернет, формат (JPG, PNG, PDF) и размер (до 10 МБ), затем повторите.",
+      );
+    }
     finally { setUploading(false); setBusy(false); if (url) { URL.revokeObjectURL(url); } setPreviewUrl(null); }
   }
 
