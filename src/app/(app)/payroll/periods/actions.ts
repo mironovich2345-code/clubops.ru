@@ -11,6 +11,7 @@ import { makeSchemeSnapshot, snapshotToSchemeParams, getPeriodForScope } from "@
 import { computeScheme, type PeriodInput } from "@/lib/payroll/compute";
 import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
 import { obligationFromRemaining } from "@/lib/payroll/obligations";
+import { notifyRegionalReview, notifyAuthor } from "@/lib/notifications/events";
 import { resolveActiveIpForClub } from "@/lib/expense-simplified";
 import { ensureClubCashWallet, ensureRegionalCashWallet } from "@/lib/cash-wallets";
 import {
@@ -368,6 +369,21 @@ export async function transitionPeriod(
     });
   } catch {
     /* ignore */
+  }
+  // Best-effort workflow notifications (never block the transition).
+  try {
+    const sum = await prisma.payrollCalculation.aggregate({ where: { payrollPeriodId: periodId }, _sum: { grossAccruedKopeks: true } });
+    const amountKopeks = sum._sum.grossAccruedKopeks ?? 0;
+    const base = { resourceType: "payroll" as const, resourceId: periodId, companyId: scope.companyId, clubId: scope.period.clubId, amountKopeks };
+    if (action === "submit") {
+      await notifyRegionalReview({ ...base, actorUserId: scope.ctx.user.id, isResubmit: scope.period.status === "needs_correction" });
+    } else if (action === "return_for_correction") {
+      await notifyAuthor({ ...base, authorUserId: scope.period.createdByUserId, actorUserId: scope.ctx.user.id, event: "returned" });
+    } else if (action === "accounting_approve") {
+      await notifyAuthor({ ...base, authorUserId: scope.period.createdByUserId, actorUserId: scope.ctx.user.id, event: "approved" });
+    }
+  } catch {
+    /* notifications are best-effort */
   }
   revalidatePath(`/payroll/periods/${periodId}`);
   return { ok: true };

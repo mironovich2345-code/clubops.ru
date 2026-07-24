@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { telegramEnabled } from "@/lib/telegram/config";
 import { enqueueNotification } from "@/lib/notifications/outbox";
 
-type ResourceType = "expense" | "invoice" | "refund";
+type ResourceType = "expense" | "invoice" | "refund" | "payroll";
 
 /** Safe, structured log line (no chatId / PII / message text). */
 function notifLog(fields: Record<string, unknown>): void {
