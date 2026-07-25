@@ -167,6 +167,16 @@ export default async function OfdIntegrationPage() {
 
   return (
     <div className="max-w-4xl">
+      <nav className="mb-3 text-sm text-slate-500">
+        <Link href="/settings" className="hover:text-slate-700">Настройки</Link>
+        <span className="mx-1.5">→</span>
+        <Link href="/settings/ofd" className="hover:text-slate-700">ОФД</Link>
+        <span className="mx-1.5">→</span>
+        <span className="text-slate-700">ОФД Такском</span>
+      </nav>
+      <div className="mb-3">
+        <Link href="/settings/ofd" className="text-sm text-slate-500 hover:text-slate-700">← Назад к провайдерам</Link>
+      </div>
       <PageHeader title="ОФД Такском" description="Подключение продаж по API ОФД (только владелец / ген. директор)" />
 
       {!ofdEnabled() ? (
