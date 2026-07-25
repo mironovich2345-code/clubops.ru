@@ -93,8 +93,8 @@ function main() {
     astralActions.includes("apiKey ? { integrationTokenEncrypted: encryptOfdSecret(apiKey) } : {}"));
   check("UI11 key stored encrypted + masked in UI (never rendered plaintext)",
     astralActions.includes("encryptOfdSecret") && astralForms.includes('type="password"') && astralForms.includes("сохранён"));
-  check("UI12 Astral honestly not-live: page shows BLOCKED, testConnection refuses (no fake live)",
-    astralPage.includes("BLOCKED BY DOCUMENTATION") && astralActions.includes("testConnection") && !astralActions.includes('notice: "Подключено"'));
+  check("UI12 Astral honestly not-live: page shows READY FOR CREDENTIALS, not marked «Подключено» until real import; testConnection present, no fake live",
+    astralPage.includes("READY FOR CREDENTIALS") && astralPage.includes("не помечается как «Подключено»") && astralActions.includes("testConnection") && !astralActions.includes('notice: "Подключено"'));
   check("UI13 Astral page role-gated + reflects PIN-needed state",
     astralPage.includes("userHasCompanyRole") && astralPage.includes("getSettingsPinStatus"));
 
