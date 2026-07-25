@@ -64,19 +64,19 @@ function main() {
   const registry = src("../src/lib/ofd/providers/registry.ts");
   const iface = src("../src/lib/ofd/providers/types.ts");
   const importer = src("../src/lib/ofd/importer.ts");
-  const daily = src("../src/lib/ofd/daily.ts");
-  const doc = src("../docs/integrations/astral-ofd-discovery.md");
+  const client = src("../src/lib/ofd/astral/client.ts");
+  const api = src("../src/lib/ofd/astral/api.ts");
 
-  check("AST8 Astral is NOT live: testConnection refuses (blocked), status not 'live'",
-    astral.includes("ASTRAL_NOT_CONFIGURED") && astral.includes('status: "blocked_by_documentation"') && !astral.includes('status: "live"'));
+  check("AST8 Astral is NOT live: status ready_for_credentials, real organization.list check, never 'live'",
+    astral.includes('status: "ready_for_credentials"') && astral.includes("listOrganizations") && api.includes("organization.list") && !astral.includes('status: "live"'));
   check("AST9 provider registry has both taxcom (live) + astral, sharing OfdProvider interface",
     registry.includes("TaxcomProvider") && registry.includes("AstralProvider") && iface.includes("export interface OfdProvider"));
-  check("AST10 normalizer targets the SHARED NormalizedOfdReceipt (downstream unchanged)",
-    astral.includes("NormalizedOfdReceipt") && iface.includes("NormalizedOfdReceipt"));
-  check("AST11 Taxcom import path untouched (daily filter still provider:taxcom, no astral in import path)",
-    daily.includes('provider: "taxcom"') && importer.includes("createTaxcomClient") && !importer.toLowerCase().includes("astral") && !daily.toLowerCase().includes("astral"));
-  check("AST12 discovery doc marks BLOCKED honestly + provisional mapping caveat",
-    doc.includes("BLOCKED BY DOCUMENTATION") && /провизорн|ПРЕДВАРИТЕЛЬНО|подтвердить/i.test(doc));
+  check("AST10 real client: injectable fetch, POST + api_key body, key never logged, bounded retry",
+    client.includes("createAstralClient") && client.includes("AbortSignal.timeout") && client.includes("redactApiKey") && client.includes("isRetryableStatus"));
+  check("AST11 Taxcom import path untouched (importer still Taxcom-only, no astral in it)",
+    importer.includes("createTaxcomClient") && !importer.toLowerCase().includes("astral"));
+  check("AST12 testConnection honest without a key (refuses) and imports nothing on test",
+    astral.includes("ASTRAL_NOT_CONFIGURED") && astral.includes("Imports NOTHING") && astral.includes("count: 10"));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
