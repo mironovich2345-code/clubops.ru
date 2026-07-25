@@ -55,8 +55,8 @@ function main() {
     action.includes('revalidatePath("/dashboard")') && action.includes('revalidatePath("/analytics/ofd-sales")') && action.includes('revalidatePath("/collections")'));
   check("SYNC15 concurrency handled by importer lock (per-connection already_running) — action relies on it",
     health.includes("export async function loadOfdSyncStatus") && action.includes("ofdEnabled()"));
-  check("SYNC16 card mounted on dashboard, hidden when disabled, trigger gated",
-    dash.includes("OfdSyncCard") && dash.includes('ofdStatus.state !== "disabled"') && dash.includes('can(roles, "ofd.sync.trigger")'));
+  check("SYNC16 card mounted on dashboard, hidden when every provider disabled, trigger gated",
+    dash.includes("OfdSyncCard") && dash.includes("anyOfdProvider") && dash.includes('p.status !== "disabled"') && dash.includes('can(roles, "ofd.sync.trigger")'));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
