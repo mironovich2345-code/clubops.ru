@@ -6,7 +6,7 @@ import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled } from "@/lib/ofd/config";
 import { getSettingsPinStatus } from "@/lib/settings-pin";
 import { AstralApiKeyForm, AstralTestConnection } from "./_components/AstralForms";
-import { AstralOrgStep, AstralOutletStep, AstralKktStep } from "./_components/AstralSteps";
+import { AstralOrgStep, AstralOutletStep, AstralKktStep, AstralImportStep } from "./_components/AstralSteps";
 
 export const dynamic = "force-dynamic";
 const CARD = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
@@ -103,8 +103,12 @@ export default async function AstralOfdPage() {
         ) : <Locked hint="Сначала выберите организацию (шаг 2)." />}
       </Step>
 
-      {/* Шаг 5 — Тестовая синхронизация (активируется отдельным коммитом) */}
-      <StepDisabled n={5} title="Тестовая синхронизация" hint="Предпросмотр за 1–3 дня (документы, продажи, возвраты, наличные/электронные, служебные, расхождения), затем импорт. Активируется после привязки хотя бы одной кассы." />
+      {/* Шаг 5 — Тестовая синхронизация */}
+      <Step n={5} title="Тестовая синхронизация" status={boundKkts.length ? "Доступно" : "—"} active={boundKkts.length > 0}>
+        {boundKkts.length ? (
+          <AstralImportStep boundKkts={boundKkts.map((k) => ({ fnNumber: k.fnNumber, label: k.label }))} defaultDate={ofdTodayMoscow()} />
+        ) : <Locked hint="Сначала привяжите хотя бы одну кассу (шаг 4)." />}
+      </Step>
 
       <div className="mt-6 text-xs text-slate-500">
         Документация: docs/integrations/astral-ofd-implementation.md · endpoints v4.2 (organization.list, kkt.aliasList,
@@ -130,14 +134,7 @@ function Locked({ hint }: { hint: string }) {
   return <p className="text-xs text-slate-500">{hint}</p>;
 }
 
-function StepDisabled({ n, title, hint }: { n: number; title: string; hint: string }) {
-  return (
-    <div className={`mb-4 opacity-60 ${CARD}`}>
-      <div className="mb-1 flex items-center justify-between">
-        <div className="text-sm font-semibold text-slate-800">Шаг {n}. {title}</div>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">Недоступно</span>
-      </div>
-      <p className="text-xs text-slate-500">{hint}</p>
-    </div>
-  );
+/** Today's date (YYYY-MM-DD) in the OFD business timezone Europe/Moscow (UTC+3). */
+function ofdTodayMoscow(): string {
+  return new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
 }

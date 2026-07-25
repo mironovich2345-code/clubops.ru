@@ -8,10 +8,14 @@ import {
   loadAstralKkts,
   bindAstralKkt,
   unbindAstralKkt,
+  previewAstralImport,
+  runAstralImport,
   type StepOrgsState,
   type StepOutletsState,
   type StepKktsState,
   type StepMutState,
+  type StepPreviewState,
+  type StepImportState,
 } from "../steps-actions";
 
 type LE = { id: string; name: string };
@@ -22,6 +26,10 @@ const orgs0: StepOrgsState = { ok: false };
 const outlets0: StepOutletsState = { ok: false };
 const kkts0: StepKktsState = { ok: false };
 const mut0: StepMutState = { ok: false };
+const preview0: StepPreviewState = { ok: false };
+const import0: StepImportState = { ok: false };
+
+const rub = (kopeks: number) => (kopeks / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽";
 
 function Btn({ label, variant = "neutral" }: { label: string; variant?: "primary" | "neutral" }) {
   const { pending } = useFormStatus();
@@ -167,4 +175,73 @@ export function AstralKktStep({ legalEntities, clubs, boundLegalEntityId, boundK
       ) : null}
     </div>
   );
+}
+
+// ---- Step 5: preview + import ------------------------------------------------
+
+export function AstralImportStep({ boundKkts, defaultDate }: { boundKkts: Array<{ fnNumber: string; label: string }>; defaultDate: string }) {
+  const [preview, previewAction] = useFormState(previewAstralImport, preview0);
+  const [imp, importAction] = useFormState(runAstralImport, import0);
+  if (boundKkts.length === 0) {
+    return <p className="text-xs text-slate-500">Сначала привяжите хотя бы одну кассу (шаг 4).</p>;
+  }
+  const p = preview.preview;
+  return (
+    <div className="space-y-3">
+      <form action={previewAction} className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-slate-600">Касса
+          <select name="fnNumber" className="input ml-1 py-1 text-sm">
+            {boundKkts.map((k) => <option key={k.fnNumber} value={k.fnNumber}>{k.label}</option>)}
+          </select>
+        </label>
+        <label className="text-xs text-slate-600">с <input type="date" name="dateFrom" defaultValue={defaultDate} className="input ml-1 py-1 text-sm" /></label>
+        <label className="text-xs text-slate-600">по <input type="date" name="dateTo" defaultValue={defaultDate} className="input ml-1 py-1 text-sm" /></label>
+        <Btn label="Предпросмотр" />
+        <Msg state={preview} />
+      </form>
+      <p className="text-[11px] text-slate-400">Диапазон предпросмотра — не более 3 дней. Предпросмотр ничего не записывает.</p>
+
+      {p ? (
+        <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
+            <Kv k="Документов" v={String(p.documents)} />
+            <Kv k="Продаж" v={String(p.sales)} />
+            <Kv k="Возвратов" v={String(p.returns)} />
+            <Kv k="Служебных" v={String(p.service)} />
+            <Kv k="Неизвестных" v={String(p.unknown)} />
+            <Kv k="Позиций" v={String(p.positions)} />
+            <Kv k="Приход" v={rub(p.incomeKopeks)} />
+            <Kv k="Возвраты" v={rub(p.returnKopeks)} />
+            <Kv k="Наличные" v={rub(p.cashKopeks)} />
+            <Kv k="Электронные" v={rub(p.ecashKopeks)} />
+            <Kv k="Страниц" v={String(p.pages)} />
+            <Kv k="Расхожд. оплат" v={String(p.paymentMismatch)} />
+          </div>
+
+          <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600">
+            <div className="mb-1 font-medium">Сверка с кабинетом</div>
+            {p.closedShifts ? (
+              <div>Закрытые смены: {p.closedShifts.shiftCount} смен, {p.closedShifts.checkCount} чеков, сумма {rub(p.closedShifts.sumKopeks)} · расхождение с документами {rub(p.discrepancyDocVsShiftsKopeks)}</div>
+            ) : <div className="text-amber-700">Закрытые смены: {p.closedShiftsError ?? "нет данных"}</div>}
+            {p.analytics ? (
+              <div>Аналитика: прибыль {rub(p.analytics.profitKopeks)}, возвраты {rub(p.analytics.refundsKopeks)} · расхождение с документами {rub(p.discrepancyDocVsAnalyticsKopeks)}</div>
+            ) : <div className="text-amber-700">Аналитика: {p.analyticsError ?? "нет данных"}</div>}
+          </div>
+
+          <form action={importAction} className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="fnNumber" value={p.fnNumber} />
+            <input type="hidden" name="dateFrom" value={p.dateFrom} />
+            <input type="hidden" name="dateTo" value={p.dateTo} />
+            <Btn label="Импортировать" variant="primary" />
+            <Msg state={imp} />
+          </form>
+          <p className="text-[11px] text-slate-400">Повторный импорт того же периода не создаёт дублей (идемпотентность по dedupeKey).</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Kv({ k, v }: { k: string; v: string }) {
+  return <div className="flex items-baseline justify-between gap-2"><span className="text-slate-500">{k}</span><span className="font-medium text-slate-800">{v}</span></div>;
 }

@@ -15,7 +15,9 @@ import {
   legalEntityInCompany,
   clubInCompany,
 } from "@/lib/ofd/astral/settings";
-import { astralClientForConfig, listOrganizations, listOutlets, listKkts, listKktsByAlias } from "@/lib/ofd/astral/api";
+import { astralClientForConfig, listOrganizations, listOutlets, listKkts, listKktsByAlias, fetchClosedShifts, fetchAnalyticsSummary, type AstralClosedShiftsSummary, type AstralAnalyticsSummary } from "@/lib/ofd/astral/api";
+import { importAstralSalesForPeriod } from "@/lib/ofd/astral/importer";
+import { moscowDayRangeUnix } from "@/lib/ofd/astral/receipts";
 import type { AstralMaskedOrg } from "@/lib/ofd/providers/astral-provider";
 import type { AstralOutlet, AstralKkt } from "@/lib/ofd/astral/normalize";
 
@@ -142,6 +144,120 @@ export async function bindAstralKkt(_prev: StepMutState | undefined, formData: F
   revalidatePath("/settings/ofd/astral");
   revalidatePath("/settings/ofd");
   return { ok: true, notice: `Касса ${numberKKT || fnNumber} привязана.` };
+}
+
+// ---- Step 5: preview + import ------------------------------------------------
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Validate a 1–3 day range. Preview/import are capped so a test cannot backfill months. */
+function validateRange(dateFrom: string, dateTo: string): string | null {
+  if (!DATE_RE.test(dateFrom) || !DATE_RE.test(dateTo) || dateFrom > dateTo) return "Некорректный диапазон дат.";
+  const days = Math.round((Date.parse(`${dateTo}T00:00:00+03:00`) - Date.parse(`${dateFrom}T00:00:00+03:00`)) / 86_400_000) + 1;
+  if (days < 1 || days > 3) return "Диапазон предпросмотра — не более 3 дней.";
+  return null;
+}
+
+export type AstralPreview = {
+  dateFrom: string;
+  dateTo: string;
+  fnNumber: string;
+  documents: number;
+  sales: number;
+  returns: number;
+  service: number;
+  unknown: number;
+  incomeKopeks: number;
+  returnKopeks: number;
+  cashKopeks: number;
+  ecashKopeks: number;
+  positions: number;
+  paymentMismatch: number;
+  pages: number;
+  foreignSkipped: number;
+  closedShifts: AstralClosedShiftsSummary | null;
+  closedShiftsError: string | null;
+  analytics: AstralAnalyticsSummary | null;
+  analyticsError: string | null;
+  discrepancyDocVsShiftsKopeks: number;
+  discrepancyDocVsAnalyticsKopeks: number;
+};
+export type StepPreviewState = { ok: boolean; error?: string; preview?: AstralPreview };
+export type StepImportState = { ok: boolean; error?: string; notice?: string; imported?: number; skipped?: number; found?: number };
+
+/** Step 5 preview: fetch + normalize a 1–3 day window for ONE KKT and reconcile the
+ * documents total against closed shifts + analytics. Writes NOTHING (dryRun). No PIN
+ * (it does not change settings), owner/GD only. */
+export async function previewAstralImport(_prev: StepPreviewState | undefined, formData: FormData): Promise<StepPreviewState> {
+  const g = await requireAstralOwner({ pin: false });
+  if (!g.ok) return { ok: false, error: g.error };
+  const fnNumber = String(formData.get("fnNumber") ?? "").trim();
+  const dateFrom = String(formData.get("dateFrom") ?? "").trim();
+  const dateTo = String(formData.get("dateTo") ?? "").trim();
+  if (!fnNumber) return { ok: false, error: "Выберите кассу." };
+  const rangeErr = validateRange(dateFrom, dateTo);
+  if (rangeErr) return { ok: false, error: rangeErr };
+
+  const dry = await importAstralSalesForPeriod({ connectionId: (await getAstralConnection(g.companyId))?.id ?? "", dateFrom, dateTo, mode: "preview", dryRun: true, onlyKktFnNumbers: [fnNumber] });
+  if (!dry.ok) return { ok: false, error: dry.safeMessage ?? dry.safeCode };
+  const d = dry.diagnostics;
+
+  // Reconciliation (best-effort; a failure here never blocks the preview).
+  const conn = await getAstralConnection(g.companyId);
+  let closedShifts: AstralClosedShiftsSummary | null = null;
+  let closedShiftsError: string | null = null;
+  let analytics: AstralAnalyticsSummary | null = null;
+  let analyticsError: string | null = null;
+  if (conn?.externalOrganizationId) {
+    const client = astralClientForConfig(buildAstralConfig(conn));
+    if (client) {
+      const { beginDate, endDate } = moscowDayRangeUnix(dateFrom, dateTo);
+      const cs = await fetchClosedShifts(client, { organizationId: conn.externalOrganizationId, beginDate, endDate });
+      if (cs.ok) closedShifts = cs.data; else closedShiftsError = cs.message;
+      const an = await fetchAnalyticsSummary(client, { organizationId: conn.externalOrganizationId, beginDate, endDate });
+      if (an.ok) analytics = an.data; else analyticsError = an.message;
+    }
+  }
+
+  const netIncome = d.totalIncomeKopeks - d.totalReturnKopeks;
+  return {
+    ok: true,
+    preview: {
+      dateFrom, dateTo, fnNumber,
+      documents: d.documentsReceived, sales: d.salesCount, returns: d.returnCount, service: d.serviceCount, unknown: d.unknownDocuments,
+      incomeKopeks: d.totalIncomeKopeks, returnKopeks: d.totalReturnKopeks, cashKopeks: d.cashKopeks, ecashKopeks: d.ecashKopeks,
+      positions: d.positionsCount, paymentMismatch: d.paymentMismatchCount, pages: d.pagesProcessed, foreignSkipped: d.foreignSkipped,
+      closedShifts, closedShiftsError, analytics, analyticsError,
+      discrepancyDocVsShiftsKopeks: closedShifts ? netIncome - closedShifts.sumKopeks : 0,
+      discrepancyDocVsAnalyticsKopeks: analytics ? netIncome - analytics.profitKopeks : 0,
+    },
+  };
+}
+
+/** Step 5 import: really import a 1–3 day window for ONE KKT. Idempotent — re-running
+ * creates no duplicates. Owner/GD. Refreshes dashboard/analytics/collections. */
+export async function runAstralImport(_prev: StepImportState | undefined, formData: FormData): Promise<StepImportState> {
+  const g = await requireAstralOwner({ pin: false });
+  if (!g.ok) return { ok: false, error: g.error };
+  const fnNumber = String(formData.get("fnNumber") ?? "").trim();
+  const dateFrom = String(formData.get("dateFrom") ?? "").trim();
+  const dateTo = String(formData.get("dateTo") ?? "").trim();
+  if (!fnNumber) return { ok: false, error: "Выберите кассу." };
+  const rangeErr = validateRange(dateFrom, dateTo);
+  if (rangeErr) return { ok: false, error: rangeErr };
+  const conn = await getAstralConnection(g.companyId);
+  if (!conn) return { ok: false, error: "Подключение Астрал не найдено." };
+
+  const r = await importAstralSalesForPeriod({ connectionId: conn.id, dateFrom, dateTo, mode: "manual_period", requestedByUserId: g.userId, onlyKktFnNumbers: [fnNumber] });
+  if (!r.ok) return { ok: false, error: r.safeMessage ?? r.safeCode };
+  try {
+    await recordAudit({ action: "ofd.astral_manual_import", entityType: "OfdSyncRun", entityId: r.syncRunId ?? undefined, companyId: g.companyId, userId: g.userId, metadata: { fnNumber, dateFrom, dateTo, found: r.found, imported: r.imported, skipped: r.skipped } });
+  } catch { /* ignore */ }
+  revalidatePath("/settings/ofd/astral");
+  revalidatePath("/dashboard");
+  revalidatePath("/analytics/ofd-sales");
+  revalidatePath("/collections");
+  return { ok: true, notice: `Импортировано: найдено ${r.found}, добавлено ${r.imported}, пропущено ${r.skipped} (статус ${r.status}).`, found: r.found, imported: r.imported, skipped: r.skipped };
 }
 
 /** Disable a KKT mapping (PIN-gated). Keeps the row (history) but frees the active key. */

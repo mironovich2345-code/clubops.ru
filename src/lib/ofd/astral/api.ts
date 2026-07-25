@@ -10,6 +10,7 @@ import type { OfdConnectionConfig } from "@/lib/ofd/types";
 import {
   createAstralClient,
   toCount,
+  toInt,
   type AstralClient,
   type AstralClientOpts,
   type AstralResult,
@@ -184,4 +185,71 @@ export async function fetchReceiptsPage(
   const documents = arr(docsRaw);
   const totalCount = toCount((res.data as Record<string, unknown>)?.totalCount ?? documents.length);
   return { ok: true, data: { documents, totalCount } };
+}
+
+// ---- closed shifts (documents.closedShiftsList) — reconciliation -------------
+
+export type AstralClosedShiftsSummary = {
+  shiftCount: number;
+  checkCount: number;
+  sumKopeks: number;
+  cashKopeks: number;
+  ecashKopeks: number;
+};
+
+/** Aggregate closed shifts over a range for reconciliation (NOT the receipt source). */
+export async function fetchClosedShifts(
+  client: AstralClient,
+  params: { organizationId: string; beginDate: number; endDate: number; count?: number },
+): Promise<AstralResult<AstralClosedShiftsSummary>> {
+  const res = await client.call<Record<string, unknown>>("documents.closedShiftsList", {
+    organizationId: String(params.organizationId),
+    pageNumber: "1",
+    count: String(params.count ?? 100),
+    order: "asc",
+    beginDate: String(params.beginDate),
+    endDate: String(params.endDate),
+  });
+  if (!res.ok) return res;
+  const shifts = arr((res.data as Record<string, unknown> | null)?.closedShifts);
+  const summary: AstralClosedShiftsSummary = { shiftCount: shifts.length, checkCount: 0, sumKopeks: 0, cashKopeks: 0, ecashKopeks: 0 };
+  for (const s of shifts) {
+    summary.checkCount += toInt(s.checkCount);
+    summary.sumKopeks += toInt(s.sum);
+    summary.cashKopeks += toInt(s.cash);
+    summary.ecashKopeks += toInt(s.ecash);
+  }
+  return { ok: true, data: summary };
+}
+
+// ---- analytics (analytics.aliases) — control totals --------------------------
+
+export type AstralAnalyticsSummary = {
+  profitKopeks: number;
+  cashKopeks: number;
+  ecashKopeks: number;
+  refundsKopeks: number;
+  averageKopeks: number;
+};
+
+/** Header control totals for a range (profit/cash/ecash/refunds). Reconciliation only —
+ * NEVER the source of receipts. */
+export async function fetchAnalyticsSummary(
+  client: AstralClient,
+  params: { organizationId: string; beginDate: number; endDate: number },
+): Promise<AstralResult<AstralAnalyticsSummary>> {
+  const res = await client.call<Record<string, unknown>>("analytics.aliases", {
+    organizationId: Number(params.organizationId),
+    beginDate: String(params.beginDate),
+    endDate: String(params.endDate),
+    page: "1",
+    count: "100",
+    type: "profit",
+    allaliases: "true",
+    allkkts: "true",
+  });
+  if (!res.ok) return res;
+  const header = ((res.data as Record<string, unknown> | null)?.header ?? {}) as Record<string, unknown>;
+  const val = (k: string): number => toInt((header[k] as Record<string, unknown> | undefined)?.value);
+  return { ok: true, data: { profitKopeks: val("profit"), cashKopeks: val("cash"), ecashKopeks: val("ecash"), refundsKopeks: val("refunds"), averageKopeks: val("average") } };
 }
