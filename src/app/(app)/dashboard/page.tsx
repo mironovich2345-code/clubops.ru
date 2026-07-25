@@ -9,6 +9,7 @@ import {
 } from "@/lib/access";
 import { canManageSalesPlans, canImportPlansAndBudgets, canApproveMonthReopen, canAnyRoleAccessPage, isStrategicRole, can, type Role } from "@/lib/auth";
 import { loadOfdSyncStatus } from "@/lib/ofd/health";
+import { loadOfdProviderCards } from "@/lib/ofd/providers/status";
 import { OfdSyncCard } from "./_components/OfdSyncCard";
 import { resolveStrategicScope } from "@/lib/strategic-scope";
 import { loadCompanyClubCards } from "@/lib/dashboard-cards";
@@ -240,7 +241,10 @@ export default async function DashboardPage({
   // sync (accountant may trigger without the ofd_sales page). Company-scoped.
   const canTriggerSync = can(roles, "ofd.sync.trigger");
   const showOfdSyncCard = canSeeOfdSales || canTriggerSync;
-  const ofdStatus = showOfdSyncCard ? await loadOfdSyncStatus(companyId, now) : null;
+  const [ofdStatus, ofdProviders] = showOfdSyncCard
+    ? await Promise.all([loadOfdSyncStatus(companyId, now), loadOfdProviderCards(companyId, now)])
+    : [null, []];
+  const anyOfdProvider = ofdProviders.some((p) => p.status !== "disabled");
 
   return (
     <div className="mx-auto max-w-[1440px]">
@@ -249,7 +253,7 @@ export default async function DashboardPage({
         <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
       </div>
 
-      {ofdStatus && ofdStatus.state !== "disabled" ? (
+      {ofdStatus && anyOfdProvider ? (
         <OfdSyncCard
           state={ofdStatus.state}
           provider={ofdStatus.provider}
@@ -260,6 +264,7 @@ export default async function DashboardPage({
           imported={ofdStatus.imported}
           found={ofdStatus.found}
           canTrigger={canTriggerSync}
+          providers={ofdProviders.map((p) => ({ id: p.id, label: p.label, statusLabel: p.statusLabel, connected: p.connected }))}
         />
       ) : null}
 

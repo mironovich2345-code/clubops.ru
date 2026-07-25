@@ -45,6 +45,7 @@ export function OfdSyncCard({
   imported,
   found,
   canTrigger,
+  providers,
 }: {
   state: OfdSyncHealthState;
   provider: string;
@@ -55,6 +56,7 @@ export function OfdSyncCard({
   imported: number;
   found: number;
   canTrigger: boolean;
+  providers: Array<{ id: string; label: string; statusLabel: string; connected: boolean }>;
 }) {
   const [formState, action] = useFormState(triggerOfdSync, initial);
   const style = STATE_STYLE[state];
@@ -75,6 +77,19 @@ export function OfdSyncCard({
             <div><dt className="inline">Подключений: </dt><dd className="inline font-medium text-slate-700 dark:text-slate-300">{connectionCount}</dd></div>
             <div><dt className="inline">Загружено/новых: </dt><dd className="inline font-medium text-slate-700 dark:text-slate-300">{found}/{imported}</dd></div>
           </dl>
+          {providers.length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {providers.map((p) => (
+                <span
+                  key={p.id}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${p.connected ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}
+                >
+                  <span className="font-medium">{p.label.replace(/^ОФД\s+/, "")}</span>
+                  <span className="opacity-70">— {p.statusLabel}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
           {formState.notice ? <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">{formState.notice}</div> : null}
           {formState.error ? <div className="mt-2 text-xs text-rose-600 dark:text-rose-400">{formState.error}</div> : null}
         </div>
