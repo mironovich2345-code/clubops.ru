@@ -35,7 +35,7 @@ function main() {
   check("DIAG7 cron route exposes ONLY POST + fail-closed auth",
     route.includes("export async function POST") && !route.includes("export async function GET") && route.includes("authorizeOfdCron"));
   check("DIAG8 per-connection fault isolation (one failure never stops the batch)",
-    daily.includes("provider: \"taxcom\", isActive: true") && /try\s*{[\s\S]*}\s*catch/.test(daily));
+    daily.includes('provider: { in: ["taxcom", "astral"] }, isActive: true') && /try\s*{[\s\S]*}\s*catch/.test(daily));
   check("DIAG9 all six health states enumerated",
     ["disabled", "never_synced", "running", "failed", "delayed", "healthy"].every((s) => health.includes(`"${s}"`)));
   check("DIAG10 diagnostics doc names the ROOT CAUSE (no in-repo scheduler / env)",

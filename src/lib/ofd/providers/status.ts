@@ -84,13 +84,19 @@ export async function loadOfdProviderCards(companyId: string, now: Date = new Da
     const lastSuccessAt = lastSuccess?.finishedAt ?? lastSuccess?.createdAt ?? null;
     const lastAttemptAt = latestRun?.finishedAt ?? latestRun?.startedAt ?? latestRun?.createdAt ?? null;
 
+    // A non-"live" provider (Astral) becomes EFFECTIVELY connected for this company
+    // once a real request has succeeded (a success/partial sync run exists). Before
+    // that it stays honestly capped at needs_api_key / needs_setup — never "Подключено"
+    // until a real credentialed request went through (project rule #7).
+    const effectivelyLive = isLive || Boolean(lastSuccessAt);
+
     let status: OfdCardStatus;
     if (!enabled) {
       status = "disabled";
     } else if (active.length === 0) {
       status = conns.length > 0 && !isLive ? "needs_api_key" : "not_connected";
-    } else if (!isLive) {
-      // Astral skeleton: even with a stored key, live sync is not available yet.
+    } else if (!effectivelyLive) {
+      // Astral configured but no real successful sync yet: not live.
       status = hasSecret ? "needs_setup" : "needs_api_key";
     } else if (latestRun && (latestRun.status === "pending" || latestRun.status === "running")) {
       status = "running";

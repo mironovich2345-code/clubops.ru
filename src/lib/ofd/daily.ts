@@ -9,6 +9,7 @@
 import { prisma } from "@/lib/prisma";
 import { bearerEquals, secretEquals } from "@/lib/secure-compare";
 import { importTaxcomSalesForPeriod } from "@/lib/ofd/importer";
+import { importAstralSalesForPeriod } from "@/lib/ofd/astral/importer";
 
 /** CRON_SECRET (never the value in any response). */
 export function ofdCronSecret(): string | null {
@@ -90,9 +91,21 @@ export type RunDailyOptions = {
   importer?: ImportFn;
 };
 
-/** The real importer bound to a mode — wraps importTaxcomSalesForPeriod for one day. */
+/**
+ * The real importer bound to a mode. Dispatches per connection PROVIDER so a single
+ * "sync" covers both Taxcom and Astral. Each provider's import is fully independent;
+ * the batch loop's per-connection try/catch guarantees one provider's failure never
+ * aborts the others.
+ */
 function defaultImporter(): ImportFn {
   return async (connectionId, date, mode) => {
+    const conn = await prisma.ofdConnection.findUnique({ where: { id: connectionId }, select: { provider: true } });
+    if (conn?.provider === "astral") {
+      const r = await importAstralSalesForPeriod({ connectionId, dateFrom: date, dateTo: date, mode });
+      return r.ok
+        ? { ok: true, found: r.found, imported: r.imported, skipped: r.skipped, status: r.status, totalIncomeKopeks: r.totalIncomeKopeks, totalReturnKopeks: r.totalReturnKopeks }
+        : { ok: false, safeCode: r.safeCode };
+    }
     const r = await importTaxcomSalesForPeriod({ connectionId, dateFrom: date, dateTo: date, mode });
     return r.ok
       ? { ok: true, found: r.found, imported: r.imported, skipped: r.skipped, status: r.status, totalIncomeKopeks: r.totalIncomeKopeks, totalReturnKopeks: r.totalReturnKopeks }
@@ -158,15 +171,15 @@ export async function runDailyOfdImport(opts: RunDailyOptions = {}): Promise<Ofd
     date: ofdYesterday(now),
     mode: "auto_daily",
     logTag: "ofd-cron",
-    listConnections: opts.listConnections ?? (() => prisma.ofdConnection.findMany({ where: { provider: "taxcom", isActive: true }, select: { id: true } })),
+    listConnections: opts.listConnections ?? (() => prisma.ofdConnection.findMany({ where: { provider: { in: ["taxcom", "astral"] }, isActive: true }, select: { id: true } })),
     importer: opts.importer,
   });
 }
 
 /**
- * On-demand "Sync now": import TODAY for the active Taxcom connections of ONE
- * company (mode sync_now). Company-scoped so the button only touches the caller's
- * own connections. Idempotent — re-running the same day creates no duplicates.
+ * On-demand "Sync now": import TODAY for the active Taxcom + Astral connections of
+ * ONE company (mode sync_now). Company-scoped so the button only touches the caller's
+ * own connections. Both providers run independently; idempotent per day.
  */
 export async function runSyncNowForCompany(companyId: string, opts: RunDailyOptions = {}): Promise<OfdDailyResult> {
   const now = opts.now ?? new Date();
@@ -174,7 +187,7 @@ export async function runSyncNowForCompany(companyId: string, opts: RunDailyOpti
     date: ofdToday(now),
     mode: "sync_now",
     logTag: "ofd-sync",
-    listConnections: opts.listConnections ?? (() => prisma.ofdConnection.findMany({ where: { companyId, provider: "taxcom", isActive: true }, select: { id: true } })),
+    listConnections: opts.listConnections ?? (() => prisma.ofdConnection.findMany({ where: { companyId, provider: { in: ["taxcom", "astral"] }, isActive: true }, select: { id: true } })),
     importer: opts.importer,
   });
 }
