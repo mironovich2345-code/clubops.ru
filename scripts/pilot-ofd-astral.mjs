@@ -83,7 +83,10 @@ function normalizeDoc(raw) {
   const items = Array.isArray(raw.items) && raw.items.length ? raw.items.map((it) => ({ name: String(it.name ?? "").slice(0, 256), quantityMilli: Math.max(0, Math.round(toNum(it.count ?? it.quantity, 1) * 1000)) || 1000, priceKopeks: it.price != null ? toInt(it.price) : 0, totalKopeks: it.sum != null ? toInt(it.sum) : 0 })) : undefined;
   return { docClass: cls, operationType: docOp(cls), isRevenue: docOp(cls) != null, fnNumber, fiscalDocumentNumber: fd, fiscalSign: fp, totalKopeks: total, cashKopeks: cash, electronicKopeks: electronic, paymentMismatch: total > 0 && paymentSum !== total, items, itemsPresent: Boolean(items && items.length), dedupeKey: dedupe(fnNumber, fd, fp) };
 }
-const moscowRange = (from, to) => ({ beginDate: Math.floor(Date.parse(`${from}T00:00:00+03:00`) / 1000), endDate: Math.floor(Date.parse(`${to}T23:59:59+03:00`) / 1000) });
+// mirror of clubDayRangeUnix (half-open [begin, endExclusive) in club tz)
+const addDaysYmd = (ymd, days) => new Date(Date.parse(`${ymd}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+const clubRange = (from, to, off = "+03:00") => { const begin = Date.parse(`${from}T00:00:00${off}`); const endEx = Date.parse(`${addDaysYmd(to, 1)}T00:00:00${off}`); return { beginDate: Math.floor(begin / 1000), endDate: Math.floor(endEx / 1000), beginIso: new Date(begin).toISOString(), endIso: new Date(endEx).toISOString() }; };
+const moscowRange = (from, to) => { const r = clubRange(from, to); return { beginDate: r.beginDate, endDate: r.endDate }; };
 
 // ================= fixtures (per PDF) ========================================
 const FN = "9999078902007111";
@@ -150,6 +153,18 @@ async function main() {
   const range = moscowRange("2026-07-23", "2026-07-23");
   check("A28 moscow day range = full local day in unix seconds (UTC+3)", range.beginDate === Math.floor(Date.parse("2026-07-23T00:00:00+03:00") / 1000) && range.endDate > range.beginDate);
   check("A29 totalCount as string handled by toCount", toCount("3") === 3);
+
+  // ---- regression: date range (fix/astral-tickets-preview) -----
+  const oneDay = clubRange("2026-07-25", "2026-07-25");
+  check("R1 single-day preview is NOT a zero range (begin != end, endExclusive = next day 00:00)", oneDay.beginDate !== oneDay.endDate && oneDay.endDate - oneDay.beginDate === 86400 && oneDay.endIso === "2026-07-25T21:00:00.000Z" && oneDay.beginIso === "2026-07-24T21:00:00.000Z");
+  const multi = clubRange("2026-07-25", "2026-07-27");
+  check("R2 multi-day range spans full days inclusive (3 days)", multi.endDate - multi.beginDate === 3 * 86400);
+  const monthRoll = clubRange("2026-07-31", "2026-07-31");
+  check("R3 month rollover: 31.07 → endExclusive 01.08 00:00", monthRoll.endIso === "2026-07-31T21:00:00.000Z" && addDaysYmd("2026-07-31", 1) === "2026-08-01");
+  const yearRoll = clubRange("2026-12-31", "2026-12-31");
+  check("R4 year rollover: 31.12 → 01.01 next year", addDaysYmd("2026-12-31", 1) === "2027-01-01" && yearRoll.endDate - yearRoll.beginDate === 86400);
+  const jan = clubRange("2026-01-15", "2026-01-15"), jul = clubRange("2026-07-15", "2026-07-15");
+  check("R5 Moscow no DST — winter/summer same offset, same day length", (jan.endDate - jan.beginDate) === (jul.endDate - jul.beginDate) && jan.beginIso.endsWith("21:00:00.000Z") && jul.beginIso.endsWith("21:00:00.000Z"));
 
   await realDbTests();
   await staticGuards();
@@ -241,6 +256,7 @@ async function staticGuards() {
   const actions = src("../src/app/(app)/settings/ofd/astral/actions.ts");
   const daily = src("../src/lib/ofd/daily.ts");
   const migration = src("../prisma/migrations/20260725090000_astral_ofd_external_ids/migration.sql");
+  const receipts = src("../src/lib/ofd/astral/receipts.ts");
 
   check("A39 client: POST + api_key in BODY, injectable fetch, api_key never logged", client.includes('body: JSON.stringify(body)') && client.includes("const body = { api_key: cfg.apiKey") && client.includes("redactApiKey") && !/console\.warn\([^)]*apiKey/.test(client));
   check("A40 base URL v4.2 + zReport v4.1 from PDF", client.includes("ofd.astralnalog.ru/api/v4.2") && client.includes("ofd.astralnalog.ru/api/v4.1"));
@@ -255,6 +271,16 @@ async function staticGuards() {
   check("A48 API key AES-256-GCM, never returned/logged in actions", actions.includes("encryptOfdSecret") && !/return[^;]*integrationToken/.test(stepsActions) && !stepsActions.includes("console.log"));
   check("A49 dashboard+cron: single sync covers taxcom+astral, providers independent", daily.includes('provider: { in: ["taxcom", "astral"] }') && daily.includes("importAstralSalesForPeriod") && /try\s*{[\s\S]*}\s*catch/.test(daily));
   check("A50 migration additive-only (ADD COLUMN / CREATE INDEX, no DROP/rebuild); Taxcom importer untouched by astral", migration.includes("ADD COLUMN") && migration.includes("CREATE INDEX") && !/\bDROP\s+(TABLE|COLUMN|INDEX)\b|\bALTER\s+COLUMN\b|\bRENAME\b/i.test(migration) && !taxImporter.toLowerCase().includes("astral"));
+
+  // ---- regression guards (fix/astral-tickets-preview) ----
+  check("R6 first/default request sends NO server operationTypes filter (fetch all, classify locally)", importer.includes("params.operationTypesFilter ?? undefined") && api.includes("if (params.operationTypes && params.operationTypes.length) body.operationTypes"));
+  check("R7 A/B/C probe exists (org-only → +kkts → +operationTypes)", api.includes("probeAstralDocuments") && api.includes("A_org_only") && api.includes("B_with_kkts") && api.includes("C_with_operationTypes"));
+  check("R8 kkts uses INTERNAL Astral id (externalKktId), NOT numberKKT/kktRegId/factoryFiscalDrive", importer.includes("Number(m.externalKktId)") && stepsActions.includes("Number(mapping.externalKktId)") && !/kkts:\s*\[?Number\(m\.(kktFactoryNumber|kktRegNumber|fnNumber)\)/.test(importer));
+  check("R9 analytics sends required comparison period (lastBeginDate/lastEndDate)", api.includes("lastBeginDate: String(lastBeginDate)") && api.includes("lastEndDate: String(lastEndDate)"));
+  check("R10 analytics failure (e.g. 406) does NOT block preview (best-effort, message surfaced)", stepsActions.includes("analyticsError = an.message") && stepsActions.includes("closedShifts, closedShiftsError, analytics, analyticsError") && !/return \{ ok: false[^}]*analytics/i.test(stepsActions));
+  check("R11 api_key never in trace logs (importer/api log ids only, client redacts)", !/console\.warn\([^)]*apiKey/.test(importer) && !/console\.warn\([^)]*apiKey/.test(api) && importer.includes("import_trace") && client.includes("redactApiKey"));
+  check("R12 date range half-open [begin, endExclusive) — never beginDate === endDate", receipts.includes("addDaysYmd(dateTo, 1)") && receipts.includes("endExclusive") && !receipts.includes("T23:59:59"));
+  check("R13 trace stores KKT id fields separately (externalKktId/numberKKT/kktRegId/fiscalDriveNumber)", stepsActions.includes("externalKktId: mapping.externalKktId") && stepsActions.includes("numberKKT: mapping.kktFactoryNumber") && stepsActions.includes("kktRegId: mapping.kktRegNumber") && stepsActions.includes("fiscalDriveNumber: mapping.fnNumber"));
 }
 
 main();

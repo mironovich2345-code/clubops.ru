@@ -37,16 +37,45 @@ export const ASTRAL_OP_INCOME = "Приход";
 export const ASTRAL_OP_INCOME_RETURN = "Возврат прихода";
 export const ASTRAL_SALES_OPERATION_TYPES = [ASTRAL_OP_INCOME, ASTRAL_OP_INCOME_RETURN];
 
+// OFD business timezone. Europe/Moscow is a FIXED UTC+3 (no DST since 2014), so a
+// constant offset is exact year-round. If a club ever uses a DST timezone this is the
+// single place to switch to a real tz library — the boundaries below are computed from
+// the offset, so daylight transitions would be handled there, not at call sites.
+export const CLUB_TZ_OFFSET = "+03:00";
+
+/** Add `days` calendar days to a YYYY-MM-DD, rolling months/years correctly (UTC math,
+ * date-only — no timezone drift). */
+export function addDaysYmd(ymd: string, days: number): string {
+  const t = Date.parse(`${ymd}T00:00:00Z`) + days * 86_400_000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+export type ClubDayRange = { beginDate: number; endDate: number; beginIso: string; endIso: string };
+
 /**
- * Convert a [dateFrom, dateTo] local business day to a unix-seconds range for the
- * documents.tickets query. Uses the OFD business timezone Europe/Moscow (fixed UTC+3,
- * no DST since 2014) — the PDF's localTimeZone default — NOT the server's timezone,
- * so the window is stable regardless of where the app runs (project rule §8).
+ * Convert an inclusive [dateFrom, dateTo] business-day range to a unix-seconds window
+ * for documents.tickets. The window is a HALF-OPEN interval in the club timezone:
+ *   begin        = dateFrom 00:00:00
+ *   endExclusive = (dateTo + 1 day) 00:00:00   ← never equals begin
+ * so a single day (dateFrom == dateTo) still spans a full calendar day and beginDate is
+ * never equal to endDate. Month/year rollovers are handled by addDaysYmd. Returns ISO
+ * strings too for safe diagnostic tracing.
  */
+export function clubDayRangeUnix(dateFrom: string, dateTo: string, tzOffset: string = CLUB_TZ_OFFSET): ClubDayRange {
+  const begin = Date.parse(`${dateFrom}T00:00:00${tzOffset}`);
+  const endExclusive = Date.parse(`${addDaysYmd(dateTo, 1)}T00:00:00${tzOffset}`);
+  return {
+    beginDate: Math.floor(begin / 1000),
+    endDate: Math.floor(endExclusive / 1000),
+    beginIso: new Date(begin).toISOString(),
+    endIso: new Date(endExclusive).toISOString(),
+  };
+}
+
+/** Back-compat wrapper (unix bounds only). Uses the half-open [begin, endExclusive). */
 export function moscowDayRangeUnix(dateFrom: string, dateTo: string): { beginDate: number; endDate: number } {
-  const begin = Date.parse(`${dateFrom}T00:00:00+03:00`);
-  const end = Date.parse(`${dateTo}T23:59:59+03:00`);
-  return { beginDate: Math.floor(begin / 1000), endDate: Math.floor(end / 1000) };
+  const r = clubDayRangeUnix(dateFrom, dateTo);
+  return { beginDate: r.beginDate, endDate: r.endDate };
 }
 
 export type AstralDocClass = "sale" | "sale_return" | "expense" | "expense_return" | "service_document" | "unknown";

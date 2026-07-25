@@ -15,9 +15,9 @@ import {
   legalEntityInCompany,
   clubInCompany,
 } from "@/lib/ofd/astral/settings";
-import { astralClientForConfig, listOrganizations, listOutlets, listKkts, listKktsByAlias, fetchClosedShifts, fetchAnalyticsSummary, type AstralClosedShiftsSummary, type AstralAnalyticsSummary } from "@/lib/ofd/astral/api";
+import { astralClientForConfig, listOrganizations, listOutlets, listKkts, listKktsByAlias, fetchClosedShifts, fetchAnalyticsSummary, probeAstralDocuments, type AstralClosedShiftsSummary, type AstralAnalyticsSummary, type AstralProbeStep } from "@/lib/ofd/astral/api";
 import { importAstralSalesForPeriod } from "@/lib/ofd/astral/importer";
-import { moscowDayRangeUnix } from "@/lib/ofd/astral/receipts";
+import { clubDayRangeUnix } from "@/lib/ofd/astral/receipts";
 import type { AstralMaskedOrg } from "@/lib/ofd/providers/astral-provider";
 import type { AstralOutlet, AstralKkt } from "@/lib/ofd/astral/normalize";
 
@@ -158,6 +158,21 @@ function validateRange(dateFrom: string, dateTo: string): string | null {
   return null;
 }
 
+export type AstralPreviewTrace = {
+  endpoint: string;
+  organizationId: string;
+  externalKktId: string | null;
+  numberKKT: string | null;
+  kktRegId: string | null;
+  fiscalDriveNumber: string;
+  kktsSent: number[];
+  beginDate: number;
+  endDate: number;
+  beginIso: string;
+  endIso: string;
+  operationTypesSent: string[] | null;
+};
+
 export type AstralPreview = {
   dateFrom: string;
   dateTo: string;
@@ -181,6 +196,8 @@ export type AstralPreview = {
   analyticsError: string | null;
   discrepancyDocVsShiftsKopeks: number;
   discrepancyDocVsAnalyticsKopeks: number;
+  trace: AstralPreviewTrace;
+  probe: AstralProbeStep[];
 };
 export type StepPreviewState = { ok: boolean; error?: string; preview?: AstralPreview };
 export type StepImportState = { ok: boolean; error?: string; notice?: string; imported?: number; skipped?: number; found?: number };
@@ -198,25 +215,47 @@ export async function previewAstralImport(_prev: StepPreviewState | undefined, f
   const rangeErr = validateRange(dateFrom, dateTo);
   if (rangeErr) return { ok: false, error: rangeErr };
 
-  const dry = await importAstralSalesForPeriod({ connectionId: (await getAstralConnection(g.companyId))?.id ?? "", dateFrom, dateTo, mode: "preview", dryRun: true, onlyKktFnNumbers: [fnNumber] });
+  const conn = await getAstralConnection(g.companyId);
+  if (!conn?.externalOrganizationId) return { ok: false, error: "Сначала выберите организацию (шаг 2)." };
+  const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { companyId: g.companyId, provider: "astral", fnNumber } });
+  if (!mapping) return { ok: false, error: "Касса не привязана." };
+
+  // The dryRun import fetches WITHOUT a server-side operationTypes filter and classifies
+  // locally — this is the corrected production path.
+  const dry = await importAstralSalesForPeriod({ connectionId: conn.id, dateFrom, dateTo, mode: "preview", dryRun: true, onlyKktFnNumbers: [fnNumber] });
   if (!dry.ok) return { ok: false, error: dry.safeMessage ?? dry.safeCode };
   const d = dry.diagnostics;
 
-  // Reconciliation (best-effort; a failure here never blocks the preview).
-  const conn = await getAstralConnection(g.companyId);
+  const range = clubDayRangeUnix(dateFrom, dateTo);
+  const kktsSent = mapping.externalKktId && Number.isFinite(Number(mapping.externalKktId)) ? [Number(mapping.externalKktId)] : [];
+  const trace: AstralPreviewTrace = {
+    endpoint: "documents.tickets",
+    organizationId: conn.externalOrganizationId,
+    externalKktId: mapping.externalKktId,
+    numberKKT: mapping.kktFactoryNumber,
+    kktRegId: mapping.kktRegNumber,
+    fiscalDriveNumber: mapping.fnNumber,
+    kktsSent,
+    beginDate: range.beginDate,
+    endDate: range.endDate,
+    beginIso: range.beginIso,
+    endIso: range.endIso,
+    operationTypesSent: null, // preview sends no server-side operationTypes filter
+  };
+
+  // A/B/C probe + reconciliation (best-effort; failures never block the preview).
+  let probe: AstralProbeStep[] = [];
   let closedShifts: AstralClosedShiftsSummary | null = null;
   let closedShiftsError: string | null = null;
   let analytics: AstralAnalyticsSummary | null = null;
   let analyticsError: string | null = null;
-  if (conn?.externalOrganizationId) {
-    const client = astralClientForConfig(buildAstralConfig(conn));
-    if (client) {
-      const { beginDate, endDate } = moscowDayRangeUnix(dateFrom, dateTo);
-      const cs = await fetchClosedShifts(client, { organizationId: conn.externalOrganizationId, beginDate, endDate });
-      if (cs.ok) closedShifts = cs.data; else closedShiftsError = cs.message;
-      const an = await fetchAnalyticsSummary(client, { organizationId: conn.externalOrganizationId, beginDate, endDate });
-      if (an.ok) analytics = an.data; else analyticsError = an.message;
-    }
+  const client = astralClientForConfig(buildAstralConfig(conn));
+  if (client) {
+    probe = await probeAstralDocuments(client, { organizationId: conn.externalOrganizationId, beginDate: range.beginDate, endDate: range.endDate, kkts: kktsSent, operationTypes: ["Приход", "Возврат прихода"] });
+    const cs = await fetchClosedShifts(client, { organizationId: conn.externalOrganizationId, beginDate: range.beginDate, endDate: range.endDate });
+    if (cs.ok) closedShifts = cs.data; else closedShiftsError = cs.message;
+    const an = await fetchAnalyticsSummary(client, { organizationId: conn.externalOrganizationId, beginDate: range.beginDate, endDate: range.endDate });
+    if (an.ok) analytics = an.data; else analyticsError = an.message;
   }
 
   const netIncome = d.totalIncomeKopeks - d.totalReturnKopeks;
@@ -230,6 +269,7 @@ export async function previewAstralImport(_prev: StepPreviewState | undefined, f
       closedShifts, closedShiftsError, analytics, analyticsError,
       discrepancyDocVsShiftsKopeks: closedShifts ? netIncome - closedShifts.sumKopeks : 0,
       discrepancyDocVsAnalyticsKopeks: analytics ? netIncome - analytics.profitKopeks : 0,
+      trace, probe,
     },
   };
 }

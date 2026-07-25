@@ -225,8 +225,33 @@ export function AstralImportStep({ boundKkts, defaultDate }: { boundKkts: Array<
             ) : <div className="text-amber-700">Закрытые смены: {p.closedShiftsError ?? "нет данных"}</div>}
             {p.analytics ? (
               <div>Аналитика: прибыль {rub(p.analytics.profitKopeks)}, возвраты {rub(p.analytics.refundsKopeks)} · расхождение с документами {rub(p.discrepancyDocVsAnalyticsKopeks)}</div>
-            ) : <div className="text-amber-700">Аналитика: {p.analyticsError ?? "нет данных"}</div>}
+            ) : <div className="text-amber-700">Контрольная аналитика недоступна{p.analyticsError ? ` (${p.analyticsError})` : ""} — предпросмотр и импорт это не блокирует.</div>}
           </div>
+
+          {/* A/B/C diagnostic: where documents disappear */}
+          {p.probe && p.probe.length ? (
+            <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600">
+              <div className="mb-1 font-medium">Диагностика documents.tickets (A → B → C)</div>
+              {p.probe.map((s) => (
+                <div key={s.step} className={s.ok ? "" : "text-rose-600"}>
+                  {s.step === "A_org_only" ? "A. организация+дата" : s.step === "B_with_kkts" ? "B. + kkts" : "C. + operationTypes"}: {s.ok ? `${s.documents} докум. (totalCount ${s.totalCount})` : `ошибка ${s.httpStatus ?? ""} ${s.code ?? ""}`}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {/* Safe request trace (no api_key) */}
+          <details className="rounded-md bg-slate-50 p-2 text-[11px] text-slate-500">
+            <summary className="cursor-pointer font-medium text-slate-600">Трассировка запроса (без api_key)</summary>
+            <div className="mt-1 space-y-0.5">
+              <div>endpoint: {p.trace.endpoint} · organizationId: {p.trace.organizationId}</div>
+              <div>kkts (передано в запрос): {JSON.stringify(p.trace.kktsSent)}</div>
+              <div>externalKktId (Astral id): {p.trace.externalKktId ?? "—"} · numberKKT: {p.trace.numberKKT ?? "—"} · kktRegId: {p.trace.kktRegId ?? "—"} · ФН: {p.trace.fiscalDriveNumber}</div>
+              <div>beginDate/endDate (unix): {p.trace.beginDate} / {p.trace.endDate}</div>
+              <div>beginDate/endDate (ISO): {p.trace.beginIso} / {p.trace.endIso}</div>
+              <div>operationTypes (в первом запросе): {p.trace.operationTypesSent ? JSON.stringify(p.trace.operationTypesSent) : "не отправляется (классификация локально)"}</div>
+            </div>
+          </details>
 
           <form action={importAction} className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="fnNumber" value={p.fnNumber} />

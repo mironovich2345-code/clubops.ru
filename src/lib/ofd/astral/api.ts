@@ -155,13 +155,9 @@ export type FetchReceiptsPageParams = {
   order?: "asc" | "desc"; // default "asc"
 };
 
-/** One page of POST /documents.tickets. Returns the RAW document objects (the caller
- * normalizes) + totalCount (string|number → number). Sends only the fields the
- * production sync needs (project rule §8 — no superfluous filters). */
-export async function fetchReceiptsPage(
-  client: AstralClient,
-  params: FetchReceiptsPageParams,
-): Promise<AstralResult<{ documents: Record<string, unknown>[]; totalCount: number }>> {
+/** Build the documents.tickets request body (WITHOUT api_key — the client adds it).
+ * Exported so callers can trace/inspect the exact request safely. */
+export function buildTicketsBody(params: FetchReceiptsPageParams): Record<string, unknown> {
   const body: Record<string, unknown> = {
     organizationId: String(params.organizationId),
     pageNumber: String(params.pageNumber),
@@ -175,6 +171,20 @@ export async function fetchReceiptsPage(
   if (params.aliasId && params.aliasId.length) body.aliasId = params.aliasId;
   if (params.fiscalDriveNumber && params.fiscalDriveNumber.length) body.fiscalDriveNumber = params.fiscalDriveNumber;
   if (params.operationTypes && params.operationTypes.length) body.operationTypes = params.operationTypes;
+  return body;
+}
+
+/** One page of POST /documents.tickets. Returns the RAW document objects (the caller
+ * normalizes) + totalCount (string|number → number). The FIRST/preview request should
+ * pass NO optional filters (operationTypes/documentType) — classification happens
+ * locally on the full response, so a server-side enum mismatch cannot zero out results. */
+export async function fetchReceiptsPage(
+  client: AstralClient,
+  params: FetchReceiptsPageParams,
+): Promise<AstralResult<{ documents: Record<string, unknown>[]; totalCount: number }>> {
+  const body = buildTicketsBody(params);
+  // SAFE trace (never the api_key — the client adds it, `body` has none).
+  console.warn(`[ofd-astral] tickets_request endpoint=documents.tickets orgId=${body.organizationId} page=${body.pageNumber} count=${body.count} beginDate=${body.beginDate} endDate=${body.endDate} kkts=${JSON.stringify(body.kkts ?? null)} fiscalDriveNumber=${JSON.stringify(body.fiscalDriveNumber ?? null)} operationTypes=${JSON.stringify(body.operationTypes ?? null)}`);
 
   const res = await client.call<Record<string, unknown>>("documents.tickets", body);
   if (!res.ok) return res;
@@ -185,6 +195,48 @@ export async function fetchReceiptsPage(
   const documents = arr(docsRaw);
   const totalCount = toCount((res.data as Record<string, unknown>)?.totalCount ?? documents.length);
   return { ok: true, data: { documents, totalCount } };
+}
+
+// ---- A/B/C diagnostic probe --------------------------------------------------
+
+export type AstralProbeStep = {
+  step: "A_org_only" | "B_with_kkts" | "C_with_operationTypes";
+  ok: boolean;
+  documents: number;
+  totalCount: number;
+  httpStatus?: number;
+  code?: string;
+  description?: string;
+  body: Record<string, unknown>; // safe: never contains api_key
+};
+
+/**
+ * Sequential diagnostic per §4: run documents.tickets for the SAME day with widening
+ * filters and report where documents disappear.
+ *   A: organizationId + date + paging only (no kkts / operationTypes)
+ *   B: + kkts[]  (internal Astral KKT ids)
+ *   C: + operationTypes  (production sales filter)
+ * Read-only, imports nothing. Each step returns a SAFE trace (no api_key).
+ */
+export async function probeAstralDocuments(
+  client: AstralClient,
+  params: { organizationId: string; beginDate: number; endDate: number; kkts?: number[]; operationTypes?: string[]; count?: number },
+): Promise<AstralProbeStep[]> {
+  const count = params.count ?? 100;
+  const base = { organizationId: params.organizationId, pageNumber: 1, count, beginDate: params.beginDate, endDate: params.endDate };
+  const variants: Array<{ step: AstralProbeStep["step"]; p: FetchReceiptsPageParams }> = [
+    { step: "A_org_only", p: { ...base } },
+    { step: "B_with_kkts", p: { ...base, kkts: params.kkts } },
+    { step: "C_with_operationTypes", p: { ...base, kkts: params.kkts, operationTypes: params.operationTypes ?? undefined } },
+  ];
+  const out: AstralProbeStep[] = [];
+  for (const v of variants) {
+    const body = buildTicketsBody(v.p);
+    const res = await fetchReceiptsPage(client, v.p);
+    if (res.ok) out.push({ step: v.step, ok: true, documents: res.data.documents.length, totalCount: res.data.totalCount, body });
+    else out.push({ step: v.step, ok: false, documents: 0, totalCount: 0, httpStatus: res.httpStatus, code: res.code, description: res.message, body });
+  }
+  return out;
 }
 
 // ---- closed shifts (documents.closedShiftsList) — reconciliation -------------
@@ -233,18 +285,25 @@ export type AstralAnalyticsSummary = {
 };
 
 /** Header control totals for a range (profit/cash/ecash/refunds). Reconciliation only —
- * NEVER the source of receipts. */
+ * NEVER the source of receipts. analytics.aliases requires a COMPARISON period
+ * (lastBeginDate/lastEndDate); omitting it returns HTTP 406. The comparison period is
+ * the immediately-preceding window of the SAME length. */
 export async function fetchAnalyticsSummary(
   client: AstralClient,
-  params: { organizationId: string; beginDate: number; endDate: number },
+  params: { organizationId: string; beginDate: number; endDate: number; type?: "profit" | "receipts" },
 ): Promise<AstralResult<AstralAnalyticsSummary>> {
+  const length = Math.max(1, params.endDate - params.beginDate); // half-open window length in seconds
+  const lastEndDate = params.beginDate; // previous period ends where this one begins
+  const lastBeginDate = params.beginDate - length; // same-length preceding window
   const res = await client.call<Record<string, unknown>>("analytics.aliases", {
-    organizationId: Number(params.organizationId),
+    organizationId: String(params.organizationId),
     beginDate: String(params.beginDate),
     endDate: String(params.endDate),
+    lastBeginDate: String(lastBeginDate),
+    lastEndDate: String(lastEndDate),
     page: "1",
     count: "100",
-    type: "profit",
+    type: params.type ?? "profit",
     allaliases: "true",
     allkkts: "true",
   });

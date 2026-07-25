@@ -25,8 +25,7 @@ import { fetchReceiptsPage } from "@/lib/ofd/astral/api";
 import {
   normalizeAstralDocument,
   toNormalizedReceipt,
-  moscowDayRangeUnix,
-  ASTRAL_SALES_OPERATION_TYPES,
+  clubDayRangeUnix,
   type AstralNormalizedDoc,
 } from "@/lib/ofd/astral/receipts";
 
@@ -149,10 +148,23 @@ export async function importAstralSalesForPeriod(params: AstralImportParams): Pr
     }
   }
 
-  const { beginDate, endDate } = moscowDayRangeUnix(dateFrom, dateTo);
+  const { beginDate, endDate, beginIso, endIso } = clubDayRangeUnix(dateFrom, dateTo);
   const pageSize = params.pageSize ?? DEFAULT_PAGE_SIZE;
   const maxPages = params.maxPages ?? DEFAULT_MAX_PAGES;
-  const operationTypes = params.operationTypesFilter === null ? undefined : params.operationTypesFilter ?? ASTRAL_SALES_OPERATION_TYPES;
+  // FIRST/default request sends NO server-side operationTypes filter — documents are
+  // classified LOCALLY, so an enum mismatch can never zero out results (§6). A caller
+  // may opt into a server filter once its exact enum values are confirmed on live data.
+  const operationTypes = params.operationTypesFilter ?? undefined;
+
+  // SAFE trace (§1): the exact request identifiers, never the api_key. kkts MUST be the
+  // internal Astral KKT ids (externalKktId), never numberKKT / kktRegId / factoryFiscalDrive.
+  console.warn(
+    `[ofd-astral] import_trace endpoint=documents.tickets orgId=${organizationId} ` +
+    `kkts=${JSON.stringify(kktIds)} fnNumbers=${JSON.stringify(fnNumbers)} ` +
+    `mappings=${mappings.map((m) => `{externalKktId=${m.externalKktId ?? "-"},numberKKT=${m.kktFactoryNumber ?? "-"},kktRegId=${m.kktRegNumber ?? "-"},fiscalDriveNumber=${m.fnNumber}}`).join(",")} ` +
+    `beginDate=${beginDate} endDate=${endDate} beginIso=${beginIso} endIso=${endIso} ` +
+    `operationTypes=${JSON.stringify(operationTypes ?? null)}`,
+  );
 
   const dbRules: OfdCategoryRuleLike[] = dryRun
     ? []
