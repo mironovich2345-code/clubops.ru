@@ -2,13 +2,13 @@
 
 import { Fragment, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { saveOfdConnection, addOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, reclassifyOfdCategoriesAction, inspectOfdNewDocumentsAction, inspectOfdDocumentInfoAction, loadTaxcomContractsAction, selectTaxcomContractAction } from "../actions";
-import type { OfdSyncSummary } from "../actions";
+import { saveOfdConnection, addOfdMapping, updateOfdMapping, runOfdImport, checkOfdConnection, syncOfdNowAction, reclassifyOfdCategoriesAction, inspectOfdNewDocumentsAction, inspectOfdDocumentInfoAction, loadTaxcomContractsAction, selectTaxcomContractAction } from "../actions";
+import type { OfdSyncSummary, OfdClubResult } from "../actions";
 import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
 import type { NewDocumentsShape, DocumentInfoShape } from "@/lib/ofd/types";
 import { formatKopeks } from "@/lib/money";
 
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; newDocsShape?: NewDocumentsShape; docInfoShape?: DocumentInfoShape };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; perClub?: OfdClubResult[]; unboundKkts?: number; clubNote?: string; newDocsShape?: NewDocumentsShape; docInfoShape?: DocumentInfoShape };
 const initial: State = { ok: false };
 
 type ClubOpt = { id: string; name: string };
@@ -225,7 +225,7 @@ export function OfdContractPicker({ connectionId }: { connectionId: string }) {
 }
 
 type ConnOpt = { id: string; label: string };
-export function OfdMappingForm({ connections, clubs }: { connections: ConnOpt[]; clubs: ClubOpt[] }) {
+export function OfdMappingForm({ connections, clubs, entities }: { connections: ConnOpt[]; clubs: ClubOpt[]; entities: EntityOpt[] }) {
   const [state, action] = useFormState(addOfdMapping, initial);
   const [kind, setKind] = useState("club_cashbox");
   return (
@@ -245,6 +245,12 @@ export function OfdMappingForm({ connections, clubs }: { connections: ConnOpt[];
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </Field>
+      <Field label="Юрлицо кассы">
+        <select name="legalEntityId" required defaultValue="" className="input">
+          <option value="" disabled>Выберите юрлицо</option>
+          {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+      </Field>
       <Field label="Тип кассы">
         <select name="registerKind" value={kind} onChange={(e) => setKind(e.target.value)} className="input">
           <option value="club_cashbox">Касса клуба</option>
@@ -253,8 +259,8 @@ export function OfdMappingForm({ connections, clubs }: { connections: ConnOpt[];
       </Field>
       <p className="text-xs text-slate-500 md:col-span-3">
         {kind === "online_cashbox"
-          ? "Используется для чеков онлайн-оплат. Продажи будут попадать в ОФД-продажи выбранного клуба, но источник будет отмечен как онлайн-касса."
-          : "Обычная касса клуба/ресепшена. Юрлицо берётся из выбранного подключения."}
+          ? "Используется для чеков онлайн-оплат. Источник будет отмечен как онлайн-касса."
+          : "Обычная касса клуба/ресепшена. Юрлицо задаётся ДЛЯ КАЖДОЙ кассы — один кабинет Такском может содержать кассы разных юрлиц."}
       </p>
       <div className="flex items-end justify-between gap-3 md:col-span-3">
         <Msg s={state} />
@@ -264,11 +270,37 @@ export function OfdMappingForm({ connections, clubs }: { connections: ConnOpt[];
   );
 }
 
+/** Inline «Изменить привязку»: set an existing KKT's club + legal entity (§7). */
+export function OfdMappingEditForm({ mappingId, clubs, entities, currentClubId, currentLegalId }: { mappingId: string; clubs: ClubOpt[]; entities: EntityOpt[]; currentClubId: string; currentLegalId: string | null }) {
+  const [state, action] = useFormState(updateOfdMapping, initial);
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return <button type="button" onClick={() => setOpen(true)} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${currentLegalId ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>{currentLegalId ? "Изменить привязку" : "Указать юрлицо"}</button>;
+  }
+  return (
+    <form action={action} className="flex flex-col gap-1 rounded-md border border-slate-200 bg-slate-50 p-2">
+      <input type="hidden" name="mappingId" value={mappingId} />
+      <select name="clubId" defaultValue={currentClubId} className="input py-1 text-xs">
+        {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <select name="legalEntityId" required defaultValue={currentLegalId ?? ""} className="input py-1 text-xs">
+        <option value="" disabled>Юрлицо…</option>
+        {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+      </select>
+      <div className="flex items-center gap-1">
+        <Submit idle="Сохранить" busy="…" />
+        <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600">Отмена</button>
+      </div>
+      {state.error ? <span className="text-xs text-rose-600">{state.error}</span> : null}
+    </form>
+  );
+}
+
 export function OfdImportForm({ connections }: { connections: ConnOpt[] }) {
   const [state, action] = useFormState(runOfdImport, initial);
   return (
     <form action={action} className="flex flex-wrap items-end gap-3">
-      <Field label="Подключение">
+      <Field label="Подключение (кабинет)">
         <select name="connectionId" required defaultValue={connections[0]?.id ?? ""} className="input">
           {connections.length === 0 ? <option value="" disabled>Нет подключений</option> : null}
           {connections.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -278,7 +310,19 @@ export function OfdImportForm({ connections }: { connections: ConnOpt[] }) {
       <Field label="Дата до"><input type="date" name="dateTo" required defaultValue="2026-07-31" className="input" /></Field>
       <Submit idle="Импортировать" busy="Импорт..." />
       <div className="w-full"><Msg s={state} /></div>
-      <p className="w-full text-xs text-slate-500">Для истории за июль выберите 2026-07-01 — 2026-07-31.</p>
+      {state.ok && state.perClub && state.perClub.length ? (
+        <div className="w-full rounded-lg border border-slate-200">
+          <div className="border-b border-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">Итог по клубам</div>
+          {state.perClub.map((c, i) => (
+            <div key={i} className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-sm">
+              <span><b>{c.clubName}</b>{c.legalName ? <span className="ml-1 text-xs text-slate-500">· {c.legalName}</span> : null}</span>
+              <span className="text-xs text-slate-600">чеков {c.found}, добавлено {c.imported}, приход {formatKopeks(c.incomeKopeks)}{c.returnKopeks ? `, возвраты ${formatKopeks(c.returnKopeks)}` : ""}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {state.clubNote ? <p className="w-full text-xs text-slate-500">{state.clubNote}</p> : null}
+      <p className="w-full text-xs text-slate-500">Импорт идёт по всему кабинету (всем активным кассам подключения) — каждый чек разносится по своему клубу и юрлицу. Кассы без юрлица пропускаются до привязки.</p>
     </form>
   );
 }

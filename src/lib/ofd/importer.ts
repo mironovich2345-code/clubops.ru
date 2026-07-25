@@ -23,8 +23,11 @@ export type ImportParams = {
   fetchImpl?: FetchImpl;
 };
 
+/** Per-club sync breakdown (§5.6) — каждый чек разнесён по своему clubId + юрлицу. */
+export type ClubImportBreakdown = { clubId: string; legalEntityId: string | null; found: number; imported: number; incomeKopeks: number; returnKopeks: number };
+
 export type ImportResult =
-  | { ok: true; syncRunId: string; found: number; imported: number; skipped: number; status: string; totalIncomeKopeks: number; totalReturnKopeks: number }
+  | { ok: true; syncRunId: string; found: number; imported: number; skipped: number; status: string; totalIncomeKopeks: number; totalReturnKopeks: number; perClub: ClubImportBreakdown[]; unboundKkts: number }
   | { ok: false; safeCode: string; safeMessage?: string; syncRunId?: string };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -93,18 +96,18 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     },
   });
 
-  // Select ACTIVE cash registers by the connection SCOPE (company + legal entity +
-  // provider), NOT by connectionId. A mapping created against an earlier connection
-  // row (recreated/re-saved → new id) keeps its companyId/legalEntityId but a stale
-  // connectionId; filtering on connectionId then silently found 0 mappings and the
-  // import finished as success 0/0/0 without ever reaching ShiftList.
+  // Select ALL active cash registers of the CABINET (company + provider), NOT scoped by
+  // the connection's legalEntityId. One Taxcom cabinet holds KKTs of DIFFERENT legal
+  // entities / clubs; a legalEntity filter here made a company-level sync return only the
+  // KKTs of one юрлицо (e.g. only "Союз") and silently drop the rest. Each receipt is
+  // booked under ITS OWN mapping's clubId + legalEntityId below. Scoped by company (not
+  // connectionId) to stay robust to a recreated connection row (stale connectionId).
   const mappings = await prisma.ofdCashRegisterMapping.findMany({
     where: {
       companyId: connection.companyId,
       provider: connection.provider,
       isActive: true,
       activeMappingKey: { not: null },
-      ...(connection.legalEntityId ? { legalEntityId: connection.legalEntityId } : {}),
     },
   });
 
@@ -149,14 +152,31 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     select: { id: true, legalEntityId: true, categoryCode: true, categoryName: true, matchType: true, pattern: true, normalizedPattern: true, priority: true, isActive: true, createdAt: true },
   });
 
-  let found = 0, imported = 0, skipped = 0, kktFailures = 0;
+  let found = 0, imported = 0, skipped = 0, kktFailures = 0, unboundKktSkipped = 0;
   let incomeTotal = 0, returnTotal = 0;
   // SAFE aggregate item diagnostics (counts only — no names / no raw / no ФПД).
   const itemStats = { itemDocumentsSeen: 0, itemRowsSeen: 0, itemRowsSaved: 0, itemRowsSkipped: 0, categoryOtherCount: 0, documentInfoRequested: 0, documentInfoSucceeded: 0, documentInfoFailed: 0 };
   const touched = new Set<string>(); // `${clubId}|${legalEntityId ?? ""}|${day}`
+  // Per-club breakdown for the sync result (§5.6): каждый чек — под свой clubId/юрлицо.
+  type ClubAgg = { clubId: string; legalEntityId: string | null; found: number; imported: number; incomeKopeks: number; returnKopeks: number };
+  const perClub = new Map<string, ClubAgg>();
+  const bumpClub = (clubId: string, legal: string | null): ClubAgg => {
+    let c = perClub.get(clubId);
+    if (!c) { c = { clubId, legalEntityId: legal, found: 0, imported: 0, incomeKopeks: 0, returnKopeks: 0 }; perClub.set(clubId, c); }
+    return c;
+  };
 
   for (const m of mappings) {
-    const legal = m.legalEntityId ?? connection.legalEntityId ?? null;
+    // Per-KKT legal entity ONLY — never inherit the connection's юрлицо. A KKT without a
+    // legal entity is NOT booked into financial aggregates (§6): it is skipped with a
+    // clear "requires legal entity" reason so the admin binds it first.
+    const legal = m.legalEntityId ?? null;
+    if (!legal) {
+      unboundKktSkipped += 1;
+      await recordSyncError(run.id, connection.id, connection.companyId, m.clubId, m.fnNumber, "mapping_check", "ofd_kkt_requires_legal_entity", `Касса ${m.fnNumber} без юрлица — не импортируется в финансовые агрегаты (укажите юрлицо кассы).`);
+      console.warn(`[ofd] kkt_requires_legal_entity fn=${m.fnNumber} clubId=${m.clubId}`);
+      continue;
+    }
     const perKktReceipts: NormalizedOfdReceipt[] = [];
     let kktFailed = false;
     // SAFE aggregate counters (no document content) for the "documents but no
@@ -215,6 +235,8 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     for (const r of perKktReceipts) byKey.set(r.dedupeKey, r);
     const keys = [...byKey.keys()];
     found += keys.length;
+    const club = bumpClub(m.clubId, legal);
+    club.found += keys.length;
     if (keys.length === 0) continue;
 
     const existing = await prisma.ofdReceiptImport.findMany({ where: { dedupeKey: { in: keys } }, select: { dedupeKey: true } });
@@ -233,9 +255,11 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
         })),
       });
       imported += fresh.length;
+      club.imported += fresh.length;
     }
     for (const r of byKey.values()) {
-      if (r.operationType === "income") incomeTotal += r.totalKopeks; else returnTotal += r.totalKopeks;
+      if (r.operationType === "income") { incomeTotal += r.totalKopeks; club.incomeKopeks += r.totalKopeks; }
+      else { returnTotal += r.totalKopeks; club.returnKopeks += r.totalKopeks; }
       touched.add(`${m.clubId}|${legal ?? ""}|${dayOf(r.receiptDate)}`);
     }
 
@@ -293,14 +317,16 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
     console.warn(`[ofd] items_unavailable receipts=${found} — Taxcom returned receipt totals but no positions.`);
   }
 
-  const status = kktFailures === 0 ? "success" : imported > 0 || mappings.length > kktFailures ? "partial_failed" : "failed";
+  // Partial when a KKT failed OR a KKT was skipped for a missing legal entity.
+  const importedKktCount = mappings.length - kktFailures - unboundKktSkipped;
+  const status = kktFailures === 0 && unboundKktSkipped === 0 ? "success" : imported > 0 || importedKktCount > 0 ? "partial_failed" : "failed";
   await prisma.ofdSyncRun.update({
     where: { id: run.id },
     data: { status, finishedAt: new Date(), foundReceipts: found, importedReceipts: imported, skippedReceipts: skipped, totalIncomeKopeks: incomeTotal, totalReturnKopeks: returnTotal },
   });
   await prisma.ofdConnection.update({ where: { id: connection.id }, data: { lastSyncAt: new Date() } });
 
-  return { ok: true, syncRunId: run.id, found, imported, skipped, status, totalIncomeKopeks: incomeTotal, totalReturnKopeks: returnTotal };
+  return { ok: true, syncRunId: run.id, found, imported, skipped, status, totalIncomeKopeks: incomeTotal, totalReturnKopeks: returnTotal, perClub: [...perClub.values()], unboundKkts: unboundKktSkipped };
 }
 
 export async function recordSyncError(syncRunId: string, connectionId: string, companyId: string, clubId: string | null, fnNumber: string | null, stage: string, safeCode: string, safeMessage?: string): Promise<void> {

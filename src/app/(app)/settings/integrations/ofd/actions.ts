@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
@@ -14,7 +15,8 @@ import { normalizeContractNumber, isCurrentAccountValid, type OfdCheckDiagnostic
 import type { DocumentInfoShape, NewDocumentsShape, OfdConnectionConfig } from "@/lib/ofd/types";
 
 export type OfdSyncSummary = { found: number; imported: number; skipped: number; incomeKopeks: number; returnKopeks: number; succeeded: number; failed: number };
-type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; newDocsShape?: NewDocumentsShape; docInfoShape?: DocumentInfoShape };
+export type OfdClubResult = { clubName: string; legalName: string | null; found: number; imported: number; incomeKopeks: number; returnKopeks: number };
+type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; perClub?: OfdClubResult[]; unboundKkts?: number; clubNote?: string; newDocsShape?: NewDocumentsShape; docInfoShape?: DocumentInfoShape };
 
 
 // Only owner / general director may administer OFD integrations.
@@ -32,6 +34,19 @@ async function requireOfdAdmin(): Promise<
 function str(fd: FormData, k: string): string | null {
   const v = String(fd.get(k) ?? "").trim();
   return v || null;
+}
+
+/**
+ * SAFE, non-reversible fingerprint of a Taxcom CABINET identity — sha256 of
+ * serverBaseUrl + authType + the account credential (login or token). Used ONLY to
+ * detect that two connections point at the SAME cabinet so we never create a duplicate
+ * connection just because a different LegalEntity was chosen. The plaintext secret is
+ * never logged and never returned — only this hash is compared.
+ */
+function cabinetFingerprint(serverBaseUrl: string, authType: string, credential: string | null): string | null {
+  if (!credential) return null;
+  const base = (serverBaseUrl || "").replace(/\/+$/, "").toLowerCase();
+  return createHash("sha256").update(`ofd:cabinet:${base}|${authType}|${credential}`).digest("hex");
 }
 
 /** Create/update the (single, MVP) Taxcom connection. Secrets are encrypted;
@@ -63,13 +78,30 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
   }
 
   const legalEntityId = str(formData, "legalEntityId");
-  // Multi-connection: an explicit connectionId edits that connection; otherwise a
-  // new Taxcom connection is created (a company may have several — ООО, ИП, …).
+  // An explicit connectionId edits that connection. Creating a connection is for a NEW
+  // cabinet only — a different LegalEntity is NOT a reason to create a second connection
+  // (юрлицо живёт на кассе, не на подключении). Genuinely different cabinets (different
+  // credentials) are still allowed.
   const editId = str(formData, "connectionId");
   const existing = editId
     ? await prisma.ofdConnection.findFirst({ where: { id: editId, companyId: g.companyId, provider: "taxcom" } })
     : null;
   if (editId && !existing) return { ok: false, error: "Подключение не найдено." };
+
+  // Cabinet-dedup: block creating a SECOND connection for the same Taxcom cabinet
+  // (same server + credentials). This is the fix for the "Такском / Такском · ЮРЛИЦО"
+  // duplicate that split KKTs of one cabinet across two connections.
+  if (!existing) {
+    const newCred = str(formData, "login") ?? str(formData, "integrationToken");
+    const newFp = cabinetFingerprint(serverBaseUrl, authType, newCred);
+    if (newFp) {
+      const siblings = await prisma.ofdConnection.findMany({ where: { companyId: g.companyId, provider: "taxcom" }, select: { id: true, displayName: true, serverBaseUrl: true, authType: true, loginEncrypted: true, integrationTokenEncrypted: true } });
+      const dup = siblings.find((s) => cabinetFingerprint(s.serverBaseUrl, s.authType, decryptOfdSecret(s.loginEncrypted) ?? decryptOfdSecret(s.integrationTokenEncrypted)) === newFp);
+      if (dup) {
+        return { ok: false, error: `Подключение к этому кабинету Такском уже существует («${dup.displayName}»). Не создавайте второе подключение из-за другого юрлица — добавьте кассу к существующему подключению и укажите её юрлицо в кассе.` };
+      }
+    }
+  }
 
   // A blank field — or the "••••••" placeholder mask if it is ever submitted —
   // means "leave the stored secret unchanged"; only a real new value is encrypted.
@@ -320,15 +352,23 @@ export async function addOfdMapping(_p: State | undefined, formData: FormData): 
   const club = await prisma.club.findFirst({ where: { id: clubId, companyId: g.companyId }, select: { id: true } });
   if (!club) return { ok: false, error: "Клуб не найден в этой компании." };
 
-  // Receipt source, NOT a legal entity. Legal entity is inherited from the chosen
-  // connection so a касса ИП can never be attached to an ООО connection by mistake.
+  // Legal entity is chosen PER KKT (one cabinet holds KKTs of different юрлица). It is
+  // NOT inherited from the connection. Falls back to the connection's legalEntity only
+  // for back-compat if the form omits it; a tenant check guards a cross-company id.
+  const legalEntityId = str(formData, "legalEntityId") ?? connection.legalEntityId;
+  if (legalEntityId) {
+    const le = await prisma.legalEntity.findFirst({ where: { id: legalEntityId, companyId: g.companyId }, select: { id: true } });
+    if (!le) return { ok: false, error: "Юрлицо не найдено в этой компании." };
+  }
+
+  // Receipt source, NOT a legal entity.
   const registerKind = str(formData, "registerKind") === "online_cashbox" ? "online_cashbox" : "club_cashbox";
 
   const activeMappingKey = `taxcom:${fnNumber}`;
   try {
     await prisma.ofdCashRegisterMapping.create({
       data: {
-        connectionId, companyId: g.companyId, clubId, legalEntityId: connection.legalEntityId,
+        connectionId, companyId: g.companyId, clubId, legalEntityId,
         provider: "taxcom", fnNumber, kktRegNumber: str(formData, "kktRegNumber"), kktName: str(formData, "kktName"),
         registerKind, isActive: true, activeMappingKey,
       },
@@ -344,6 +384,34 @@ export async function addOfdMapping(_p: State | undefined, formData: FormData): 
   await recordAudit({ action: "ofd.mapping_created", entityType: "OfdCashRegisterMapping", companyId: g.companyId, clubId, userId: g.userId, metadata: { provider: "taxcom", registerKind } });
   revalidatePath("/settings/integrations/ofd");
   return { ok: true, notice: "Касса сопоставлена." };
+}
+
+/** Change an existing KKT mapping's club and/or legal entity (§7 «Изменить привязку»).
+ * Tenant-checked. Used to bind the legal entity for a касса that was created without one
+ * (e.g. «Куб» → «требует привязки»). Owner / general_director only, PIN-gated. */
+export async function updateOfdMapping(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const pin = await requireSettingsPin(g.companyId, g.userId);
+  if (!pin.ok) return { ok: false, error: "Требуется подтверждение ПИН настроек. Откройте «Настройки → Безопасность» и введите ПИН." };
+
+  const mappingId = str(formData, "mappingId");
+  if (!mappingId) return { ok: false, error: "Касса не выбрана." };
+  const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { id: mappingId, companyId: g.companyId, provider: "taxcom" } });
+  if (!mapping) return { ok: false, error: "Касса не найдена." };
+
+  const clubId = str(formData, "clubId") ?? mapping.clubId;
+  const legalEntityId = str(formData, "legalEntityId"); // required by this form
+  const club = await prisma.club.findFirst({ where: { id: clubId, companyId: g.companyId }, select: { id: true } });
+  if (!club) return { ok: false, error: "Клуб не найден в этой компании." };
+  if (!legalEntityId) return { ok: false, error: "Выберите юрлицо кассы." };
+  const le = await prisma.legalEntity.findFirst({ where: { id: legalEntityId, companyId: g.companyId }, select: { id: true } });
+  if (!le) return { ok: false, error: "Юрлицо не найдено в этой компании." };
+
+  await prisma.ofdCashRegisterMapping.update({ where: { id: mapping.id }, data: { clubId, legalEntityId } });
+  await recordAudit({ action: "ofd.mapping_updated", entityType: "OfdCashRegisterMapping", entityId: mapping.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { provider: "taxcom", fnNumber: mapping.fnNumber } });
+  revalidatePath("/settings/integrations/ofd");
+  return { ok: true, notice: "Привязка кассы обновлена." };
 }
 
 /** Enable / disable a whole Taxcom connection. A disabled connection is skipped by
@@ -389,11 +457,37 @@ export async function runOfdImport(_p: State | undefined, formData: FormData): P
   const mode: ImportMode = dateFrom === "2026-07-01" && dateTo === "2026-07-31" ? "backfill_july" : dateFrom === dateTo ? "manual_day" : "manual_period";
   const res = await importTaxcomSalesForPeriod({ connectionId, dateFrom, dateTo, mode, requestedByUserId: g.userId });
   if (!res.ok) {
-    const msg = res.safeCode === "already_running" ? "Импорт уже выполняется. Дождитесь завершения." : res.safeCode === "bad_period" ? "Некорректный период." : "Не удалось выполнить импорт.";
+    const msg = res.safeCode === "already_running" ? "Импорт уже выполняется. Дождитесь завершения." : res.safeCode === "bad_period" ? "Некорректный период." : res.safeCode === "ofd_no_active_cash_register_mappings" ? "Нет активных касс для этого подключения." : "Не удалось выполнить импорт.";
     return { ok: false, error: msg };
   }
+
+  // Resolve club + legal names for the per-club breakdown (§5.6).
+  const clubIds = res.perClub.map((c) => c.clubId);
+  const leIds = res.perClub.map((c) => c.legalEntityId).filter((x): x is string => Boolean(x));
+  const [clubs, les] = await Promise.all([
+    prisma.club.findMany({ where: { id: { in: clubIds } }, select: { id: true, name: true } }),
+    prisma.legalEntity.findMany({ where: { id: { in: leIds } }, select: { id: true, name: true } }),
+  ]);
+  const clubName = new Map(clubs.map((c) => [c.id, c.name]));
+  const leName = new Map(les.map((l) => [l.id, l.name]));
+  const perClub: OfdClubResult[] = res.perClub
+    .map((c) => ({ clubName: clubName.get(c.clubId) ?? c.clubId, legalName: c.legalEntityId ? leName.get(c.legalEntityId) ?? null : null, found: c.found, imported: c.imported, incomeKopeks: c.incomeKopeks, returnKopeks: c.returnKopeks }))
+    .sort((a, b) => b.imported - a.imported);
+
+  // Header-club note (§8): sync is company/cabinet-wide; the top filter may hide clubs.
+  const ctx = await getCurrentAccessContext();
+  const currentClubId = ctx?.selectedClubId ?? null;
+  const currentClubName = currentClubId ? clubName.get(currentClubId) ?? (await prisma.club.findFirst({ where: { id: currentClubId }, select: { name: true } }))?.name ?? null : null;
+  const clubNote = perClub.length > 0
+    ? `Синхронизировано клубов: ${perClub.length}.${currentClubName ? ` Сейчас в верхнем фильтре выбран клуб «${currentClubName}» — в разделе «ОФД продажи» показываются данные только по нему.` : ""}`
+    : undefined;
+
   revalidatePath("/settings/integrations/ofd");
-  return { ok: true, notice: `Импорт завершён: найдено ${res.found}, добавлено ${res.imported}, пропущено ${res.skipped}.` };
+  return {
+    ok: true,
+    notice: `Импорт завершён (${res.status}): найдено ${res.found}, добавлено ${res.imported}, пропущено ${res.skipped}.` + (res.unboundKkts > 0 ? ` Пропущено касс без юрлица: ${res.unboundKkts} (требуют привязки).` : ""),
+    perClub, unboundKkts: res.unboundKkts, clubNote,
+  };
 }
 
 /** On-demand "Синхронизировать сейчас": import TODAY across the company's active
