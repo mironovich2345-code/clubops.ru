@@ -237,3 +237,34 @@ health/cron isolation (ofd-sync-diagnostics), 25–26 нет дублей чек
 не сломан, PIN на ключ Астрал, приглашённый собственник ПИН не обходит, dashboard
 2-провайдера независимо, mobile-сетка, tenant isolation. `pilot:ofd-sync-dashboard`
 обновлён под новый гейт видимости карточки.
+
+## 19. Астрал.ОФД — реальная реализация (ветка `feat/astral-ofd-live`)
+
+Skeleton Астрал заменён рабочей реализацией по официальной документации
+(«Документация Астрал ОФД API.pdf», v4.2). **Статус: READY FOR CREDENTIALS** — код и
+фикстуры проверены, но LIVE не заявляется без реального `api_key` и сверки тестового дня
+(правило №7). Детали — `docs/integrations/astral-ofd-implementation.md`, живой пилот —
+`docs/testing/astral-ofd-pilot.md`.
+
+- **Клиент** (`src/lib/ofd/astral/client.ts`): POST + `api_key` в теле, инъектируемый fetch,
+  timeout, ограниченный retry (5xx/429/timeout/network), no-retry 400/401/403/404,
+  толерантный парсинг, `api_key` не логируется, коды `ASTRAL_*`.
+- **Каталог + импорт** (`api.ts`, `receipts.ts`, `importer.ts`): organization.list,
+  kkt.aliasList/search/listByAlias/getById, **documents.tickets** (основной импорт,
+  пагинация), closedShiftsList/analytics.aliases (сверка). Нормализация в общий
+  `NormalizedOfdReceipt` → тот же пайплайн (позиции, категории, дневные сводки, дашборд,
+  Фактические деньги). Уникальный ключ `astral:ФН:ФД:ФП` (идемпотентность).
+- **Классификация (провизорно, стандарт ФФД):** documentType 3/4/21/31 — продажа;
+  operationType 1 приход / 2 возврат прихода → выручка; расход/служебные/unknown — только
+  диагностика. Суммы в копейках; cash→наличные, ecash+credit+prepaid+provision→электронные;
+  расхождение оплат — флаг, не блок. Таймзона Europe/Moscow.
+- **Миграция** аддитивная: external org/alias/kkt id на mapping, org+syncStartDate на
+  connection, диагностика на OfdSyncRun. dev+prod, без DROP/rebuild, Такском не тронут.
+- **Настройки** (`/settings/ofd/astral`, шаги 1–5): api_key → организация→юрлицо →
+  точки → кассы→Клуб/юрлицо → предпросмотр+импорт. Owner/GD server-side; мутации PIN-gated
+  и tenant-safe; preview/testConnection без ПИН.
+- **Дашборд/cron:** общая кнопка и `/api/cron/ofd/daily` берут taxcom+astral независимо;
+  Астрал показывает «Подключено» только после реального успешного импорта.
+- **Тесты:** `npm run pilot:ofd-astral` — 50 проверок (клиент/парсинг/ошибки/retry,
+  классификация/оплаты, пагинация/идемпотентность, реальная БД: только выручка, без дублей,
+  дневная сводка, tenant isolation; безопасность/миграция/неизменность Такском).

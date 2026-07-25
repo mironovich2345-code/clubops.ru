@@ -1,98 +1,129 @@
-# Астрал.ОФД — реализация (UI, экран подключения, статус)
+# Астрал.ОФД — реализация
 
-**Статус интеграции: BLOCKED BY CREDENTIALS/DOCUMENTATION.** По правилу №7 интеграция
-НЕ считается готовой, пока не выполнен реальный запрос с действующими реквизитами. Этот
-документ описывает **готовую часть** — пользовательский экран подключения, роли, ПИН и
-отображение статуса. Что нужно от оператора для перевода в live — см.
-[`astral-ofd-discovery.md`](./astral-ofd-discovery.md).
+**Статус: READY FOR CREDENTIALS.** Код полностью реализован по официальной документации
+(«Документация Астрал ОФД API.pdf», v4.2). Провайдер не помечается «LIVE/Подключено», пока
+не выполнен реальный запрос с действующим `api_key` и не сверён хотя бы один тестовый день
+(правило №7). Discovery/ограничения — `astral-ofd-discovery.md`; чек-лист живого пилота —
+`docs/testing/astral-ofd-pilot.md`.
 
-## 1. Где это в интерфейсе
-
-Новая структура настроек ОФД (единый вход, ветка `feat/ofd-unified-settings`):
+## 1. Архитектура (переиспользование, без второго контура)
 
 ```
-Настройки → Интеграции → «Подключение ОФД»   (/settings/ofd)
-                          ├── карточка «ОФД Такском» → /settings/integrations/ofd
-                          └── карточка «ОФД Астрал»  → /settings/ofd/astral
+/settings/ofd/astral  (шаги 1–5)
+      │ api_key (AES-256-GCM в OfdConnection.integrationTokenEncrypted)
+      ▼
+AstralApiClient (src/lib/ofd/astral/client.ts)   POST + api_key, retry, error-map
+      ▼
+api.ts (каталог) + receipts.ts (нормализация) + importer.ts (documents.tickets)
+      ▼  NormalizedOfdReceipt (ОБЩИЙ DTO)
+существующий пайплайн: OfdReceiptImport → OfdReceiptItem → categorizeItem →
+OfdDailySalesSummary → OfdRevenueCategoryDailySummary → дашборд/аналитика/Фактические деньги
 ```
 
-- `/settings/ofd` — обзор: карточки провайдеров со статусом, кол-вом организаций/касс и
-  датой последней синхронизации. Это **read-only агрегация** существующих
-  `OfdConnection` / `OfdCashRegisterMapping` / `OfdSyncRun` (нет параллельного синка и
-  второго контура).
-- `/settings/ofd/astral` — пошаговый экран Астрал.
+Astral не создаёт новых экранов, контуров или таблиц чеков. Общая кнопка синхронизации и
+cron `/api/cron/ofd/daily` обрабатывают taxcom+astral независимо.
 
-## 2. Экран Астрал — шаги
+## 2. Endpoints (v4.2; Z-отчёт v4.1)
 
-| Шаг | Состояние | Описание |
+| Метод | Назначение | Где |
 |---|---|---|
-| **1. API-ключ** | активен | Поле masked (`type=password`); ключ хранится зашифрованным (AES-256-GCM, `encryptOfdSecret`), не отображается. Пустое поле при сохранении = оставить прежний ключ. Кнопка «Проверить подключение». |
-| 2. Организация | заготовка | Выбор организации Астрал (`organization.list`) + привязка к юрлицу CLUB-OPS. |
-| 3. Торговая точка | заготовка | Выбор торговой точки (`kkt.aliasList`) + привязка к клубу. |
-| 4. Кассы | заготовка | Выбор касс + привязка каждой к клубу и юрлицу. |
-| 5. Тестовая синхронизация | заготовка | Импорт малого периода (1–3 дня) с предпросмотром перед подтверждением. |
+| `organization.list` | организации; **testConnection** (search="" page=1 count=10) | api.ts `listOrganizations` |
+| `kkt.aliasList` | торговые точки (пагинация) | `listOutlets` |
+| `kkt.search` | кассы организации | `listKkts` |
+| `kkt.listByAlias` | кассы точки | `listKktsByAlias` |
+| `kkt.getById` | детали/диагностика кассы | `getKktById` |
+| **`documents.tickets`** | **основной импорт чеков** (пагинация) | `fetchReceiptsPage` → importer |
+| `documents.closedShiftsList` | сверка (смены: sum/cash/ecash/checkCount) | `fetchClosedShifts` |
+| `documents.shiftTickets` | диагностика/добор позиций смены | (резерв) |
+| `analytics.aliases` | контрольные суммы (profit/cash/ecash/refunds) | `fetchAnalyticsSummary` |
+| `document.zReport` (v4.1) | диагностика одной смены | (не в основном sync) |
 
-Шаги 2–5 отключены (заглушки) до подтверждённой документации и реальных реквизитов.
+## 3. Авторизация и клиент
 
-## 3. Хранение (additive, без новых моделей)
+- Base URL `https://ofd.astralnalog.ru/api/v4.2`. Все методы POST, тело JSON, авторизация
+  параметром **`api_key`** (никогда не header/URL). Конверт `{ok,result}` / `{ok:false,error_code,description}`.
+- `AbortController` timeout (30с). Ограниченный exponential backoff (400мс→5с) только для
+  5xx/429/timeout/network. **Нет retry** для 400/401/403/404. Толерантный парсинг
+  string|number|boolean. Защита от malformed JSON. reference id + structured logs.
+- **`api_key` никогда не логируется** и не попадает в тексты ошибок (`redactApiKey`).
+- Внутренние коды: `ASTRAL_INVALID_API_KEY` (401), `ASTRAL_ACCESS_DENIED` (403),
+  `ASTRAL_KKT_NOT_FOUND` (404), `ASTRAL_RATE_LIMITED` (429), `ASTRAL_SERVICE_UNAVAILABLE` (5xx),
+  `ASTRAL_TIMEOUT`, `ASTRAL_INVALID_RESPONSE`, `ASTRAL_PAGINATION_ERROR`,
+  `ASTRAL_ORGANIZATION_NOT_FOUND`/`ASTRAL_ALIAS_NOT_FOUND`, `ASTRAL_SYNC_PARTIAL_FAILURE`,
+  `ASTRAL_NOT_CONFIGURED`.
 
-Ключ Астрал хранится в существующей `OfdConnection`:
+## 4. Основной sync (documents.tickets)
 
-```
-provider: "astral"
-authType: "integration_token"
-integrationTokenEncrypted: <AES-256-GCM>   // encryptOfdSecret(apiKey)
-serverBaseUrl: ""                          // подтверждённый URL — после документации
-displayName: "Астрал.ОФД"
-```
+- Минимальный production-запрос: `organizationId`, `pageNumber`, `count`, `orderBy="dateTime"`,
+  `order="asc"`, `beginDate`/`endDate`, `kkts[]` (или `fiscalDriveNumber[]` из mapping),
+  `operationTypes=["Приход","Возврат прихода"]`. Лишние фильтры не отправляются.
+- **Таймзона:** `beginDate/endDate` — unix seconds в **Europe/Moscow (UTC+3)**, не в таймзоне
+  сервера (`moscowDayRangeUnix`).
 
-За счёт этого подключение автоматически появляется в обзоре `/settings/ofd` и в
-dashboard-чипах без миграций и дублирования логики провайдера.
+## 5. Пагинация и идемпотентность
 
-## 4. Роли (server-side)
+- `pageNumber` (1-based) + `count` (100), `result.documents[]` + `result.totalCount`
+  (string|number). Цикл до `documentsReceived >= totalCount`; пустая страница завершает цикл;
+  guard `DEFAULT_MAX_PAGES`; детект повторяющейся страницы (первый dedupeKey совпал) →
+  `ASTRAL_PAGINATION_ERROR`. Каждая страница пишется идемпотентно до продвижения.
+- **Уникальный ключ чека** = `OfdReceiptImport.dedupeKey` (unique) =
+  `astral:<fiscalDriveNumber>:<fd>:<fiscalSign>`, где `fd = fiscalDocumentNumber ?? checkNumber`.
+  `fiscalSign` уникален в рамках ФН → один и тот же `checkNumber` на другом ФН/ККТ не
+  коллидирует. Повтор/перекрытие периода, повтор страницы, partial failure → без дублей.
+  Ключ Такском не менялся.
 
-- Обзор `/settings/ofd` и экран Астрал — только **owner / general_director**
-  (`userHasCompanyRole`, иначе `redirect("/settings")`). Прямой заход по URL без прав
-  заблокирован. Менеджер критичных настроек подключения не видит.
-- Server-actions Астрал (`saveAstralApiKey`, `testAstralConnection`,
-  `toggleAstralConnection`) проверяют роль внутри `requireAstralAdmin` — гейт не
-  полагается на клиента.
+## 6. Типы документов и операции (провизорно, стандарт ФФД)
 
-## 5. Settings PIN
+- `documentType` 3/4/21/31 — чек продажи/БСО/коррекция (несут выручку); 1/2/5/6/11/41 —
+  служебные. `operationType` 1 приход → **income**, 2 возврат прихода → **income_return**,
+  3 расход / 4 возврат расхода → не выручка, 0/неизвестно → служебный.
+- В выручку идут только `sale`/`sale_return`. `expense`/`expense_return`/`service`/`unknown`
+  **не** попадают в выручку и `OfdRevenueCategoryDailySummary`, но считаются диагностикой
+  (`unknownDocuments` и др. в `OfdSyncRun`). Неизвестная комбинация — `unknown`, а не
+  молчаливая продажа. Сырые `documentType`/`operationType` сохраняются. **Подтвердить на
+  реальном дне** до массового импорта.
 
-Критичные действия проходят через `requireSettingsPin(companyId, userId)`:
+## 7. Суммы, оплаты, возвраты, номенклатура
 
-- `saveAstralApiKey` — **PIN-gated** (`requireAstralAdmin(true)`).
-- `toggleAstralConnection` (вкл/выкл) — **PIN-gated**.
-- `testAstralConnection` — без ПИН (не меняет секреты/привязки).
-- Простое открытие страницы ПИН не требует; при наличии 15-мин подтверждённой сессии
-  повторный ввод не нужен. Приглашённый собственник ПИН **не обходит** (opt-in guard:
-  если ПИН задан — нужна подтверждённая сессия).
+- Все суммы **в копейках** (без ×100). `cashKopeks = cash`;
+  `electronicKopeks = ecash + credit + prepaid + provision`; `totalKopeks = sum`.
+- Сверка `cash+ecash+credit+prepaid+provision` против `sum`: при расхождении — флаг
+  (`paymentMismatchCount`), импорт не блокируется, исходные значения сохраняются.
+- Возврат (income_return) уменьшает выручку/наличные/электронные/категорию/дневные сводки.
+- Позиции: только реально пришедшее (`name`, `count`; `price/sum` не выдумываются — 0 коп).
+  Категоризация — существующая (`normalizedItemName` + `categorizeItem` +
+  `OfdRevenueCategoryDailySummary`), без второго классификатора.
 
-## 6. Статус и честность
+## 8. Хранение (аддитивная миграция)
 
-`testConnection` Астрал отказывает (`ASTRAL_NOT_CONFIGURED`) — не притворяется. Статус
-карточки для non-live провайдера **capped**:
+`OfdConnection`: `externalOrganizationId`, `syncStartDate`. `OfdCashRegisterMapping`:
+`externalOrganizationId`, `externalAliasId`, `externalKktId` (Такском оставляет null;
+`fnNumber` = `factoryFiscalDrive`, `kktRegNumber` = `kktRegID`). `OfdSyncRun`:
+`pagesProcessed`, `documentsReceived`, `unknownDocuments`, `durationMs`. Только ADD COLUMN /
+CREATE INDEX — без DROP/rebuild, dev(SQLite)+prod(PostgreSQL).
 
-- нет подключения → `Не подключено`;
-- есть строка, ключа нет / неактивно → `Требует API-ключ`;
-- ключ сохранён → `Требует настройки` (**никогда «Подключено»** до реального live-запроса).
+## 9. Настройки, роли, ПИН, безопасность
 
-На dashboard в блоке «Данные ОФД» Астрал показывается отдельным чипом (напр.
-«Астрал — Не подключено») независимо от Такском — ошибка одного провайдера не влияет на
-отображение другого.
+- Экран `/settings/ofd/astral`, шаги 1–5. Только owner/general_director (server-side, иначе
+  redirect). Менеджер критичных настроек не видит.
+- **ПИН настроек** обязателен для: сохранения/замены api_key, выбора организации, привязки
+  LegalEntity, привязки/отвязки кассы, вкл/выкл подключения. НЕ требуется для: обзора, статуса,
+  `testConnection` сохранённым ключом, preview без изменения настроек.
+- Tenant-safe: LegalEntity/Club обязаны принадлежать компании; чужой external id привязать
+  нельзя; sync не использует чужую OfdConnection. api_key — AES-256-GCM, не возвращается
+  клиенту, не логируется. Аудит: test, выбор организации, привязка/отвязка кассы, вкл/выкл,
+  ручной импорт, cron.
 
-## 7. Что нужно для перевода в live
+## 10. Дашборд и cron
 
-См. [`astral-ofd-discovery.md`](./astral-ofd-discovery.md): официальный API-ключ,
-подтверждённый базовый URL и тип авторизации, endpoints (кассы/смены/фискальные
-документы), формат чека и единицы сумм, пагинация/лимиты/коды ошибок. После этого —
-реальный `testConnection`, затем активация шагов 2–5.
+- Блок «Данные ОФД» показывает провайдеры отдельными чипами; Астрал становится «Подключено»
+  только после реального успешного импорта (иначе «Требует API-ключ»/«Требует настройки»).
+- Общая кнопка и `POST /api/cron/ofd/daily` берут taxcom+astral; per-connection try/catch
+  изолирует падение одного провайдера от другого; отдельного endpoint/кнопки на провайдера нет.
 
-## 8. Тесты
+## 11. Тесты
 
-`npm run pilot:ofd-settings` — покрывает: доступ к обзору только owner/GD, менеджер
-заблокирован, обе карточки, Такском подключён / Астрал не подключён, старый URL Такском не
-сломан, PIN на ключ Астрал, приглашённый собственник ПИН не обходит, dashboard
-2-провайдера независимо, mobile-сетка, tenant isolation. Провизорный маппинг чеков —
-`npm run pilot:ofd-astral`.
+`npm run pilot:ofd-astral` — 50 проверок: клиент/парсинг/ошибки/retry, классификация
+документов и оплат, пагинация/идемпотентность, реальная БД (импорт только выручки, отсутствие
+дублей, дневная сводка, tenant isolation), статические guard'ы (безопасность, endpoints,
+общий пайплайн, миграция, неизменность Такском). Живой пилот — `docs/testing/astral-ofd-pilot.md`.
