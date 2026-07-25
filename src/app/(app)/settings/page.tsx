@@ -77,8 +77,9 @@ export default async function SettingsPage() {
       {leAccess.length > 0 ? (
         <div className="mb-8">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">Интеграции</h2>
-          <Link href="/settings/integrations/ofd" className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-            ОФД Такском — подключение продаж по кассам →
+          <Link href="/settings/ofd" className="inline-flex flex-col rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm hover:bg-slate-50">
+            <span className="text-sm font-medium text-slate-700">Подключение ОФД →</span>
+            <span className="mt-0.5 text-xs text-slate-500">Подключение касс и фискальных данных через операторов ОФД</span>
           </Link>
         </div>
       ) : null}
