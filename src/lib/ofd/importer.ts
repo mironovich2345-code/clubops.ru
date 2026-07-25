@@ -303,7 +303,7 @@ export async function importTaxcomSalesForPeriod(params: ImportParams): Promise<
   return { ok: true, syncRunId: run.id, found, imported, skipped, status, totalIncomeKopeks: incomeTotal, totalReturnKopeks: returnTotal };
 }
 
-async function recordSyncError(syncRunId: string, connectionId: string, companyId: string, clubId: string | null, fnNumber: string | null, stage: string, safeCode: string, safeMessage?: string): Promise<void> {
+export async function recordSyncError(syncRunId: string, connectionId: string, companyId: string, clubId: string | null, fnNumber: string | null, stage: string, safeCode: string, safeMessage?: string): Promise<void> {
   await prisma.ofdSyncError.create({
     data: { syncRunId, connectionId, companyId, clubId, fnNumber, stage, safeCode, safeMessage: safeMessage ? safeMessage.slice(0, 200) : null },
   });
@@ -338,13 +338,13 @@ export async function recomputeDailySummary(companyId: string, clubId: string, l
   });
 }
 
-type ItemStats = { itemDocumentsSeen: number; itemRowsSeen: number; itemRowsSaved: number; itemRowsSkipped: number; categoryOtherCount: number };
+export type ItemStats = { itemDocumentsSeen: number; itemRowsSeen: number; itemRowsSaved: number; itemRowsSkipped: number; categoryOtherCount: number };
 
 /** Persist SAFE nomenclature lines for a set of receipts. Categorizes each line,
  * writes only safe fields (name/numbers/category), and is idempotent by itemKey
  * ("<dedupeKey>:<lineIndex>") so a re-import (or backfill of a skipped receipt)
  * never creates duplicates. Never stores raw JSON / buyer PII. */
-async function persistReceiptItems(
+export async function persistReceiptItems(
   receipts: NormalizedOfdReceipt[],
   idByDedupeKey: Map<string, string>,
   ctx: { companyId: string; clubId: string; legal: string | null; provider: string },

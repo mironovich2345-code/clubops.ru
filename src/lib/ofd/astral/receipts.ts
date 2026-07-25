@@ -31,6 +31,24 @@ import { toInt, toNum, toStr, toStrOrNull } from "@/lib/ofd/astral/client";
 export const ASTRAL_SALE_DOCUMENT_TYPES = new Set(["3", "4", "21", "31"]);
 export const ASTRAL_SERVICE_DOCUMENT_TYPES = new Set(["1", "2", "5", "6", "11", "41"]);
 
+// operationTypes REQUEST values are Cyrillic strings (PDF §documents.tickets). The
+// production sync narrows to sales + sale-returns; the response operationType is numeric.
+export const ASTRAL_OP_INCOME = "Приход";
+export const ASTRAL_OP_INCOME_RETURN = "Возврат прихода";
+export const ASTRAL_SALES_OPERATION_TYPES = [ASTRAL_OP_INCOME, ASTRAL_OP_INCOME_RETURN];
+
+/**
+ * Convert a [dateFrom, dateTo] local business day to a unix-seconds range for the
+ * documents.tickets query. Uses the OFD business timezone Europe/Moscow (fixed UTC+3,
+ * no DST since 2014) — the PDF's localTimeZone default — NOT the server's timezone,
+ * so the window is stable regardless of where the app runs (project rule §8).
+ */
+export function moscowDayRangeUnix(dateFrom: string, dateTo: string): { beginDate: number; endDate: number } {
+  const begin = Date.parse(`${dateFrom}T00:00:00+03:00`);
+  const end = Date.parse(`${dateTo}T23:59:59+03:00`);
+  return { beginDate: Math.floor(begin / 1000), endDate: Math.floor(end / 1000) };
+}
+
 export type AstralDocClass = "sale" | "sale_return" | "expense" | "expense_return" | "service_document" | "unknown";
 
 /** Classify by (documentType, operationType). Safe fallback: an unrecognized combo

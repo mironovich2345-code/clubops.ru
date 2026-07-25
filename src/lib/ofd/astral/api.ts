@@ -137,3 +137,51 @@ export async function getKktById(client: AstralClient, id: string): Promise<Astr
   }
   return { ok: true, data: normalizeKkt(res.data as Record<string, unknown>) };
 }
+
+// ---- fiscal documents (documents.tickets) — one page -------------------------
+
+export type FetchReceiptsPageParams = {
+  organizationId: string;
+  pageNumber: number;
+  count: number;
+  beginDate: number; // unix seconds
+  endDate: number; // unix seconds
+  kkts?: number[]; // external KKT ids
+  aliasId?: number[]; // external outlet ids
+  fiscalDriveNumber?: string[]; // ФН numbers
+  operationTypes?: string[]; // Cyrillic ["Приход","Возврат прихода"]
+  orderBy?: string; // default "dateTime"
+  order?: "asc" | "desc"; // default "asc"
+};
+
+/** One page of POST /documents.tickets. Returns the RAW document objects (the caller
+ * normalizes) + totalCount (string|number → number). Sends only the fields the
+ * production sync needs (project rule §8 — no superfluous filters). */
+export async function fetchReceiptsPage(
+  client: AstralClient,
+  params: FetchReceiptsPageParams,
+): Promise<AstralResult<{ documents: Record<string, unknown>[]; totalCount: number }>> {
+  const body: Record<string, unknown> = {
+    organizationId: String(params.organizationId),
+    pageNumber: String(params.pageNumber),
+    count: String(params.count),
+    orderBy: params.orderBy ?? "dateTime",
+    order: params.order ?? "asc",
+    beginDate: String(params.beginDate),
+    endDate: String(params.endDate),
+  };
+  if (params.kkts && params.kkts.length) body.kkts = params.kkts;
+  if (params.aliasId && params.aliasId.length) body.aliasId = params.aliasId;
+  if (params.fiscalDriveNumber && params.fiscalDriveNumber.length) body.fiscalDriveNumber = params.fiscalDriveNumber;
+  if (params.operationTypes && params.operationTypes.length) body.operationTypes = params.operationTypes;
+
+  const res = await client.call<Record<string, unknown>>("documents.tickets", body);
+  if (!res.ok) return res;
+  const docsRaw = (res.data as Record<string, unknown> | null)?.documents;
+  if (!Array.isArray(docsRaw)) {
+    return { ok: false, code: "ASTRAL_INVALID_RESPONSE", message: "Astral: ответ documents.tickets не содержит массив documents." };
+  }
+  const documents = arr(docsRaw);
+  const totalCount = toCount((res.data as Record<string, unknown>)?.totalCount ?? documents.length);
+  return { ok: true, data: { documents, totalCount } };
+}
