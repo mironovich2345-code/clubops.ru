@@ -1735,6 +1735,11 @@ model OfdConnection {
   passwordEncrypted         String?
   integrationTokenEncrypted String?
   integratorIdEncrypted     String?
+  // Astral.ОФД: the external organization selected for this connection (Step 2) and
+  // an optional import start-date boundary (PIN-gated). Additive, nullable — Taxcom
+  // rows leave these null and behave exactly as before.
+  externalOrganizationId    String?
+  syncStartDate             DateTime?
   isActive                  Boolean   @default(true)
   lastSyncAt                DateTime?
   createdByUserId           String
@@ -1759,6 +1764,12 @@ model OfdCashRegisterMapping {
   kktRegNumber     String?
   kktFactoryNumber String?
   kktName          String?
+  // Astral.ОФД external identifiers — the org/outlet/KKT this mapping points at in
+  // Astral. Additive, nullable: Taxcom rows leave these null (they key by fnNumber
+  // only). fnNumber holds the KKT's factoryFiscalDrive; kktRegNumber holds kktRegID.
+  externalOrganizationId String?
+  externalAliasId        String?
+  externalKktId          String?
   // Source of receipts: "club_cashbox" (ordinary club/reception KKT) or
   // "online_cashbox" (records online-payment receipts). NOT a legal entity —
   // ИП/ООО live on legalEntityId. Existing rows fall back to club_cashbox.
@@ -1775,6 +1786,7 @@ model OfdCashRegisterMapping {
   @@index([connectionId])
   @@index([companyId, clubId])
   @@index([provider, fnNumber])
+  @@index([provider, externalKktId])
 }
 
 // A safe fiscal fingerprint of a receipt (NO buyer PII, NO items, NO raw JSON).
@@ -1851,6 +1863,11 @@ model OfdSyncRun {
   skippedReceipts    Int       @default(0)
   totalIncomeKopeks  Int       @default(0)
   totalReturnKopeks  Int       @default(0)
+  // Astral.ОФД sync diagnostics (also safe for Taxcom; default 0). Additive.
+  pagesProcessed     Int       @default(0)
+  documentsReceived  Int       @default(0)
+  unknownDocuments   Int       @default(0)
+  durationMs         Int?
   safeErrorCode      String?
   safeErrorMessage   String?
   createdAt          DateTime  @default(now())
