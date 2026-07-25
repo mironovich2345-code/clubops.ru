@@ -44,6 +44,7 @@ const pilots = [
   ["OFD dashboard quick-sync", "pilot-ofd-sync-dashboard.mjs"],
   ["OFD Astral provider foundation", "pilot-ofd-astral.mjs"],
   ["OFD unified settings restructure", "pilot-ofd-settings.mjs"],
+  ["OFD Taxcom multi-KKT cabinet", "pilot-ofd-taxcom-multikkt.mjs"],
   ["OFD auto-sync diagnostics", "pilot-ofd-sync-diagnostics.mjs"],
   ["Email OTP", "pilot-otp.mjs"],
   ["Sessions / revocation", "pilot-sessions.mjs"],
