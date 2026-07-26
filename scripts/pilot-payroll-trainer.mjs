@@ -67,7 +67,7 @@ function main() {
   const calc = src("../src/lib/payroll/calc.ts");
   const trainer = src("../src/lib/payroll/trainer.ts");
   const actions = src("../src/app/(app)/payroll/periods/trainer-actions.ts");
-  const periodPage = src("../src/app/(app)/payroll/periods/[id]/page.tsx");
+  const periodPage = src("../src/app/(app)/payroll/periods/[id]/employees/[calculationId]/page.tsx");
   const saveInputs = src("../src/app/(app)/payroll/periods/actions.ts");
   const schemaDev = src("../prisma/schema.prisma");
   const schemaProd = src("../prisma/production/schema.prisma");

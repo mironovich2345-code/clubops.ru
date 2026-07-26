@@ -39,7 +39,7 @@ function main() {
   // ---- static guards ----
   const actions = src("../src/app/(app)/payroll/periods/actions.ts");
   const section = src("../src/app/(app)/payroll/_components/PaymentsSection.tsx");
-  const page = src("../src/app/(app)/payroll/periods/[id]/page.tsx");
+  const page = src("../src/app/(app)/payroll/periods/[id]/employees/[calculationId]/page.tsx");
 
   check("LE7 recordPayment reads + validates a per-payment legalEntity",
     actions.includes("pickPaymentLegalEntity(scope.companyId, calc.clubId, method, chosenLe") && actions.includes('String(formData.get("legalEntityId")'));

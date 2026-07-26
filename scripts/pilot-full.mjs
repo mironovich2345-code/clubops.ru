@@ -85,6 +85,7 @@ const pilots = [
   ["Payroll regional city payroll", "pilot-payroll-regional.mjs"],
   ["Payroll debts + settlement", "pilot-payroll-obligations.mjs"],
   ["Payroll summary + notifications + activity", "pilot-payroll-surface.mjs"],
+  ["Payroll UX restructure", "pilot-payroll-ux.mjs"],
   ["Payroll OFD/sales integration", "pilot-payroll-integration.mjs"],
   ["Deploy config", "pilot-deploy-config.mjs"],
   ["Document security", "pilot-document-security.mjs"],
