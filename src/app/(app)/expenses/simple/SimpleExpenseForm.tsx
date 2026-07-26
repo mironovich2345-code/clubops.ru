@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createSimplifiedExpenseDraft } from "../simplified-actions";
+import { createSimplifiedExpenseDraft, submitExpense } from "../simplified-actions";
 import { uploadExpenseDocuments } from "../document-actions";
 
 type Category = { key: string; name: string };
@@ -141,15 +141,25 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
       setFiles(updated);
 
       if (anyFailed) {
-        setError("Черновик сохранён, но не все файлы загрузились. Исправьте отмеченные файлы и повторите.");
+        setError("Не все файлы загрузились. Исправьте отмеченные файлы и повторите — расход ещё не отправлен.");
         setBusy(false);
         return;
       }
 
-      // 3. Everything uploaded → open the draft.
-      router.push(`/expenses/${id}`);
+      // 3. All files uploaded → submit to the regional director in the SAME flow (no
+      // separate "Отправить" step). Idempotent: submitExpense's compare-and-set means a
+      // repeated click never re-submits. On success open the object showing its review state.
+      const sfd = new FormData();
+      sfd.set("expenseId", id);
+      const sub = await submitExpense(undefined, sfd);
+      if (!sub.ok) {
+        setError(sub.error ?? "Расход создан, но не отправлен на проверку. Откройте его и отправьте вручную.");
+        setBusy(false);
+        return;
+      }
+      router.push(`/expenses/${id}?submitted=1`);
     } catch {
-      setError("Произошла ошибка. Черновик сохранён — повторите загрузку.");
+      setError("Произошла ошибка. Данные сохранены — повторите.");
       setBusy(false);
     }
   }
@@ -262,10 +272,11 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
         </div>
       </div>
 
-      {/* Main action — full width under both columns. */}
-      <button type="submit" disabled={busy} className="mt-6 w-full rounded-md bg-brand-600 px-4 py-3 text-base font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+      {/* Main action — full width under both columns. One click: create → send to regional. */}
+      <button type="submit" disabled={busy} className="mt-6 min-h-[44px] w-full rounded-md bg-brand-600 px-4 py-3 text-base font-medium text-white hover:bg-brand-700 disabled:opacity-60">
         {busy ? "Создание…" : "Создать расход"}
       </button>
+      <p className="mt-2 text-center text-xs text-slate-500">После создания расход будет отправлен региональному директору на проверку.</p>
     </form>
   );
 }

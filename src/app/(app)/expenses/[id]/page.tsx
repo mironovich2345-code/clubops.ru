@@ -138,6 +138,11 @@ export default async function ExpenseDetailPage({
 
   return (
     <div>
+      {sp.submitted === "1" ? (
+        <div className="mb-4 rounded-md bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">
+          Расход создан и отправлен региональному директору на проверку.
+        </div>
+      ) : null}
       <div className="mb-6 flex items-center justify-between gap-4">
         <PageHeader
           title="Расход"
