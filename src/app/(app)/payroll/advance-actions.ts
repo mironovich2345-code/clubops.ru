@@ -146,6 +146,8 @@ export async function recordEmployeeAdvance(_prev: AdvanceState | undefined, for
     await recordAudit({ action: "payroll.advance_recorded", entityType: "PayrollAdvance", entityId: advance.id, companyId, clubId, userId: ctx.user.id, metadata: { amountKopeks, method, earnedSource, status: needsRegionalApproval ? "requested" : "paid" } });
   } catch { /* ignore */ }
   revalidatePath(`/payroll/employees/${employeeId}`);
+  revalidatePath("/payroll/advances");
+  revalidatePath("/payroll");
   return { ok: true, notice: needsRegionalApproval ? "Аванс отправлен на подтверждение региональному директору." : "Аванс выдан." };
 }
 
@@ -169,6 +171,8 @@ export async function approveEmployeeAdvance(formData: FormData): Promise<void> 
     await recordAudit({ action: "payroll.advance_approved", entityType: "PayrollAdvance", entityId: advance.id, companyId: advance.companyId, clubId: advance.clubId, userId: ctx.user.id });
   } catch { /* ignore */ }
   revalidatePath(`/payroll/employees/${advance.employeeId}`);
+  revalidatePath("/payroll/advances");
+  revalidatePath("/payroll");
 }
 
 /** Cancel a pre-period advance (requested → just cancel; paid → reverse the salary expense). */
@@ -191,4 +195,6 @@ export async function cancelEmployeeAdvance(formData: FormData): Promise<void> {
     await recordAudit({ action: "payroll.advance_canceled", entityType: "PayrollAdvance", entityId: advance.id, companyId: advance.companyId, clubId: advance.clubId, userId: ctx.user.id });
   } catch { /* ignore */ }
   revalidatePath(`/payroll/employees/${advance.employeeId}`);
+  revalidatePath("/payroll/advances");
+  revalidatePath("/payroll");
 }
