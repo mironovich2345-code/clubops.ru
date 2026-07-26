@@ -36,3 +36,22 @@ export function canAddPayrollAdjustment(roles: readonly Role[], opts: { locked: 
   if (opts.locked) return accounting;
   return accounting || roles.some((r) => r === "manager" || r === "regional_director");
 }
+
+/**
+ * PROPOSE a change to a locked payroll parameter (STAGE 10). The regional director may
+ * only PROPOSE — the change does not affect any calculation until a GD/owner approves it.
+ * The proposer band deliberately excludes the reviewer band so no one applies their own
+ * locked change directly.
+ */
+export function canProposePayrollChange(roles: readonly Role[]): boolean {
+  return roles.some((r) => r === "regional_director");
+}
+
+/**
+ * REVIEW (approve / reject / return) a payroll change request (STAGE 11) — the decision
+ * that actually applies a locked change. Reserved for general director and owner. The
+ * caller additionally forbids reviewing one's OWN request (spec §18/§19).
+ */
+export function canReviewPayrollChange(roles: readonly Role[]): boolean {
+  return roles.some((r) => r === "general_director" || r === "owner");
+}

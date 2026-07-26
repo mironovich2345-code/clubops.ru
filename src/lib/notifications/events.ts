@@ -119,6 +119,85 @@ export async function notifyRegionalReview(params: RegionalReviewParams): Promis
   }
 }
 
+/**
+ * Distinct ACTIVE reviewer (general director / owner) user ids for a company — the band
+ * that decides payroll change requests. Company-level access covers every club. Excludes
+ * the actor (never notify yourself).
+ */
+export async function getPayrollReviewerUserIds(companyId: string, excludeUserId: string): Promise<string[]> {
+  const rows = await prisma.companyUserAccess.findMany({
+    where: { companyId, role: { in: ["general_director", "owner"] }, user: { isActive: true } },
+    select: { userId: true },
+  });
+  const ids = new Set<string>(rows.map((r) => r.userId));
+  ids.delete(excludeUserId);
+  return [...ids];
+}
+
+/** Notify GD/owner that a payroll change request awaits their decision (STAGE 11). */
+export async function notifyPayrollChangeReview(params: {
+  resourceId: string;
+  companyId: string;
+  clubId: string;
+  amountKopeks: number;
+  actorUserId: string;
+  isResubmit: boolean;
+}): Promise<void> {
+  if (!telegramEnabled()) return;
+  try {
+    const recipients = await getPayrollReviewerUserIds(params.companyId, params.actorUserId);
+    if (recipients.length === 0) {
+      notifLog({ event: "payroll_change_review", result: "no_recipient" });
+      return;
+    }
+    const name = await clubName(params.clubId);
+    const type = `payroll_change.${params.isResubmit ? "resubmitted_review" : "submitted_review"}`;
+    for (const recipientUserId of recipients) {
+      await enqueueNotification({
+        type,
+        recipientUserId,
+        resourceType: "payroll",
+        resourceId: params.resourceId,
+        companyId: params.companyId,
+        clubId: params.clubId,
+        payload: { resourceType: "payroll", clubName: name, amountKopeks: params.amountKopeks },
+      });
+    }
+    notifLog({ event: "payroll_change_review", recipients: recipients.length, resubmit: params.isResubmit });
+  } catch (error) {
+    notifLog({ event: "payroll_change_review", result: "error", code: (error as { code?: string })?.code });
+  }
+}
+
+/** Notify the change-request author of the GD decision (approved/returned/rejected). */
+export async function notifyPayrollChangeDecision(params: {
+  resourceId: string;
+  companyId: string;
+  clubId: string;
+  amountKopeks: number;
+  authorUserId: string;
+  actorUserId: string;
+  event: "approved" | "returned" | "rejected";
+}): Promise<void> {
+  if (!telegramEnabled()) return;
+  if (params.authorUserId === params.actorUserId) return;
+  try {
+    const name = await clubName(params.clubId);
+    await enqueueNotification({
+      type: `payroll_change.${params.event}`,
+      recipientUserId: params.authorUserId,
+      resourceType: "payroll",
+      resourceId: params.resourceId,
+      companyId: params.companyId,
+      clubId: params.clubId,
+      payload: { resourceType: "payroll", clubName: name, amountKopeks: params.amountKopeks },
+    });
+    notifLog({ event: `payroll_change_${params.event}` });
+  } catch (error) {
+    notifLog({ event: `payroll_change_${params.event}`, result: "error", code: (error as { code?: string })?.code });
+  }
+}
+
 type AuthorParams = {
   resourceType: ResourceType;
   resourceId: string;
