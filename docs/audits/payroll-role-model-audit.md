@@ -123,3 +123,17 @@ PayrollAdjustment 1310, PayrollAdvance 1335, PayrollPayment 1367, PayrollTrainer
 
 **Ограничение честности:** до подключения `formulas.ts` к периоду через snapshot и до
 реализации траншей/согласования/маппинга задача НЕ считается завершённой (см. §27 запреты).
+
+## Обновление: STAGE 2 + STAGE 3–8 выполнены
+
+- STAGE 2: `categories.ts` (8 категорий ≠ 5 UI-групп; unknown), позиция `sales_manager`,
+  `resolveSchemeForCalc` (приоритет сотрудник → категория клуба → not_configured/conflict).
+- STAGE 3–8: аддитивная миграция `calculationEngineVersion` (legacy_v1|role_categories_v2);
+  8 `role_*` типов схем + params + валидация; `role-compute.ts` подключает `formulas.ts` к
+  `computeScheme` (единая точка); `generateCalculations`/`collectPeriodInput`/`CalculationCard`
+  проводят входы и расчёт role-категорий; 5 карточек периода. Формулы реально участвуют в
+  расчётах новых периодов. Закрытые периоды защищены snapshot. Тесты:
+  `pilot:payroll-role-cards-stage2` (25), `pilot:payroll-formulas` (28), pilot:full 2940/0.
+- Осталось: STAGE 9 (транши аванса), 10–11 (регионал→ГД), 12–13 (versioned schemes +
+  OfdCashierMapping), 14 (mobile/детальные вкладки/финальные гайды). См.
+  `docs/testing/payroll-role-cards-stage2-report.md`.
