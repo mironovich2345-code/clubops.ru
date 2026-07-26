@@ -1318,6 +1318,15 @@ model PayrollCalculation {
   // stored separately so the snapshot is never rewritten. final = snapshot + overrides +
   // manual inputs. Nullable/additive.
   approvedOverridesJson String?
+  // STAGE 13 (additive): OFD personal-sales snapshot. automatic = Σ confirmed attributions;
+  // manual override wins when set (never silently overwritten). effective = manual ?? auto.
+  // salesSource: manual | ofd_confirmed | mixed.
+  automaticSalesKopeks   Int      @default(0)
+  manualSalesOverrideKopeks Int?
+  manualSalesComment     String?
+  effectiveSalesKopeks   Int      @default(0)
+  salesSource            String   @default("manual")
+  salesSyncedAt          DateTime?
   calculatedAt        DateTime?
   approvedAt          DateTime?
   createdAt           DateTime  @default(now())
@@ -1442,6 +1451,9 @@ model PayrollChangeRequest {
   fieldType             String
   targetField           String?   // e.g. abBaseKopeks, ptBaseKopeks, limitBp, salaryFor15Kopeks
   categoryKey           String?   // payroll calc category (for future_scheme_change targeting)
+  // STAGE 13: scope of a future_scheme_change — "employee" (default, employee-specific version)
+  // or "payroll_category" (a category-level version, employeeId=null). Additive; null=employee.
+  schemeScope           String?
   oldValueJson          String?   // current value snapshot (never fabricated)
   proposedValueJson     String    // proposed value
   calculatedImpactKopeks Int?     // preview impact on accrual (null = cannot compute)
@@ -1925,6 +1937,12 @@ model OfdReceiptImport {
   electronicKopeks     Int
   dedupeKey            String   @unique
   source               String   @default("taxcom")
+  // STAGE 13 (additive): cashier/operator captured for payroll attribution. Astral supplies
+  // the operator name; Taxcom leaves these null (value not read) → those receipts stay
+  // unmatched. Normalized form is used only to build MATCH SUGGESTIONS, never as a live key.
+  operatorName         String?
+  operatorNormalized   String?
+  externalCashierId    String?
   importedAt           DateTime @default(now())
   syncRunId            String?
   createdAt            DateTime @default(now())
@@ -1933,6 +1951,108 @@ model OfdReceiptImport {
   @@index([fnNumber])
   @@index([receiptDate])
   @@index([syncRunId])
+  @@index([operatorNormalized])
+}
+
+// STAGE 13: a distinct cashier as seen in ONE source (company+connection+provider, optionally
+// a specific KKT). Aggregated from receipts that carry an operator name. Identical names from
+// different companies / connections / providers / KKTs are DIFFERENT identities (never merged).
+model OfdCashierIdentity {
+  id                    String    @id @default(cuid())
+  companyId             String
+  provider              String    @default("taxcom")
+  ofdConnectionId       String
+  cashRegisterMappingId String?
+  legalEntityId         String?
+  clubId                String?
+  externalCashierId     String?
+  rawName               String
+  normalizedName        String
+  firstSeenAt           DateTime
+  lastSeenAt            DateTime
+  receiptsCount         Int       @default(0)
+  salesAmountKopeks     Int       @default(0)
+  status                String    @default("active")
+  // Stable identity key: company|provider|connection|kkt(fn)|normalizedName — one row per
+  // cashier per source. Enforces no accidental cross-source merge.
+  identityKey           String    @unique
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([ofdConnectionId])
+  @@index([clubId])
+  @@index([status])
+}
+
+// STAGE 13: identity → Employee link. Payroll attributes sales ONLY through a confirmed or
+// manually_assigned mapping. Append-only history: reassigning closes the old interval and adds
+// a new row. matchMethod records how the link was proposed; confidence is advisory only.
+//   status:      auto_matched | confirmed | unmatched | ambiguous | manually_assigned | excluded | inactive
+//   matchMethod: exact_normalized_name | alias | manual | imported_external_id | historical_mapping
+model OfdCashierMapping {
+  id                    String    @id @default(cuid())
+  companyId             String
+  provider              String    @default("taxcom")
+  ofdConnectionId       String
+  cashRegisterMappingId String?
+  cashierIdentityId     String
+  employeeId            String?
+  clubId                String
+  legalEntityId         String?
+  status                String    @default("auto_matched")
+  matchMethod           String    @default("exact_normalized_name")
+  confidence            Int?      // 0..100 advisory (never a live payout key on its own)
+  effectiveFrom         DateTime
+  effectiveTo           DateTime?
+  confirmedById         String?
+  confirmedAt           DateTime?
+  excludedReason        String?
+  comment               String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([cashierIdentityId])
+  @@index([employeeId])
+  @@index([clubId])
+  @@index([status])
+}
+
+// STAGE 13: per-receipt personal-sales attribution — the audit trail behind an employee's
+// automatic sales. Idempotent: one receipt contributes to one attributionType exactly once
+// (@@unique). A refund carries a negative amount and links to the ORIGINAL sale receipt.
+//   attributionType: personal_sale | refund | trainer_new | trainer_renewal | group_personal
+//   status:          attributed | reversed | requires_review | unmatched_refund | requires_classification
+//   source:          ofd_confirmed | manual
+model PayrollSalesAttribution {
+  id                     String    @id @default(cuid())
+  companyId              String
+  clubId                 String
+  employeeId             String
+  payrollPeriodId        String?
+  payrollCalculationId   String?
+  ofdReceiptId           String    // OfdReceiptImport.id
+  attributionType        String
+  amountKopeks           Int
+  originalSaleReceiptId  String?
+  mappingId              String?
+  status                 String    @default("attributed")
+  source                 String    @default("ofd_confirmed")
+  assignedById           String?
+  assignedAt             DateTime  @default(now())
+  reversedAt             DateTime?
+  // Idempotency: a physical receipt affects one attribution type once (stable fingerprint).
+  dedupeKey              String    @unique
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+  @@index([payrollCalculationId])
+  @@index([ofdReceiptId])
+  @@index([status])
 }
 
 // Per-day aggregate for fast cards. summaryKey enforces one row per
