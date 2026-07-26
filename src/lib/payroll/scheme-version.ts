@@ -141,3 +141,75 @@ export function frozenFieldTouched(patch: Record<string, unknown>): string | nul
   for (const f of IMMUTABLE_SCHEME_FIELDS) if (f in patch) return f;
   return null;
 }
+
+// --- presentational param formatting / diff (client-safe) --------------------
+const PARAM_LABELS: Record<string, string> = {
+  abBaseKopeks: "Оклад (абонементы)",
+  ptBaseKopeks: "Оклад (ПТ)",
+  subscriptionsBaseKopeks: "Оклад (абонементы)",
+  baseKopeks: "Оклад",
+  salaryFor15Kopeks: "Оклад за 15 смен",
+  shiftRateKopeks: "Ставка за смену",
+  hourRateKopeks: "Ставка за час",
+  hourlyRateKopeks: "Ставка за час",
+  fixedKopeks: "Фикс. часть",
+  fixedBonusKopeks: "Фикс. доплата старшего",
+  thresholdKopeks: "Порог пакета",
+  limitBp: "Лимит корректировки",
+  maxAdjustmentBp: "Максимальная корректировка",
+  rateBp: "Процент с продаж",
+  percentBp: "Процент от прибыли",
+  belowPlanRateBp: "Процент ниже плана",
+  atPlanRateBp: "Процент при выполнении плана",
+  subsPercentBp: "Процент (абонементы)",
+  ptPercentBp: "Процент (ПТ)",
+  newRateBp: "Процент (новые)",
+  renewalRateBp: "Процент (продления)",
+  personalRateBp: "Личный процент",
+  clubShareBp: "Процент с выручки клуба",
+  lowRateBp: "Процент (≤ порога)",
+  highRateBp: "Процент (> порога)",
+  planThresholdBp: "Порог выполнения плана",
+  shiftNorm: "Норматив смен",
+  tiers: "Уровни процента",
+  newTiers: "Уровни (новые)",
+  renewalTiers: "Уровни (продления)",
+};
+
+export type ParamRow = { key: string; label: string; display: string; kind: "kopeks" | "bp" | "num" | "tiers" };
+
+function classifyKey(key: string): ParamRow["kind"] {
+  if (/tiers$/i.test(key)) return "tiers";
+  if (/Kopeks$/.test(key)) return "kopeks";
+  if (/Bp$/.test(key)) return "bp";
+  return "num";
+}
+
+export function formatParamValue(kind: ParamRow["kind"], value: unknown): string {
+  if (value == null) return "—";
+  if (kind === "kopeks" && typeof value === "number") return `${(value / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`;
+  if (kind === "bp" && typeof value === "number") return `${(value / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} %`;
+  if (kind === "tiers" && Array.isArray(value)) return value.map((t: { thresholdBp?: number; percentBp?: number }) => `${(Number(t?.thresholdBp ?? 0) / 100).toFixed(0)}%→${(Number(t?.percentBp ?? 0) / 100).toFixed(2)}%`).join(", ");
+  return String(value);
+}
+
+/** Ordered, human-readable rows for a params object. */
+export function describeParamRows(params: Record<string, unknown>): ParamRow[] {
+  return Object.keys(params).map((key) => {
+    const kind = classifyKey(key);
+    return { key, label: PARAM_LABELS[key] ?? key, display: formatParamValue(kind, params[key]), kind };
+  });
+}
+
+export type DiffRow = { key: string; label: string; kind: ParamRow["kind"]; oldDisplay: string; newDisplay: string; changed: boolean };
+
+/** Compare two params objects for the version-compare UI (spec §13). */
+export function diffParamRows(oldParams: Record<string, unknown>, newParams: Record<string, unknown>): DiffRow[] {
+  const keys = [...new Set([...Object.keys(oldParams), ...Object.keys(newParams)])];
+  return keys.map((key) => {
+    const kind = classifyKey(key);
+    const oldDisplay = formatParamValue(kind, oldParams[key]);
+    const newDisplay = formatParamValue(kind, newParams[key]);
+    return { key, label: PARAM_LABELS[key] ?? key, kind, oldDisplay, newDisplay, changed: oldDisplay !== newDisplay };
+  });
+}

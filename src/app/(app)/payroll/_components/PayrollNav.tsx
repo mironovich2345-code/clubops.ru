@@ -10,7 +10,8 @@ type NavItem = { href: string; label: string; match: (p: string) => boolean };
 
 const FULL_ITEMS: NavItem[] = [
   { href: "/payroll", label: "Обзор", match: (p) => p === "/payroll" },
-  { href: "/payroll/employees", label: "Сотрудники и схемы", match: (p) => p.startsWith("/payroll/employees") },
+  { href: "/payroll/employees", label: "Сотрудники", match: (p) => p.startsWith("/payroll/employees") },
+  { href: "/payroll/schemes", label: "Схемы и версии", match: (p) => p.startsWith("/payroll/schemes") },
   { href: "/payroll/periods", label: "Расчётные периоды", match: (p) => p.startsWith("/payroll/periods") },
   { href: "/payroll/advances", label: "Авансы", match: (p) => p.startsWith("/payroll/advances") },
   { href: "/payroll/payments", label: "Выплаты", match: (p) => p.startsWith("/payroll/payments") },
