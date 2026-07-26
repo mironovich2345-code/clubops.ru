@@ -81,8 +81,8 @@ function main() {
   const periods = src("../src/lib/payroll/periods.ts");
   const compute = src("../src/lib/payroll/compute.ts");
 
-  check("S17 calculation recomputes from the SNAPSHOT, not the live scheme",
-    actions.includes("snapshotToSchemeParams(calc.schemeSnapshotJson)") && periods.includes("export function snapshotToSchemeParams"));
+  check("S17 calculation recomputes from the SNAPSHOT (+ approved overrides), not the live scheme",
+    actions.includes("effectiveSchemeParams(calc.schemeSnapshotJson, calc.approvedOverridesJson)") && periods.includes("export function snapshotToSchemeParams") && !actions.includes("getEffectiveSchemeForEmployee(calc"));
   check("S18 generation snapshots the effective scheme",
     actions.includes("makeSchemeSnapshot(scheme)") && actions.includes("getEffectiveSchemeForEmployee"));
   check("S19 locked period blocks generation AND input edits",
