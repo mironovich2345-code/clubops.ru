@@ -1300,6 +1300,10 @@ model PayrollCalculation {
   // Which engine produced this calc: legacy_v1 (existing schemes) | role_categories_v2
   // (per-category formulas.ts). Additive; existing rows read as legacy_v1.
   calculationEngineVersion String @default("legacy_v1")
+  // Approved period overrides (STAGE 10–11) applied ON TOP of the base scheme snapshot —
+  // stored separately so the snapshot is never rewritten. final = snapshot + overrides +
+  // manual inputs. Nullable/additive.
+  approvedOverridesJson String?
   calculatedAt        DateTime?
   approvedAt          DateTime?
   createdAt           DateTime  @default(now())
@@ -1402,6 +1406,62 @@ model PayrollAdvancePayment {
   @@index([employeeAdvanceId])
   @@index([companyId])
   @@index([clubId])
+}
+
+// STAGE 10–11: a regional director's PROPOSAL to change a payroll parameter that is locked
+// for the manager. Pending proposals DO NOT affect any calculation total — only a GD/owner
+// approval applies the change exactly once. Additive; carries full old/new/impact + revision
+// history so nothing is silently rewritten.
+//   requestType:  period_adjustment | future_scheme_change
+//   fieldType:    percentage | base_salary | one_time_bonus | threshold | tier | scheme_parameters
+//   status:       draft | submitted | under_review | returned_for_revision | approved |
+//                 rejected | cancelled | applied | approved_pending_scheme_creation | superseded
+model PayrollChangeRequest {
+  id                    String    @id @default(cuid())
+  companyId             String
+  clubId                String
+  employeeId            String?
+  payrollPeriodId       String?
+  payrollCalculationId  String?   // target for a period_adjustment
+  payrollSchemeId       String?   // target/base for a future_scheme_change
+  requestType           String
+  fieldType             String
+  targetField           String?   // e.g. abBaseKopeks, ptBaseKopeks, limitBp, salaryFor15Kopeks
+  categoryKey           String?   // payroll calc category (for future_scheme_change targeting)
+  oldValueJson          String?   // current value snapshot (never fabricated)
+  proposedValueJson     String    // proposed value
+  calculatedImpactKopeks Int?     // preview impact on accrual (null = cannot compute)
+  impactUncomputable    Boolean   @default(false) // true → "Невозможно рассчитать влияние"
+  effectiveFrom         DateTime? // future_scheme_change only
+  reason                String
+  regionalComment       String?
+  reviewerComment       String?
+  status                String    @default("draft")
+  revision              Int       @default(1)
+  historyJson           String?   // append-only audit trail of every transition/revision
+  // The applied result (one approved request → one applied artifact). Idempotency is
+  // enforced by @@unique on appliedToken (set once at apply time).
+  appliedToken          String?   @unique
+  appliedAdjustmentId   String?   // one_time_bonus → the created PayrollAdjustment
+  requestedById         String
+  requestedAt           DateTime?
+  submittedAt           DateTime?
+  reviewedById          String?
+  reviewedAt            DateTime?
+  returnedAt            DateTime?
+  rejectedAt            DateTime?
+  cancelledAt           DateTime?
+  appliedById           String?
+  appliedAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([clubId])
+  @@index([employeeId])
+  @@index([payrollPeriodId])
+  @@index([payrollCalculationId])
+  @@index([status])
 }
 
 // Actual payment (partial / cash / bank). A cash payment settles via the existing
