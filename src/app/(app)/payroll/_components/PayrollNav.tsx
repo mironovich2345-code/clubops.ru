@@ -17,6 +17,7 @@ const FULL_ITEMS: NavItem[] = [
   { href: "/payroll/payments", label: "Выплаты", match: (p) => p.startsWith("/payroll/payments") },
   { href: "/payroll/obligations", label: "Долги", match: (p) => p.startsWith("/payroll/obligations") || p.startsWith("/payroll/debts") },
   { href: "/payroll/change-requests", label: "Согласования", match: (p) => p.startsWith("/payroll/change-requests") },
+  { href: "/payroll/ofd-cashiers", label: "Кассиры ОФД", match: (p) => p.startsWith("/payroll/ofd-cashiers") },
   { href: "/payroll/regional", label: "Регионал", match: (p) => p.startsWith("/payroll/regional") },
 ];
 

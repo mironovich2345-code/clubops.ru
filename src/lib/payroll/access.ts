@@ -57,6 +57,15 @@ export function canReviewPayrollChange(roles: readonly Role[]): boolean {
 }
 
 /**
+ * MANAGE OFD cashier → employee mappings (STAGE 13): confirm/assign/exclude/resolve
+ * ambiguous. Regional director (own clubs) + general director + owner. A club manager sees
+ * their confirmed mappings read-only and may propose a per-receipt assignment only.
+ */
+export function canManageCashierMapping(roles: readonly Role[]): boolean {
+  return roles.some((r) => r === "regional_director" || r === "general_director" || r === "owner");
+}
+
+/**
  * ACTIVATE / APPROVE a pay-scheme version (STAGE 12). A regional director may author and
  * submit draft versions but may NOT activate them in-place (spec §14); only owner / general
  * director / chief accountant commit a version live. `canManagePaySchemes` still gates who

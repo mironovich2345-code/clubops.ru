@@ -15,8 +15,11 @@ import { AdjustmentsSection, type AdjustmentRow } from "../../../../_components/
 import { PaymentsSection, type PaymentRow, type AdvanceRow, type LegalEntityOption } from "../../../../_components/PaymentsSection";
 import { TrainerPackages, type TrainerSummaryVM, type TrainerPackageVM } from "../../../../_components/TrainerPackages";
 import { ProposeChangeSection, type ProposeFieldOption, type ChangeRequestRow } from "../../../../_components/ProposeChangeSection";
+import { SalesAttributionSection, type SalesVM } from "../../../../_components/SalesAttributionSection";
 import { canProposePayrollChange } from "@/lib/payroll/access";
 import { allowedFieldsForScheme, effectiveSchemeParams, formatFieldValue } from "@/lib/payroll/change-request";
+import { schemeUsesPersonalSales } from "@/lib/payroll/recompute";
+import { previewPeriodSales } from "@/lib/payroll/sales-attribution";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +83,29 @@ export default async function PayrollEmployeeCalcPage({ params }: { params: Prom
     await prisma.payrollChangeRequest.findMany({ where: { payrollCalculationId: c.id }, orderBy: { createdAt: "desc" } })
   ).map((r) => ({ id: r.id, requestType: r.requestType, fieldType: r.fieldType, targetField: r.targetField, status: r.status, impactKopeks: r.calculatedImpactKopeks, impactUncomputable: r.impactUncomputable, revision: r.revision }));
 
+  // STAGE 13: OFD personal-sales block for categories with personal sales.
+  const usesSales = snap ? schemeUsesPersonalSales(snap.schemeType) : false;
+  let salesVM: SalesVM | null = null;
+  if (usesSales) {
+    const [attributions, periodPreview] = await Promise.all([
+      prisma.payrollSalesAttribution.findMany({ where: { payrollCalculationId: c.id, status: "attributed" }, select: { attributionType: true, amountKopeks: true } }),
+      previewPeriodSales(companyId, period.clubId, period.year, period.month),
+    ]);
+    const refundKopeks = attributions.filter((a) => a.attributionType === "refund").reduce((s, a) => s + Math.abs(a.amountKopeks), 0);
+    const receiptCount = attributions.length;
+    salesVM = {
+      automaticKopeks: c.automaticSalesKopeks,
+      manualOverrideKopeks: c.manualSalesOverrideKopeks ?? null,
+      effectiveKopeks: c.effectiveSalesKopeks,
+      source: c.salesSource,
+      receiptCount,
+      refundKopeks,
+      unmatchedReceiptCount: periodPreview.unmatchedReceiptCount,
+      disputedRefundCount: periodPreview.disputedRefundCount,
+      syncedAt: c.salesSyncedAt ? new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(c.salesSyncedAt) : null,
+    };
+  }
+
   const payable = !closed && ["approved", "partially_paid", "paid"].includes(period.status);
   const canPayCash = canManage;
   const canPayBank = ctx.effectiveRoles.some((r) => r === "accountant" || r === "chief_accountant");
@@ -120,6 +146,7 @@ export default async function PayrollEmployeeCalcPage({ params }: { params: Prom
             locked={locked || !canManage}
             initial={initial}
           />
+          {salesVM ? <SalesAttributionSection calculationId={c.id} periodId={period.id} vm={salesVM} canManage={canManage && !locked} /> : null}
           <AdjustmentsSection calculationId={c.id} adjustments={adjRows} canAdd={canAdjust} />
           {snap?.schemeType === "gym_trainer" ? (
             <TrainerPackages calculationId={c.id} summary={details.trainer} paidKopeks={c.paidKopeks} employeeDebtKopeks={c.employeeDebtKopeks} packages={packages} canManage={canManage} locked={locked} employeeDismissed={dismissed} />
