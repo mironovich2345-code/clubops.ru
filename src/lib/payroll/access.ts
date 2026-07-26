@@ -56,6 +56,16 @@ export function canReviewPayrollChange(roles: readonly Role[]): boolean {
   return roles.some((r) => r === "general_director" || r === "owner");
 }
 
+/**
+ * ACTIVATE / APPROVE a pay-scheme version (STAGE 12). A regional director may author and
+ * submit draft versions but may NOT activate them in-place (spec §14); only owner / general
+ * director / chief accountant commit a version live. `canManagePaySchemes` still gates who
+ * can author drafts at all.
+ */
+export function canActivateScheme(roles: readonly Role[]): boolean {
+  return roles.some((r) => r === "owner" || r === "general_director" || r === "chief_accountant");
+}
+
 // --- role-aware payroll navigation (manager UX simplification) ---------------
 // Roles that get the FULL payroll section (overview, schemes, periods list, advances,
 // payments, regional). A user with ANY of these keeps the full toolbar.

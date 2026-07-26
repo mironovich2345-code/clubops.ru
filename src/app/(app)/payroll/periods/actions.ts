@@ -141,7 +141,7 @@ export async function generateCalculations(formData: FormData): Promise<void> {
     // Priority resolver (spec §4): employee → club-category → conflict/not-configured.
     const resolution = await resolveSchemeForCalc({ companyId, clubId: period.clubId, employeeId, position, at: firstDay });
     const scheme = resolution.ok ? resolution.scheme : null;
-    const snapshot = scheme ? makeSchemeSnapshot(scheme) : null;
+    const snapshot = scheme && resolution.ok ? makeSchemeSnapshot(scheme, { resolverLevel: resolution.level, resolvedAt: new Date() }) : null;
     const engineVersion = scheme && isRoleCategoryScheme(scheme.schemeType) ? "role_categories_v2" : "legacy_v1";
     const conflictWarning = !resolution.ok && resolution.reason === "conflict" ? resolution.message : null;
 

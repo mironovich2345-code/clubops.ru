@@ -19,22 +19,45 @@ export function periodStatusLabel(status: string): string {
   return PAYROLL_PERIOD_STATUS_LABELS[status] ?? status;
 }
 
-/** Shape stored in PayrollCalculation.schemeSnapshotJson. */
+/** Shape stored in PayrollCalculation.schemeSnapshotJson. STAGE 12 enriches it with the
+ * resolved version/level/interval/source so a snapshot fully identifies the version that
+ * produced it — WITHOUT ever being rewritten by a later scheme change. All new keys are
+ * additive; old snapshots read them as undefined. */
 export type SchemeSnapshot = {
   schemeId: string;
   schemeType: string;
   params: Record<string, unknown>;
   effectiveFrom: string;
+  // STAGE 12 (additive):
+  version?: number;
+  status?: string;
+  effectiveTo?: string | null;
+  logicalKey?: string;
+  resolverLevel?: "employee" | "category" | "legacy_fallback";
+  sourceChangeRequestId?: string | null;
+  resolvedAt?: string;
 };
 
-export function makeSchemeSnapshot(scheme: EmployeePayScheme): SchemeSnapshot {
+export function makeSchemeSnapshot(scheme: EmployeePayScheme, extra?: { resolverLevel?: "employee" | "category" | "legacy_fallback"; resolvedAt?: Date }): SchemeSnapshot {
   let params: Record<string, unknown> = {};
   try {
     params = JSON.parse(scheme.paramsJson) as Record<string, unknown>;
   } catch {
     params = {};
   }
-  return { schemeId: scheme.id, schemeType: scheme.schemeType, params, effectiveFrom: scheme.effectiveFrom.toISOString() };
+  return {
+    schemeId: scheme.id,
+    schemeType: scheme.schemeType,
+    params,
+    effectiveFrom: scheme.effectiveFrom.toISOString(),
+    version: scheme.version,
+    status: scheme.status,
+    effectiveTo: scheme.effectiveTo ? scheme.effectiveTo.toISOString() : null,
+    logicalKey: `${scheme.companyId}|${scheme.clubId}|${scheme.employeeId ?? "ALL"}|${scheme.position ?? ""}`,
+    resolverLevel: extra?.resolverLevel,
+    sourceChangeRequestId: scheme.sourceChangeRequestId,
+    resolvedAt: (extra?.resolvedAt ?? new Date()).toISOString(),
+  };
 }
 
 /** Re-validate a stored snapshot into a typed SchemeParams for the engine. */

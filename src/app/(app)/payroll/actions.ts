@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, getUserClubs, canAccessClub, recordAudit } from "@/lib/access";
 import { monthClosedError } from "@/lib/month-close";
-import { rublesToKopeks } from "@/lib/money";
 import { getEmployeeForScope } from "@/lib/club-employees";
-import { canManagePayrollAssignments, canManagePaySchemes } from "@/lib/payroll/access";
+import { canManagePayrollAssignments, canManagePaySchemes, canActivateScheme } from "@/lib/payroll/access";
 import { validateAssignmentDraft } from "@/lib/payroll/assignments";
-import { schemesToSupersede } from "@/lib/payroll/schemes";
 import { validateSchemeParams } from "@/lib/payroll/scheme";
+import { collectSchemeRawParams } from "@/lib/payroll/scheme-form";
+import { createCommittedVersion } from "@/lib/payroll/scheme-service";
+import { nextVersion, categoryOfPosition } from "@/lib/payroll/scheme-version";
 import { PAYROLL_SCHEME_TYPES, isKnown } from "@/lib/payroll/enums";
 
 export type PayrollFormState = { ok: boolean; error?: string; fieldErrors?: Record<string, string> };
@@ -20,64 +21,6 @@ async function accessibleClubIds(userId: string, companyId: string): Promise<str
 
 function fail(error: string): PayrollFormState {
   return { ok: false, error };
-}
-
-// --- rubles/percent → kopeks/bp -------------------------------------------------
-const rubField = (fd: FormData, name: string): number | null => {
-  const raw = String(fd.get(name) ?? "").trim().replace(/\s/g, "").replace(",", ".");
-  if (raw === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? rublesToKopeks(n) : null;
-};
-const pctField = (fd: FormData, name: string): number | null => {
-  const raw = String(fd.get(name) ?? "").trim().replace(",", ".");
-  if (raw === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.round(n * 100) : null; // percent → basis points
-};
-const numField = (fd: FormData, name: string): number | null => {
-  const raw = String(fd.get(name) ?? "").trim();
-  if (raw === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-};
-
-/** Map form inputs (rubles / percent) to the raw kopeks/bp params for a scheme type. */
-function collectSchemeRawParams(schemeType: string, fd: FormData): Record<string, unknown> {
-  switch (schemeType) {
-    case "fixed_salary":
-      return { baseKopeks: rubField(fd, "baseRubles") };
-    case "salary_by_shifts":
-      return { baseKopeks: rubField(fd, "baseRubles"), shiftNorm: numField(fd, "shiftNorm") };
-    case "salary_plus_percentage":
-      return {
-        baseKopeks: rubField(fd, "baseRubles"),
-        shiftNorm: numField(fd, "shiftNorm"),
-        belowPlanRateBp: pctField(fd, "belowPlanPercent"),
-        atPlanRateBp: pctField(fd, "atPlanPercent"),
-      };
-    case "sales_percentage":
-      return { rateBp: pctField(fd, "ratePercent") };
-    case "hourly":
-      return { hourlyRateKopeks: rubField(fd, "hourlyRateRubles") };
-    case "plan_adjusted_salary":
-      return {
-        subscriptionsBaseKopeks: rubField(fd, "subscriptionsBaseRubles"),
-        ptBaseKopeks: rubField(fd, "ptBaseRubles"),
-        maxAdjustmentBp: pctField(fd, "maxAdjustmentPercent"),
-        manualReviewDeviationBp: pctField(fd, "manualReviewDeviationPercent"),
-      };
-    case "revenue_percentage":
-      return {
-        fixedKopeks: rubField(fd, "fixedRubles"),
-        subsPercentBp: pctField(fd, "subsPercent"),
-        ptPercentBp: pctField(fd, "ptPercent"),
-      };
-    case "profit_percentage":
-      return { percentBp: pctField(fd, "profitPercent") };
-    default:
-      return {};
-  }
 }
 
 /** Resolve the caller + verify they can access the employee's club. */
@@ -256,32 +199,50 @@ export async function savePayScheme(
 
   const existing = await prisma.employeePayScheme.findMany({
     where: { companyId: scope.companyId, clubId, employeeId },
-    select: { id: true, effectiveFrom: true, effectiveTo: true },
+    select: { id: true, effectiveFrom: true, version: true },
   });
   // Guard 2: append-forward only — never insert into or before existing history.
   const latest = existing.reduce<number>((max, s) => Math.max(max, s.effectiveFrom.getTime()), -Infinity);
   if (existing.length > 0 && effectiveFrom.getTime() <= latest) {
     return fail("Новая схема должна вступать в силу позже всех существующих. Закрытые месяцы не пересчитываются.");
   }
-  const supersede = schemesToSupersede(existing, effectiveFrom);
 
-  await prisma.$transaction([
-    ...supersede.map((s) =>
-      prisma.employeePayScheme.update({ where: { id: s.id }, data: { effectiveTo: s.effectiveTo } }),
-    ),
-    prisma.employeePayScheme.create({
+  const now = new Date();
+  // STAGE 12 (§14): a regional director may only AUTHOR a draft version; owner/GD/chief
+  // accountant activate it live. A draft is not resolver-live and affects nothing until
+  // approved+materialized. Activators commit the version immediately (append-forward,
+  // closing the previous open interval).
+  const employeePosition = scope.employee?.position ?? null;
+  if (canActivateScheme(scope.ctx.effectiveRoles)) {
+    await prisma.$transaction(async (tx) => {
+      await createCommittedVersion(tx, {
+        scope: { companyId: scope.companyId, clubId, employeeId, position: null },
+        schemeType,
+        params: validated.scheme.params,
+        effectiveFrom,
+        at: now,
+        approvedById: scope.ctx.user.id,
+        createdByUserId: scope.ctx.user.id,
+      });
+    });
+  } else {
+    await prisma.employeePayScheme.create({
       data: {
         companyId: scope.companyId,
         clubId,
         employeeId,
+        payrollCategory: categoryOfPosition(employeePosition),
         schemeType,
         paramsJson: JSON.stringify(validated.scheme.params),
         effectiveFrom,
         effectiveTo: null,
+        version: nextVersion(existing),
+        status: "draft",
+        submittedById: null,
         createdByUserId: scope.ctx.user.id,
       },
-    }),
-  ]);
+    });
+  }
   try {
     await recordAudit({
       action: "payroll.scheme_saved",
@@ -290,11 +251,12 @@ export async function savePayScheme(
       companyId: scope.companyId,
       clubId,
       userId: scope.ctx.user.id,
-      metadata: { schemeType, effectiveFrom: effectiveFrom.toISOString(), superseded: supersede.map((s) => s.id) },
+      metadata: { schemeType, effectiveFrom: effectiveFrom.toISOString(), committed: canActivateScheme(scope.ctx.effectiveRoles) },
     });
   } catch {
     /* ignore */
   }
   revalidatePath(`/payroll/employees/${employeeId}`);
+  revalidatePath("/payroll/schemes");
   return { ok: true };
 }
