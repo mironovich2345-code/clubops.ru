@@ -12,6 +12,7 @@ const ITEMS: Array<{ href: string; label: string; match: (p: string) => boolean 
   { href: "/payroll/advances", label: "Авансы", match: (p) => p.startsWith("/payroll/advances") },
   { href: "/payroll/payments", label: "Выплаты", match: (p) => p.startsWith("/payroll/payments") },
   { href: "/payroll/obligations", label: "Долги", match: (p) => p.startsWith("/payroll/obligations") },
+  { href: "/payroll/change-requests", label: "Согласования", match: (p) => p.startsWith("/payroll/change-requests") },
   { href: "/payroll/regional", label: "Регионал", match: (p) => p.startsWith("/payroll/regional") },
 ];
 
