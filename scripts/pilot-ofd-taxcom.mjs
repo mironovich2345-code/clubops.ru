@@ -535,7 +535,9 @@ async function main() {
   check("TD-DIAG3 truly empty shift (receiptCount 0, 0 docs) = success 0/0/0, no error", emptyRun.status === "success" && emptyRun.found === 0 && emptyErr === 0);
   const storedProd = await p.ofdReceiptImport.findFirst({ where: { companyId: CO, fnNumber: PROD_FN } });
   const storedKeys = Object.keys(storedProd);
-  check("TD9 stored receipt has NO raw JSON / PII columns (no phone/email/name/items/rawJson)", !storedKeys.some((k) => /phone|email|name|buyer|customer|items|rawjson|rawresponse|fio/i.test(k)));
+  // STAGE 13: operator* (cashier for payroll attribution) is an intentional, documented
+  // addition — it is the cashier/employee, NOT buyer PII. Buyer PII stays forbidden.
+  check("TD9 stored receipt has NO buyer PII / raw JSON (phone/email/buyer/customer/items/rawJson); operator* cashier is intentional", !storedKeys.filter((k) => !/^operator/i.test(k) && k !== "externalCashierId").some((k) => /phone|email|name|buyer|customer|items|rawjson|rawresponse|fio/i.test(k)));
   const oldShapeDoc = { Fn: "FN-X", Shift: 7, Fd: 900, Fpd: "Z", DateTime: "2026-07-15T12:00:00.000Z", OperationType: "Income", Sum: 5000, Cash: 5000 };
   check("TD10 old DocumentList shapes still parse (Fn/Fd/OperationType/Sum + Items key)", parseDocumentList({ Items: [oldShapeDoc] })[0].fd === 900 && normalize(parseDocumentList({ Items: [oldShapeDoc] })[0]).totalKopeks === 5000 && normalize(parseDocumentList({ Items: [oldShapeDoc] })[0]).operationType === "income");
   await p.ofdCashRegisterMapping.delete({ where: { id: mapProd.id } });
@@ -1326,7 +1328,11 @@ async function main() {
   // --- DocumentInfo shape DIAGNOSTIC (real source) ---
   check("T-S18 client inspectDocumentInfo: GET /API/v2/DocumentInfo + fn/fd query, DIAGNOSTIC ONLY (never returns raw body)", clientSrc.includes("async inspectDocumentInfo(fnNumber, fd)") && /raw\(PATHS\.documentInfo,\s*\{\s*method:\s*"GET",\s*withSession:\s*true,\s*query:\s*\{\s*fn:\s*fnNumber,\s*fd\s*\}/.test(clientSrc) && clientSrc.includes("inspectDocumentInfoShape(r.data)"));
   check("T-S18b adapter.inspectDocumentInfoShape returns SAFE structure (keys+counts, nested + FFD 1059, firstItemKeys, numericFfdModeDetected), no values/PII", adapter.includes("export function inspectDocumentInfoShape") && adapter.includes("documentKeys") && adapter.includes("itemLikeCount") && adapter.includes("firstItemKeys") && adapter.includes("numericFfdModeDetected") && adapter.includes('"document.1059"') && adapter.includes("safeDocumentType") && adapter.includes('"ticket.items"') && adapter.includes('"content.items"') && !/inspectDocumentInfoShape[\s\S]*?(itemName|buyer|phone|email|JSON\.stringify)/i.test(adapter));
-  check("CASHIER-DIAG-S adapter → cashierDetected + cashierFieldsDetected (KEY NAMES only, 1021/1203), never value; no cashier storage in OFD models; UI показывает факт без ФИО/ИНН", adapter.includes("cashierFieldsDetected") && adapter.includes("cashierDetected") && adapter.includes('"1021"') && adapter.includes('"1203"') && adapter.includes("KEY NAMES only") && !/cashier/i.test(schema.slice(schema.indexOf("model OfdReceiptItem"), schema.indexOf("model OfdReceiptItem") + 900)) && !/cashier/i.test(schema.slice(schema.indexOf("model OfdReceiptImport"), schema.indexOf("model OfdReceiptImport") + 900)) && forms.includes("Поля кассира в чеке") && forms.includes("без ФИО/ИНН") && !/cashierName\s*:|cashierInn/i.test(schema));
+  // STAGE 13: Taxcom adapter STILL reads cashier tags 1021/1203 by KEY NAME only (never the
+  // value), so Taxcom receipts carry no cashier → they attribute as `unmatched`. The OFD
+  // models now DO have operator* columns (Astral populates them) — that is the intentional
+  // STAGE 13 capture; we still never name a column cashierName/cashierInn.
+  check("CASHIER-DIAG-S adapter → cashierDetected + cashierFieldsDetected (KEY NAMES only, 1021/1203), never value; UI показывает факт без ФИО/ИНН", adapter.includes("cashierFieldsDetected") && adapter.includes("cashierDetected") && adapter.includes('"1021"') && adapter.includes('"1203"') && adapter.includes("KEY NAMES only") && forms.includes("Поля кассира в чеке") && forms.includes("без ФИО/ИНН") && !/cashierName\s*:|cashierInn/i.test(schema));
   // ----- Compact OFD settings UI + category diagnostics + dark -----
   const globalsCss = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
   const collComp = pageSrc.slice(pageSrc.indexOf("function Collapsible"), pageSrc.indexOf("function Collapsible") + 900);
