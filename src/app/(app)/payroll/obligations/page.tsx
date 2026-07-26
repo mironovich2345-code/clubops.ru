@@ -12,6 +12,7 @@ import {
 import { canManagePayrollAssignments } from "@/lib/payroll/access";
 import { formatKopeks } from "@/lib/money";
 import { ObligationRow } from "../_components/ObligationRow";
+import { PayrollNav } from "../_components/PayrollNav";
 
 export const dynamic = "force-dynamic";
 
@@ -46,10 +47,8 @@ export default async function PayrollObligationsPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <div className="mb-4">
-        <Link href="/payroll" className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">← Зарплата</Link>
-      </div>
-      <PageHeader title="Долги и обязательства" description="Взаимные долги сотрудников и компании. Погашение всегда закрывает конкретное обязательство." />
+      <PageHeader title="Зарплата (ФОТ)" description="Долги и обязательства. Погашение всегда закрывает конкретное обязательство." />
+      <PayrollNav />
 
       <div className={`mb-6 grid grid-cols-2 gap-4 p-5 ${CARD}`}>
         <div>

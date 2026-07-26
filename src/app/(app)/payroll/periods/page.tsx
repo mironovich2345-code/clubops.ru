@@ -7,6 +7,7 @@ import { getPeriodsForScope, periodLabel, periodStatusLabel } from "@/lib/payrol
 import { canManagePayrollAssignments } from "@/lib/payroll/access";
 import { formatKopeks } from "@/lib/money";
 import { CreatePeriodForm } from "../_components/CreatePeriodForm";
+import { PayrollNav } from "../_components/PayrollNav";
 
 export const dynamic = "force-dynamic";
 
@@ -36,12 +37,8 @@ export default async function PayrollPeriodsPage() {
 
   return (
     <div className="mx-auto max-w-[1200px]">
-      <div className="mb-4">
-        <Link href="/payroll" className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-          ← Зарплата
-        </Link>
-      </div>
-      <PageHeader title="Расчётные периоды" description="Начисления зарплаты по клубам и месяцам. Один период на клуб и месяц." />
+      <PageHeader title="Зарплата (ФОТ)" description="Расчётные периоды по клубам и месяцам. Один период на клуб и месяц." />
+      <PayrollNav />
 
       {canManagePayrollAssignments(ctx.effectiveRoles) && clubs.length > 0 ? (
         <div className={`mb-6 p-5 ${CARD}`}>

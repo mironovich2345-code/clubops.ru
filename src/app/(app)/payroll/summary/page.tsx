@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { PayrollNav } from "../_components/PayrollNav";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
@@ -51,10 +52,8 @@ export default async function PayrollSummaryPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <div className="mb-4">
-        <Link href="/payroll" className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">← Зарплата</Link>
-      </div>
-      <PageHeader title="Сводка по ФОТ" description="Совокупный фонд оплаты труда по клубам за всё время (начислено / выплачено / остаток) и открытые взаимные долги." />
+      <PageHeader title="Зарплата (ФОТ)" description="Сводка ФОТ по клубам за всё время (начислено / выплачено / остаток) и открытые взаимные долги." />
+      <PayrollNav />
 
       <div className={`mb-6 grid grid-cols-2 gap-4 p-5 sm:grid-cols-3 ${CARD}`}>
         <Stat label="Начислено (всего)" value={formatKopeks(totals.accrued)} />

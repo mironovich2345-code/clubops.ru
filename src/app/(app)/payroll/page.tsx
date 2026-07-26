@@ -2,17 +2,20 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
-import { getEmployeesForScope } from "@/lib/club-employees";
-import { getAssignmentsForEmployees } from "@/lib/payroll/assignments";
-import { getSchemesForEmployee, resolveEffectiveScheme, describeSchemeShort } from "@/lib/payroll/schemes";
 import { canManagePaySchemes } from "@/lib/payroll/access";
-import { PAYROLL_POSITION_LABELS } from "@/lib/payroll/enums";
+import { formatKopeks } from "@/lib/money";
+import { loadPayrollOverview } from "@/lib/payroll/overview";
+import { PayrollNav } from "./_components/PayrollNav";
 
 export const dynamic = "force-dynamic";
 
 const CARD = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
-export default async function PayrollPage() {
+function monthOf(now: Date): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export default async function PayrollPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const user = await requirePageAccess("payroll");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) {
@@ -21,127 +24,80 @@ export default async function PayrollPage() {
   const companyId = ctx.selectedCompanyId;
   const clubs = (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name }));
   const clubIds = clubs.map((c) => c.id);
-  const showClubColumn = clubs.length > 1;
-
-  const rows = await getEmployeesForScope(companyId, clubIds, { status: "active" });
-  const assignments = await getAssignmentsForEmployees(companyId, rows.map((r) => r.id));
   const now = new Date();
-  // Effective scheme per employee (employee-specific rows). Cheap for a club roster.
-  const schemeByEmployee = new Map<string, string>();
-  await Promise.all(
-    rows.map(async (r) => {
-      const schemes = await getSchemesForEmployee(companyId, r.id);
-      const eff = resolveEffectiveScheme(schemes, now);
-      if (eff) schemeByEmployee.set(r.id, describeSchemeShort(eff));
-    }),
-  );
+  const sp = await searchParams;
+  const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : monthOf(now);
+  const ov = await loadPayrollOverview(companyId, clubIds, month, now);
+  const monthTitle = new Date(`${month}-01T00:00:00`).toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+
+  // «Требуют внимания» — direct links to the right screen. (Расширяется отдельно.)
+  const attention: Array<{ text: string; href: string; tone: "warn" | "info" }> = [];
+  if (ov.employeesNotConfigured > 0) attention.push({ text: `Сотрудников без схемы оплаты: ${ov.employeesNotConfigured}. Настройте схему перед расчётом.`, href: "/payroll/employees", tone: "warn" });
+  if (ov.periodsNeedsDecision > 0) attention.push({ text: `Периодов возвращено на исправление: ${ov.periodsNeedsDecision}.`, href: "/payroll/periods?status=needs_correction", tone: "warn" });
+  if (ov.periodsOnReview > 0) attention.push({ text: `Периодов на согласовании: ${ov.periodsOnReview}.`, href: "/payroll/periods?status=review", tone: "info" });
+  if (ov.remainingKopeks > 0) attention.push({ text: `Остаток к выплате за ${monthTitle}: ${formatKopeks(ov.remainingKopeks)}.`, href: "/payroll/payments", tone: "info" });
+  if (ov.activeDebtsCount > 0) attention.push({ text: `Активных долгов: ${ov.activeDebtsCount} на ${formatKopeks(ov.activeDebtsKopeks)}.`, href: "/payroll/obligations", tone: "info" });
 
   return (
     <div className="mx-auto max-w-[1440px]">
-      <div className="mb-4 flex items-center justify-between">
-        <PageHeader
-          title="Зарплата (ФОТ)"
-          description="Схемы оплаты, начисления и выплаты сотрудникам. Настройте закрепления и схемы, затем формируйте расчётные периоды по клубам."
-        />
-        <div className="flex shrink-0 gap-2">
-          <Link
-            href="/payroll/summary"
-            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-          >
-            Сводка ФОТ
-          </Link>
-          <Link
-            href="/payroll/regional"
-            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-          >
-            Регионал
-          </Link>
-          <Link
-            href="/payroll/obligations"
-            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-          >
-            Долги
-          </Link>
-          <Link
-            href="/payroll/periods"
-            className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
-          >
-            Расчётные периоды →
-          </Link>
-        </div>
+      <PageHeader title="Зарплата (ФОТ)" description="Обзор: настройка, начисления, авансы и выплаты по клубам." />
+      <PayrollNav />
+
+      {/* Month picker */}
+      <form method="get" className="mb-4 flex items-center gap-2">
+        <label className="text-sm text-slate-500 dark:text-slate-400">Месяц</label>
+        <input type="month" name="month" defaultValue={month} className="input py-1 text-sm" />
+        <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Показать</button>
+      </form>
+
+      {/* KPI cards */}
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Kpi label="Сотрудников с активной схемой" value={String(ov.employeesWithScheme)} sub={`из ${ov.employeesActive}`} href="/payroll/employees" />
+        <Kpi label="Не настроено" value={String(ov.employeesNotConfigured)} accent={ov.employeesNotConfigured > 0} href="/payroll/employees" />
+        <Kpi label="Периодов в черновике" value={String(ov.periodsDraft)} href="/payroll/periods" />
+        <Kpi label="На согласовании" value={String(ov.periodsOnReview)} href="/payroll/periods" />
+        <Kpi label="Требуют решения" value={String(ov.periodsNeedsDecision)} accent={ov.periodsNeedsDecision > 0} href="/payroll/periods" />
+        <Kpi label={`Начислено · ${monthTitle}`} value={formatKopeks(ov.accruedKopeks)} href="/payroll/periods" />
+        <Kpi label="Выплачено" value={formatKopeks(ov.paidKopeks)} href="/payroll/payments" />
+        <Kpi label="Остаток к выплате" value={formatKopeks(ov.remainingKopeks)} accent={ov.remainingKopeks > 0} href="/payroll/payments" />
+        <Kpi label="Активные долги" value={formatKopeks(ov.activeDebtsKopeks)} sub={`${ov.activeDebtsCount} шт.`} href="/payroll/obligations" />
+        <Kpi label={`Авансы · ${monthTitle}`} value={formatKopeks(ov.advancesKopeks)} sub={`${ov.advancesCount} шт.`} href="/payroll/advances" />
+      </div>
+
+      {/* Требуют внимания */}
+      <div className={`mb-6 p-5 ${CARD}`}>
+        <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Требуют внимания</div>
+        {attention.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">Нет нерешённых вопросов за выбранный месяц.</p>
+        ) : (
+          <ul className="space-y-2">
+            {attention.map((a, i) => (
+              <li key={i}>
+                <Link href={a.href} className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/40 ${a.tone === "warn" ? "border-amber-200 bg-amber-50/50 dark:border-amber-900/50" : "border-slate-200 dark:border-slate-800"}`}>
+                  <span className="text-slate-700 dark:text-slate-200">{a.text}</span>
+                  <span className="ml-3 shrink-0 text-brand-600 dark:text-brand-400">Открыть →</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {!canManagePaySchemes(ctx.effectiveRoles) ? (
-        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-          Схемы оплаты настраивают региональный директор, главный бухгалтер или собственник. Вам доступен просмотр и оформление начислений.
+        <div className={`p-4 text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
+          Схемы оплаты настраивают региональный директор, главный бухгалтер или собственник. Вам доступны просмотр, авансы и оформление выплат по правам.
         </div>
       ) : null}
-
-      {rows.length === 0 ? (
-        <div className={`px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
-          Нет активных сотрудников. Добавьте их в разделе «Сотрудники».
-        </div>
-      ) : (
-        <div className={`overflow-hidden ${CARD}`}>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-              <thead className="bg-slate-50 dark:bg-slate-800/50">
-                <tr>
-                  <Th>ФИО</Th>
-                  {showClubColumn ? <Th>Клуб</Th> : null}
-                  <Th>Должность</Th>
-                  <Th>Закрепления</Th>
-                  <Th>Текущая схема</Th>
-                  <Th className="text-right">Настройка</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                {rows.map((e) => {
-                  const asg = assignments.get(e.id) ?? [];
-                  return (
-                    <tr key={e.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <Td className="whitespace-nowrap font-medium text-slate-900 dark:text-slate-100">{e.fullName}</Td>
-                      {showClubColumn ? <Td className="whitespace-nowrap">{e.clubName}</Td> : null}
-                      <Td className="whitespace-nowrap">{PAYROLL_POSITION_LABELS[e.position] ?? e.position}</Td>
-                      <Td className="text-slate-500 dark:text-slate-400">
-                        {asg.length === 0
-                          ? "—"
-                          : asg.map((a) => PAYROLL_POSITION_LABELS[a.position] ?? a.position).join(", ")}
-                      </Td>
-                      <Td>
-                        {schemeByEmployee.has(e.id) ? (
-                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                            {schemeByEmployee.get(e.id)}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                            Не задана
-                          </span>
-                        )}
-                      </Td>
-                      <Td className="text-right">
-                        <Link
-                          href={`/payroll/employees/${e.id}`}
-                          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                        >
-                          Открыть
-                        </Link>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
-  return <th scope="col" className={`whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 ${className ?? ""}`}>{children}</th>;
-}
-function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-3 py-2.5 align-middle text-sm text-slate-700 dark:text-slate-300 ${className ?? ""}`}>{children}</td>;
+function Kpi({ label, value, sub, accent, href }: { label: string; value: string; sub?: string; accent?: boolean; href: string }) {
+  return (
+    <Link href={href} className={`flex flex-col justify-between p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 ${CARD}`}>
+      <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
+      <div className={`mt-1 text-lg font-semibold tabular-nums ${accent ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-slate-100"}`}>{value}</div>
+      {sub ? <div className="mt-0.5 text-[11px] text-slate-400">{sub}</div> : null}
+    </Link>
+  );
 }

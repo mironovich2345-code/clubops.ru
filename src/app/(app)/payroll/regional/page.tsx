@@ -7,6 +7,7 @@ import { formatKopeks } from "@/lib/money";
 import { canManagePaySchemes } from "@/lib/payroll/access";
 import { regionalTotals, paidByClub, REGIONAL_BASE_LABELS } from "@/lib/payroll/regional";
 import { RegionalCreateForm, RegionalPaymentForm } from "../_components/RegionalCityForms";
+import { PayrollNav } from "../_components/PayrollNav";
 import { approveRegionalCityPayroll, cancelRegionalCityPayment } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -43,8 +44,8 @@ export default async function RegionalPayrollPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <div className="mb-4"><Link href="/payroll" className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400">← Зарплата</Link></div>
-      <PageHeader title="Зарплата регионала (город)" description="Единое начисление на город и месяц; выплаты частями из клубов города. Схему и процент утверждает собственник." />
+      <PageHeader title="Зарплата (ФОТ)" description="Регионал: единое начисление на город и месяц; выплаты частями из клубов города. Схему и процент утверждает собственник." />
+      <PayrollNav />
 
       {canManage && cities.length > 0 ? (
         <div className={`mb-6 p-5 ${CARD}`}>
