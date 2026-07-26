@@ -9,7 +9,7 @@ import {
   canWriteOffObligation,
   OBLIGATION_DIRECTION_LABELS,
 } from "@/lib/payroll/obligations";
-import { canManagePayrollAssignments } from "@/lib/payroll/access";
+import { canManagePayrollAssignments, payrollNavMode } from "@/lib/payroll/access";
 import { formatKopeks } from "@/lib/money";
 import { ObligationRow } from "../_components/ObligationRow";
 import { PayrollNav } from "../_components/PayrollNav";
@@ -48,7 +48,7 @@ export default async function PayrollObligationsPage() {
   return (
     <div className="mx-auto max-w-[1100px]">
       <PageHeader title="Зарплата (ФОТ)" description="Долги и обязательства. Погашение всегда закрывает конкретное обязательство." />
-      <PayrollNav />
+      <PayrollNav mode={payrollNavMode(ctx.effectiveRoles)} />
 
       <div className={`mb-6 grid grid-cols-2 gap-4 p-5 ${CARD}`}>
         <div>
