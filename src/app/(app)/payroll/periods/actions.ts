@@ -6,7 +6,8 @@ import { getCurrentAccessContext, getUserClubs, canAccessClub, recordAudit } fro
 import { monthClosedError } from "@/lib/month-close";
 import { rublesToKopeks } from "@/lib/money";
 import { canManagePayrollAssignments, canAddPayrollAdjustment } from "@/lib/payroll/access";
-import { getEffectiveSchemeForEmployee } from "@/lib/payroll/schemes";
+import { getEffectiveSchemeForEmployee, resolveSchemeForCalc } from "@/lib/payroll/schemes";
+import { isRoleCategoryScheme } from "@/lib/payroll/enums";
 import { makeSchemeSnapshot, snapshotToSchemeParams, getPeriodForScope } from "@/lib/payroll/periods";
 import { computeScheme, type PeriodInput } from "@/lib/payroll/compute";
 import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
@@ -136,8 +137,12 @@ export async function generateCalculations(formData: FormData): Promise<void> {
     const employee = await prisma.clubEmployee.findUnique({ where: { id: employeeId } });
     if (!employee || employee.companyId !== companyId || employee.status !== "active") continue;
 
-    const scheme = await getEffectiveSchemeForEmployee(companyId, period.clubId, employeeId, firstDay);
+    // Priority resolver (spec §4): employee → club-category → conflict/not-configured.
+    const resolution = await resolveSchemeForCalc({ companyId, clubId: period.clubId, employeeId, position, at: firstDay });
+    const scheme = resolution.ok ? resolution.scheme : null;
     const snapshot = scheme ? makeSchemeSnapshot(scheme) : null;
+    const engineVersion = scheme && isRoleCategoryScheme(scheme.schemeType) ? "role_categories_v2" : "legacy_v1";
+    const conflictWarning = !resolution.ok && resolution.reason === "conflict" ? resolution.message : null;
 
     // Idempotent: an existing calculation keeps its entered inputs; only the scheme
     // snapshot is refreshed while it is still a draft. New calculations are created and,
@@ -148,14 +153,17 @@ export async function generateCalculations(formData: FormData): Promise<void> {
     });
     if (existing) {
       if (scheme && existing.status === "draft") {
-        await prisma.payrollCalculation.update({ where: { id: existing.id }, data: { schemeSnapshotJson: JSON.stringify(snapshot) } });
+        await prisma.payrollCalculation.update({ where: { id: existing.id }, data: { schemeSnapshotJson: JSON.stringify(snapshot), calculationEngineVersion: engineVersion } });
       }
       created += 1;
       continue;
     }
 
     const typed = snapshot ? snapshotToSchemeParams(JSON.stringify(snapshot)) : null;
-    const prefill = typed && (typed.type === "plan_adjusted_salary" || typed.type === "revenue_percentage") && (bases.hasPlan || bases.hasFact);
+    // Manager plan-fact (legacy or v2) prefills АБ/ПТ from OFD/plan; revenue-% prefills fact.
+    const isManagerPlanFact = typed != null && (typed.type === "plan_adjusted_salary" || typed.type === "role_club_manager");
+    const prefill = typed != null && (isManagerPlanFact || typed.type === "revenue_percentage") && (bases.hasPlan || bases.hasFact);
+    const baseWarnings = conflictWarning ? [conflictWarning] : scheme ? [] : ["Схема оплаты не задана на этот месяц."];
 
     let data: Record<string, unknown> = {
       companyId,
@@ -165,15 +173,15 @@ export async function generateCalculations(formData: FormData): Promise<void> {
       legalEntityId: employee.defaultLegalEntityId ?? null,
       roleSnapshot: position,
       schemeSnapshotJson: snapshot ? JSON.stringify(snapshot) : null,
+      calculationEngineVersion: engineVersion,
       status: "draft",
-      detailsJson: JSON.stringify({ breakdown: [], flags: {}, warnings: scheme ? [] : ["Схема оплаты не задана на этот месяц."] }),
+      detailsJson: JSON.stringify({ breakdown: [], flags: conflictWarning ? { needsManualReview: true } : {}, warnings: baseWarnings }),
     };
 
     if (prefill && typed) {
-      const input =
-        typed.type === "plan_adjusted_salary"
-          ? { subscriptions: bases.subscriptions, personalTraining: bases.personalTraining }
-          : { subscriptionsRevenueKopeks: bases.subscriptions.factKopeks, ptRevenueKopeks: bases.personalTraining.factKopeks };
+      const input = isManagerPlanFact
+        ? { subscriptions: bases.subscriptions, personalTraining: bases.personalTraining }
+        : { subscriptionsRevenueKopeks: bases.subscriptions.factKopeks, ptRevenueKopeks: bases.personalTraining.factKopeks };
       const result = computeScheme(typed, input);
       const planKopeks = bases.subscriptions.planKopeks + bases.personalTraining.planKopeks;
       const actualKopeks = bases.subscriptions.factKopeks + bases.personalTraining.factKopeks;
@@ -184,9 +192,9 @@ export async function generateCalculations(formData: FormData): Promise<void> {
         automaticAmountKopeks: result.amountKopeks,
         salesBaseKopeks: bases.personalTraining.factKopeks,
         revenueBaseKopeks: actualKopeks,
-        planKopeks: typed.type === "plan_adjusted_salary" ? planKopeks : null,
-        actualKopeks: typed.type === "plan_adjusted_salary" ? actualKopeks : null,
-        completionBp: typed.type === "plan_adjusted_salary" && planKopeks > 0 ? Math.round((actualKopeks / planKopeks) * BP_PER_100_PERCENT) : null,
+        planKopeks: isManagerPlanFact ? planKopeks : null,
+        actualKopeks: isManagerPlanFact ? actualKopeks : null,
+        completionBp: isManagerPlanFact && planKopeks > 0 ? Math.round((actualKopeks / planKopeks) * BP_PER_100_PERCENT) : null,
         detailsJson: JSON.stringify({ breakdown: result.breakdown, flags: result.flags, warnings: [...result.warnings, "Данные подставлены из ОФД/плана продаж — проверьте перед согласованием."] }),
       };
     }
@@ -237,9 +245,45 @@ function collectPeriodInput(schemeType: string, fd: FormData): PeriodInput {
       return { cityProfitKopeks: rub(fd, "cityProfit") };
     case "mixed":
       return { manualAmountKopeks: rub(fd, "manualAmount") };
+
+    // --- role-categories engine v2 inputs (STAGE 3–8) ---
+    case "role_club_manager":
+      return {
+        subscriptions: { planKopeks: rub(fd, "subsPlan"), factKopeks: rub(fd, "subsFact") },
+        personalTraining: { planKopeks: rub(fd, "ptPlan"), factKopeks: rub(fd, "ptFact") },
+        normShifts: int(fd, "normShifts"),
+        actualShifts: int(fd, "actualShifts"),
+      };
+    case "role_administrator":
+      return { actualShifts: int(fd, "actualShifts"), normShifts: int(fd, "normShifts") };
+    case "role_sales_manager":
+    case "role_night_manager":
+      return {
+        actualShifts: int(fd, "actualShifts"),
+        clubPlanCompletionBp: pctBp(fd, "clubPlanCompletion"),
+        personalSalesKopeks: rub(fd, "personalSales"),
+        returnsKopeks: rub(fd, "returns"),
+      };
+    case "role_gym_trainer":
+      return { newSalesKopeks: rub(fd, "newSales"), renewalSalesKopeks: rub(fd, "renewalSales"), trainerCreditKopeks: rub(fd, "trainerCredit") };
+    case "role_gym_head_trainer":
+      return { newSalesKopeks: rub(fd, "newSales"), renewalSalesKopeks: rub(fd, "renewalSales"), clubPtCompletionBp: pctBp(fd, "clubPtCompletion"), trainerCreditKopeks: rub(fd, "trainerCredit") };
+    case "role_group_trainer":
+      return { hours: int(fd, "hours"), personalSalesKopeks: rub(fd, "personalSales") };
+    case "role_group_head_trainer":
+      return { hours: int(fd, "hours"), personalSalesKopeks: rub(fd, "personalSales"), clubGroupSalesKopeks: rub(fd, "clubGroupSales") };
+
     default:
       return {};
   }
+}
+
+/** Percent field (e.g. "95" or "95.5") → basis points. Empty → 0. */
+function pctBp(fd: FormData, name: string): number {
+  const raw = String(fd.get(name) ?? "").trim().replace(",", ".");
+  if (raw === "") return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0;
 }
 
 /**

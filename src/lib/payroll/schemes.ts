@@ -73,6 +73,50 @@ export async function getEffectiveSchemeForEmployee(
   return resolveEffectiveScheme(rows, at);
 }
 
+// --- STAGE 2 resolver: priority (employee → club-category) + conflict + tenant-safe ---
+
+const ms2 = (d: Date | string): number => (d instanceof Date ? d.getTime() : new Date(d).getTime());
+
+/** True when ≥2 rows cover `at` sharing the SAME (max) effectiveFrom — genuinely
+ * ambiguous; we must NOT pick one at random. */
+function hasSchemeConflict(rows: readonly EmployeePayScheme[], at: Date): boolean {
+  const t = at.getTime();
+  const covering = rows.filter((s) => ms2(s.effectiveFrom) <= t && (s.effectiveTo == null || ms2(s.effectiveTo) > t));
+  if (covering.length < 2) return false;
+  const maxFrom = Math.max(...covering.map((s) => ms2(s.effectiveFrom)));
+  return covering.filter((s) => ms2(s.effectiveFrom) === maxFrom).length > 1;
+}
+
+export type SchemeResolution =
+  | { ok: true; scheme: EmployeePayScheme; level: "employee" | "category" }
+  | { ok: false; reason: "not_configured" | "conflict"; message: string };
+
+/**
+ * Resolve the scheme that drives a calculation, by PRIORITY (spec §4):
+ *   1. employee-specific: company + club + employeeId, effective at `at`;
+ *   2. club-category:      company + club + employeeId=null + position, effective at `at`;
+ *   3. otherwise → "Схема не настроена".
+ * Never takes another club's/company's/position's scheme (queries are fully scoped). A
+ * genuine same-level ambiguity returns a `conflict` that blocks the calc.
+ */
+export async function resolveSchemeForCalc(args: { companyId: string; clubId: string; employeeId: string; position: string | null; at: Date }): Promise<SchemeResolution> {
+  const { companyId, clubId, employeeId, position, at } = args;
+
+  const empRows = await prisma.employeePayScheme.findMany({ where: { companyId, clubId, employeeId }, orderBy: [{ effectiveFrom: "desc" }] });
+  if (hasSchemeConflict(empRows, at)) return { ok: false, reason: "conflict", message: "Конфликт схем сотрудника: несколько активных схем с одной датой начала." };
+  const emp = resolveEffectiveScheme(empRows, at);
+  if (emp) return { ok: true, scheme: emp, level: "employee" };
+
+  if (position) {
+    const catRows = await prisma.employeePayScheme.findMany({ where: { companyId, clubId, employeeId: null, position }, orderBy: [{ effectiveFrom: "desc" }] });
+    if (hasSchemeConflict(catRows, at)) return { ok: false, reason: "conflict", message: "Конфликт схем категории клуба: несколько активных схем с одной датой начала." };
+    const cat = resolveEffectiveScheme(catRows, at);
+    if (cat) return { ok: true, scheme: cat, level: "category" };
+  }
+
+  return { ok: false, reason: "not_configured", message: "Схема не настроена для этого клуба/сотрудника/категории." };
+}
+
 /** Parse + re-validate a stored scheme's paramsJson into a typed SchemeParams. */
 export function parseSchemeParams(scheme: Pick<EmployeePayScheme, "schemeType" | "paramsJson">): SchemeParams | null {
   let raw: unknown = {};

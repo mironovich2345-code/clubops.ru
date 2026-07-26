@@ -34,6 +34,51 @@ const INPUT_FIELDS: Record<string, InputField[]> = {
   // The 70% payout gate (this month's sales-plan completion). Packages are entered below.
   gym_trainer: [{ name: "planCompletionPercent", label: "Выполнение плана продаж месяца, %", kind: "int" }],
   mixed: [{ name: "manualAmount", label: "Сумма (ручной ввод), ₽", kind: "rub" }],
+  // --- role-categories engine v2 (STAGE 3–8) — field names match collectPeriodInput ---
+  role_club_manager: [
+    { name: "subsPlan", label: "АБ — план, ₽", kind: "rub" },
+    { name: "subsFact", label: "АБ — факт, ₽", kind: "rub" },
+    { name: "ptPlan", label: "ПТ — план, ₽", kind: "rub" },
+    { name: "ptFact", label: "ПТ — факт, ₽", kind: "rub" },
+    { name: "actualShifts", label: "Смен", kind: "int" },
+    { name: "normShifts", label: "Норма смен (контроль)", kind: "int" },
+  ],
+  role_administrator: [
+    { name: "actualShifts", label: "Отработано смен", kind: "int" },
+    { name: "normShifts", label: "Норма смен (контроль)", kind: "int" },
+  ],
+  role_sales_manager: [
+    { name: "actualShifts", label: "Смен", kind: "int" },
+    { name: "clubPlanCompletion", label: "Выполнение общего плана клуба, %", kind: "int" },
+    { name: "personalSales", label: "Личная выручка, ₽", kind: "rub" },
+    { name: "returns", label: "Возвраты по продажам, ₽", kind: "rub" },
+  ],
+  role_night_manager: [
+    { name: "actualShifts", label: "Ночных смен", kind: "int" },
+    { name: "clubPlanCompletion", label: "Выполнение общего плана клуба, %", kind: "int" },
+    { name: "personalSales", label: "Личная выручка, ₽", kind: "rub" },
+    { name: "returns", label: "Возвраты по продажам, ₽", kind: "rub" },
+  ],
+  role_gym_trainer: [
+    { name: "newSales", label: "Продажи новым клиентам, ₽", kind: "rub" },
+    { name: "renewalSales", label: "Продажи по продлениям, ₽", kind: "rub" },
+    { name: "trainerCredit", label: "Кредит тренера (информационно), ₽", kind: "rub" },
+  ],
+  role_gym_head_trainer: [
+    { name: "newSales", label: "Продажи новым клиентам, ₽", kind: "rub" },
+    { name: "renewalSales", label: "Продажи по продлениям, ₽", kind: "rub" },
+    { name: "clubPtCompletion", label: "Выполнение общего плана ПТ клуба, %", kind: "int" },
+    { name: "trainerCredit", label: "Кредит тренера (информационно), ₽", kind: "rub" },
+  ],
+  role_group_trainer: [
+    { name: "hours", label: "Часы", kind: "int" },
+    { name: "personalSales", label: "Личные продажи, ₽", kind: "rub" },
+  ],
+  role_group_head_trainer: [
+    { name: "hours", label: "Часы", kind: "int" },
+    { name: "personalSales", label: "Личные продажи, ₽", kind: "rub" },
+    { name: "clubGroupSales", label: "Вся выручка ГП клуба, ₽", kind: "rub" },
+  ],
 };
 
 const initialState: PayrollPeriodFormState = { ok: false };

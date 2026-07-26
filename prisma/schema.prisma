@@ -1294,6 +1294,9 @@ model PayrollCalculation {
   detailsJson         String?
   manualOverrideKopeks Int?
   manualOverrideReason String?
+  // Which engine produced this calc: legacy_v1 (existing schemes) | role_categories_v2
+  // (per-category formulas.ts). Additive; existing rows read as legacy_v1.
+  calculationEngineVersion String @default("legacy_v1")
   calculatedAt        DateTime?
   approvedAt          DateTime?
   createdAt           DateTime  @default(now())
