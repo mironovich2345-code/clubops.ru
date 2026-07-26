@@ -111,11 +111,35 @@ export default async function PayrollAdvancesPage({ searchParams }: { searchPara
         <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Показать</button>
       </form>
 
-      {/* Table */}
+      {/* Mobile cards (§19 — no horizontal table on narrow screens) */}
+      {advances.length > 0 ? (
+        <ul className="space-y-2 md:hidden">
+          {advances.map((a) => {
+            const ui = STATUS_UI[a.status] ?? { label: a.status, cls: "bg-slate-100 text-slate-500" };
+            return (
+              <li key={a.id} className={`p-3 ${CARD}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium text-slate-900 dark:text-slate-100">{nameBy.get(a.employeeId) ?? a.employeeId}</span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${ui.cls}`}>{ui.label}</span>
+                </div>
+                <div className="mt-0.5 text-xs text-slate-500">{clubName(a.clubId)} · {PAYROLL_POSITION_LABELS[posBy.get(a.employeeId) ?? ""] ?? "—"}</div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                  <div><div className="text-slate-400">Запрошено</div><div className="font-medium tabular-nums">{formatKopeks(a.amountKopeks)}</div></div>
+                  <div><div className="text-slate-400">Заработано</div><div className="font-medium tabular-nums">{formatKopeks(a.earnedToDateKopeks)}</div></div>
+                  <div><div className="text-slate-400">Способ</div><div className="font-medium">{a.paymentMethod === "bank" ? "безнал" : "наличные"}</div></div>
+                </div>
+                <div className="mt-2"><Link href={`/payroll/advances/${a.id}`} className="inline-flex min-h-[40px] items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Открыть · транши</Link></div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      {/* Table (desktop) */}
       {advances.length === 0 ? (
         <div className={`px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>Авансов за выбранный период нет.</div>
       ) : (
-        <div className={`overflow-hidden ${CARD}`}>
+        <div className={`hidden overflow-hidden md:block ${CARD}`}>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50"><tr>
