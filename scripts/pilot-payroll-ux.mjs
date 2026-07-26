@@ -28,8 +28,8 @@ function staticGuards() {
     overview.includes("loadPayrollOverview") && overview.includes("Требуют внимания") && !overview.includes("getEmployeesForScope"));
   check("UX2 отдельный пункт «Авансы» и «Выплаты» в навигации + страницы существуют",
     nav.includes('href: "/payroll/advances"') && nav.includes('href: "/payroll/payments"') && exists("../src/app/(app)/payroll/advances/page.tsx") && exists("../src/app/(app)/payroll/payments/page.tsx"));
-  check("UX3 навигация покрывает все этапы (Обзор/Сотрудники/Периоды/Авансы/Выплаты/Долги/Регионал)",
-    ["Обзор", "Сотрудники и схемы", "Расчётные периоды", "Авансы", "Выплаты", "Долги", "Регионал"].every((l) => nav.includes(l)));
+  check("UX3 навигация покрывает все этапы (Обзор/Сотрудники/Схемы/Периоды/Авансы/Выплаты/Долги/Регионал)",
+    ["Обзор", "Сотрудники", "Схемы и версии", "Расчётные периоды", "Авансы", "Выплаты", "Долги", "Регионал"].every((l) => nav.includes(l)));
   check("UX4 аванс создаётся в разделе «Авансы» без периода (форма зовёт recordEmployeeAdvance)",
     advForm.includes("recordEmployeeAdvance") && advPage.includes("AdvanceCreateForm") && advForm.includes("до расчётного периода"));
   check("UX5 карточка расчёта: аванс read-only summary + ссылка «Управление авансами», формы создания нет",

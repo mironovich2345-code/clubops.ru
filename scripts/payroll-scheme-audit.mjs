@@ -1,6 +1,6 @@
 // STAGE 12 pre-migration audit of EmployeePayScheme (read-only). Reports COUNTS and
-// technical IDs only — no PII, no secrets, no DATABASE_URL. Flags rows that need manual
-// review before/after the versioned-schemes backfill (spec §16/§17/§22).
+// technical IDs only — no personal data, no credentials, no connection strings. Flags
+// rows that need manual review before/after the backfill (spec §16/§17/§22).
 //   node scripts/payroll-scheme-audit.mjs
 import { PrismaClient } from "@prisma/client";
 

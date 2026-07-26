@@ -53,7 +53,7 @@ function staticGuards() {
   check("SG8 резолвер приоритета: сотрудник → категория клуба → not_configured/conflict",
     schemes.includes("resolveSchemeForCalc") && schemes.includes('level: "employee"') && schemes.includes('level: "category"') && schemes.includes("employeeId: null") && schemes.includes('reason: "conflict"'));
   check("SG9 generateCalculations резолвит по приоритету + ставит engineVersion + snapshot",
-    actions.includes("resolveSchemeForCalc") && actions.includes("calculationEngineVersion: engineVersion") && actions.includes('role_categories_v2') && actions.includes("makeSchemeSnapshot(scheme)"));
+    actions.includes("resolveSchemeForCalc") && actions.includes("calculationEngineVersion: engineVersion") && actions.includes('role_categories_v2') && actions.includes("makeSchemeSnapshot(scheme,"));
   check("SG10 collectPeriodInput читает входы всех 8 role_* категорий",
     ["role_club_manager", "role_administrator", "role_sales_manager", "role_night_manager", "role_gym_trainer", "role_gym_head_trainer", "role_group_trainer", "role_group_head_trainer"].every((t) => actions.includes(`case "${t}"`)));
   check("SG11 CalculationCard: наборы полей для 8 role_* типов", ["role_club_manager", "role_sales_manager", "role_gym_head_trainer", "role_group_head_trainer"].every((t) => card.includes(t)));

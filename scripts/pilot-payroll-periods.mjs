@@ -84,7 +84,7 @@ function main() {
   check("S17 calculation recomputes from the SNAPSHOT (+ approved overrides), not the live scheme",
     actions.includes("effectiveSchemeParams(calc.schemeSnapshotJson, calc.approvedOverridesJson)") && periods.includes("export function snapshotToSchemeParams") && !actions.includes("getEffectiveSchemeForEmployee(calc"));
   check("S18 generation snapshots the effective scheme",
-    actions.includes("makeSchemeSnapshot(scheme)") && actions.includes("getEffectiveSchemeForEmployee"));
+    actions.includes("makeSchemeSnapshot(scheme,") && actions.includes("getEffectiveSchemeForEmployee"));
   check("S19 locked period blocks generation AND input edits",
     (actions.match(/isPayrollPeriodLocked\(scope\.period\.status\)/g) ?? []).length >= 2);
   check("S20 re-generate never overwrites entered inputs",
