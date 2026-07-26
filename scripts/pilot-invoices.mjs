@@ -785,7 +785,7 @@ async function main() {
 
   // --- Static: the create + correction UI (single primary button each) --------
   check("B-U1 upload UI submits via createAndSubmitInvoice (not draft save)", uploadSrc.includes("createAndSubmitInvoice") && !uploadSrc.includes("saveInvoice"));
-  check("B-U2 primary button = «Создать и отправить на согласование»", uploadSrc.includes("Создать и отправить на согласование"));
+  check("B-U2 primary button = «Создать счёт» (draftless create-and-submit; hint about regional)", uploadSrc.includes('idle="Создать счёт"') && uploadSrc.includes("После создания счёт будет отправлен"));
   check("B-U3 no «черновик» wording / no separate send button in create UI", !uploadSrc.includes("черновик") && !uploadSrc.includes("Сохранить черновик"));
   check("B-U4 create UI sends an idempotency key", uploadSrc.includes('name="clientSubmissionId"'));
   check("B-U5 create success message confirms it went to the regional director", uploadSrc.includes("отправлен региональному директору"));
