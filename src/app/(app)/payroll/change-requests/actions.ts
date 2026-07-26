@@ -245,6 +245,9 @@ export async function proposeFutureSchemeChange(_prev: ChangeRequestState | unde
   const merged = applyOverridesToParams(cc.schemeType, cc.baseParams, [{ requestId: "validate", targetField, fieldType, value: proposedValue, appliedAt: "" }]);
   if (!merged.ok) return fail(merged.error);
 
+  // STAGE 13 (§21): scope of the future version — employee-specific or the whole category.
+  const schemeScope = String(formData.get("schemeScope") ?? "employee").trim() === "payroll_category" ? "payroll_category" : "employee";
+
   return createRequest(scope, {
     requestType: "future_scheme_change",
     fieldType,
@@ -256,6 +259,7 @@ export async function proposeFutureSchemeChange(_prev: ChangeRequestState | unde
     reason,
     regionalComment: null,
     effectiveFrom,
+    schemeScope,
   });
 }
 
@@ -270,6 +274,7 @@ type CreateArgs = {
   reason: string;
   regionalComment: string | null;
   effectiveFrom: Date | null;
+  schemeScope?: string | null;
 };
 
 async function createRequest(
@@ -302,6 +307,7 @@ async function createRequest(
       calculatedImpactKopeks: a.calculatedImpactKopeks,
       impactUncomputable: a.impactUncomputable,
       effectiveFrom: a.effectiveFrom,
+      schemeScope: a.schemeScope ?? null,
       reason: a.reason,
       regionalComment: a.regionalComment,
       status: "submitted",

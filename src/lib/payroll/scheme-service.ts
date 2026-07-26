@@ -144,10 +144,21 @@ export async function materializeApprovedSchemeChange(
   const revalidate = validateSchemeParams(snap.schemeType, params);
   if (!revalidate.ok) return { ok: false, error: revalidate.error };
 
+  // STAGE 13 (§21): scope decides employee-specific vs category-level version. A
+  // payroll_category request materialises a version with employeeId=null for the whole
+  // category of the club; employee-specific versions still take priority in the resolver.
+  const categoryScope = req.schemeScope === "payroll_category";
+  const scope = {
+    companyId: req.companyId,
+    clubId: req.clubId,
+    employeeId: categoryScope ? null : req.employeeId,
+    position: calc.roleSnapshot,
+  };
+
   try {
     const scheme = await prisma.$transaction(async (tx) => {
       const created = await createCommittedVersion(tx, {
-        scope: { companyId: req.companyId, clubId: req.clubId, employeeId: req.employeeId, position: calc.roleSnapshot },
+        scope,
         schemeType: snap.schemeType!,
         params,
         effectiveFrom: req.effectiveFrom!,

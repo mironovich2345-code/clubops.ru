@@ -153,10 +153,19 @@ export function ProposeChangeSection({
                 С будущей даты (новая схема)
               </label>
               {horizon === "future_scheme_change" ? (
-                <label className="inline-flex items-center gap-1">
-                  Действует с:
-                  <input name="effectiveFrom" type="date" className="input text-xs" />
-                </label>
+                <>
+                  <label className="inline-flex items-center gap-1">
+                    Действует с:
+                    <input name="effectiveFrom" type="date" className="input text-xs" />
+                  </label>
+                  <label className="inline-flex items-center gap-1">
+                    Область:
+                    <select name="schemeScope" defaultValue="employee" className="input text-xs">
+                      <option value="employee">Этот сотрудник</option>
+                      <option value="payroll_category">Вся категория клуба</option>
+                    </select>
+                  </label>
+                </>
               ) : null}
             </div>
           ) : null}

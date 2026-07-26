@@ -113,6 +113,7 @@ export default async function ChangeRequestDetailPage({ params }: { params: Prom
             )}
           </Field>
           {req.effectiveFrom ? <Field label="Действует с">{dateFmt.format(req.effectiveFrom)}</Field> : null}
+          {req.requestType === "future_scheme_change" ? <Field label="Область">{req.schemeScope === "payroll_category" ? "Вся категория клуба" : "Этот сотрудник"}</Field> : null}
         </div>
 
         {overpayWarning ? (
