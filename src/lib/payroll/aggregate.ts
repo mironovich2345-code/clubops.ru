@@ -5,6 +5,7 @@
 // debt. Called after any change to inputs, adjustments, advances or payments.
 import { prisma } from "@/lib/prisma";
 import { aggregateCalculation } from "@/lib/payroll/calc";
+import { advancePaidKopeks } from "@/lib/payroll/advance-tranche-calc";
 
 export async function recomputeCalculationTotals(calculationId: string): Promise<void> {
   const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });
@@ -24,19 +25,29 @@ export async function recomputeCalculationTotals(calculationId: string): Promise
       where: { payrollCalculationId: calculationId, status: "confirmed" },
       select: { amountKopeks: true },
     }),
-    // Paid advance(s) for the same employee + club + month (advances are keyed by month,
-    // not calculation). Counted as part of paid — and NEVER also counted as a payment.
+    // Advance(s) for the same employee + club + month (keyed by month, not calc). Only the
+    // ACTUALLY-PAID part (Σ active tranches; legacy fallback to the single amount) counts —
+    // approved-but-unpaid does NOT reduce salary remaining (spec §13). NEVER counted as a
+    // PayrollPayment as well.
     period
       ? prisma.payrollAdvance.findMany({
-          where: { employeeId: calc.employeeId, clubId: calc.clubId, periodYear: period.year, periodMonth: period.month, status: "paid" },
-          select: { amountKopeks: true },
+          where: { employeeId: calc.employeeId, clubId: calc.clubId, periodYear: period.year, periodMonth: period.month, status: { notIn: ["canceled", "rejected"] } },
+          select: { id: true, amountKopeks: true, status: true },
         })
-      : Promise.resolve([] as { amountKopeks: number }[]),
+      : Promise.resolve([] as { id: string; amountKopeks: number; status: string }[]),
   ]);
+
+  // Active tranches for the month's advances (folded per advance).
+  const advanceIds = advances.map((a) => a.id);
+  const tranches = advanceIds.length
+    ? await prisma.payrollAdvancePayment.findMany({ where: { employeeAdvanceId: { in: advanceIds } }, select: { employeeAdvanceId: true, amountKopeks: true, status: true } })
+    : [];
+  const trBy = new Map<string, { amountKopeks: number; status: string }[]>();
+  for (const t of tranches) { const l = trBy.get(t.employeeAdvanceId) ?? []; l.push({ amountKopeks: t.amountKopeks, status: t.status }); trBy.set(t.employeeAdvanceId, l); }
 
   const bonuses = adjustments.filter((a) => a.direction === "credit").reduce((s, a) => s + a.amountKopeks, 0);
   const deductions = adjustments.filter((a) => a.direction === "debit").reduce((s, a) => s + a.amountKopeks, 0);
-  const advance = advances.reduce((s, a) => s + a.amountKopeks, 0);
+  const advance = advances.reduce((s, a) => s + advancePaidKopeks(a, trBy.get(a.id) ?? []), 0);
   const otherPayments = payments.reduce((s, p) => s + p.amountKopeks, 0);
 
   const agg = aggregateCalculation({
