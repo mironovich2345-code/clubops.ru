@@ -125,6 +125,10 @@ export type NormalizedOfdReceipt = {
   dedupeKey: string;
   items?: TaxcomReceiptItem[]; // carried through so the importer can persist them
   itemsPresent?: boolean;
+  // STAGE 13: cashier/operator captured for payroll attribution (Astral supplies it; Taxcom
+  // leaves it null — value not read). Persisted on OfdReceiptImport for the mapping pipeline.
+  operatorName?: string | null;
+  externalCashierId?: string | null;
 };
 
 /** SAFE structural diagnostics for GET /API/v2/NewDocuments — key names + counts

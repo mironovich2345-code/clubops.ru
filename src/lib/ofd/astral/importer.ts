@@ -15,6 +15,7 @@ import {
 } from "@/lib/ofd/importer";
 import type { OfdCategoryRuleLike } from "@/lib/ofd/revenue";
 import type { NormalizedOfdReceipt } from "@/lib/ofd/types";
+import { normalizeCashierName } from "@/lib/ofd/cashier-normalize";
 import {
   createAstralClient,
   type AstralClient,
@@ -302,6 +303,10 @@ async function persistPage(
         fiscalDocumentNumber: er.receipt.fiscalDocumentNumber, fiscalSign: er.receipt.fiscalSign, operationType: er.receipt.operationType,
         receiptDate: er.receipt.receiptDate, totalKopeks: er.receipt.totalKopeks, cashKopeks: er.receipt.cashKopeks,
         electronicKopeks: er.receipt.electronicKopeks, dedupeKey: er.receipt.dedupeKey, source: "astral", syncRunId,
+        // STAGE 13: persist the cashier for payroll attribution (normalized for suggestions).
+        operatorName: er.receipt.operatorName ?? null,
+        operatorNormalized: normalizeCashierName(er.receipt.operatorName),
+        externalCashierId: er.receipt.externalCashierId ?? null,
       })),
     });
   }

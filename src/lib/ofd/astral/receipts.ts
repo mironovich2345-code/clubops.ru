@@ -272,5 +272,9 @@ export function toNormalizedReceipt(doc: AstralNormalizedDoc): NormalizedOfdRece
     dedupeKey: doc.dedupeKey,
     items: doc.items,
     itemsPresent: doc.itemsPresent,
+    // STAGE 13: carry the operator name to persistence. No reliable per-cashier external id
+    // from Astral (inn is the org's), so externalCashierId stays null.
+    operatorName: doc.cashier,
+    externalCashierId: null,
   };
 }
