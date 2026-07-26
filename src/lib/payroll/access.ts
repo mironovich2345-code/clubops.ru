@@ -55,3 +55,48 @@ export function canProposePayrollChange(roles: readonly Role[]): boolean {
 export function canReviewPayrollChange(roles: readonly Role[]): boolean {
   return roles.some((r) => r === "general_director" || r === "owner");
 }
+
+// --- role-aware payroll navigation (manager UX simplification) ---------------
+// Roles that get the FULL payroll section (overview, schemes, periods list, advances,
+// payments, regional). A user with ANY of these keeps the full toolbar.
+const FULL_PAYROLL_NAV_ROLES: readonly Role[] = [
+  "owner",
+  "general_director",
+  "regional_director",
+  "chief_accountant",
+  "accountant",
+];
+
+/**
+ * Navigation mode for the payroll section, by capability (NOT by role name alone):
+ *   "manager" — a pure club manager (управляющий): ONE working screen + Долги only.
+ *   "full"    — owner / GD / regional / chief_accountant / accountant: the full toolbar.
+ * A user who is manager AND (say) regional keeps the full toolbar.
+ */
+export function payrollNavMode(roles: readonly Role[]): "manager" | "full" {
+  if (roles.some((r) => FULL_PAYROLL_NAV_ROLES.includes(r))) return "full";
+  if (roles.some((r) => r === "manager")) return "manager";
+  return "full";
+}
+
+/** True for the simplified club-manager view (one screen + Долги). */
+export function isPayrollManagerView(roles: readonly Role[]): boolean {
+  return payrollNavMode(roles) === "manager";
+}
+
+/**
+ * VIEW the regional-director payroll (единый расчёт по городу). Money-sensitive and
+ * NOT a club manager's concern — reserved for owner / GD / regional / chief_accountant.
+ * Enforced server-side on the page AND on every regional action (spec §7/§16); a manager
+ * cannot read it even by typing the URL.
+ */
+export function canViewRegionalPayroll(roles: readonly Role[]): boolean {
+  return roles.some(
+    (r) =>
+      r === "owner" ||
+      r === "general_director" ||
+      r === "regional_director" ||
+      r === "chief_accountant" ||
+      r === "accountant",
+  );
+}
