@@ -7,6 +7,7 @@ import type { EmployeePayScheme } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { PAYROLL_SCHEME_LABELS } from "@/lib/payroll/enums";
 import { validateSchemeParams, type SchemeParams } from "@/lib/payroll/scheme";
+import { isLiveForResolver } from "@/lib/payroll/scheme-version";
 
 export type SchemeWindow = { effectiveFrom: Date | string; effectiveTo: Date | string | null };
 
@@ -70,21 +71,26 @@ export async function getEffectiveSchemeForEmployee(
     where: { companyId, clubId, employeeId },
     orderBy: [{ effectiveFrom: "desc" }],
   });
-  return resolveEffectiveScheme(rows, at);
+  return resolveEffectiveScheme(liveRows(rows), at);
 }
 
 // --- STAGE 2 resolver: priority (employee → club-category) + conflict + tenant-safe ---
 
 const ms2 = (d: Date | string): number => (d instanceof Date ? d.getTime() : new Date(d).getTime());
 
-/** True when ≥2 rows cover `at` sharing the SAME (max) effectiveFrom — genuinely
- * ambiguous; we must NOT pick one at random. */
+/** Only committed (resolver-live) versions drive a calculation — draft / pending_approval
+ * / rejected / cancelled / archived never participate (spec §3/§6). */
+function liveRows(rows: readonly EmployeePayScheme[]): EmployeePayScheme[] {
+  return rows.filter((s) => isLiveForResolver(s.status));
+}
+
+/** Conflict when ≥2 LIVE versions cover the same date `at` — genuinely ambiguous overlap
+ * (spec §11). With versioning any two covering intervals are invalid, so we block rather
+ * than silently pick the newest. */
 function hasSchemeConflict(rows: readonly EmployeePayScheme[], at: Date): boolean {
   const t = at.getTime();
-  const covering = rows.filter((s) => ms2(s.effectiveFrom) <= t && (s.effectiveTo == null || ms2(s.effectiveTo) > t));
-  if (covering.length < 2) return false;
-  const maxFrom = Math.max(...covering.map((s) => ms2(s.effectiveFrom)));
-  return covering.filter((s) => ms2(s.effectiveFrom) === maxFrom).length > 1;
+  const covering = liveRows(rows).filter((s) => ms2(s.effectiveFrom) <= t && (s.effectiveTo == null || ms2(s.effectiveTo) > t));
+  return covering.length >= 2;
 }
 
 export type SchemeResolution =
@@ -102,15 +108,18 @@ export type SchemeResolution =
 export async function resolveSchemeForCalc(args: { companyId: string; clubId: string; employeeId: string; position: string | null; at: Date }): Promise<SchemeResolution> {
   const { companyId, clubId, employeeId, position, at } = args;
 
+  // Resolve by the PERIOD date `at` among committed versions only (spec §3/§9). A
+  // scheduled version whose effectiveFrom has passed is picked by date regardless of a
+  // stale status; draft/pending/rejected/cancelled/archived never participate.
   const empRows = await prisma.employeePayScheme.findMany({ where: { companyId, clubId, employeeId }, orderBy: [{ effectiveFrom: "desc" }] });
-  if (hasSchemeConflict(empRows, at)) return { ok: false, reason: "conflict", message: "Конфликт схем сотрудника: несколько активных схем с одной датой начала." };
-  const emp = resolveEffectiveScheme(empRows, at);
+  if (hasSchemeConflict(empRows, at)) return { ok: false, reason: "conflict", message: "Найдено несколько действующих схем сотрудника на дату периода. Требуется исправление настроек." };
+  const emp = resolveEffectiveScheme(liveRows(empRows), at);
   if (emp) return { ok: true, scheme: emp, level: "employee" };
 
   if (position) {
     const catRows = await prisma.employeePayScheme.findMany({ where: { companyId, clubId, employeeId: null, position }, orderBy: [{ effectiveFrom: "desc" }] });
-    if (hasSchemeConflict(catRows, at)) return { ok: false, reason: "conflict", message: "Конфликт схем категории клуба: несколько активных схем с одной датой начала." };
-    const cat = resolveEffectiveScheme(catRows, at);
+    if (hasSchemeConflict(catRows, at)) return { ok: false, reason: "conflict", message: "Найдено несколько действующих схем категории на дату периода. Требуется исправление настроек." };
+    const cat = resolveEffectiveScheme(liveRows(catRows), at);
     if (cat) return { ok: true, scheme: cat, level: "category" };
   }
 
