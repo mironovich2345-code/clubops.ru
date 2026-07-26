@@ -9,6 +9,7 @@ import { isPayrollPeriodClosed } from "@/lib/payroll/period";
 import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
 import { computeScheme, type PeriodInput } from "@/lib/payroll/compute";
 import { recomputeGymTrainerCalculation } from "@/app/(app)/payroll/periods/trainer-actions";
+import { materializeApprovedSchemeChange } from "@/lib/payroll/scheme-service";
 import { notifyPayrollChangeReview, notifyPayrollChangeDecision } from "@/lib/notifications/events";
 import {
   allowedFieldsForScheme,
@@ -547,6 +548,19 @@ export async function approveChangeRequest(_prev: ChangeRequestState | undefined
     return fail(`Не удалось применить изменение: ${(e as Error).message}`);
   }
 
+  // STAGE 12 (§8/§15): a future scheme change now materialises a REAL new PayrollScheme
+  // version immediately after approval. Idempotent; on failure the request stays
+  // approved_pending_scheme_creation for a safe retry (never a partial second version).
+  if (req.requestType === "future_scheme_change") {
+    const mat = await materializeApprovedSchemeChange(req.id, scope.ctx.user.id, now);
+    if (mat.ok) {
+      finalStatus = "applied";
+      notice = mat.alreadyExisted ? "Изменение согласовано; версия схемы уже была создана." : "Изменение согласовано — создана новая версия схемы с указанной даты.";
+    } else {
+      notice = `Изменение согласовано, но версия схемы не создана: ${mat.error}. Повторите материализацию на карточке заявки.`;
+    }
+  }
+
   try {
     await recordAudit({ action: "payroll.change_request_approved", entityType: "PayrollChangeRequest", entityId: req.id, companyId: scope.companyId, clubId: req.clubId, userId: scope.ctx.user.id, metadata: { requestType: req.requestType, fieldType: req.fieldType, targetField: req.targetField, finalStatus, appliedAdjustmentId } });
     await notifyPayrollChangeDecision({ resourceId: req.id, companyId: scope.companyId, clubId: req.clubId, amountKopeks: req.calculatedImpactKopeks ?? 0, authorUserId: req.requestedById, actorUserId: scope.ctx.user.id, event: "approved" });
@@ -556,6 +570,29 @@ export async function approveChangeRequest(_prev: ChangeRequestState | undefined
   revalidatePath("/payroll/change-requests");
   if (req.payrollPeriodId) revalidatePath(`/payroll/periods/${req.payrollPeriodId}`);
   return { ok: true, requestId: req.id, notice };
+}
+
+/**
+ * Retry materialising an approved future scheme change (spec §15) when the automatic
+ * attempt at approval time failed. Idempotent — never creates a second version.
+ */
+export async function retryMaterializeSchemeChange(_prev: ChangeRequestState | undefined, formData: FormData): Promise<ChangeRequestState> {
+  const requestId = String(formData.get("requestId") ?? "").trim();
+  const base = await ctxScope();
+  if (!base.ok) return fail(base.error);
+  const req = await prisma.payrollChangeRequest.findUnique({ where: { id: requestId } });
+  if (!req || req.companyId !== base.companyId || !base.clubIds.includes(req.clubId)) return fail("Заявка не найдена");
+  if (!canReviewPayrollChange(base.ctx.effectiveRoles)) return fail("Материализация доступна только ГД или собственнику.");
+  const mat = await materializeApprovedSchemeChange(req.id, base.ctx.user.id, new Date());
+  if (!mat.ok) return fail(mat.error);
+  try {
+    await recordAudit({ action: "payroll.scheme_version_materialized", entityType: "EmployeePayScheme", entityId: mat.scheme.id, companyId: req.companyId, clubId: req.clubId, userId: base.ctx.user.id, metadata: { requestId, version: mat.scheme.version, alreadyExisted: mat.alreadyExisted } });
+  } catch {
+    /* ignore */
+  }
+  revalidatePath("/payroll/change-requests");
+  revalidatePath("/payroll/schemes");
+  return { ok: true, requestId: req.id, notice: mat.alreadyExisted ? "Версия схемы уже была создана." : "Новая версия схемы создана." };
 }
 
 /**
