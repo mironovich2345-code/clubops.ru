@@ -1354,16 +1354,52 @@ model PayrollAdvance {
   earnedToDateSource String? // auto (from calc) | manual (manager-entered)
   comment         String?
   documentKey     String?
-  expenseId       String?   // linked salary Expense (advance is part of the actual payout)
+  expenseId       String?   // legacy: linked salary Expense of the single pre-tranche payout
   status          String    @default("requested")
   requestedAt     DateTime  @default(now())
   approvedByUserId String?
   paidByUserId    String?
   paidAt          DateTime?
+  // STAGE 9 (tranches): approved amount vs actually-paid tranches. `amountKopeks` stays
+  // as the legacy single amount; backfill sets requested/approved = amountKopeks.
+  requestedAmountKopeks Int?
+  approvedAmountKopeks  Int?
+  linkedPayrollCalculationId String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   @@unique([employeeId, clubId, periodYear, periodMonth])
+  @@index([companyId])
+  @@index([clubId])
+}
+
+// One PAYMENT (tranche) of a PayrollAdvance. Several tranches settle one advance up to its
+// approved amount. Each tranche carries its OWN salary Expense + cash movement (one money
+// record each) and is idempotent by idempotencyKey. Storno is per-tranche.
+model PayrollAdvancePayment {
+  id                String    @id @default(cuid())
+  companyId         String
+  clubId            String
+  employeeAdvanceId String
+  amountKopeks      Int
+  paidAt            DateTime  @default(now())
+  paymentMethod     String    // cash | bank
+  legalEntityId     String?
+  cashSource        String?   // club_cash | regional_cash (naличные)
+  expenseId         String?   // linked salary Expense (one per tranche)
+  cashMovementId    String?   // linked cash movement (наличные)
+  paymentReference  String?   // безналичная ссылка/референс, если есть
+  status            String    @default("paid") // paid | reversed
+  createdByUserId   String
+  approvedByUserId  String?
+  reversedAt        DateTime?
+  reversedByUserId  String?
+  reversalReason    String?
+  idempotencyKey    String    @unique
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([employeeAdvanceId])
   @@index([companyId])
   @@index([clubId])
 }
