@@ -38,6 +38,7 @@
     "pilot:ofd-settings": "node scripts/pilot-ofd-settings.mjs",
     "pilot:ofd-taxcom-multikkt": "node scripts/pilot-ofd-taxcom-multikkt.mjs",
     "pilot:payroll-ux": "node scripts/pilot-payroll-ux.mjs",
+    "pilot:payroll-formulas": "node scripts/pilot-payroll-formulas.mjs",
     "ofd:audit": "node scripts/ofd-taxcom-audit.mjs",
     "ofd:merge": "node scripts/ofd-taxcom-merge.mjs",
     "pilot:refund-upload-errors": "node scripts/pilot-refund-upload-errors.mjs",
