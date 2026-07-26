@@ -14,6 +14,9 @@ import { CalculationCard, type BreakdownLine } from "../../../../_components/Cal
 import { AdjustmentsSection, type AdjustmentRow } from "../../../../_components/AdjustmentsSection";
 import { PaymentsSection, type PaymentRow, type AdvanceRow, type LegalEntityOption } from "../../../../_components/PaymentsSection";
 import { TrainerPackages, type TrainerSummaryVM, type TrainerPackageVM } from "../../../../_components/TrainerPackages";
+import { ProposeChangeSection, type ProposeFieldOption, type ChangeRequestRow } from "../../../../_components/ProposeChangeSection";
+import { canProposePayrollChange } from "@/lib/payroll/access";
+import { allowedFieldsForScheme, effectiveSchemeParams, formatFieldValue } from "@/lib/payroll/change-request";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +67,18 @@ export default async function PayrollEmployeeCalcPage({ params }: { params: Prom
   const packages = snap?.schemeType === "gym_trainer"
     ? (await prisma.payrollTrainerPackage.findMany({ where: { payrollCalculationId: c.id }, orderBy: { createdAt: "asc" } })).map((p): TrainerPackageVM => ({ id: p.id, clientRef: p.clientRef, contractNumber: p.contractNumber, contractAmountKopeks: p.contractAmountKopeks, sessionCount: p.sessionCount, providedSessions: p.providedSessions, refundKopeks: p.refundKopeks, trainerRateBp: p.trainerRateBp, seniorTrainerConfirmed: p.seniorTrainerConfirmed }))
     : [];
+
+  // STAGE 10–11: change proposals. Whitelisted scheme fields + their CURRENT effective
+  // value (base snapshot + already-approved overrides), and this calc's change requests.
+  const canPropose = !closed && canProposePayrollChange(ctx.effectiveRoles);
+  const effScheme = effectiveSchemeParams(c.schemeSnapshotJson, c.approvedOverridesJson);
+  const effParams = (effScheme?.params ?? {}) as Record<string, unknown>;
+  const proposeFields: ProposeFieldOption[] = snap
+    ? allowedFieldsForScheme(snap.schemeType).map((f) => ({ key: f.key, fieldType: f.fieldType, unit: f.unit, labelRu: f.labelRu, currentDisplay: formatFieldValue(f.unit, effParams[f.key]) }))
+    : [];
+  const changeReqRows: ChangeRequestRow[] = (
+    await prisma.payrollChangeRequest.findMany({ where: { payrollCalculationId: c.id }, orderBy: { createdAt: "desc" } })
+  ).map((r) => ({ id: r.id, requestType: r.requestType, fieldType: r.fieldType, targetField: r.targetField, status: r.status, impactKopeks: r.calculatedImpactKopeks, impactUncomputable: r.impactUncomputable, revision: r.revision }));
 
   const payable = !closed && ["approved", "partially_paid", "paid"].includes(period.status);
   const canPayCash = canManage;
@@ -120,6 +135,13 @@ export default async function PayrollEmployeeCalcPage({ params }: { params: Prom
             canPayCash={canPayCash}
             canPayBank={canPayBank}
             legalEntities={legalEntityOptions}
+          />
+          <ProposeChangeSection
+            calculationId={c.id}
+            fields={proposeFields}
+            requests={changeReqRows}
+            canPropose={canPropose}
+            unitHint={{ kopeks: "₽", bp: "%", count: "шт" }}
           />
         </div>
       </div>
