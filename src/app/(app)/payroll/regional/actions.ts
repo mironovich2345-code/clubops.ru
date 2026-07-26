@@ -7,7 +7,7 @@ import { monthClosedError } from "@/lib/month-close";
 import { rublesToKopeks } from "@/lib/money";
 import { getActiveClubLegalEntities } from "@/lib/legal-entities";
 import { ensureClubCashWallet, ensureRegionalCashWallet } from "@/lib/cash-wallets";
-import { canManagePaySchemes } from "@/lib/payroll/access";
+import { canManagePaySchemes, canViewRegionalPayroll } from "@/lib/payroll/access";
 import { regionalAccrual, regionalTotals, REGIONAL_BASE_TYPES } from "@/lib/payroll/regional";
 import { createSalaryExpense, cancelSalaryExpense } from "@/lib/payroll/salary-expense";
 
@@ -96,7 +96,9 @@ export async function recordRegionalCityPayment(_prev: RegionalState | undefined
   if (!ctx || !ctx.selectedCompanyId || ctx.selectedCompanyId !== row.companyId) return fail("Нет доступа");
   if (row.status !== "approved") return fail("Выплата возможна только после утверждения собственником");
   const roles = ctx.effectiveRoles;
-  if (!roles.some((r) => r === "manager" || r === "regional_director" || r === "accountant" || r === "chief_accountant")) return fail("Недостаточно прав");
+  // Regional payroll is off-limits to a club manager (§7/§16). Only the regional-payroll
+  // band (owner/GD/regional/chief_accountant/accountant) may pay the regional's share.
+  if (!canViewRegionalPayroll(roles)) return fail("Недостаточно прав");
 
   const clubId = String(formData.get("clubId") ?? "").trim();
   const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true, city: true } });
@@ -171,6 +173,8 @@ export async function cancelRegionalCityPayment(formData: FormData): Promise<voi
   if (!payment || payment.status !== "confirmed") return;
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId || ctx.selectedCompanyId !== payment.companyId) return;
+  // Managers cannot touch regional payroll (§7/§16) — even to cancel a payment.
+  if (!canViewRegionalPayroll(ctx.effectiveRoles)) return;
   if (!(await canAccessClub(ctx.user.id, payment.clubId))) return;
   await cancelSalaryExpense(payment.expenseId, ctx.user.id, "Отмена выплаты регионалу");
   await prisma.regionalCityPayment.update({ where: { id: paymentId }, data: { status: "canceled" } });

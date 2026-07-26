@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
+import { notFound } from "next/navigation";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs, userHasCompanyRole } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { formatKopeks } from "@/lib/money";
-import { canManagePaySchemes } from "@/lib/payroll/access";
+import { canManagePaySchemes, canViewRegionalPayroll } from "@/lib/payroll/access";
 import { regionalTotals, paidByClub, REGIONAL_BASE_LABELS } from "@/lib/payroll/regional";
 import { RegionalCreateForm, RegionalPaymentForm } from "../_components/RegionalCityForms";
 import { PayrollNav } from "../_components/PayrollNav";
@@ -17,6 +18,10 @@ export default async function RegionalPayrollPage() {
   const user = await requirePageAccess("payroll");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) return <NoCompanyState title="Зарплата регионала" description="Единый расчёт по городу" />;
+  // Regional payroll is money-sensitive and NOT a club manager's concern (§7/§16). Guard
+  // VIEW server-side — a manager cannot read it even by typing the URL. notFound() (404)
+  // rather than a redirect so the route does not even acknowledge the data exists.
+  if (!canViewRegionalPayroll(ctx.effectiveRoles)) notFound();
   const companyId = ctx.selectedCompanyId;
   const clubs = await getUserClubs(user.id, companyId);
   const clubsByCity = new Map<string, Array<{ id: string; name: string }>>();
@@ -45,7 +50,7 @@ export default async function RegionalPayrollPage() {
   return (
     <div className="mx-auto max-w-[1100px]">
       <PageHeader title="Зарплата (ФОТ)" description="Регионал: единое начисление на город и месяц; выплаты частями из клубов города. Схему и процент утверждает собственник." />
-      <PayrollNav />
+      <PayrollNav mode="full" />
 
       {canManage && cities.length > 0 ? (
         <div className={`mb-6 p-5 ${CARD}`}>
