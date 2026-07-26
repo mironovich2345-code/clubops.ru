@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
-import { recordPayment, recordAdvance, cancelPayment, cancelAdvance, type PayrollPaymentState } from "../periods/actions";
+import { recordPayment, cancelPayment, type PayrollPaymentState } from "../periods/actions";
 import { formatKopeks } from "@/lib/money";
 
 const initial: PayrollPaymentState = { ok: false };
@@ -55,7 +56,6 @@ export function PaymentsSection({
   legalEntities: LegalEntityOption[];
 }) {
   const [payState, payAction] = useFormState(recordPayment, initial);
-  const [advState, advAction] = useFormState(recordAdvance, initial);
   const canPay = payable && (canPayCash || canPayBank);
 
   return (
@@ -70,18 +70,13 @@ export function PaymentsSection({
         </span>
       </div>
 
-      {/* Advance */}
-      {advance ? (
-        <div className="mb-2 flex items-center justify-between text-xs">
-          <span className="text-slate-600 dark:text-slate-300">Аванс: {formatKopeks(advance.amountKopeks)} ({methodLabel(advance.method)})</span>
-          {canPay ? (
-            <form action={cancelAdvance} onSubmit={(e) => { if (!window.confirm("Отменить аванс?")) e.preventDefault(); }}>
-              <input type="hidden" name="advanceId" value={advance.id} />
-              <button type="submit" className="text-slate-400 hover:text-rose-600">отменить</button>
-            </form>
-          ) : null}
-        </div>
-      ) : null}
+      {/* Advance — read-only summary; управление в разделе «Авансы» (§7.5) */}
+      <div className="mb-2 flex items-center justify-between text-xs">
+        <span className="text-slate-600 dark:text-slate-300">
+          Аванс: {advance ? `${formatKopeks(advance.amountKopeks)} (${methodLabel(advance.method)})` : "не выдан"}
+        </span>
+        <Link href="/payroll/advances" className="text-brand-600 hover:text-brand-700 dark:text-brand-400">Управление авансами →</Link>
+      </div>
 
       {/* Payments list */}
       {payments.length > 0 ? (
@@ -126,21 +121,6 @@ export function PaymentsSection({
             <SubmitBtn label="Выплатить" />
             {payState.error ? <span className="w-full text-[11px] text-rose-600">{payState.error}</span> : null}
           </form>
-
-          {/* Advance form (only if none yet) */}
-          {!advance ? (
-            <form action={advAction} className="flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-2 dark:bg-slate-800/40">
-              <input type="hidden" name="calculationId" value={calculationId} />
-              <MethodSelect canCash={canPayCash} canBank={canPayBank} />
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-slate-500">Аванс, ₽</span>
-                <input name="amount" type="number" min="0" step="0.01" className="input w-24 text-sm" />
-              </label>
-              <input name="documentKey" className="input w-28 text-sm" placeholder="Документ" />
-              <SubmitBtn label="Аванс" />
-              {advState.error ? <span className="w-full text-[11px] text-rose-600">{advState.error}</span> : null}
-            </form>
-          ) : null}
         </div>
       ) : payable ? (
         <p className="text-xs text-slate-400">Выплату проводит управляющий/регионал (наличные) или бухгалтер (безнал).</p>

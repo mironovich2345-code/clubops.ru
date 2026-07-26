@@ -60,8 +60,8 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
   return (
     <div className="mx-auto max-w-[1100px]">
       <div className="mb-4">
-        <Link href="/payroll" className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-          ← К списку
+        <Link href="/payroll/employees" className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+          ← Сотрудники и схемы
         </Link>
       </div>
       <PageHeader
