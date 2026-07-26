@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
@@ -138,6 +139,7 @@ export default async function PayrollAdvancesPage({ searchParams }: { searchPara
                       <Td><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${ui.cls}`}>{ui.label}</span></Td>
                       <Td className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Link href={`/payroll/advances/${a.id}`} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Открыть · транши</Link>
                           {canApprove && a.status === "requested" ? (
                             <form action={approveEmployeeAdvance}><input type="hidden" name="advanceId" value={a.id} /><button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Подтвердить и выдать</button></form>
                           ) : null}
