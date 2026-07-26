@@ -8,6 +8,7 @@
 // from the position — so a position is a label, the scheme drives the formula.
 export const PAYROLL_POSITIONS = [
   "manager", // управляющий (club head)
+  "sales_manager", // менеджер продаж (STAGE 2 — additive)
   "administrator",
   "night_manager",
   "head_gym_trainer", // старший тренер тренажёрного зала
@@ -20,6 +21,7 @@ export type PayrollPosition = (typeof PAYROLL_POSITIONS)[number];
 
 export const PAYROLL_POSITION_LABELS: Record<string, string> = {
   manager: "Управляющий",
+  sales_manager: "Менеджер продаж",
   administrator: "Администратор",
   night_manager: "Ночной менеджер",
   head_gym_trainer: "Старший тренер тренажёрного зала",
@@ -41,8 +43,30 @@ export const PAYROLL_SCHEME_TYPES = [
   "profit_percentage", // regional profit %
   "gym_trainer", // тренер ТЗ: per-package 40/50% + trainer credit (spec §4.2)
   "mixed",
+  // Role-categories engine v2 (STAGE 3–8). One scheme type per calculation category;
+  // dispatched to the pure per-category functions in formulas.ts. Prefixed "role_" so
+  // they never collide with the legacy types above and mark calculationEngineVersion.
+  "role_club_manager",
+  "role_administrator",
+  "role_sales_manager",
+  "role_night_manager",
+  "role_gym_trainer",
+  "role_gym_head_trainer",
+  "role_group_trainer",
+  "role_group_head_trainer",
 ] as const;
 export type PayrollSchemeType = (typeof PAYROLL_SCHEME_TYPES)[number];
+
+// The v2 (role-categories) scheme types — drive formulas.ts. Everything else is legacy_v1.
+export const ROLE_CATEGORY_SCHEME_TYPES = [
+  "role_club_manager", "role_administrator", "role_sales_manager", "role_night_manager",
+  "role_gym_trainer", "role_gym_head_trainer", "role_group_trainer", "role_group_head_trainer",
+] as const;
+export function isRoleCategoryScheme(t: string): boolean {
+  return (ROLE_CATEGORY_SCHEME_TYPES as readonly string[]).includes(t);
+}
+export const CALCULATION_ENGINE_VERSIONS = ["legacy_v1", "role_categories_v2"] as const;
+export type CalculationEngineVersion = (typeof CALCULATION_ENGINE_VERSIONS)[number];
 
 export const PAYROLL_SCHEME_LABELS: Record<string, string> = {
   fixed_salary: "Фиксированный оклад",
@@ -55,6 +79,14 @@ export const PAYROLL_SCHEME_LABELS: Record<string, string> = {
   profit_percentage: "Процент от прибыли",
   gym_trainer: "Тренер ТЗ (пакеты 40/50%)",
   mixed: "Смешанная",
+  role_club_manager: "Управляющий (АБ+ПТ, план-факт ±40%)",
+  role_administrator: "Администратор (ставка × смены)",
+  role_sales_manager: "Менеджер продаж (оклад/15 + % по плану клуба)",
+  role_night_manager: "Ночной менеджер (ставка × смены + %)",
+  role_gym_trainer: "Тренер ТЗ (новые/продления %)",
+  role_gym_head_trainer: "Старший тренер ТЗ (повышенный % по плану ПТ)",
+  role_group_trainer: "Тренер ГП (часы + личный %)",
+  role_group_head_trainer: "Старший тренер ГП (+фикс +доля ГП)",
 };
 
 // Payroll period status machine (spec §3.4). Transitions are guarded in period.ts.

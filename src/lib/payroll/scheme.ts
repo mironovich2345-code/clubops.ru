@@ -2,6 +2,7 @@
 // scheme type has a typed params shape stored as JSON on EmployeePayScheme.paramsJson.
 // Money = kopeks, percentages = basis points (bp). Defaults match spec §4.
 import { PAYROLL_SCHEME_TYPES, type PayrollSchemeType, isKnown } from "@/lib/payroll/enums";
+import type { PercentTier } from "@/lib/payroll/formulas";
 
 export const DEFAULT_SHIFT_NORM = 15; // 100% oklad = 15 shifts (spec §4.1) — configurable
 export const DEFAULT_BELOW_PLAN_RATE_BP = 300; // 3% when plan not met
@@ -11,6 +12,7 @@ export const DEFAULT_GYM_HIGH_RATE_BP = 5000; // 50% otherwise
 export const DEFAULT_GYM_THRESHOLD_KOPEKS = 20000 * 100; // 20 000 ₽ inclusive
 export const DEFAULT_TRAINER_PLAN_THRESHOLD_BP = 7000; // 70% of month plan to unlock last-month payout
 export const DEFAULT_SENIOR_GROUP_SALES_BP = 1000; // 10%
+export const DEFAULT_SENIOR_GROUP_FIXED_KOPEKS = 500000; // 5000 ₽ фикс. доплата старшего ГП
 export const DEFAULT_MAX_ADJUSTMENT_BP = 4000; // ±40% cap (manager plan-fact)
 export const DEFAULT_MANUAL_REVIEW_DEVIATION_BP = 2000; // >20% deviation → manual decision
 
@@ -26,6 +28,16 @@ export type PlanAdjustedParams = { subscriptionsBaseKopeks: number; ptBaseKopeks
 export type RevenuePercentageParams = { fixedKopeks: number; subsPercentBp: number; ptPercentBp: number };
 export type ProfitPercentageParams = { percentBp: number };
 
+// --- role-categories engine v2 params (STAGE 3–8) — feed formulas.ts ----------
+export type RoleClubManagerParams = { abBaseKopeks: number; ptBaseKopeks: number; limitBp: number };
+export type RoleAdministratorParams = { shiftRateKopeks: number };
+export type RoleSalesManagerParams = { salaryFor15Kopeks: number; shiftNorm: number; tiers: PercentTier[] };
+export type RoleNightManagerParams = { shiftRateKopeks: number; tiers: PercentTier[] };
+export type RoleGymTrainerParams = { newRateBp: number; renewalRateBp: number };
+export type RoleGymHeadTrainerParams = { newTiers: PercentTier[]; renewalTiers: PercentTier[] };
+export type RoleGroupTrainerParams = { hourRateKopeks: number; personalRateBp: number };
+export type RoleGroupHeadTrainerParams = { hourRateKopeks: number; personalRateBp: number; fixedBonusKopeks: number; clubShareBp: number };
+
 export type SchemeParams =
   | { type: "fixed_salary"; params: FixedSalaryParams }
   | { type: "salary_by_shifts"; params: SalaryByShiftsParams }
@@ -36,12 +48,32 @@ export type SchemeParams =
   | { type: "revenue_percentage"; params: RevenuePercentageParams }
   | { type: "profit_percentage"; params: ProfitPercentageParams }
   | { type: "gym_trainer"; params: GymTrainerParams }
-  | { type: "mixed"; params: Record<string, unknown> };
+  | { type: "mixed"; params: Record<string, unknown> }
+  | { type: "role_club_manager"; params: RoleClubManagerParams }
+  | { type: "role_administrator"; params: RoleAdministratorParams }
+  | { type: "role_sales_manager"; params: RoleSalesManagerParams }
+  | { type: "role_night_manager"; params: RoleNightManagerParams }
+  | { type: "role_gym_trainer"; params: RoleGymTrainerParams }
+  | { type: "role_gym_head_trainer"; params: RoleGymHeadTrainerParams }
+  | { type: "role_group_trainer"; params: RoleGroupTrainerParams }
+  | { type: "role_group_head_trainer"; params: RoleGroupHeadTrainerParams };
 
 // --- validation --------------------------------------------------------------
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const nonNegInt = (v: unknown): number | null => { const n = num(v); return n != null && n >= 0 && Number.isInteger(n) ? n : null; };
 const bp = (v: unknown): number | null => { const n = num(v); return n != null && n >= 0 && n <= 100000 && Number.isInteger(n) ? n : null; };
+/** Validate a percent-tier ladder [{thresholdBp, percentBp}]. Supports 1..N levels. */
+function tiers(v: unknown): PercentTier[] | null {
+  if (!Array.isArray(v) || v.length === 0) return null;
+  const out: PercentTier[] = [];
+  for (const raw of v) {
+    const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const t = bp(r.thresholdBp), p = bp(r.percentBp);
+    if (t == null || p == null) return null;
+    out.push({ thresholdBp: t, percentBp: p });
+  }
+  return out;
+}
 
 export type ValidateResult = { ok: true; scheme: SchemeParams } | { ok: false; error: string };
 
@@ -116,5 +148,57 @@ export function validateSchemeParams(schemeType: string, raw: unknown): Validate
     }
     case "mixed":
       return { ok: true, scheme: { type: "mixed", params: p } };
+
+    // --- role-categories engine v2 ---
+    case "role_club_manager": {
+      const abBaseKopeks = nonNegInt(p.abBaseKopeks);
+      const ptBaseKopeks = nonNegInt(p.ptBaseKopeks);
+      const limitBp = bp(p.limitBp) ?? DEFAULT_MAX_ADJUSTMENT_BP;
+      if (abBaseKopeks == null || ptBaseKopeks == null) return err("Укажите окладные части АБ и ПТ.");
+      return { ok: true, scheme: { type: "role_club_manager", params: { abBaseKopeks, ptBaseKopeks, limitBp } } };
+    }
+    case "role_administrator": {
+      const shiftRateKopeks = nonNegInt(p.shiftRateKopeks);
+      if (shiftRateKopeks == null) return err("Укажите ставку за смену.");
+      return { ok: true, scheme: { type: "role_administrator", params: { shiftRateKopeks } } };
+    }
+    case "role_sales_manager": {
+      const salaryFor15Kopeks = nonNegInt(p.salaryFor15Kopeks);
+      const shiftNorm = num(p.shiftNorm) ?? DEFAULT_SHIFT_NORM;
+      const t = tiers(p.tiers);
+      if (salaryFor15Kopeks == null) return err("Укажите оклад за 15 смен.");
+      if (!(shiftNorm > 0)) return err("Норматив смен должен быть больше нуля.");
+      if (!t) return err("Укажите уровни процента (tiers) по выполнению плана клуба.");
+      return { ok: true, scheme: { type: "role_sales_manager", params: { salaryFor15Kopeks, shiftNorm, tiers: t } } };
+    }
+    case "role_night_manager": {
+      const shiftRateKopeks = nonNegInt(p.shiftRateKopeks);
+      const t = tiers(p.tiers);
+      if (shiftRateKopeks == null) return err("Укажите ставку за ночную смену.");
+      if (!t) return err("Укажите уровни процента (tiers).");
+      return { ok: true, scheme: { type: "role_night_manager", params: { shiftRateKopeks, tiers: t } } };
+    }
+    case "role_gym_trainer": {
+      const newRateBp = bp(p.newRateBp), renewalRateBp = bp(p.renewalRateBp);
+      if (newRateBp == null || renewalRateBp == null) return err("Укажите проценты по новым клиентам и продлениям.");
+      return { ok: true, scheme: { type: "role_gym_trainer", params: { newRateBp, renewalRateBp } } };
+    }
+    case "role_gym_head_trainer": {
+      const newTiers = tiers(p.newTiers), renewalTiers = tiers(p.renewalTiers);
+      if (!newTiers || !renewalTiers) return err("Укажите уровни процентов (новые/продления) по выполнению плана ПТ.");
+      return { ok: true, scheme: { type: "role_gym_head_trainer", params: { newTiers, renewalTiers } } };
+    }
+    case "role_group_trainer": {
+      const hourRateKopeks = nonNegInt(p.hourRateKopeks), personalRateBp = bp(p.personalRateBp);
+      if (hourRateKopeks == null || personalRateBp == null) return err("Укажите ставку за час и личный процент.");
+      return { ok: true, scheme: { type: "role_group_trainer", params: { hourRateKopeks, personalRateBp } } };
+    }
+    case "role_group_head_trainer": {
+      const hourRateKopeks = nonNegInt(p.hourRateKopeks), personalRateBp = bp(p.personalRateBp);
+      const fixedBonusKopeks = nonNegInt(p.fixedBonusKopeks) ?? DEFAULT_SENIOR_GROUP_FIXED_KOPEKS;
+      const clubShareBp = bp(p.clubShareBp) ?? DEFAULT_SENIOR_GROUP_SALES_BP;
+      if (hourRateKopeks == null || personalRateBp == null) return err("Укажите ставку за час и личный процент.");
+      return { ok: true, scheme: { type: "role_group_head_trainer", params: { hourRateKopeks, personalRateBp, fixedBonusKopeks, clubShareBp } } };
+    }
   }
 }

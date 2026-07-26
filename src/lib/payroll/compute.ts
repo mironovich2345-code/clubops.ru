@@ -4,6 +4,8 @@
 import * as calc from "@/lib/payroll/calc";
 import type { CalcResult, GymPackage } from "@/lib/payroll/calc";
 import type { SchemeParams } from "@/lib/payroll/scheme";
+import { isRoleCategoryScheme } from "@/lib/payroll/enums";
+import { computeRoleCategoryScheme } from "@/lib/payroll/role-compute";
 
 export type PeriodInput = {
   actualShifts?: number;
@@ -21,13 +23,36 @@ export type PeriodInput = {
   // payout gate — SEPARATE from the trainer credit, which is provided-vs-paid sessions).
   gymPackages?: GymPackage[];
   planCompletionBp?: number;
+  // --- role-categories engine v2 inputs (STAGE 3–8) ---
+  normShifts?: number; // производственная норма (контроль, для админа/управляющего)
+  clubPlanCompletionBp?: number; // выполнение ОБЩЕГО плана клуба (менеджеры/ночные)
+  clubPtCompletionBp?: number; // выполнение общего плана ПТ клуба (старший ТЗ)
+  personalSalesKopeks?: number; // личная выручка (до возвратов)
+  returnsKopeks?: number; // возвраты по его продажам
+  newSalesKopeks?: number; // тренер ТЗ: продажи новым клиентам
+  renewalSalesKopeks?: number; // тренер ТЗ: продления
+  trainerCreditKopeks?: number; // кредит тренера — ИНФОРМАТИВНО
+  clubGroupSalesKopeks?: number; // старший ГП: вся выручка ГП клуба (после возвратов)
 };
 
 const zeroPart = { planKopeks: 0, factKopeks: 0 };
 
-/** Dispatch a validated scheme + inputs to the right engine function. */
+/** Dispatch a validated scheme + inputs to the right engine function. Role-categories
+ * (v2) schemes route to the pure per-category functions in formulas.ts — this is the
+ * SINGLE calc point; there is no parallel engine. */
 export function computeScheme(scheme: SchemeParams, input: PeriodInput): CalcResult {
+  // Role-categories engine v2 → formulas.ts (handled below, after the legacy switch).
+  if (isRoleCategoryScheme(scheme.type)) return computeRoleCategoryScheme(scheme, input);
   switch (scheme.type) {
+    case "role_club_manager":
+    case "role_administrator":
+    case "role_sales_manager":
+    case "role_night_manager":
+    case "role_gym_trainer":
+    case "role_gym_head_trainer":
+    case "role_group_trainer":
+    case "role_group_head_trainer":
+      return computeRoleCategoryScheme(scheme, input); // unreachable (handled above) — keeps the switch total
     case "fixed_salary":
       return {
         amountKopeks: scheme.params.baseKopeks,
