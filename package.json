@@ -41,6 +41,7 @@
     "pilot:payroll-formulas": "node scripts/pilot-payroll-formulas.mjs",
     "pilot:payroll-role-cards-stage2": "node scripts/pilot-payroll-role-cards-stage2.mjs",
     "pilot:payroll-advance-tranches": "node scripts/pilot-payroll-advance-tranches.mjs",
+    "pilot:payroll-change-requests": "node scripts/pilot-payroll-change-requests.mjs",
     "payroll:advance-audit": "node scripts/payroll-advance-audit.mjs",
     "payroll:advance-backfill": "node scripts/payroll-advance-backfill.mjs",
     "ofd:audit": "node scripts/ofd-taxcom-audit.mjs",
