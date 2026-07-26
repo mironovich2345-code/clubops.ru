@@ -324,8 +324,9 @@ export function InvoiceUpload({
             </div>
           ) : null}
 
-          <div className="mt-5 flex justify-end">
-            <Button idle="Создать и отправить на согласование" busy="Отправка..." />
+          <div className="mt-5 flex flex-col items-end gap-2">
+            <Button idle="Создать счёт" busy="Отправка..." />
+            <p className="text-xs text-slate-500">После создания счёт будет отправлен региональному директору на проверку.</p>
           </div>
         </form>
       ) : null}

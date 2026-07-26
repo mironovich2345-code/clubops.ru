@@ -74,7 +74,7 @@ export default async function RefundDetailsPage({ params }: { params: Promise<{ 
   // Submit bar — only the manager-author sees it; readiness re-checked on the server.
   const isManagerAuthor = ctx.effectiveRoles.includes("manager") && isCreator;
   const ready = refundSubmissionReadiness(refund, active.map((d) => d.documentType));
-  const submitBar = isManagerAuthor ? <SubmitToRegional refundId={id} ready={ready.ok} readyError={ready.ok ? null : ready.error} /> : null;
+  const submitBar = isManagerAuthor ? <SubmitToRegional refundId={id} ready={ready.ok} readyError={ready.ok ? null : ready.error} resubmit={refund.status === "needs_correction"} /> : null;
 
   // ---- Personal training ----
   if (rt === "personal_training") {

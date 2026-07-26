@@ -84,6 +84,12 @@ export default async function RefundDetailPage({
           <Link href={back.href} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">{back.label}</Link>
         </div>
 
+        {sp.submitted === "1" ? (
+          <div className="mb-4 rounded-md bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">
+            Возврат создан и отправлен региональному директору на проверку.
+          </div>
+        ) : null}
+
         {/* needs_correction banner for the author */}
         {refund.status === "needs_correction" ? (
           <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
