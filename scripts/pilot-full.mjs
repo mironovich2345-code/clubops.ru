@@ -92,6 +92,7 @@ const pilots = [
   ["Payroll change requests", "pilot-payroll-change-requests.mjs"],
   ["Payroll manager simplified UX", "pilot-payroll-manager-simplified-ux.mjs"],
   ["Payroll versioned schemes", "pilot-payroll-versioned-schemes.mjs"],
+  ["Payroll OFD cashier mapping", "pilot-payroll-ofd-cashier-mapping.mjs"],
   ["Payroll OFD/sales integration", "pilot-payroll-integration.mjs"],
   ["Deploy config", "pilot-deploy-config.mjs"],
   ["Document security", "pilot-document-security.mjs"],
