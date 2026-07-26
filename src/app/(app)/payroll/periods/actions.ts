@@ -9,6 +9,7 @@ import { canManagePayrollAssignments, canAddPayrollAdjustment } from "@/lib/payr
 import { getEffectiveSchemeForEmployee, resolveSchemeForCalc } from "@/lib/payroll/schemes";
 import { isRoleCategoryScheme } from "@/lib/payroll/enums";
 import { makeSchemeSnapshot, snapshotToSchemeParams, getPeriodForScope } from "@/lib/payroll/periods";
+import { effectiveSchemeParams } from "@/lib/payroll/change-request";
 import { computeScheme, type PeriodInput } from "@/lib/payroll/compute";
 import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
 import { obligationFromRemaining } from "@/lib/payroll/obligations";
@@ -303,7 +304,9 @@ export async function saveCalculationInputs(
   if (!canManagePayrollAssignments(scope.ctx.effectiveRoles)) return fail("Недостаточно прав");
   if (isPayrollPeriodLocked(scope.period.status)) return fail("Период закрыт для изменений расчёта");
 
-  const scheme = snapshotToSchemeParams(calc.schemeSnapshotJson);
+  // Effective scheme = base snapshot + approved overrides (spec §6). saveCalculationInputs
+  // is a compute site, so it honours approved GD overrides too.
+  const scheme = effectiveSchemeParams(calc.schemeSnapshotJson, calc.approvedOverridesJson);
   if (!scheme) return fail("Схема оплаты не зафиксирована для этого расчёта. Сначала задайте схему и пересоздайте расчёт.");
 
   // Gym trainer: inputs are the per-package rows (entered separately) + the this-month
@@ -348,7 +351,9 @@ export async function saveCalculationInputs(
       automaticAmountKopeks: automatic,
       status: "calculated",
       calculatedAt: new Date(),
-      detailsJson: JSON.stringify({ breakdown: result.breakdown, flags: result.flags, warnings: result.warnings }),
+      // Persist the raw PeriodInput so an approved change-request can deterministically
+      // recompute the automatic amount from the effective scheme (STAGE 10–11 apply).
+      detailsJson: JSON.stringify({ breakdown: result.breakdown, flags: result.flags, warnings: result.warnings, inputJson: JSON.stringify(input) }),
     },
   });
   // Fold the new automatic amount together with any existing adjustments/payments.
@@ -407,6 +412,11 @@ export async function transitionPeriod(
     // No unconfirmed cash payments may be left dangling before closing.
     const pendingPay = await prisma.payrollPayment.count({ where: { payrollCalculationId: { in: (await prisma.payrollCalculation.findMany({ where: { payrollPeriodId: periodId }, select: { id: true } })).map((c) => c.id) }, status: "pending" } });
     if (pendingPay > 0) return { ok: false, error: "Есть неподтверждённые выплаты. Подтвердите или отмените их перед закрытием." };
+    // Closed-period protection (STAGE 11, §16): an unresolved change request must be
+    // decided (approved/rejected/cancelled) before the period can close — otherwise a
+    // later approval would try to touch a closed period.
+    const openChanges = await prisma.payrollChangeRequest.count({ where: { payrollPeriodId: periodId, status: { in: ["submitted", "under_review", "returned_for_revision"] } } });
+    if (openChanges > 0) return { ok: false, error: "Есть незакрытые заявки на изменение зарплаты. Согласуйте или отклоните их перед закрытием периода." };
   }
 
   const data: Record<string, unknown> = { status: decision.to };

@@ -7,6 +7,7 @@ import { monthClosedError } from "@/lib/month-close";
 import { rublesToKopeks } from "@/lib/money";
 import { canManagePayrollAssignments, canAddPayrollAdjustment } from "@/lib/payroll/access";
 import { getPeriodForScope, snapshotToSchemeParams } from "@/lib/payroll/periods";
+import { effectiveSchemeParams } from "@/lib/payroll/change-request";
 import { computeScheme } from "@/lib/payroll/compute";
 import { toGymPackage, computeTrainerSummary } from "@/lib/payroll/trainer";
 import { recomputeCalculationTotals } from "@/lib/payroll/aggregate";
@@ -49,7 +50,9 @@ async function resolveCalcScope(calculationId: string) {
 export async function recomputeGymTrainerCalculation(calculationId: string): Promise<void> {
   const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });
   if (!calc) return;
-  const scheme = snapshotToSchemeParams(calc.schemeSnapshotJson);
+  // Effective scheme = base snapshot + approved overrides (STAGE 10–11): a GD-approved
+  // rate/threshold change re-runs the gym-trainer income here too.
+  const scheme = effectiveSchemeParams(calc.schemeSnapshotJson, calc.approvedOverridesJson);
   if (!scheme || scheme.type !== "gym_trainer") return;
   const pkgs = await prisma.payrollTrainerPackage.findMany({ where: { payrollCalculationId: calculationId } });
   const planCompletionBp = calc.completionBp ?? 0;
