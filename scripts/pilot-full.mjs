@@ -88,6 +88,7 @@ const pilots = [
   ["Payroll UX restructure", "pilot-payroll-ux.mjs"],
   ["Payroll per-category formulas", "pilot-payroll-formulas.mjs"],
   ["Payroll role cards stage 2", "pilot-payroll-role-cards-stage2.mjs"],
+  ["Payroll advance tranches", "pilot-payroll-advance-tranches.mjs"],
   ["Payroll OFD/sales integration", "pilot-payroll-integration.mjs"],
   ["Deploy config", "pilot-deploy-config.mjs"],
   ["Document security", "pilot-document-security.mjs"],

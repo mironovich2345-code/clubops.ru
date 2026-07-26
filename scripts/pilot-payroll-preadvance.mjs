@@ -48,8 +48,8 @@ function main() {
     actions.includes("monthClosedError(companyId, clubId, firstDay)"));
   check("PRE10 advance is a salary expense (part of actual payout, one deduction)",
     actions.includes("createSalaryExpense") && actions.includes('kind: "advance"'));
-  check("PRE11 auto-link on period create: aggregate counts month advances (paid), no repeat expense",
-    aggregateSrc.includes("payrollAdvance.findMany") && aggregateSrc.includes('status: "paid"') && actions.includes("recomputeCalculationTotals(calc.id)"));
+  check("PRE11 auto-link on period create: aggregate counts month advances (active tranches), no repeat expense",
+    aggregateSrc.includes("payrollAdvance.findMany") && aggregateSrc.includes("advancePaidKopeks") && actions.includes("recomputeCalculationTotals(calc.id)"));
   check("PRE12 tenant isolation: club access + employee scope checked server-side",
     actions.includes("ctx.allowedClubIds.includes(clubId)") && actions.includes("getEmployeeForScope") && actions.includes("canAccessClub"));
   check("PRE13 schema fields additive (dev+prod) + migration no DROP",

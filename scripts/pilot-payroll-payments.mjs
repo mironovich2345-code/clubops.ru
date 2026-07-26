@@ -81,8 +81,8 @@ function main() {
     actions.includes("Аванс за этот месяц уже оформлен"));
   check("S41 month-close guarded before any payout",
     (actions.match(/monthClosedError\(scope\.companyId, calc\.clubId/g) ?? []).length >= 2);
-  check("S42 paid derived from ledger (advances + confirmed payments)",
-    aggregateSrc.includes('status: "confirmed"') && aggregateSrc.includes('status: "paid"') && aggregateSrc.includes("paidKopeks: agg.paidKopeks"));
+  check("S42 paid derived from ledger (advances via active tranches + confirmed payments)",
+    aggregateSrc.includes('status: "confirmed"') && aggregateSrc.includes("advancePaidKopeks") && aggregateSrc.includes("paidKopeks: agg.paidKopeks"));
   check("S43 payments audited server-side",
     actions.includes('"payroll.payment_recorded"') && actions.includes('"payroll.advance_recorded"'));
 
