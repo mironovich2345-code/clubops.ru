@@ -1231,6 +1231,22 @@ model EmployeePayScheme {
   effectiveFrom   DateTime
   effectiveTo     DateTime?
   createdByUserId String
+  // --- STAGE 12: append-only versioning (all additive; legacy rows read as v1/active) ---
+  // version increments within the LOGICAL KEY (company, club, employeeId ?? ALL, position).
+  version         Int       @default(1)
+  // draft | pending_approval | approved | scheduled | active | superseded | archived |
+  // rejected | cancelled. Legacy rows backfill to active/scheduled/superseded by dates.
+  status          String    @default("active")
+  payrollCategory String?   // derived from position (display/validation); nullable/additive
+  submittedById   String?
+  submittedAt     DateTime?
+  approvedById    String?
+  approvedAt      DateTime?
+  activatedAt     DateTime?
+  archivedAt      DateTime?
+  supersedesSchemeId   String?  // the previous version this one supersedes
+  sourceChangeRequestId String? @unique // idempotency: one change request → one version
+  comment         String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -1238,6 +1254,7 @@ model EmployeePayScheme {
   @@index([clubId])
   @@index([employeeId])
   @@index([clubId, effectiveFrom])
+  @@index([status])
 }
 
 // One payroll period per club per month.
