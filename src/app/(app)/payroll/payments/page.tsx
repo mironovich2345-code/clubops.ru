@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { getPeriodsForScope, periodLabel } from "@/lib/payroll/periods";
 import { formatKopeks } from "@/lib/money";
+import { payrollNavMode } from "@/lib/payroll/access";
 import { PayrollNav } from "../_components/PayrollNav";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +21,9 @@ export default async function PayrollPaymentsPage({ searchParams }: { searchPara
   const user = await requirePageAccess("payroll");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) return <NoCompanyState title="Выплаты" description="Выплаты зарплаты" />;
+  // Payments are contextual for the manager (in the calc/advance/debts screens), not a
+  // standalone section (§10). The dedicated payments list stays for the accounting band.
+  if (payrollNavMode(ctx.effectiveRoles) === "manager") redirect("/payroll");
   const companyId = ctx.selectedCompanyId;
   const clubs = (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name }));
   const clubIds = clubs.map((c) => c.id);
@@ -60,7 +65,7 @@ export default async function PayrollPaymentsPage({ searchParams }: { searchPara
   return (
     <div className="mx-auto max-w-[1440px]">
       <PageHeader title="Зарплата (ФОТ)" description="Выплаты — движение денег отдельно от начисления. Сама выплата проводится в карточке расчёта сотрудника." />
-      <PayrollNav />
+      <PayrollNav mode="full" />
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Card label="К выплате" value={formatKopeks(toPay)} accent={toPay > 0} />

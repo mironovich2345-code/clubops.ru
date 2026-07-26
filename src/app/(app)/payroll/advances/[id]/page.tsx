@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { formatKopeks } from "@/lib/money";
 import { advancePaidKopeks, advanceApprovedKopeks, advanceRemainingKopeks, deriveAdvanceUiStatus } from "@/lib/payroll/advance-tranche-calc";
 import { PAYROLL_POSITION_LABELS } from "@/lib/payroll/enums";
+import { payrollNavMode } from "@/lib/payroll/access";
 import { PayrollNav } from "../../_components/PayrollNav";
 import { AddTrancheForm, ReverseTrancheButton, IncreaseApprovedForm } from "../../_components/AdvanceTrancheForms";
 
@@ -46,7 +47,7 @@ export default async function AdvanceDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="mx-auto max-w-[820px]">
       <PageHeader title="Зарплата (ФОТ)" description="Аванс сотрудника" />
-      <PayrollNav />
+      <PayrollNav mode={payrollNavMode(roles)} />
       <div className="mb-3"><Link href="/payroll/advances" className="text-sm text-slate-500 hover:text-slate-700">← Авансы</Link></div>
 
       {/* Header */}

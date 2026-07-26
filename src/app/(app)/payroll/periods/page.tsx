@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { getPeriodsForScope, periodLabel, periodStatusLabel } from "@/lib/payroll/periods";
-import { canManagePayrollAssignments } from "@/lib/payroll/access";
+import { canManagePayrollAssignments, payrollNavMode } from "@/lib/payroll/access";
 import { formatKopeks } from "@/lib/money";
 import { CreatePeriodForm } from "../_components/CreatePeriodForm";
 import { PayrollNav } from "../_components/PayrollNav";
@@ -35,10 +36,19 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
     return <NoCompanyState title="Расчётные периоды" description="Начисления зарплаты по клубам и месяцам" />;
   }
   const companyId = ctx.selectedCompanyId;
+  const sp = await searchParams;
+  // Manager works from the single /payroll screen — the periods TABLE is not their flow
+  // (§12/§15). Redirect to /payroll preserving month/club (no cyclic redirect: /payroll
+  // renders the workspace, never bounces back here).
+  if (payrollNavMode(ctx.effectiveRoles) === "manager") {
+    const q = new URLSearchParams();
+    if (sp.month) q.set("month", sp.month);
+    if (sp.club) q.set("club", sp.club);
+    redirect(`/payroll${q.toString() ? `?${q.toString()}` : ""}`);
+  }
   const clubs = (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name }));
   const clubIds = clubs.map((c) => c.id);
   const clubName = (id: string) => clubs.find((c) => c.id === id)?.name ?? id;
-  const sp = await searchParams;
   const monthF = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : null;
   const clubF = sp.club && clubIds.includes(sp.club) ? sp.club : null;
   const statusF = sp.status && (sp.status === "review" || STATUS_META[sp.status]) ? sp.status : null;
@@ -68,7 +78,7 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
   return (
     <div className="mx-auto max-w-[1200px]">
       <PageHeader title="Зарплата (ФОТ)" description="Расчётные периоды по клубам и месяцам. Один период на клуб и месяц." />
-      <PayrollNav />
+      <PayrollNav mode="full" />
 
       {canManagePayrollAssignments(ctx.effectiveRoles) && clubs.length > 0 ? (
         <div className={`mb-6 p-5 ${CARD}`}>

@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
+import { payrollNavMode } from "@/lib/payroll/access";
 import { prisma } from "@/lib/prisma";
 import { getEmployeesForScope } from "@/lib/club-employees";
 import { getAssignmentsForEmployees } from "@/lib/payroll/assignments";
@@ -28,6 +30,9 @@ export default async function PayrollEmployeesPage() {
   const user = await requirePageAccess("payroll");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) return <NoCompanyState title="Сотрудники и схемы" description="Настройка оплаты сотрудников" />;
+  // Scheme parameters are closed to the manager (§8); their scheme problems surface on the
+  // main screen instead. The standalone list is not their flow — redirect to /payroll.
+  if (payrollNavMode(ctx.effectiveRoles) === "manager") redirect("/payroll");
   const companyId = ctx.selectedCompanyId;
   const clubs = (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name }));
   const clubIds = clubs.map((c) => c.id);
@@ -65,7 +70,7 @@ export default async function PayrollEmployeesPage() {
   return (
     <div className="mx-auto max-w-[1440px]">
       <PageHeader title="Зарплата (ФОТ)" description="Сотрудники и схемы оплаты" />
-      <PayrollNav />
+      <PayrollNav mode="full" />
 
       {rows.length === 0 ? (
         <div className={`px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>

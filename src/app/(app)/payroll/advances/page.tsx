@@ -4,7 +4,7 @@ import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { getEmployeesForScope } from "@/lib/club-employees";
-import { canManagePayrollAssignments } from "@/lib/payroll/access";
+import { canManagePayrollAssignments, payrollNavMode } from "@/lib/payroll/access";
 import { PAYROLL_POSITION_LABELS } from "@/lib/payroll/enums";
 import { formatKopeks } from "@/lib/money";
 import { PayrollNav } from "../_components/PayrollNav";
@@ -80,7 +80,7 @@ export default async function PayrollAdvancesPage({ searchParams }: { searchPara
   return (
     <div className="mx-auto max-w-[1440px]">
       <PageHeader title="Зарплата (ФОТ)" description="Авансы. Можно создавать до расчётного периода — они привяжутся к расчёту автоматически." />
-      <PayrollNav />
+      <PayrollNav mode={payrollNavMode(ctx.effectiveRoles)} />
 
       <div className="mb-4">
         <AdvanceCreateForm employees={employeeOptions} defaultMonth={month} canManage={canManage} />

@@ -4,7 +4,7 @@ import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { formatKopeks } from "@/lib/money";
-import { canReviewPayrollChange } from "@/lib/payroll/access";
+import { canReviewPayrollChange, payrollNavMode } from "@/lib/payroll/access";
 import { STATUS_LABEL, REQUEST_TYPE_LABEL, FIELD_TYPE_LABEL, OPEN_BLOCKING_STATUSES } from "@/lib/payroll/change-request";
 import { PayrollNav } from "../_components/PayrollNav";
 
@@ -83,7 +83,7 @@ export default async function PayrollChangeRequestsPage({ searchParams }: { sear
   return (
     <div>
       <PageHeader title="Согласования зарплаты" description="Заявки регионала на изменение закрытых параметров — решение ГД/собственника" />
-      <PayrollNav />
+      <PayrollNav mode={payrollNavMode(ctx.effectiveRoles)} />
 
       {/* KPI */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">

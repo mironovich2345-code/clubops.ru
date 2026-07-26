@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { PayrollNav } from "../_components/PayrollNav";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
+import { payrollNavMode } from "@/lib/payroll/access";
 import { prisma } from "@/lib/prisma";
 import { formatKopeks } from "@/lib/money";
 
@@ -16,6 +18,8 @@ export default async function PayrollSummaryPage() {
   if (!ctx || !ctx.selectedCompanyId) {
     return <NoCompanyState title="Сводка по ФОТ" description="Общий фонд оплаты труда по клубам" />;
   }
+  // Company-wide ФОТ summary is not a club-manager screen — send them to their one screen.
+  if (payrollNavMode(ctx.effectiveRoles) === "manager") redirect("/payroll");
   const companyId = ctx.selectedCompanyId;
   const clubs = (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name }));
   const clubIds = clubs.map((c) => c.id);
@@ -53,7 +57,7 @@ export default async function PayrollSummaryPage() {
   return (
     <div className="mx-auto max-w-[1100px]">
       <PageHeader title="Зарплата (ФОТ)" description="Сводка ФОТ по клубам за всё время (начислено / выплачено / остаток) и открытые взаимные долги." />
-      <PayrollNav />
+      <PayrollNav mode="full" />
 
       <div className={`mb-6 grid grid-cols-2 gap-4 p-5 sm:grid-cols-3 ${CARD}`}>
         <Stat label="Начислено (всего)" value={formatKopeks(totals.accrued)} />
