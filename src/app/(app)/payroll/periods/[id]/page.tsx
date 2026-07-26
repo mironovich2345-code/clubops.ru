@@ -13,13 +13,15 @@ import { GeneratePeriodButton } from "../../_components/GeneratePeriodButton";
 import { type BreakdownLine } from "../../_components/CalculationCard";
 import { PeriodWorkflowBar } from "../../_components/PeriodWorkflowBar";
 import { PeriodRoster, type RosterRow } from "../../_components/PeriodRoster";
+import { PeriodCategoryCards, type CategoryCard } from "../../_components/PeriodCategoryCards";
+import { payrollCategoryOfPosition, payrollUiGroupOfCategory, UI_GROUP_LABELS, type PayrollUiGroup } from "@/lib/payroll/categories";
 
 export const dynamic = "force-dynamic";
 
 const CARD = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const CALC_STATUS_LABEL: Record<string, string> = { draft: "Черновик", calculated: "Рассчитан", approved: "Утверждён", paid: "Выплачен", closed: "Закрыт" };
 
-export default async function PayrollPeriodPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PayrollPeriodPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ group?: string }> }) {
   const user = await requirePageAccess("payroll");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) {
@@ -27,6 +29,7 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
   }
   const companyId = ctx.selectedCompanyId;
   const { id } = await params;
+  const { group: groupFilter } = await searchParams;
   const clubs = (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name }));
   const clubIds = clubs.map((c) => c.id);
   const period = await getPeriodForScope(companyId, clubIds, id);
@@ -64,6 +67,28 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
     };
   });
 
+  // Group each calc into one of the 4 category cards (advances is a 5th, cross-category).
+  const uiGroupByCalc = new Map<string, PayrollUiGroup>();
+  for (const c of calcs) {
+    const cat = payrollCategoryOfPosition(c.roleSnapshot);
+    uiGroupByCalc.set(c.id, cat === "unknown" ? "administrative_card" : payrollUiGroupOfCategory(cat));
+  }
+  const GROUPS: PayrollUiGroup[] = ["manager_card", "administrative_card", "gym_trainers_card", "group_trainers_card"];
+  const cardStatus = (count: number, filled: number, problems: number): string =>
+    count === 0 ? "Не начато" : problems > 0 ? "Требует проверки" : filled >= count ? "Заполнено" : "Требует заполнения";
+  const cards: CategoryCard[] = GROUPS.map((g): CategoryCard => {
+    const ids = calcs.filter((c) => uiGroupByCalc.get(c.id) === g);
+    const filled = ids.filter((c) => c.status !== "draft").length;
+    const problems = ids.reduce((s, c) => s + parseDetails(c.detailsJson).warnings.length, 0);
+    const prelim = ids.reduce((s, c) => s + c.grossAccruedKopeks, 0);
+    return { group: g, label: UI_GROUP_LABELS[g], count: ids.length, filled, problems, prelimKopeks: prelim, status: cardStatus(ids.length, filled, problems), href: `/payroll/periods/${period.id}?group=${g}` };
+  });
+  cards.push({ group: "advances_card", label: UI_GROUP_LABELS.advances_card, count: 0, filled: 0, problems: 0, prelimKopeks: 0, status: "", href: "/payroll/advances" });
+
+  const activeGroup = GROUPS.includes(groupFilter as PayrollUiGroup) ? (groupFilter as PayrollUiGroup) : null;
+  const visibleRoster = activeGroup ? rosterRows.filter((r) => uiGroupByCalc.get(r.calculationId) === activeGroup) : rosterRows;
+  const filledTotal = calcs.filter((c) => c.status !== "draft").length;
+
   return (
     <div className="mx-auto max-w-[1100px]">
       <div className="mb-4">
@@ -73,13 +98,17 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
       </div>
       <PageHeader title={`${clubName} · ${periodLabel(period)}`} description={`Статус: ${periodStatusLabel(period.status)}`} />
 
-      {/* Totals */}
+      {/* Totals + progress (§18) */}
       <div className={`mb-6 grid grid-cols-2 gap-4 p-5 sm:grid-cols-4 ${CARD}`}>
         <Stat label="Сотрудников" value={String(totals.count)} />
         <Stat label="Начислено" value={formatKopeks(totals.grossAccruedKopeks)} />
         <Stat label="К выплате" value={formatKopeks(totals.netPayableKopeks)} />
         <Stat label="Требуют решения" value={String(totals.needsReview)} accent={totals.needsReview > 0} />
       </div>
+      {calcs.length > 0 ? <p className="-mt-3 mb-6 text-sm text-slate-500 dark:text-slate-400">Расчёт заполнен на {filledTotal} из {calcs.length} сотрудников.</p> : null}
+
+      {/* Five payroll cards (§9) */}
+      {calcs.length > 0 ? <PeriodCategoryCards cards={cards} /> : null}
 
       {workflowActions.length > 0 ? (
         <div className={`mb-6 p-5 ${CARD}`}>
@@ -102,7 +131,15 @@ export default async function PayrollPeriodPage({ params }: { params: Promise<{ 
           Пока нет расчётов. {canManage ? "Сформируйте состав по закреплениям." : ""}
         </div>
       ) : (
-        <PeriodRoster periodId={period.id} rows={rosterRows} />
+        <>
+          {activeGroup ? (
+            <div className="mb-3 flex items-center gap-2 text-sm">
+              <span className="font-medium text-slate-700 dark:text-slate-200">{UI_GROUP_LABELS[activeGroup]}</span>
+              <Link href={`/payroll/periods/${period.id}`} className="text-xs text-brand-600 hover:text-brand-700">× показать всех</Link>
+            </div>
+          ) : null}
+          <PeriodRoster periodId={period.id} rows={visibleRoster} />
+        </>
       )}
     </div>
   );
