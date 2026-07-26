@@ -17,7 +17,7 @@ import {
   type FieldUnit,
 } from "@/lib/payroll/change-request";
 import { PayrollNav } from "../../_components/PayrollNav";
-import { ReviewActions, AuthorActions } from "../../_components/ChangeRequestActions";
+import { ReviewActions, AuthorActions, MaterializeButton } from "../../_components/ChangeRequestActions";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +65,9 @@ export default async function ChangeRequestDetailPage({ params }: { params: Prom
   const isAuthor = req.requestedById === user.id;
   const canCancel = isAuthor && (req.status === "submitted" || req.status === "under_review" || req.status === "returned_for_revision" || req.status === "draft");
   const canResubmit = isAuthor && req.status === "returned_for_revision";
+  // STAGE 12: an approved future scheme change whose version materialization failed can be
+  // retried by a reviewer (GD/owner).
+  const canMaterialize = canReviewPayrollChange(ctx.effectiveRoles) && req.requestType === "future_scheme_change" && req.status === "approved_pending_scheme_creation";
 
   const impactSummary = req.impactUncomputable
     ? "Влияние на начисление рассчитать невозможно (нет базы)."
@@ -143,6 +146,14 @@ export default async function ChangeRequestDetailPage({ params }: { params: Prom
         <div className={`mb-4 p-5 ${CARD}`}>
           <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{canResubmit ? "Доработка" : "Управление заявкой"}</div>
           <AuthorActions requestId={req.id} canResubmit={canResubmit} />
+        </div>
+      ) : null}
+
+      {canMaterialize ? (
+        <div className={`mb-4 p-5 ${CARD}`}>
+          <div className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-200">Создание версии схемы</div>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Изменение согласовано, но новая версия схемы ещё не создана. Повторите создание — операция идемпотентна (второй версии не появится).</p>
+          <MaterializeButton requestId={req.id} />
         </div>
       ) : null}
 

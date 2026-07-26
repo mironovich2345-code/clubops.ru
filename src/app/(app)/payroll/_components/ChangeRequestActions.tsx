@@ -7,6 +7,7 @@ import {
   returnChangeRequest,
   cancelChangeRequest,
   resubmitChangeRequest,
+  retryMaterializeSchemeChange,
   type ChangeRequestState,
 } from "../change-requests/actions";
 
@@ -62,6 +63,19 @@ export function ReviewActions({ requestId, impactSummary }: { requestId: string;
         </form>
       </div>
     </div>
+  );
+}
+
+/** Reviewer control: retry materialising an approved future scheme change (spec §15). */
+export function MaterializeButton({ requestId }: { requestId: string }) {
+  const [state, action] = useFormState(retryMaterializeSchemeChange, initial);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="requestId" value={requestId} />
+      <Btn label="Создать версию схемы" tone="brand" />
+      {state.error ? <span className="text-xs text-rose-600">{state.error}</span> : null}
+      {state.ok && state.notice ? <span className="text-xs text-emerald-600">{state.notice}</span> : null}
+    </form>
   );
 }
 
