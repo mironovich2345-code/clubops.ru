@@ -33,7 +33,9 @@ function staticGuards() {
   const schemes = src("../src/lib/payroll/schemes.ts");
   const actions = src("../src/app/(app)/payroll/periods/actions.ts");
   const card = src("../src/app/(app)/payroll/_components/CalculationCard.tsx");
-  const periodPage = src("../src/app/(app)/payroll/periods/[id]/page.tsx");
+  // The 5-card working screen was extracted into PayrollWorkspace (manager UX simplification),
+  // rendered both at /payroll and /payroll/periods/[id]. Assert against the workspace.
+  const periodPage = src("../src/app/(app)/payroll/_components/PayrollWorkspace.tsx");
   const cardsComp = src("../src/app/(app)/payroll/_components/PeriodCategoryCards.tsx");
 
   check("SG1 UI group ≠ payroll category (8 категорий, 5 UI-групп, разные функции)",
