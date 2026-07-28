@@ -56,7 +56,7 @@ check("SEC1 SW пишет в кеш ТОЛЬКО статик+offline; нави�
 check("SH1 desktop sidebar/header скрыты на mobile (lg:), mobile shell — lg:hidden", appLayout.includes('className="hidden lg:block"') && appLayout.includes("hidden h-16") && appLayout.includes("lg:flex") && shell.includes("lg:hidden"));
 check("SH2 mobile: sticky top bar + гамбургер + safe-area", shell.includes("sticky top-0") && shell.includes("pt-safe") && shell.includes('aria-label="Меню"'));
 check("SH3 drawer: полная role-filtered навигация + scope + account", shell.includes("items.map") && shell.includes("{header}") && shell.includes("{account}") && appLayout.includes("visibleItems.map"));
-check("SH4 нижняя навигация ≤5 (4 primary + Ещё), role-aware (из visibleItems), ≥44px", shell.includes("slice(0, 4)") && shell.includes("Ещё") && shell.includes("min-h-[52px]") && shell.includes("PRIMARY_ORDER"));
+check("SH4 нижняя навигация ≤5 (4 primary + Ещё), role-aware (bottomOrder), ≥44px", shell.includes("slice(0, 4)") && shell.includes("Ещё") && shell.includes("min-h-[52px]") && shell.includes("bottomOrder"));
 check("SH5 контент не под навигацией (pb-bottom-nav) + min-w-0 guard", appLayout.includes("pb-bottom-nav") && appLayout.includes("min-w-0"));
 check("SH6 навигация не показывает запрещённые пункты (visibleItems уже role-filtered)", appLayout.includes("canAnyRoleAccessPage") && appLayout.includes("STRATEGIC_HIDDEN_PAGES"));
 
