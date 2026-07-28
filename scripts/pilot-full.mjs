@@ -101,6 +101,7 @@ const pilots = [
   ["Document security", "pilot-document-security.mjs"],
   ["Dark mode toggle", "pilot-theme.mjs"],
   ["Mobile + PWA readiness", "pilot-mobile-pwa-readiness.mjs"],
+  ["Mobile WAVE2 finance", "pilot-mobile-wave2-finance.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;

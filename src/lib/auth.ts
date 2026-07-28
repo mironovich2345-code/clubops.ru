@@ -160,15 +160,29 @@ export const STRATEGIC_READONLY_ERROR =
   "Стратегическая роль работает в режиме просмотра и не изменяет операционные данные";
 
 // --- Budget-overrun approval by category ------------------------------------
-// General Director may approve a budget overrun ONLY for advertising and salary.
-// Owner approves any category; regional director approves any category for its
-// assigned clubs (club scope is enforced separately by getManageableClubIds).
-export const GD_OVERRUN_CATEGORIES: readonly string[] = ["advertising", "salary"];
+// Advertising overrun is GENERAL-DIRECTOR-EXCLUSIVE: an advertising overspend may be
+// approved ONLY by the general director — the owner and the regional director are BOTH
+// excluded from it (spec §6). For every OTHER category the owner may approve any overrun,
+// and the regional director may approve within its assigned clubs (club scope enforced
+// separately by getManageableClubIds). The general director additionally retains the
+// salary overrun right. Club scope + self-approval blocks are enforced by the callers.
+export const ADVERTISING_CATEGORY = "advertising";
+// Overrun categories that only the general director may approve (owner/RD excluded).
+export const GD_ONLY_OVERRUN_CATEGORIES: readonly string[] = [ADVERTISING_CATEGORY];
+// Additional non-exclusive categories the general director may also approve (besides ads).
+export const GD_OVERRUN_CATEGORIES: readonly string[] = ["salary"];
 export const GD_OVERRUN_CATEGORY_ERROR =
-  "Генеральный директор может согласовывать превышение бюджета только по рекламе и зарплатам";
+  "Перерасход по рекламе согласовывает только генеральный директор";
 
 export function canApproveBudgetOverrunForCategory(roles: readonly Role[], category: string): boolean {
+  // Advertising overrun: general director ONLY. Owner and regional director are excluded,
+  // and no direct action/API call may bypass this (the sole server guard runs here).
+  if (GD_ONLY_OVERRUN_CATEGORIES.includes(category)) {
+    return roles.includes("general_director");
+  }
+  // Any other category: owner or regional director (club-scoped) may approve.
   if (roles.includes("owner") || roles.includes("regional_director")) return true;
+  // General director additionally may approve the whitelisted categories (salary).
   if (roles.includes("general_director")) return GD_OVERRUN_CATEGORIES.includes(category);
   return false;
 }
