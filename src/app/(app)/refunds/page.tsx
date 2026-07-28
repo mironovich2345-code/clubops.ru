@@ -6,12 +6,23 @@ import { requirePageAccess, getCurrentCompanyAndClub, getCurrentAccessContext, m
 import { getRefundsForScope, type RefundWithClub } from "@/lib/refunds";
 import { APPROVAL_STATUS_LABELS } from "@/lib/approval";
 import { REFUND_V2_STATUS_LABELS } from "@/lib/refund-workflow";
+import { MobileListCard } from "@/components/mobile/MobileListCard";
+import { StatusBadge, type StatusTone } from "@/components/mobile/StatusBadge";
 
 export const dynamic = "force-dynamic";
 
 const dateFormatter = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 const statusLabel = (r: RefundWithClub) =>
   (r.entryVersion === 2 ? REFUND_V2_STATUS_LABELS[r.status] : APPROVAL_STATUS_LABELS[r.status]) ?? r.status;
+
+function refundTone(status: string): StatusTone {
+  const s = status.toLowerCase();
+  if (s.includes("reject") || s.includes("cancel")) return "danger";
+  if (s.includes("correction") || s.includes("need")) return "warning";
+  if (s.includes("paid") || s.includes("complete") || s.includes("approved") || s.includes("done")) return "success";
+  if (s.includes("pending") || s.includes("progress") || s.includes("review")) return "info";
+  return "neutral";
+}
 
 export default async function RefundsPage() {
   const user = await requirePageAccess("refunds");
@@ -81,32 +92,55 @@ function Queue({ title, rows, tone }: { title: string; rows: RefundWithClub[]; t
 
 function RefundTable({ rows, empty }: { rows: RefundWithClub[]; empty: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-slate-200">
-        <thead className="bg-slate-50">
-          <tr><Th>Клиент</Th><Th className="text-right">Сумма</Th><Th>Статус</Th><Th>Клуб</Th><Th>Создан</Th><Th>Действия</Th></tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
-          {rows.length === 0 ? (
-            <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">{empty}</td></tr>
-          ) : (
-            rows.map((r) => (
-              <tr key={r.id} className="hover:bg-slate-50">
-                {/* v1 refunds set clientName; v2 (slot-based) capture the recipient
-                    name as bankRecipientName — show it as the client. Only a NAME
-                    is shown here — never phone or bank account/BIK. */}
-                <Td><div className="font-medium text-slate-900">{r.clientName || r.bankRecipientName || "— без клиента —"}</div></Td>
-                <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
-                <Td className="whitespace-nowrap">{statusLabel(r)}</Td>
-                <Td className="whitespace-nowrap text-slate-600">{r.club.name}</Td>
-                <Td className="whitespace-nowrap text-slate-500">{dateFormatter.format(r.createdAt)}</Td>
-                <Td><Link href={`/refunds/${r.id}`} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">Открыть</Link></Td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {/* Desktop table (≥lg) */}
+      <div className="hidden overflow-x-auto lg:block">
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr><Th>Клиент</Th><Th className="text-right">Сумма</Th><Th>Статус</Th><Th>Клуб</Th><Th>Создан</Th><Th>Действия</Th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {rows.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">{empty}</td></tr>
+            ) : (
+              rows.map((r) => (
+                <tr key={r.id} className="hover:bg-slate-50">
+                  {/* v1 refunds set clientName; v2 (slot-based) capture the recipient
+                      name as bankRecipientName — show it as the client. Only a NAME
+                      is shown here — never phone or bank account/BIK. */}
+                  <Td><div className="font-medium text-slate-900">{r.clientName || r.bankRecipientName || "— без клиента —"}</div></Td>
+                  <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
+                  <Td className="whitespace-nowrap">{statusLabel(r)}</Td>
+                  <Td className="whitespace-nowrap text-slate-600">{r.club.name}</Td>
+                  <Td className="whitespace-nowrap text-slate-500">{dateFormatter.format(r.createdAt)}</Td>
+                  <Td><Link href={`/refunds/${r.id}`} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">Открыть</Link></Td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      {/* Mobile cards (<lg) — client name only, never phone/bank/BIK (spec §11, security) */}
+      <div className="space-y-3 p-3 lg:hidden">
+        {rows.length === 0 ? (
+          <div className="py-6 text-center text-sm text-slate-500">{empty}</div>
+        ) : (
+          rows.map((r) => (
+            <MobileListCard
+              key={r.id}
+              href={`/refunds/${r.id}`}
+              title={r.clientName || r.bankRecipientName || "— без клиента —"}
+              amount={formatKopeks(r.amountKopeks)}
+              status={<StatusBadge tone={refundTone(r.status)}>{statusLabel(r)}</StatusBadge>}
+              meta={[
+                { label: "Клуб", value: r.club.name },
+                { label: "Создан", value: dateFormatter.format(r.createdAt) },
+              ]}
+            />
+          ))
+        )}
+      </div>
+    </>
   );
 }
 

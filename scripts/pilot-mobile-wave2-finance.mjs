@@ -71,5 +71,10 @@ check("I-L2 карточка счёта: контрагент+сумма+ста�
 check("I-L3 AI/просрочка отражены (problem-флаг)", invList.includes('problem={r.overdue ? "просрочен"') || invList.includes("problem={r.dueDate"));
 check("I-L4 elevated summary не grid-cols-2 на 320px", invList.includes("grid-cols-1 gap-4 min-[400px]:grid-cols-2 lg:grid-cols-5"));
 
+// ============================ REFUNDS list (§11) ============================
+const refList = src("../src/app/(app)/refunds/page.tsx");
+check("R-L1 RefundTable: desktop hidden lg:block + mobile карточки lg:hidden (покрывает список+очереди)", refList.includes("hidden overflow-x-auto lg:block") && refList.includes("space-y-3 p-3 lg:hidden") && refList.includes("<MobileListCard"));
+check("R-L2 карточка возврата: клиент+сумма+статус+клуб (без телефона/реквизитов)", /title=\{r\.clientName \|\| r\.bankRecipientName/.test(refList) && refList.includes("refundTone(") && !/r\.(phone|bankAccount|bankBik|bik)\b/i.test(refList));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
