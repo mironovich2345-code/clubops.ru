@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { MobileDataCard } from "@/components/mobile/density";
 import { StatusBadge } from "@/components/mobile/StatusBadge";
+import { buttonClass } from "@/components/mobile/buttons";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import {
@@ -82,8 +83,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
         </div>
       )}
 
-      {/* Filters (GET form — keeps state in the URL) */}
-      <form method="get" className="mb-6 flex flex-wrap items-end gap-3">
+      {/* Filters (GET form — keeps state in the URL). Mobile: 2-col grid; desktop: inline. */}
+      <form method="get" className="mb-6 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
         {showClubColumn ? (
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Клуб</span>
@@ -106,7 +107,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
             {EMPLOYEE_STATUS_FILTERS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
         </label>
-        <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        <button type="submit" className={`${buttonClass({ variant: "primary" })} min-[380px]:col-span-2 lg:col-span-1 lg:w-auto`}>
           Применить
         </button>
       </form>

@@ -38,7 +38,7 @@ check("OF3 OFD: shared MonthNav + без Block mb-8", ofd.includes("<MonthNav") 
 
 // ===================== Budgets (§14/§15/§16) =====================
 const bud = src("../src/app/(app)/budgets/page.tsx");
-check("BG1 budgets: compact header + compact filter + segmented control (Бюджеты/План-факт)", bud.includes("CompactPageHeader") && bud.includes("inline-flex rounded-lg bg-slate-100 p-1") && bud.includes("bg-white text-slate-900 shadow-sm"));
+check("BG1 budgets: compact header + compact filter + segmented control (Бюджеты/План-факт)", bud.includes("CompactPageHeader") && bud.includes("<SegmentedControl>") && bud.includes("segmentClass(v.key === view)"));
 check("BG2 budgets лимиты → desktop table hidden lg:block + mobile cards + статус перерасхода", bud.includes("hidden overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:block") && bud.includes("space-y-3 lg:hidden") && bud.includes("budgetStatus(") && bud.includes("budgetRank(") && bud.includes('label: "Перерасход"'));
 check("BG3 budgets permission note компактный (InfoNote, не большая карточка)", bud.includes("<InfoNote>Управлять бюджетами"));
 

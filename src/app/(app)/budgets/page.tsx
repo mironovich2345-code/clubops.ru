@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { CompactPageHeader, MobileDataCard, InfoNote, EmptyState } from "@/components/mobile/density";
 import { StatusBadge, type StatusTone } from "@/components/mobile/StatusBadge";
+import { SegmentedControl, segmentClass, buttonClass } from "@/components/mobile/buttons";
 import { formatKopeks } from "@/lib/money";
 import {
   requirePageAccess,
@@ -159,24 +160,18 @@ export default async function BudgetsPage({
         </label>
         <input type="hidden" name="tab" value={tab} />
         <input type="hidden" name="view" value={view} />
-        <button type="submit" className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50">
+        <button type="submit" className={buttonClass({ variant: "primary" })}>
           Показать
         </button>
       </form>
 
-      {/* Page view — segmented control (§14) */}
-      <div className="mb-4 inline-flex rounded-lg bg-slate-100 p-1">
-        {PAGE_VIEWS.map((v) => (
-          <Link
-            key={v.key}
-            href={viewHref(v.key)}
-            className={`inline-flex min-h-[40px] items-center rounded-md px-4 text-sm font-medium transition ${
-              v.key === view ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            {v.label}
-          </Link>
-        ))}
+      {/* Page view — shared segmented control (§14) */}
+      <div className="mb-4">
+        <SegmentedControl>
+          {PAGE_VIEWS.map((v) => (
+            <Link key={v.key} href={viewHref(v.key)} className={segmentClass(v.key === view)}>{v.label}</Link>
+          ))}
+        </SegmentedControl>
       </div>
 
       {view === "plan-fact" ? (

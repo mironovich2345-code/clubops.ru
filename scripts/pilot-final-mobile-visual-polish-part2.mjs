@@ -35,6 +35,12 @@ check("I1 invoices KPI: 5-я карта full-width (не одинокая пол
 // ===================== Collections + Employees CTA (§5) =====================
 check("CE1 Collections + Employees primary CTA full-width на mobile (buttonClass cta block)", src("../src/app/(app)/collections/_components/CollectionForms.tsx").includes('buttonClass({ variant: "primary", size: "cta", block: true })') && src("../src/app/(app)/employees/_components/EmployeeForm.tsx").includes('buttonClass({ variant: "primary", size: "cta", block: true })'));
 
+// ===================== Filter system (§6) =====================
+const flt = src("../src/components/mobile/filters.tsx");
+check("F1 shared filter components (MobileFilterStack + FilterActionRow + Field)", ["MobileFilterStack", "FilterActionRow", "Field"].every((c) => flt.includes(`export function ${c}`)));
+check("F2 budgets: shared SegmentedControl (Бюджеты/План-факт) + primary Показать", src("../src/app/(app)/budgets/page.tsx").includes("<SegmentedControl>") && src("../src/app/(app)/budgets/page.tsx").includes("segmentClass(v.key === view)") && src("../src/app/(app)/budgets/page.tsx").includes('buttonClass({ variant: "primary" })'));
+check("F3 employees + invoices фильтры: равные колонки на mobile (grid 1→2) + primary Применить", src("../src/app/(app)/employees/page.tsx").includes("grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex") && /buttonClass\(\{ variant: "primary" \}\)/.test(src("../src/app/(app)/employees/page.tsx")) && src("../src/app/(app)/invoices/_components/InvoiceFilters.tsx").includes("min-[380px]:grid-cols-2 lg:contents"));
+
 // ===================== Playwright harness exists (§8) =====================
 check("PW1 real Playwright harness: config + spec + bounding-box assertions + contact sheet", has("../playwright.config.ts") && has("../tests/visual/mobile-visual.spec.ts") && src("../tests/visual/mobile-visual.spec.ts").includes("no horizontal page overflow") && src("../tests/visual/mobile-visual.spec.ts").includes("controls within viewport") && has("../tests/visual/contact-sheet.mjs") && has("../tests/visual/README.md"));
 check("PW2 harness покрывает нужные ширины 320–1440 + light/dark", src("../playwright.config.ts").includes("[320, 568]") && src("../playwright.config.ts").includes("[430, 932]") && src("../playwright.config.ts").includes("[1440, 900]") && src("../tests/visual/mobile-visual.spec.ts").includes('["light", "dark"]'));
