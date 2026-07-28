@@ -48,3 +48,25 @@ advances уже адаптированы (см. `mobile-readiness-audit.md`).
 - iOS/Safari standalone: сессии-куки и загрузка файлов — проверить рано.
 - Клавиатура iOS перекрывает поля/фидбек — sticky action bar + scroll-into-view.
 - Плотность данных на 320px — приоритет карточкам и «краткому виду» по умолчанию.
+
+## Статус — WAVE 1 доставлена (2026-07-28)
+
+Системный фундамент готов и закреплён автотестами (`pilot:mobile-pwa-readiness` 31/31):
+
+- **Foundation CSS/viewport:** `viewport-fit=cover`, зум-доступность сохранена, mobile inputs
+  ≥16px (нет авто-зума), глобальный `overflow-x:clip`, safe-area утилиты, `break-anywhere`.
+- **App-shell:** `MobileShell` — sticky top bar + drawer (полная role-навигация) + нижняя
+  навигация (≤5 + «Ещё»); desktop sidebar/header под `lg:`, не тронут.
+- **PWA:** `manifest.ts` (standalone, shortcuts), иконки 192/512/maskable, apple-мета,
+  service worker (безопасный кеш — [pwa-cache-policy.md](../architecture/pwa-cache-policy.md)),
+  `/install` + `/offline`, контролируемое обновление.
+
+### Осталось до 18.08 (WAVE 2–5)
+
+- **WAVE 2 (core finance):** карточная переверстка Расходы/Счета/Возвраты/Наличные на 320–430px.
+- **WAVE 3 (operations):** payroll/advances довести до карточек + sticky action bar под клавиатуру.
+- **WAVE 4 (analytics/admin):** широкие таблицы аналитики/ОФД → «краткий вид» + скролл-контейнеры.
+- **WAVE 5 (perf + QA):** Lighthouse на мобильной сети; ручной прогон
+  [iphone-pwa-manual-checklist.md](../testing/iphone-pwa-manual-checklist.md) на живых устройствах.
+
+Полный статус приёмки — [mobile-pwa-report.md](../testing/mobile-pwa-report.md).
