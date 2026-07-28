@@ -100,6 +100,7 @@ const pilots = [
   ["Deploy config", "pilot-deploy-config.mjs"],
   ["Document security", "pilot-document-security.mjs"],
   ["Dark mode toggle", "pilot-theme.mjs"],
+  ["Mobile + PWA readiness", "pilot-mobile-pwa-readiness.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
