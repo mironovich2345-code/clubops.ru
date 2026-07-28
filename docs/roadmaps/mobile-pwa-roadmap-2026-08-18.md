@@ -128,3 +128,16 @@ company/club stack; глобальный box-sizing для input/select/date; em
 **Остаток:** единый Button-variants компонент; глубокая пиксельная переверстка expenses top-actions/
 status-tabs/dashboard month-nav; замена текст-глифов ✓/⚠ в payroll/sales; Playwright 320–1440; ручной
 прогон [iphone-final-mobile-visual-polish-checklist.md](../testing/iphone-final-mobile-visual-polish-checklist.md).
+
+## Статус — Final visual polish Part 2 (2026-07-29)
+
+Button system (`buttons.tsx`) + shared MonthNav; expenses top-actions/status-chips, invoices KPI,
+collections/employees CTA, dashboard/OFD month-nav. Реальный Playwright-harness (config+spec+bbox+
+contact-sheet) — **не запущен в среде** (нет сети/браузера/OTP), команды для локального прогона в
+[iphone-manual-acceptance-part2.md](../testing/iphone-manual-acceptance-part2.md). Тесты
+`pilot:final-mobile-visual-polish-part2` 12/12. Отчёт:
+[final-mobile-visual-polish-part2-report.md](../testing/final-mobile-visual-polish-part2-report.md).
+NB: скриншоты приёмки были со старой сборки — нужен rebuild.
+
+**Остаток:** DateField wrapper; общий FilterStack/FilterActionRow (invoices/analytics/ofd/budgets/
+history); Refunds/Payroll/Settings pixel-pass; запуск Playwright + ручной iPhone.
