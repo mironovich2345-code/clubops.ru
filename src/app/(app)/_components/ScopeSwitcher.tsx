@@ -59,14 +59,16 @@ export function ScopeSwitcher({
   }
 
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <label className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1">
-        <span className="text-xs text-slate-400">Компания</span>
+    // Mobile: full-width vertical stack (never two wide selects in a row, §5).
+    // Desktop: inline pills as before.
+    <div className="flex flex-col gap-2 text-sm lg:flex-row lg:items-center">
+      <label className="flex min-h-[44px] w-full min-w-0 items-center gap-1.5 rounded-md bg-slate-100 px-2.5 lg:min-h-0 lg:w-auto lg:py-1">
+        <span className="shrink-0 text-xs text-slate-400">Компания</span>
         <select
           value={companyId}
           onChange={onCompanyChange}
           disabled={isPending}
-          className="bg-transparent font-medium text-slate-700 focus:outline-none disabled:opacity-60"
+          className="min-w-0 flex-1 truncate bg-transparent font-medium text-slate-700 focus:outline-none disabled:opacity-60 lg:flex-none"
         >
           {companies.map((c) => (
             <option key={c.id} value={c.id}>
@@ -77,13 +79,13 @@ export function ScopeSwitcher({
       </label>
 
       {clubs.length > 0 ? (
-        <label className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1">
-          <span className="text-xs text-slate-400">Клуб</span>
+        <label className="flex min-h-[44px] w-full min-w-0 items-center gap-1.5 rounded-md bg-slate-100 px-2.5 lg:min-h-0 lg:w-auto lg:py-1">
+          <span className="shrink-0 text-xs text-slate-400">Клуб</span>
           <select
             value={clubId}
             onChange={onClubChange}
             disabled={isPending}
-            className="bg-transparent font-medium text-slate-700 focus:outline-none disabled:opacity-60"
+            className="min-w-0 flex-1 truncate bg-transparent font-medium text-slate-700 focus:outline-none disabled:opacity-60 lg:flex-none"
           >
             <option value="">Все клубы</option>
             {clubs.map((c) => (

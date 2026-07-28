@@ -14,14 +14,15 @@ check("D2 density: SectionHeader + InfoNote + EmptyState + ActiveFilterChips (б
 check("D3 metric value не переносит ₽, clamp font (не мелкий), tabular-nums", dens.includes("whitespace-nowrap") && dens.includes("clamp(1.05rem, 5.5vw, 1.5rem)") && dens.includes("tabular-nums"));
 check("D4 breakdown cards заменяют таблицы (title + rows + details), width-safe", dens.includes("break-anywhere") && dens.includes("details") && dens.includes("Подробнее"));
 
-// ===================== Bottom-nav scroll-hide (§5/§16) =====================
-const chrome = src("../src/components/mobile/mobile-chrome.ts");
+// ===================== Bottom navigation REMOVED (final polish) =====================
+// The bottom nav + its scroll-hide/suppression machinery were removed; the drawer is
+// the sole mobile nav hub. Guard that the dead code is gone (no CSS-hide leftovers).
 const shell = src("../src/app/(app)/_components/MobileShell.tsx");
-check("BN1 hook: hide-on-scroll-down с hysteresis + не на клавиатуре + show at top", chrome.includes("useHideOnScrollDown") && chrome.includes("threshold") && /INPUT\|TEXTAREA\|SELECT/.test(chrome) && chrome.includes("y <= 4"));
-check("BN2 suppression store: sticky + overlay (единый, без per-page логики)", chrome.includes("pushStickyActions") && chrome.includes("pushOverlay") && chrome.includes("useChromeSuppressed") && chrome.includes("useSyncExternalStore"));
-check("BN3 bottom nav: transform-hide (без layout shift), скрыт при scroll/overlay/drawer", shell.includes("useHideOnScrollDown") && shell.includes("useChromeSuppressed") && shell.includes("translate-y-full") && shell.includes("transition-transform") && shell.includes("open || suppressed || scrollHidden"));
-check("BN4 StickyActions скрывает bottom nav (§16)", src("../src/components/mobile/StickyActions.tsx").includes("pushStickyActions"));
-check("BN5 Sheet (drawer/sheet) скрывает bottom nav", src("../src/components/mobile/Sheet.tsx").includes("pushOverlay"));
+const fs = await import("node:fs");
+const chromeGone = !fs.existsSync(new URL("../src/components/mobile/mobile-chrome.ts", import.meta.url));
+check("BN1 bottom nav удалена полностью (нет fixed bottom-0 nav, нет translate-y-full скрытия)", !/fixed inset-x-0 bottom-0/.test(shell) && !shell.includes("translate-y-full"));
+check("BN2 dead-code удалён: mobile-chrome.ts (scroll-hide/suppression) больше не существует", chromeGone && !shell.includes("useHideOnScrollDown") && !shell.includes("useChromeSuppressed"));
+check("BN3 StickyActions/Sheet не тянут удалённый chrome-store", !src("../src/components/mobile/StickyActions.tsx").includes("pushStickyActions") && !src("../src/components/mobile/Sheet.tsx").includes("pushOverlay"));
 
 // ===================== Analytics (§6/§7) =====================
 const an = src("../src/app/(app)/analytics/page.tsx");

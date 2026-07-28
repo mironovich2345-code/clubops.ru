@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { CloseIcon, ExternalLinkIcon, DownloadIcon } from "./icons";
 
 // Kinds we can render inline. HEIC/webp are not inline-previewable (backend forces download for
 // webp and rejects HEIC), so they get an honest download fallback (spec §16).
@@ -41,9 +42,9 @@ function Viewer({ href, name, mime, onClose }: { href: string; name: string; mim
       <div className="flex items-center justify-between gap-2 px-3 py-2 pt-safe text-white">
         <span className="min-w-0 break-anywhere text-sm font-medium">{name}</span>
         <div className="flex shrink-0 items-center gap-1">
-          <a href={href} target="_blank" rel="noopener noreferrer" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10" aria-label="Открыть в новой вкладке">↗</a>
-          <a href={href} download={name} className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10" aria-label="Скачать">⤓</a>
-          <button type="button" onClick={onClose} aria-label="Закрыть" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10">✕</button>
+          <a href={href} target="_blank" rel="noopener noreferrer" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10" aria-label="Открыть в новой вкладке"><ExternalLinkIcon className="h-5 w-5" /></a>
+          <a href={href} download={name} className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10" aria-label="Скачать"><DownloadIcon className="h-5 w-5" /></a>
+          <button type="button" onClick={onClose} aria-label="Закрыть" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10"><CloseIcon className="h-5 w-5" /></button>
         </div>
       </div>
 

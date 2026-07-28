@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { pushOverlay } from "./mobile-chrome";
+import { CloseIcon } from "./icons";
 
 /**
  * Base sheet primitive (spec §19). The finance contour had NO modal/dialog/sheet component —
@@ -33,13 +33,12 @@ export function Sheet({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Lock background scroll + suppress the bottom nav while open (spec §16).
+  // Lock background scroll while open.
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const releaseOverlay = pushOverlay();
-    return () => { document.body.style.overflow = prev; releaseOverlay(); };
+    return () => { document.body.style.overflow = prev; };
   }, [open]);
 
   const requestClose = () => {
@@ -74,7 +73,7 @@ export function Sheet({
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div className="min-w-0 break-anywhere text-sm font-semibold text-slate-900">{title}</div>
-          <button type="button" aria-label="Закрыть" onClick={requestClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100">✕</button>
+          <button type="button" aria-label="Закрыть" onClick={requestClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"><CloseIcon className="h-5 w-5" /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
         {footer ? <div className="border-t border-slate-200 px-4 py-3 pb-safe-actions">{footer}</div> : null}

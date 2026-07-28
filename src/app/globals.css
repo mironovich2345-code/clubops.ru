@@ -164,6 +164,23 @@ body {
   }
 }
 
+/* Form controls must never exceed their container (spec §18). iOS date/month inputs
+   in particular have an intrinsic min-width that pushes past narrow cards — clamp them.
+   `.input` already sets width:100%; this covers bare native controls too. */
+input,
+select,
+textarea {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+input[type="date"],
+input[type="month"],
+input[type="datetime-local"],
+input[type="time"] {
+  min-width: 0;
+  width: 100%;
+}
+
 /* Flex/grid children overflow guard — long content (ФН, UUID, email, sums) must not
    force the row wider than the viewport. */
 .min-w-0-safe { min-width: 0; }
@@ -184,9 +201,8 @@ body {
 .pt-safe-header { padding-top: max(env(safe-area-inset-top), 0px); }
 /* Sticky bottom action bar: internal padding clears the home indicator. */
 .pb-safe-actions { padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
-/* Page content padding so a fixed bottom nav / action bar never overlaps the last row.
-   ~3.5rem bar height + safe area. */
-.pb-bottom-nav { padding-bottom: calc(env(safe-area-inset-bottom) + 4rem); }
+/* NOTE: the mobile bottom navigation was removed; the former `.pb-bottom-nav`
+   content spacer is gone. Pages use plain safe-area bottom padding. */
 
 /* Standalone-only helpers: hide the in-app install hint when already installed. */
 @media (display-mode: standalone) {

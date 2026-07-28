@@ -3,17 +3,17 @@ import type { BudgetFactRow, BudgetFactStatus } from "@/lib/budgets";
 
 const STATUS_META: Record<BudgetFactStatus, { label: string; badge: string; bar: string }> = {
   normal: {
-    label: "🟢 Норма",
+    label: "Норма",
     badge: "bg-emerald-50 text-emerald-700 ring-emerald-200",
     bar: "bg-emerald-500",
   },
   warning: {
-    label: "🟡 Близко к лимиту",
+    label: "Близко к лимиту",
     badge: "bg-amber-50 text-amber-800 ring-amber-200",
     bar: "bg-amber-500",
   },
   over_budget: {
-    label: "🔴 Превышен",
+    label: "Превышен",
     badge: "bg-rose-50 text-rose-700 ring-rose-200",
     bar: "bg-rose-500",
   },

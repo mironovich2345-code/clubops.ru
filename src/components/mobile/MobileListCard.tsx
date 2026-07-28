@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ArrowRightIcon, PaperclipIcon } from "./icons";
 
 // Mobile list card for the finance contour. Rendered ONLY below `lg` (desktop keeps its
 // <table>). Shows just what the audit's card spec lists: title/category, amount, key meta,
@@ -59,11 +60,11 @@ export function MobileListCard({
           {status}
           {actor ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-              <span aria-hidden>➜</span>
+              <ArrowRightIcon className="h-3.5 w-3.5" />
               <span className="truncate">{actor}</span>
             </span>
           ) : null}
-          {hasDocs ? <span className="text-xs text-slate-400" title="Есть документы">📎</span> : null}
+          {hasDocs ? <PaperclipIcon className="h-4 w-4 text-slate-400" aria-label="Есть документы" /> : null}
           {problem ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">{problem}</span>
           ) : null}

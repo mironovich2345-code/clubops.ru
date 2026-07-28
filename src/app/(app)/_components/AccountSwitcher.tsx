@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sheet } from "@/components/mobile/Sheet";
 import { switchAccountAction, removeAccountAction, logoutAllAction, startAddAccountAction } from "../account-actions";
+import { SwitchIcon } from "@/components/mobile/icons";
 import type { AccountSummary } from "@/lib/account-container";
 
 // Account switcher (spec §10/§11). Compact current-account block that opens an
@@ -34,7 +35,7 @@ export function AccountSwitcher({
             {current.roleLabel}{current.companyName ? ` · ${current.companyName}` : ""}
           </span>
         </span>
-        <span className="shrink-0 text-slate-400" aria-hidden>⇄</span>
+        <SwitchIcon className="h-4 w-4 shrink-0 text-slate-400" />
       </button>
 
       <Sheet open={open} onClose={() => setOpen(false)} title="Аккаунты" variant="full">

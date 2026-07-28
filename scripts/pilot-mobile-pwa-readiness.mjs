@@ -26,7 +26,7 @@ check("V3 theme-color per-scheme (light/dark)", /prefers-color-scheme: light/.te
 check("V4 apple standalone: capable + statusBarStyle", layout.includes("appleWebApp") && layout.includes("black-translucent"));
 check("C1 глобальный overflow-x guard (нет горизонтального скролла страницы)", /html,[\s\S]{0,400}overflow-x:\s*clip/.test(globals) && globals.includes("max-width: 100%"));
 check("C2 inputs ≥16px на mobile (нет iOS auto-zoom), desktop не тронут", /@media \(max-width: 767px\)[\s\S]{0,120}font-size:\s*16px/.test(globals));
-check("C3 safe-area утилиты (pt/pb/pl/pr-safe + bottom-nav/actions)", globals.includes("env(safe-area-inset-top)") && globals.includes("env(safe-area-inset-bottom)") && globals.includes(".pb-bottom-nav") && globals.includes(".pb-safe-actions"));
+check("C3 safe-area утилиты (pt/pb/pl/pr-safe + actions)", globals.includes("env(safe-area-inset-top)") && globals.includes("env(safe-area-inset-bottom)") && globals.includes(".pb-safe-actions"));
 check("C4 break-anywhere для длинных токенов (ФН/UUID/email)", globals.includes(".break-anywhere") && globals.includes("overflow-wrap: anywhere"));
 check("C5 standalone-only helpers (скрыть install-подсказку в standalone)", globals.includes("display-mode: standalone") && globals.includes("hide-in-standalone"));
 
@@ -56,8 +56,8 @@ check("SEC1 SW пишет в кеш ТОЛЬКО статик+offline; нави�
 check("SH1 desktop sidebar/header скрыты на mobile (lg:), mobile shell — lg:hidden", appLayout.includes('className="hidden lg:block"') && appLayout.includes("hidden h-16") && appLayout.includes("lg:flex") && shell.includes("lg:hidden"));
 check("SH2 mobile: sticky top bar + гамбургер + safe-area", shell.includes("sticky top-0") && shell.includes("pt-safe") && shell.includes('aria-label="Меню"'));
 check("SH3 drawer: полная role-filtered навигация + scope + account", shell.includes("items.map") && shell.includes("{header}") && shell.includes("{account}") && appLayout.includes("visibleItems.map"));
-check("SH4 нижняя навигация ≤5 (4 primary + Ещё), role-aware (bottomOrder), ≥44px", shell.includes("slice(0, 4)") && shell.includes("Ещё") && shell.includes("min-h-[52px]") && shell.includes("bottomOrder"));
-check("SH5 контент не под навигацией (pb-bottom-nav) + min-w-0 guard", appLayout.includes("pb-bottom-nav") && appLayout.includes("min-w-0"));
+check("SH4 нижняя навигация УДАЛЕНА (нет fixed bottom-0 nav в mobile shell)", !/fixed inset-x-0 bottom-0/.test(shell) && !shell.includes("bottomOrder"));
+check("SH5 контент использует safe-area bottom padding + min-w-0 (без bottom-nav spacer)", appLayout.includes("env(safe-area-inset-bottom)") && appLayout.includes("min-w-0") && !appLayout.includes("pb-bottom-nav"));
 check("SH6 навигация не показывает запрещённые пункты (visibleItems уже role-filtered)", appLayout.includes("canAnyRoleAccessPage") && appLayout.includes("STRATEGIC_HIDDEN_PAGES"));
 
 // --- Install (§10,§26) ---

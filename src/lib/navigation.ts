@@ -1,8 +1,7 @@
 // CLIENT-SAFE navigation config. This module is imported by client components
 // (Sidebar, MobileShell), so it MUST NOT import runtime values from auth/session/
-// prisma or next/headers — only ERASED type imports are allowed. The server-only
-// resolver (bottomNavOrder over effective roles) lives in navigation-server.ts.
-import type { AppPage, Role } from "@/lib/auth";
+// prisma or next/headers — only ERASED type imports are allowed.
+import type { AppPage } from "@/lib/auth";
 
 export type NavItem = {
   page: AppPage;
@@ -10,37 +9,9 @@ export type NavItem = {
   label: string;
 };
 
-// Lightweight emoji icons per page (no icon-font dependency). Used by the mobile
-// drawer + bottom nav; desktop text nav is unaffected.
-export const NAV_ICONS: Record<string, string> = {
-  workspace: "🗂", dashboard: "🏠", analytics: "📊", ofd_sales: "🧾",
-  expenses: "💸", collections: "💵", invoices: "📄", payments: "📆",
-  mandatory_payments: "📌", balances: "🏦", employees: "👥", payroll: "💰",
-  refunds: "↩️", budgets: "🎯", documents: "📁", activity: "🕘",
-  users: "🔑", settings: "⚙️",
-};
-
-// Role-aware bottom-navigation order (spec §15). Uses ONLY existing pages/routes —
-// there is no dedicated «Задачи» page, so each role's landing/dashboard stands in
-// (documented limitation). The mobile shell filters this to what the role can see
-// and shows the first 4 + «Ещё»; a page the role lacks is simply skipped.
-const BOTTOM_NAV_BY_ROLE: Partial<Record<Role, AppPage[]>> = {
-  owner: ["dashboard", "analytics", "payments", "ofd_sales"],
-  general_director: ["dashboard", "analytics", "payments", "ofd_sales"],
-  regional_director: ["dashboard", "analytics", "invoices", "expenses"],
-  manager: ["dashboard", "expenses", "invoices", "collections"],
-  accountant: ["workspace", "invoices", "expenses", "refunds"],
-  chief_accountant: ["workspace", "invoices", "expenses", "refunds"],
-  marketer: ["dashboard", "analytics"],
-};
-const DEFAULT_BOTTOM_NAV: AppPage[] = ["dashboard", "expenses", "invoices", "refunds"];
-
-/** Client-safe: bottom-nav page order for a single (already-resolved) role. The
- *  server resolver navigation-server.bottomNavOrder maps effective roles → highest
- *  role → this. Pure; no auth/session import. */
-export function bottomNavOrderForRole(role: Role | null): AppPage[] {
-  return (role && BOTTOM_NAV_BY_ROLE[role]) || DEFAULT_BOTTOM_NAV;
-}
+// Per-page nav icons render via the SVG NavIcon component (src/components/mobile/
+// icons.tsx) — there are no emoji icons here. The bottom navigation was removed;
+// the drawer is the sole mobile nav hub.
 
 export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "workspace", href: "/workspace", label: "Рабочий стол" },

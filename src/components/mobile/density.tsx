@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { StatusBadge, type StatusTone } from "./StatusBadge";
+import { InfoIcon } from "./icons";
 
 // Shared mobile density system (spec §2/§17). One unified set — no near-duplicate
 // components. Presentational (Server-Component-safe). Targets: page padding 16px,
@@ -98,10 +99,10 @@ export function SectionHeader({ children, action }: { children: ReactNode; actio
 }
 
 /** Compact muted info note (e.g. permission hint) — never a full oversized card (§16). */
-export function InfoNote({ icon = "ℹ", children }: { icon?: string; children: ReactNode }) {
+export function InfoNote({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-inset ring-slate-200">
-      <span aria-hidden className="shrink-0">{icon}</span>
+      <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
       <span className="min-w-0 break-anywhere">{children}</span>
     </div>
   );

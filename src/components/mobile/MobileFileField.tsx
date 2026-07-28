@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { CameraIcon, PaperclipIcon, CloseIcon } from "./icons";
 
 const DEFAULT_ACCEPT = ".jpg,.jpeg,.png,.webp,.pdf";
 
@@ -69,10 +70,10 @@ export function MobileFileField({
 
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={pending || files.length >= maxFiles} onClick={() => cameraRef.current?.click()} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50">
-          <span aria-hidden>📷</span> Камера
+          <CameraIcon className="h-4 w-4" /> Камера
         </button>
         <button type="button" disabled={pending || files.length >= maxFiles} onClick={() => inputRef.current?.click()} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50">
-          <span aria-hidden>📎</span> Из файлов
+          <PaperclipIcon className="h-4 w-4" /> Из файлов
         </button>
       </div>
 
@@ -86,7 +87,7 @@ export function MobileFileField({
               <span className="min-w-0 break-anywhere text-sm text-slate-700">{f.name}</span>
               <span className="flex shrink-0 items-center gap-2">
                 <span className="text-xs text-slate-400">{human(f.size)}</span>
-                <button type="button" disabled={pending} onClick={() => remove(i)} aria-label={`Удалить ${f.name}`} className="flex h-8 w-8 items-center justify-center rounded text-slate-500 hover:bg-slate-100 disabled:opacity-50">✕</button>
+                <button type="button" disabled={pending} onClick={() => remove(i)} aria-label={`Удалить ${f.name}`} className="flex h-9 w-9 items-center justify-center rounded text-slate-500 hover:bg-slate-100 disabled:opacity-50"><CloseIcon className="h-4 w-4" /></button>
               </span>
             </li>
           ))}
