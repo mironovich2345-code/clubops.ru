@@ -34,7 +34,7 @@ check("AN3 analytics KPI grid 320-safe (не grid-cols-2 базово)", !/grid 
 const ofd = src("../src/app/(app)/analytics/ofd-sales/page.tsx");
 check("OF1 OFD: compact header + summary cards (DataSummaryCard, без p-5 text-2xl)", ofd.includes("CompactPageHeader") && ofd.includes("DataSummaryCard") && !ofd.includes("rounded-2xl border p-5"));
 check("OF2 OFD «По клубам»/«По юрлицам» → desktop table hidden lg:block + mobile cards", ofd.includes("hidden overflow-x-auto rounded-lg border border-slate-200 lg:block") && ofd.includes("space-y-3 lg:hidden") && ofd.includes("<MobileDataCard"));
-check("OF3 OFD: компактный month switcher + без Block mb-8", ofd.includes('aria-label="Предыдущий месяц"') && !ofd.includes("mb-8"));
+check("OF3 OFD: shared MonthNav + без Block mb-8", ofd.includes("<MonthNav") && !ofd.includes("mb-8"));
 
 // ===================== Budgets (§14/§15/§16) =====================
 const bud = src("../src/app/(app)/budgets/page.tsx");
