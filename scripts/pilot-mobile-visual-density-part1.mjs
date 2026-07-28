@@ -29,5 +29,11 @@ check("OF1 OFD: compact header + summary cards (DataSummaryCard, без p-5 text
 check("OF2 OFD «По клубам»/«По юрлицам» → desktop table hidden lg:block + mobile cards", ofd.includes("hidden overflow-x-auto rounded-lg border border-slate-200 lg:block") && ofd.includes("space-y-3 lg:hidden") && ofd.includes("<MobileDataCard"));
 check("OF3 OFD: компактный month switcher + без Block mb-8", ofd.includes('aria-label="Предыдущий месяц"') && !ofd.includes("mb-8"));
 
+// ===================== Budgets (§14/§15/§16) =====================
+const bud = src("../src/app/(app)/budgets/page.tsx");
+check("BG1 budgets: compact header + compact filter + segmented control (Бюджеты/План-факт)", bud.includes("CompactPageHeader") && bud.includes("inline-flex rounded-lg bg-slate-100 p-1") && bud.includes("bg-white text-slate-900 shadow-sm"));
+check("BG2 budgets лимиты → desktop table hidden lg:block + mobile cards + статус перерасхода", bud.includes("hidden overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:block") && bud.includes("space-y-3 lg:hidden") && bud.includes("budgetStatus(") && bud.includes("budgetRank(") && bud.includes('label: "Перерасход"'));
+check("BG3 budgets permission note компактный (InfoNote, не большая карточка)", bud.includes("<InfoNote>Управлять бюджетами"));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

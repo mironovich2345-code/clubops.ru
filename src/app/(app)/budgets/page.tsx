@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
+import { CompactPageHeader, MobileDataCard, InfoNote, EmptyState } from "@/components/mobile/density";
+import { StatusBadge, type StatusTone } from "@/components/mobile/StatusBadge";
 import { formatKopeks } from "@/lib/money";
 import {
   requirePageAccess,
@@ -43,6 +45,22 @@ const PAGE_VIEWS = [
 ] as const;
 
 type PageView = (typeof PAGE_VIEWS)[number]["key"];
+
+// Budget line status for the mobile cards (spec §15). Business data/order unchanged;
+// this is presentational only (desktop table keeps its original order).
+type BudgetRow = { hasLimit: boolean; remainingKopeks: number; percentUsed: number | null };
+function budgetStatus(row: BudgetRow): { tone: StatusTone; label: string } {
+  if (!row.hasLimit) return { tone: "neutral", label: "Лимит не задан" };
+  if (row.remainingKopeks < 0) return { tone: "danger", label: "Перерасход" };
+  if (row.percentUsed !== null && row.percentUsed >= 80) return { tone: "warning", label: "Близко к лимиту" };
+  return { tone: "success", label: "В норме" };
+}
+function budgetRank(row: BudgetRow): number {
+  if (row.hasLimit && row.remainingKopeks < 0) return 0;
+  if (row.hasLimit && row.percentUsed !== null && row.percentUsed >= 80) return 1;
+  if (!row.hasLimit) return 3;
+  return 2;
+}
 
 export default async function BudgetsPage({
   searchParams,
@@ -123,39 +141,37 @@ export default async function BudgetsPage({
 
   return (
     <div>
-      <PageHeader title="Бюджеты" description="Месячные лимиты по статьям и согласование перерасхода" />
+      <CompactPageHeader title="Бюджеты" subtitle="Месячные лимиты по статьям и согласование перерасхода" />
 
-      {/* Club + month selector */}
-      <form method="get" className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Клуб</span>
-          <select name="clubId" defaultValue={selectedClubId} className="input">
+      {/* Club + month selector — compact */}
+      <form method="get" className="mb-4 grid grid-cols-1 items-end gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm min-[420px]:grid-cols-[1fr_auto_auto]">
+        <label className="block min-w-0">
+          <span className="mb-1 block text-xs font-medium text-slate-600">Клуб</span>
+          <select name="clubId" defaultValue={selectedClubId} className="input w-full">
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Месяц</span>
-          <input type="month" name="month" defaultValue={month} className="input" />
+          <span className="mb-1 block text-xs font-medium text-slate-600">Месяц</span>
+          <input type="month" name="month" defaultValue={month} className="input w-full" />
         </label>
         <input type="hidden" name="tab" value={tab} />
         <input type="hidden" name="view" value={view} />
-        <button type="submit" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+        <button type="submit" className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Показать
         </button>
       </form>
 
-      {/* Page view tabs */}
-      <div className="mb-6 flex flex-wrap gap-2">
+      {/* Page view — segmented control (§14) */}
+      <div className="mb-4 inline-flex rounded-lg bg-slate-100 p-1">
         {PAGE_VIEWS.map((v) => (
           <Link
             key={v.key}
             href={viewHref(v.key)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition ${
-              v.key === view
-                ? "bg-brand-600 text-white"
-                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            className={`inline-flex min-h-[40px] items-center rounded-md px-4 text-sm font-medium transition ${
+              v.key === view ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
             }`}
           >
             {v.label}
@@ -178,45 +194,63 @@ export default async function BudgetsPage({
           <BudgetImportPanel month={month} />
         </div>
       ) : (
-        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-          Управлять бюджетами может собственник или ген.директор
-        </div>
+        <div className="mb-4"><InfoNote>Управлять бюджетами может собственник или ген.директор</InfoNote></div>
       )}
 
-      {/* Overview */}
-      <div className="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-          Лимиты и использование · {month}
+      {/* Overview — desktop table (≥lg) + mobile cards (§15) */}
+      <div className="mb-6">
+        <div className="mb-2 text-sm font-semibold text-slate-700">Лимиты и использование · {month}</div>
+        {/* Desktop table */}
+        <div className="hidden overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:block">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <Th>Статья</Th>
+                <Th className="text-right">Лимит</Th>
+                <Th className="text-right">Использовано</Th>
+                <Th className="text-right">Остаток</Th>
+                <Th className="text-right">% использования</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {overview.map((row) => {
+                const over = row.hasLimit && row.remainingKopeks < 0;
+                return (
+                  <tr key={row.category} className="hover:bg-slate-50">
+                    <Td>{row.label}</Td>
+                    <Td className="text-right">{row.hasLimit ? formatKopeks(row.limitKopeks) : "—"}</Td>
+                    <Td className="text-right">{formatKopeks(row.usedKopeks)}</Td>
+                    <Td className={`text-right font-medium ${over ? "text-rose-700" : "text-slate-900"}`}>
+                      {row.hasLimit ? formatKopeks(row.remainingKopeks) : "—"}
+                    </Td>
+                    <Td className={`text-right ${over ? "text-rose-700" : "text-slate-700"}`}>
+                      {row.percentUsed === null ? "—" : `${row.percentUsed.toFixed(0)}%`}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
-            <tr>
-              <Th>Статья</Th>
-              <Th className="text-right">Лимит</Th>
-              <Th className="text-right">Использовано</Th>
-              <Th className="text-right">Остаток</Th>
-              <Th className="text-right">% использования</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {overview.map((row) => {
-              const over = row.hasLimit && row.remainingKopeks < 0;
-              return (
-                <tr key={row.category} className="hover:bg-slate-50">
-                  <Td>{row.label}</Td>
-                  <Td className="text-right">{row.hasLimit ? formatKopeks(row.limitKopeks) : "—"}</Td>
-                  <Td className="text-right">{formatKopeks(row.usedKopeks)}</Td>
-                  <Td className={`text-right font-medium ${over ? "text-rose-700" : "text-slate-900"}`}>
-                    {row.hasLimit ? formatKopeks(row.remainingKopeks) : "—"}
-                  </Td>
-                  <Td className={`text-right ${over ? "text-rose-700" : "text-slate-700"}`}>
-                    {row.percentUsed === null ? "—" : `${row.percentUsed.toFixed(0)}%`}
-                  </Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {/* Mobile cards — overspend first, then close-to-limit (§15). Desktop order preserved. */}
+        <div className="space-y-3 lg:hidden">
+          {overview.length === 0 ? <EmptyState>Нет статей.</EmptyState> : [...overview].sort((a, b) => budgetRank(a) - budgetRank(b)).map((row) => {
+            const s = budgetStatus(row);
+            return (
+              <MobileDataCard
+                key={row.category}
+                title={row.label}
+                badge={<StatusBadge tone={s.tone}>{s.label}</StatusBadge>}
+                rows={[
+                  { label: "Лимит", value: row.hasLimit ? formatKopeks(row.limitKopeks) : "—" },
+                  { label: "Использовано", value: formatKopeks(row.usedKopeks) },
+                  { label: "Остаток", value: row.hasLimit ? formatKopeks(row.remainingKopeks) : "—", strong: true, tone: s.tone === "danger" ? "danger" : undefined },
+                  { label: "%", value: row.percentUsed === null ? "—" : `${row.percentUsed.toFixed(0)}%` },
+                ]}
+              />
+            );
+          })}
+        </div>
       </div>
 
       {/* Budget approval requests */}
