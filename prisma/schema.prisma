@@ -206,6 +206,44 @@ model Session {
   @@index([revokedAt])
 }
 
+// Device-local multi-account container. One per browser/device. Holds a random
+// httpOnly cookie token (stored HMAC-only) and points at the ACTIVE stored account.
+// Scalar ids, no FK/relation (SettingsPinSession precedent) — keeps the migration
+// purely additive and never touches User/Session.
+model AccountSessionContainer {
+  id                    String    @id @default(cuid())
+  tokenHash             String    @unique
+  activeStoredSessionId String?
+  expiresAt             DateTime
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  lastActiveAt          DateTime  @default(now())
+  revokedAt             DateTime?
+  userAgentHash         String?
+  deviceLabel           String?
+
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+// One parked account inside a container. References an existing Session by id
+// (scalar, no FK). The container's activeStoredSessionId selects which one drives
+// the current user. unique(containerId, userId) prevents duplicate accounts.
+model StoredAccountSession {
+  id           String    @id @default(cuid())
+  containerId  String
+  userId       String
+  sessionId    String
+  displayOrder Int       @default(0)
+  addedAt      DateTime  @default(now())
+  lastUsedAt   DateTime  @default(now())
+  revokedAt    DateTime?
+
+  @@unique([containerId, userId])
+  @@index([containerId])
+  @@index([sessionId])
+}
+
 // Email OTP (second factor). Mandatory on every login: a Session is created only
 // after a challenge is verified. Never stores the plaintext OTP (only an
 // HMAC digest keyed by OTP_SECRET) nor the raw challenge token (only its HMAC).
