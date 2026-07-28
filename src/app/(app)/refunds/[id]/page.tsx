@@ -5,6 +5,7 @@ import { getCurrentAccessContext, hasActiveRegionalApproverForClub, userHasClubR
 import { canAnyRoleAccessPage, canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
 import { formatKopeks } from "@/lib/money";
 import { formatUserDisplayName } from "@/lib/user-display";
+import { DocumentLink } from "@/components/mobile/DocumentViewer";
 import {
   getRefundForContext,
   getActiveRefundDocuments,
@@ -119,7 +120,7 @@ export default async function RefundDetailPage({
               <li key={i} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                 <span className="text-slate-700">{s.label}</span>
                 {s.doc ? (
-                  <a href={`/api/refunds/${id}/file?key=${encodeURIComponent(s.doc.storageKey)}`} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:text-brand-700">{s.doc.originalFilename} · Открыть</a>
+                  <DocumentLink href={`/api/refunds/${id}/file?key=${encodeURIComponent(s.doc.storageKey)}`} name={s.doc.originalFilename} className="inline-flex min-h-[44px] items-center break-anywhere px-2 text-sm font-medium text-brand-700 hover:underline">{s.doc.originalFilename} · Открыть</DocumentLink>
                 ) : <span className="text-rose-600">не загружен</span>}
               </li>
             ))}

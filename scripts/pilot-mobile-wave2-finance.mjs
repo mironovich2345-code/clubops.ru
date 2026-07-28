@@ -64,6 +64,10 @@ check("E2 expenses карточка: статья+сумма+статус+клу
 check("E3 expenses list не клипает контент (overflow-hidden убран у таблицы)", !/xl:col-span-2 overflow-hidden/.test(expList));
 check("E4 IpCash факт-блок не grid-cols-2 на 320px (стек → min-[400px])", expList.includes("grid-cols-1 gap-x-6 gap-y-1 text-sm min-[400px]:grid-cols-2"));
 
+// ============================ DETAIL document viewer (§7/§10/§15/§16) ============================
+check("D-V1 деталь счёта: DocumentBlock → in-app DocumentLink (не target=_blank)", src("../src/app/(app)/invoices/[id]/_components/InvoiceEditForm.tsx").includes("DocumentLink") && !/href=\{`\/api\/invoices\/\$\{invoice\.id\}\/file`\}\s*\n\s*target="_blank"/.test(src("../src/app/(app)/invoices/[id]/_components/InvoiceEditForm.tsx")));
+check("D-V2 деталь возврата: документы → in-app DocumentLink (не target=_blank)", src("../src/app/(app)/refunds/[id]/page.tsx").includes("DocumentLink") && !/refunds\/\$\{id\}\/file[\s\S]{0,60}target="_blank"/.test(src("../src/app/(app)/refunds/[id]/page.tsx")));
+
 // ============================ EXPENSE create + documents (§5/§7/§16/§18) ============================
 const simpleForm = src("../src/app/(app)/expenses/simple/SimpleExpenseForm.tsx");
 check("E5 создание расхода: mobile StickyActions + desktop lg:block (без дубля), keyboard-clear pb", simpleForm.includes("<StickyActions>") && simpleForm.includes("hidden lg:block") && simpleForm.includes("pb-28 lg:pb-0"));

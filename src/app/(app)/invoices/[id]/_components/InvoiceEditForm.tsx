@@ -7,6 +7,7 @@ import {
   replaceInvoiceFile,
   saveAndResubmitInvoice,
 } from "../../actions";
+import { DocumentLink } from "@/components/mobile/DocumentViewer";
 
 type InvoiceView = {
   id: string;
@@ -393,14 +394,13 @@ function DocumentBlock({ invoice }: { invoice: InvoiceView }) {
       <div className="flex flex-col items-start gap-1">
         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Файл доступен</span>
         <div className="flex flex-wrap items-center gap-4">
-          <a
+          <DocumentLink
             href={`/api/invoices/${invoice.id}/file`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-medium text-brand-600 hover:text-brand-700"
+            name={invoice.originalFileName ?? "Документ счёта"}
+            className="inline-flex min-h-[44px] items-center break-anywhere px-2 text-sm font-medium text-brand-700 hover:underline"
           >
             Открыть документ{invoice.originalFileName ? ` (${invoice.originalFileName})` : ""}
-          </a>
+          </DocumentLink>
           {invoice.canDownload ? (
             <a
               href={`/api/invoices/${invoice.id}/file?download=1`}
