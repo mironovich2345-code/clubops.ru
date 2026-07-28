@@ -3,17 +3,14 @@
 import { useFormState, useFormStatus } from "react-dom";
 import { createClubEmployee, type EmployeeFormState } from "../actions";
 import { EMPLOYEE_POSITIONS } from "@/lib/club-employees";
+import { buttonClass } from "@/components/mobile/buttons";
 
 const initial: EmployeeFormState = { ok: false };
 
 function Submit() {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
-    >
+    <button type="submit" disabled={pending} className={`${buttonClass({ variant: "primary", size: "cta", block: true })} sm:w-auto`}>
       {pending ? "Сохранение..." : "Добавить сотрудника"}
     </button>
   );

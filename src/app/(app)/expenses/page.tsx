@@ -27,6 +27,7 @@ import { loadClubCashBalances } from "@/lib/cash-collections";
 import { IpCashSyncButton, OpeningBalanceForm } from "../collections/_components/CollectionForms";
 import { UnsentDrafts } from "./_components/UnsentDrafts";
 import { MobileListCard } from "@/components/mobile/MobileListCard";
+import { buttonClass } from "@/components/mobile/buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -156,16 +157,13 @@ export default async function ExpensesPage({
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <PageHeader title="Расходы" description="Наличные расходы ИП, документы и согласование" />
         {canCreate ? (
-          <div className="flex flex-wrap gap-2">
-            <Link href="/collections" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-              Инкассация и остатки
-            </Link>
-            <Link href="/expenses/simple" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700">
-              + Новый расход
-            </Link>
+          // Mobile: two equal-height full-width actions (stack < 380px); desktop: inline.
+          <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2 lg:flex lg:w-auto lg:shrink-0">
+            <Link href="/collections" className={buttonClass({ variant: "secondary" })}>Инкассация и остатки</Link>
+            <Link href="/expenses/simple" className={buttonClass({ variant: "primary" })}>+ Новый расход</Link>
           </div>
         ) : null}
       </div>
@@ -186,22 +184,24 @@ export default async function ExpensesPage({
         </div>
       ) : null}
 
-      {cardClubId ? (
-        <IpCashFactBlock companyId={scope.company.id} club={{ id: cardClubId, name: clubs.find((c) => c.id === cardClubId)?.name ?? "" }} today={iso(now)} />
-      ) : (
-        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">Выберите один клуб, чтобы увидеть фактический остаток наличных ИП.</div>
-      )}
+      <div className="mt-4">
+        {cardClubId ? (
+          <IpCashFactBlock companyId={scope.company.id} club={{ id: cardClubId, name: clubs.find((c) => c.id === cardClubId)?.name ?? "" }} today={iso(now)} />
+        ) : (
+          <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900">Выберите один клуб, чтобы увидеть фактический остаток наличных ИП.</div>
+        )}
+      </div>
 
-      {/* Status filter */}
-      <div className="mb-3 flex flex-wrap gap-2">
+      {/* Status filter — single row, horizontal scroll inside the container (no chaotic wrap). */}
+      <div className="mb-3 -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-wrap lg:px-0">
         {STATUS_FILTERS.map((f) => (
           <Link
             key={f.key}
             href={f.key === DEFAULT_FILTER_KEY ? "/expenses" : `/expenses?status=${f.key}`}
-            className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+            className={`inline-flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border px-3.5 text-sm font-medium ${
               statusFilter.key === f.key
-                ? "border-brand-300 bg-brand-600 text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                ? "border-brand-600 bg-brand-600 text-white"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
             }`}
           >
             {f.label}

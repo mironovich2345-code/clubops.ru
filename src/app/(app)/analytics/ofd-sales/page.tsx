@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CompactPageHeader, DataSummaryCard, MobileDataCard, SectionHeader, EmptyState } from "@/components/mobile/density";
+import { MonthNav } from "@/components/mobile/MonthNav";
 import { formatKopeks } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
@@ -92,15 +92,9 @@ export default async function OfdSalesAnalyticsPage({ searchParams }: { searchPa
         <SalesCard title={monthLabel(month)} agg={monthAgg} highlight />
       </div>
 
-      {/* Compact month switcher (‹ месяц ›) */}
-      <div className="mt-4 flex items-center justify-between gap-2 text-sm">
-        <Link href={`/analytics/ofd-sales?month=${prevMonth}`} aria-label="Предыдущий месяц" className="inline-flex min-h-[44px] items-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50">‹</Link>
-        <span className="min-w-0 flex-1 truncate rounded-md bg-slate-100 px-3 py-2 text-center font-medium capitalize text-slate-700">{monthLabel(month)}</span>
-        {canGoNext ? (
-          <Link href={`/analytics/ofd-sales?month=${nextMonth}`} aria-label="Следующий месяц" className="inline-flex min-h-[44px] items-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50">›</Link>
-        ) : (
-          <span aria-label="Следующий месяц недоступен" className="inline-flex min-h-[44px] items-center rounded-md border border-slate-200 px-3 font-medium text-slate-300">›</span>
-        )}
+      {/* Shared month navigator */}
+      <div className="mt-4">
+        <MonthNav prevHref={`/analytics/ofd-sales?month=${prevMonth}`} nextHref={canGoNext ? `/analytics/ofd-sales?month=${nextMonth}` : null} label={monthLabel(month)} />
       </div>
 
       {!monthHasData ? (

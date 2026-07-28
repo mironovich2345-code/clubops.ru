@@ -147,11 +147,11 @@ export default async function InvoicesPage({
 
 // --- Summary cards ----------------------------------------------------------
 
-function Stat({ label, value, accent, sub }: { label: string; value: string; accent?: string; sub?: string }) {
+function Stat({ label, value, accent, sub, className = "" }: { label: string; value: string; accent?: string; sub?: string; className?: string }) {
   return (
-    <div className={`p-4 ${CARD}`}>
+    <div className={`p-4 ${CARD} ${className}`}>
       <div className="text-xs text-slate-500">{label}</div>
-      <div className={`mt-1 truncate text-lg font-semibold ${accent ?? "text-slate-900"}`}>{value}</div>
+      <div className={`mt-1 whitespace-nowrap text-lg font-semibold tabular-nums ${accent ?? "text-slate-900"}`}>{value}</div>
       {sub ? <div className="text-[11px] text-slate-400">{sub}</div> : null}
     </div>
   );
@@ -179,7 +179,8 @@ function ElevatedCards({ view }: { view: InvoicesView }) {
       <Stat label="Оплачено" value={formatKopeks(paid)} accent="text-emerald-700" />
       <Stat label="Ожидает оплаты" value={formatKopeks(s.pendingPaymentAmountKopeks)} accent="text-amber-700" />
       <Stat label="Просрочено" value={formatKopeks(s.overdueAmountKopeks)} accent={s.overdueAmountKopeks > 0 ? "text-rose-700" : undefined} />
-      <Stat label="Счетов" value={String(view.currentPeriodInvoices.length)} />
+      {/* 5th card spans both columns at the 2-col mobile width so it isn't a lonely half. */}
+      <Stat label="Счетов" value={String(view.currentPeriodInvoices.length)} className="min-[400px]:col-span-2 lg:col-span-1" />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import { buttonClass } from "@/components/mobile/buttons";
 import {
   createCashCollection,
   createCashWithdrawal,
@@ -25,8 +26,9 @@ type ClubOpt = { id: string; name: string };
 
 function Submit({ idle, busy }: { idle: string; busy: string }) {
   const { pending } = useFormStatus();
+  // Primary CTA — full-width on mobile (48px), auto on desktop.
   return (
-    <button type="submit" disabled={pending} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60">
+    <button type="submit" disabled={pending} className={`${buttonClass({ variant: "primary", size: "cta", block: true })} sm:w-auto`}>
       {pending ? busy : idle}
     </button>
   );

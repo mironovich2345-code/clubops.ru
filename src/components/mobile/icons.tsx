@@ -14,6 +14,8 @@ function Svg({ children, className, ...rest }: SVGProps<SVGSVGElement>) {
 export const MenuIcon = (p: SVGProps<SVGSVGElement>) => <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16" /></Svg>;
 export const CloseIcon = (p: SVGProps<SVGSVGElement>) => <Svg {...p}><path d="M6 6l12 12M18 6L6 18" /></Svg>;
 export const ChevronDownIcon = (p: SVGProps<SVGSVGElement>) => <Svg {...p}><path d="M6 9l6 6 6-6" /></Svg>;
+export const ChevronLeftIcon = (p: SVGProps<SVGSVGElement>) => <Svg {...p}><path d="M15 6l-6 6 6 6" /></Svg>;
+export const ChevronRightIcon = (p: SVGProps<SVGSVGElement>) => <Svg {...p}><path d="M9 6l6 6-6 6" /></Svg>;
 export const FilterIcon = (p: SVGProps<SVGSVGElement>) => <Svg {...p}><path d="M3 5h18l-7 8v6l-4-2v-4z" /></Svg>;
 export const CameraIcon = (p: SVGProps<SVGSVGElement>) => <Svg {...p}><path d="M3 8h3l2-2h8l2 2h3v11H3z" /><circle cx="12" cy="13" r="3.2" /></Svg>;
 export const PaperclipIcon = (p: SVGProps<SVGSVGElement>) => <Svg {...p}><path d="M21 11l-8.5 8.5a5 5 0 01-7-7L14 4a3.3 3.3 0 015 4.5l-8.6 8.6a1.7 1.7 0 01-2.4-2.4L14 7" /></Svg>;

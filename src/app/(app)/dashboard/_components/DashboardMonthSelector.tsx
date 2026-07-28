@@ -1,12 +1,10 @@
 import Link from "next/link";
-
-const BTN =
-  "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";
+import { MonthNav } from "@/components/mobile/MonthNav";
 
 /**
- * Dashboard month selector (?month=YYYY-MM). Prev / label / next + "Текущий
- * месяц". Pure links — the page validates the query param and falls back to the
- * current month, so the selection survives reload/navigation.
+ * Dashboard month selector (?month=YYYY-MM). Uses the shared MonthNav: symmetric 44×44
+ * arrows + centered label, with "Текущий месяц" on its own line (badge when already the
+ * current month, else a reset link). Pure links — the page validates the query param.
  */
 export function DashboardMonthSelector({
   monthLabel,
@@ -20,15 +18,17 @@ export function DashboardMonthSelector({
   isCurrent: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Link href={`/dashboard?month=${prevMonth}`} className={BTN} aria-label="Предыдущий месяц">‹</Link>
-      <span className="min-w-[9.5rem] text-center text-sm font-semibold text-slate-900 dark:text-slate-100">{monthLabel}</span>
-      <Link href={`/dashboard?month=${nextMonth}`} className={BTN} aria-label="Следующий месяц">›</Link>
-      {isCurrent ? (
-        <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Текущий месяц</span>
-      ) : (
-        <Link href="/dashboard" className={BTN}>Текущий месяц</Link>
-      )}
-    </div>
+    <MonthNav
+      prevHref={`/dashboard?month=${prevMonth}`}
+      nextHref={`/dashboard?month=${nextMonth}`}
+      label={monthLabel}
+      badge={
+        isCurrent ? (
+          <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300">Текущий месяц</span>
+        ) : (
+          <Link href="/dashboard" className="rounded-md px-2.5 py-1 text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">← Текущий месяц</Link>
+        )
+      }
+    />
   );
 }
