@@ -284,3 +284,44 @@ export async function listDeviceAccounts(): Promise<AccountSummary[]> {
   if (!containerId) return [];
   return listContainerAccountsRecord(containerId);
 }
+
+// --- Add-account intent + login completion ---------------------------------
+
+const ADD_INTENT_COOKIE = "club_ops_add_account";
+
+/** Mark that the next successful login should ADD an account (not replace). Set when
+ *  the user taps «Добавить аккаунт»; short-lived, httpOnly. */
+export async function setAddAccountIntent(): Promise<void> {
+  (await cookies()).set(ADD_INTENT_COOKIE, "1", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 15 * 60 });
+}
+
+async function consumeAddAccountIntent(): Promise<boolean> {
+  const store = await cookies();
+  const has = store.get(ADD_INTENT_COOKIE)?.value === "1";
+  if (has) store.delete(ADD_INTENT_COOKIE);
+  return has;
+}
+
+/**
+ * Wire a freshly-created login session into the device container. Called right after
+ * createSession in the OTP verify step:
+ *   - add-account intent  → force a container (creating it on first use) and attach +
+ *     activate the new account, leaving other accounts active (§5);
+ *   - otherwise           → attach only if a container already exists (re-login of one
+ *     account, §7); a single-account device stays container-free (zero regression).
+ */
+export async function completeLoginAttach(sessionId: string, userId: string): Promise<{ added: boolean }> {
+  if (await consumeAddAccountIntent()) {
+    await addAccountSession(sessionId, userId);
+    return { added: true };
+  }
+  await attachToExistingContainer(sessionId, userId);
+  return { added: false };
+}
+
+/** Snapshot the CURRENT account into a container (creating it if needed) before an
+ *  add-account login, so the existing account is preserved and stays active until the
+ *  new one signs in. */
+export async function ensureCurrentAccountStored(sessionId: string, userId: string): Promise<void> {
+  await addAccountSession(sessionId, userId);
+}

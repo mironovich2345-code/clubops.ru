@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/tokens";
 import { recordAudit } from "@/lib/access";
 import { createSession } from "@/lib/session";
+import { completeLoginAttach } from "@/lib/account-container";
 import { sendOtpEmail } from "@/lib/email";
 import { applyPendingInvitesForUser } from "@/lib/invite-service";
 import {
@@ -269,6 +270,18 @@ export async function verifyCurrentChallenge(code: string): Promise<VerifyResult
   const sessionId = await createSession(user.id);
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   await recordAudit({ action: "session.created", entityType: "Session", entityId: sessionId, userId: user.id, metadata: { via: "otp" } });
+
+  // Multi-account: attach the new session to this device's container. With an
+  // add-account intent this ADDS an account (keeping the others); otherwise it only
+  // updates an existing container (re-login) — a single-account device stays as-is.
+  try {
+    const { added } = await completeLoginAttach(sessionId, user.id);
+    if (added) {
+      await recordAudit({ action: "account.added_to_device", entityType: "Session", entityId: sessionId, userId: user.id });
+    }
+  } catch (err) {
+    console.error("multi-account attach failed", { userId: user.id, code: (err as { code?: string })?.code });
+  }
 
   await clearChallengeCookie();
   return { ok: true };
