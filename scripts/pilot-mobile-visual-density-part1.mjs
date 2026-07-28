@@ -23,6 +23,12 @@ check("BN3 bottom nav: transform-hide (без layout shift), скрыт при s
 check("BN4 StickyActions скрывает bottom nav (§16)", src("../src/components/mobile/StickyActions.tsx").includes("pushStickyActions"));
 check("BN5 Sheet (drawer/sheet) скрывает bottom nav", src("../src/components/mobile/Sheet.tsx").includes("pushOverlay"));
 
+// ===================== Analytics (§6/§7) =====================
+const an = src("../src/app/(app)/analytics/page.tsx");
+check("AN1 analytics: compact header (CompactPageHeader, без PageHeader)", an.includes("CompactPageHeader") && !an.includes("<PageHeader"));
+check("AN2 analytics KPI карточки компактные (p-3, clamp value, без p-5 text-3xl truncate)", an.includes("flex h-full flex-col p-3") && an.includes("clamp(1.1rem, 5.5vw, 1.75rem)") && !an.includes("truncate text-3xl"));
+check("AN3 analytics KPI grid 320-safe (не grid-cols-2 базово)", !/grid grid-cols-2 gap-4 lg:grid-cols-4/.test(an) && an.includes("grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4"));
+
 // ===================== OFD sales (§8/§9/§10) =====================
 const ofd = src("../src/app/(app)/analytics/ofd-sales/page.tsx");
 check("OF1 OFD: compact header + summary cards (DataSummaryCard, без p-5 text-2xl)", ofd.includes("CompactPageHeader") && ofd.includes("DataSummaryCard") && !ofd.includes("rounded-2xl border p-5"));

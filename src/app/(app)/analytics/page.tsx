@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PageHeader } from "@/components/PageHeader";
+import { CompactPageHeader } from "@/components/mobile/density";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
 import { SalesDynamicsChart } from "@/components/SalesDynamicsChart";
@@ -137,7 +137,7 @@ export default async function AnalyticsPage({
     return (
       <div className="mx-auto max-w-[1440px]">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <PageHeader title="Аналитика" description="Все доступные сети" />
+          <CompactPageHeader title="Аналитика" subtitle="Все доступные сети" />
           <span className="text-sm text-slate-500 dark:text-slate-400">{period.label} · {rangeLabel}</span>
         </div>
         <div className="mb-5">
@@ -153,7 +153,7 @@ export default async function AnalyticsPage({
             extra={{ period: periodKey, from: sp.from ?? "", to: sp.to ?? "" }}
           />
         </div>
-        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4">
           {anyOfd ? <KpiCard label="Выручка ОФД (все сети)" value={formatKopeks(tRev)} accent="text-brand-700 dark:text-brand-400" /> : null}
           <KpiCard label="Продажи АБ (все сети)" value={formatKopeks(tAb)} accent="text-emerald-600 dark:text-emerald-400" />
           <KpiCard label="Продажи ПТ (все сети)" value={formatKopeks(tPt)} accent="text-sky-600 dark:text-sky-400" />
@@ -265,7 +265,7 @@ export default async function AnalyticsPage({
     <div className="mx-auto max-w-[1440px]">
       {/* Header + period selector */}
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <PageHeader title="Аналитика" description="Бизнес-обзор клуба" />
+        <CompactPageHeader title="Аналитика" subtitle="Бизнес-обзор клуба" />
         <form method="get" className={`flex flex-wrap items-end gap-2 p-2 ${CARD}`}>
           {groups ? (
             <>
@@ -371,7 +371,7 @@ export default async function AnalyticsPage({
 
       {/* Part 6 (Finance Control) — ООО / ИП forecasts kept separate (no merge) */}
       {financials && entityGaps ? (
-        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4">
           <KpiCard
             label="Прогноз ООО"
             value={entityGaps.ooo.projectedBalanceKopeks === null ? "нет данных" : formatKopeks(entityGaps.ooo.projectedBalanceKopeks)}
@@ -512,12 +512,12 @@ function KpiCard({
   progress?: PlanSplitCell;
 }) {
   return (
-    <div className={`flex h-full flex-col p-5 ${CARD}`}>
+    <div className={`flex h-full flex-col p-3 ${CARD}`}>
       <div className="flex items-start justify-between gap-2">
-        <div className="text-sm font-medium leading-tight text-slate-500 dark:text-slate-400">{label}</div>
+        <div className="text-xs font-medium leading-tight text-slate-500 dark:text-slate-400">{label}</div>
         {trend ? <TrendChip cur={trend.cur} prev={trend.prev} goodWhenUp={trend.goodWhenUp} /> : null}
       </div>
-      <div className={`mt-3 truncate text-3xl font-semibold tracking-tight ${muted ? "text-slate-400 dark:text-slate-500" : accent ?? "text-slate-900 dark:text-slate-100"}`}>
+      <div className={`mt-1 whitespace-nowrap font-semibold tabular-nums tracking-tight ${muted ? "text-slate-400 dark:text-slate-500" : accent ?? "text-slate-900 dark:text-slate-100"}`} style={{ fontSize: "clamp(1.1rem, 5.5vw, 1.75rem)" }}>
         {value}
       </div>
       {sub ? <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{sub}</div> : null}
