@@ -49,6 +49,11 @@
 html,
 body {
   height: 100%;
+  /* Mobile: never allow the page itself to scroll horizontally (blocks off-viewport
+     overflow). `clip` keeps position:sticky working (unlike overflow:hidden). Individual
+     wide blocks opt back in with their own `overflow-x-auto` container. */
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 body {
@@ -141,3 +146,56 @@ body {
 .dark .border-rose-300 { border-color: rgba(244, 63, 94, 0.35) !important; }
 .dark .border-amber-200,
 .dark .border-amber-300 { border-color: rgba(245, 158, 11, 0.35) !important; }
+
+/* ---------------------------------------------------------------------------
+   Mobile + PWA foundation (WAVE 1). Systemic, theme-agnostic. Desktop unaffected
+   (rules are mobile-scoped or opt-in utility classes).
+--------------------------------------------------------------------------- */
+
+/* Prevent iOS Safari auto-zoom on focus: form controls must be ≥16px on phones.
+   Desktop keeps its compact text-sm. Accessibility pinch-zoom stays enabled (we do
+   NOT set user-scalable=no). */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea,
+  .input {
+    font-size: 16px;
+  }
+}
+
+/* Flex/grid children overflow guard — long content (ФН, UUID, email, sums) must not
+   force the row wider than the viewport. */
+.min-w-0-safe { min-width: 0; }
+
+/* Safe word wrapping for long tokens without spaces. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* iPhone safe-area utilities (need viewport-fit=cover, set in the viewport export).
+   Use for sticky headers, bottom nav, sticky action bars, full-screen sheets, toasts. */
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pl-safe { padding-left: env(safe-area-inset-left); }
+.pr-safe { padding-right: env(safe-area-inset-right); }
+/* Header top padding that also clears the notch. */
+.pt-safe-header { padding-top: max(env(safe-area-inset-top), 0px); }
+/* Sticky bottom action bar: internal padding clears the home indicator. */
+.pb-safe-actions { padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
+/* Page content padding so a fixed bottom nav / action bar never overlaps the last row.
+   ~3.5rem bar height + safe area. */
+.pb-bottom-nav { padding-bottom: calc(env(safe-area-inset-bottom) + 4rem); }
+
+/* Standalone-only helpers: hide the in-app install hint when already installed. */
+@media (display-mode: standalone) {
+  .hide-in-standalone { display: none !important; }
+}
+.only-in-standalone { display: none; }
+@media (display-mode: standalone) {
+  .only-in-standalone { display: revert; }
+}
+
+/* Long-form-scroll pages: reserve room for a sticky bottom action bar + safe area. */
+.has-sticky-actions { padding-bottom: calc(env(safe-area-inset-bottom) + 5rem); }
