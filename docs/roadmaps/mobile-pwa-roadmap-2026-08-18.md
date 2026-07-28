@@ -86,3 +86,17 @@ guard + UI); sticky «Создать расход» и sticky nav wizard (keyboa
 пагинация/lazy списков; видимый stepper wizard; sticky в calc-формах; повсеместный `StatusNote`;
 расширенные фильтры; полная унификация upload; Playwright visual 320–1440; ручной прогон
 [iphone-wave2-finance-checklist.md](../testing/iphone-wave2-finance-checklist.md) на устройстве.
+
+## Статус — Навигация + Multi-account (частично, 2026-07-28)
+
+Доставлено: multi-account (backend + login + switch/remove/logout-all + UI switcher; тесты 18/18),
+навигационный редизайн (сгруппированный drawer + role-aware bottom nav + иконки; тесты 14/14).
+Аудит: [navigation-multi-account-visual-balance-audit.md](../audits/navigation-multi-account-visual-balance-audit.md).
+Модель: [multi-account-session-model.md](../architecture/multi-account-session-model.md);
+угрозы: [multi-account-threat-model.md](../security/multi-account-threat-model.md);
+отчёт: [navigation-visual-balance-report.md](../testing/navigation-visual-balance-report.md).
+
+**Долг (WAVE-продолжение):** desktop sidebar expanded/compact/hidden; density-система + per-page
+баланс (analytics/OFD/collections/budgets/history/остальные); bottom-nav scroll-hide + скрытие при
+StickyActions; unsaved-form guard; Playwright visual 320–1440; ручной прогон
+[iphone-navigation-multi-account-checklist.md](../testing/iphone-navigation-multi-account-checklist.md).

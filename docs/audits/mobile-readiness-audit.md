@@ -63,3 +63,10 @@ Collections/Payments/Employees → Settings**. Детали и сроки — `d
 только ГД). Подробно: [mobile-wave2-finance-audit.md](mobile-wave2-finance-audit.md),
 [отчёт](../testing/mobile-wave2-finance-report.md), [перф](mobile-wave2-performance.md).
 Остатки (пагинация, stepper, calc-sticky, device-QA) — WAVE 3.
+
+## Обновление — Навигация + Multi-account (2026-07-28)
+
+Multi-account (несколько независимых аккаунтов на устройстве) + сгруппированный mobile drawer +
+role-aware bottom nav доставлены. Density-пас визуальных страниц и sidebar-режимы — долг. Подробно:
+[navigation-multi-account-visual-balance-audit.md](navigation-multi-account-visual-balance-audit.md),
+[отчёт](../testing/navigation-visual-balance-report.md).
