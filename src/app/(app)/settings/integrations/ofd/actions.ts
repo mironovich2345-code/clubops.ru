@@ -13,6 +13,7 @@ import { runSyncNowForCompany } from "@/lib/ofd/daily";
 import { createTaxcomClient } from "@/lib/ofd/taxcom/client";
 import { normalizeContractNumber, isCurrentAccountValid, type OfdCheckDiagnostics, type OfdSafeContract } from "@/lib/ofd/contract";
 import type { DocumentInfoShape, NewDocumentsShape, OfdConnectionConfig } from "@/lib/ofd/types";
+import { cashRegisterUsage, hasBlockingHistory, recordAssignmentChange, recordFiscalDriveChange } from "@/lib/ofd/cash-register-service";
 
 export type OfdSyncSummary = { found: number; imported: number; skipped: number; incomeKopeks: number; returnKopeks: number; succeeded: number; failed: number };
 export type OfdClubResult = { clubName: string; legalName: string | null; found: number; imported: number; incomeKopeks: number; returnKopeks: number };
@@ -412,6 +413,146 @@ export async function updateOfdMapping(_p: State | undefined, formData: FormData
   await recordAudit({ action: "ofd.mapping_updated", entityType: "OfdCashRegisterMapping", entityId: mapping.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { provider: "taxcom", fnNumber: mapping.fnNumber } });
   revalidatePath("/settings/integrations/ofd");
   return { ok: true, notice: "Привязка кассы обновлена." };
+}
+
+/**
+ * FULL edit of a cash register (§2): FN, РНМ ККТ, name, connection, legal entity, club,
+ * register type — from an effective date. Owner/GD + PIN. Changing the binding closes the
+ * current assignment and opens a new one; changing the FN keeps the old FN in history. Past
+ * receipts are NEVER rewritten (they snapshot their own club/legalEntity/fn at import).
+ */
+export async function editCashRegister(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const pin = await requireSettingsPin(g.companyId, g.userId);
+  if (!pin.ok) return { ok: false, error: "Требуется подтверждение ПИН настроек." };
+
+  const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { id: str(formData, "mappingId") ?? "", companyId: g.companyId } });
+  if (!mapping) return { ok: false, error: "Касса не найдена." };
+  if (mapping.status === "deleted") return { ok: false, error: "Касса удалена — редактирование недоступно." };
+
+  const fnNumber = str(formData, "fnNumber") ?? mapping.fnNumber;
+  const kktRegNumber = str(formData, "kktRegNumber");
+  const kktName = str(formData, "kktName");
+  const connectionId = str(formData, "connectionId") ?? mapping.connectionId;
+  const clubId = str(formData, "clubId") ?? mapping.clubId;
+  const legalEntityId = str(formData, "legalEntityId");
+  const registerKind = str(formData, "registerKind") === "online_cashbox" ? "online_cashbox" : "club_cashbox";
+  const effRaw = str(formData, "effectiveFrom");
+  const effectiveFrom = effRaw ? new Date(`${effRaw}T00:00:00`) : new Date();
+  if (Number.isNaN(effectiveFrom.getTime())) return { ok: false, error: "Некорректная дата привязки." };
+
+  // Tenant validation of every referenced entity.
+  const connection = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId }, select: { id: true, provider: true } });
+  if (!connection) return { ok: false, error: "Подключение не найдено в этой компании." };
+  if (connection.provider !== mapping.provider) return { ok: false, error: "Подключение другого провайдера — перенос через отдельное действие." };
+  const club = await prisma.club.findFirst({ where: { id: clubId, companyId: g.companyId }, select: { id: true } });
+  if (!club) return { ok: false, error: "Клуб не найден в этой компании." };
+  if (legalEntityId) {
+    const le = await prisma.legalEntity.findFirst({ where: { id: legalEntityId, companyId: g.companyId }, select: { id: true } });
+    if (!le) return { ok: false, error: "Юрлицо не найдено в этой компании." };
+  }
+
+  // FN conflict: a DIFFERENT active mapping already owns the new FN.
+  const fnChanged = fnNumber !== mapping.fnNumber;
+  if (fnChanged) {
+    const conflict = await prisma.ofdCashRegisterMapping.findFirst({ where: { companyId: g.companyId, provider: mapping.provider, fnNumber, status: { not: "deleted" }, id: { not: mapping.id }, activeMappingKey: { not: null } }, select: { id: true } });
+    if (conflict) return { ok: false, error: "Активная касса с этим ФН уже существует. Используйте перенос кассы." };
+  }
+  const nextActiveKey = mapping.status === "active" ? `${mapping.provider}:${fnNumber}` : mapping.activeMappingKey;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (fnChanged) await recordFiscalDriveChange(tx, { mapping, fiscalDriveNumber: fnNumber, registrationNumber: kktRegNumber ?? mapping.kktRegNumber, effectiveFrom });
+      await recordAssignmentChange(tx, { mapping, clubId, legalEntityId, connectionId, cashRegisterType: registerKind, effectiveFrom, createdById: g.userId, reason: str(formData, "reason") });
+      await tx.ofdCashRegisterMapping.update({ where: { id: mapping.id }, data: { fnNumber, kktRegNumber, kktName, connectionId, clubId, legalEntityId, registerKind, activeMappingKey: nextActiveKey } });
+    });
+  } catch (error) {
+    if (error instanceof Error && /Unique|P2002/.test(error.message)) return { ok: false, error: "Конфликт ФН активной кассы." };
+    return { ok: false, error: "Не удалось изменить кассу." };
+  }
+  await recordAudit({ action: "ofd.cash_register_edited", entityType: "OfdCashRegisterMapping", entityId: mapping.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { fnChanged, effectiveFrom: effectiveFrom.toISOString() } });
+  revalidatePath("/settings/integrations/ofd");
+  return { ok: true, notice: "Касса изменена." };
+}
+
+/**
+ * Delete a cash register (§5). Hard delete only when it has NO imported history; otherwise
+ * ARCHIVE it (hidden from the active list, sync stopped, current assignment closed) while
+ * keeping every receipt / aggregate / attribution. Owner/GD + PIN. The confirm modal tells
+ * the user which path applies.
+ */
+export async function deleteCashRegister(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const pin = await requireSettingsPin(g.companyId, g.userId);
+  if (!pin.ok) return { ok: false, error: "Требуется подтверждение ПИН настроек." };
+  const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { id: str(formData, "mappingId") ?? "", companyId: g.companyId } });
+  if (!mapping) return { ok: false, error: "Касса не найдена." };
+
+  const usage = await cashRegisterUsage(mapping);
+  const now = new Date();
+  if (hasBlockingHistory(usage)) {
+    await prisma.$transaction(async (tx) => {
+      await tx.ofdCashRegisterAssignment.updateMany({ where: { cashRegisterMappingId: mapping.id, effectiveTo: null }, data: { effectiveTo: now } });
+      await tx.ofdCashRegisterMapping.update({ where: { id: mapping.id }, data: { status: "archived", archivedAt: now, isActive: false, activeMappingKey: null } });
+    });
+    await recordAudit({ action: "ofd.cash_register_archived", entityType: "OfdCashRegisterMapping", entityId: mapping.id, companyId: g.companyId, clubId: mapping.clubId, userId: g.userId, metadata: { receipts: usage.receipts } });
+    revalidatePath("/settings/integrations/ofd");
+    return { ok: true, notice: "Касса удалена из активных настроек. Исторические чеки и аналитика сохранены." };
+  }
+  // No history → true hard delete of the mapping + its (empty) history rows.
+  await prisma.$transaction(async (tx) => {
+    await tx.ofdCashRegisterAssignment.deleteMany({ where: { cashRegisterMappingId: mapping.id } });
+    await tx.ofdFiscalDrive.deleteMany({ where: { cashRegisterMappingId: mapping.id } });
+    await tx.ofdCashRegisterMapping.delete({ where: { id: mapping.id } });
+  });
+  await recordAudit({ action: "ofd.cash_register_deleted", entityType: "OfdCashRegisterMapping", entityId: mapping.id, companyId: g.companyId, clubId: mapping.clubId, userId: g.userId, metadata: { hardDelete: true } });
+  revalidatePath("/settings/integrations/ofd");
+  return { ok: true, notice: "Пустая касса удалена." };
+}
+
+/**
+ * HIGH-RISK full purge of a cash register together with ALL imported data (§6). OWNER only,
+ * PIN + typed-FN confirmation. Blocked when the data participated in a CLOSED payroll period.
+ * Dry-run by default (returns a preview count); `apply=1` executes in a transaction. Audit
+ * before and after.
+ */
+export async function purgeCashRegisterHistory(_p: State | undefined, formData: FormData): Promise<State> {
+  const g = await requireOfdAdmin();
+  if (!g.ok) return { ok: false, error: g.error };
+  const isOwner = await userHasCompanyRole(g.userId, g.companyId, ["owner"]);
+  if (!isOwner) return { ok: false, error: "Полное удаление доступно только собственнику." };
+  const pin = await requireSettingsPin(g.companyId, g.userId);
+  if (!pin.ok) return { ok: false, error: "Требуется подтверждение ПИН настроек." };
+  const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { id: str(formData, "mappingId") ?? "", companyId: g.companyId } });
+  if (!mapping) return { ok: false, error: "Касса не найдена." };
+
+  const usage = await cashRegisterUsage(mapping);
+  if (usage.usedInClosedPeriod) return { ok: false, error: "Данные кассы участвуют в закрытом расчётном периоде — полное удаление запрещено." };
+
+  const apply = str(formData, "apply") === "1";
+  if (!apply) {
+    return { ok: true, notice: `Предпросмотр: будет удалено чеков ${usage.receipts}, позиций ${usage.items}, идентификаторов кассиров ${usage.identities}, атрибуций ${usage.attributions}. Подтвердите вводом ФН и повторным нажатием.` };
+  }
+  if (str(formData, "confirmFn") !== mapping.fnNumber) return { ok: false, error: "Введите номер ФН для подтверждения." };
+
+  await recordAudit({ action: "ofd.cash_register_purge_started", entityType: "OfdCashRegisterMapping", entityId: mapping.id, companyId: g.companyId, clubId: mapping.clubId, userId: g.userId, metadata: { ...usage, firstReceiptAt: undefined, lastReceiptAt: undefined } });
+  const receipts = await prisma.ofdReceiptImport.findMany({ where: { companyId: g.companyId, provider: mapping.provider, fnNumber: mapping.fnNumber }, select: { id: true } });
+  const receiptIds = receipts.map((r) => r.id);
+  await prisma.$transaction(async (tx) => {
+    if (receiptIds.length) await tx.payrollSalesAttribution.deleteMany({ where: { companyId: g.companyId, ofdReceiptId: { in: receiptIds } } });
+    await tx.ofdReceiptItem.deleteMany({ where: { companyId: g.companyId, provider: mapping.provider, fnNumber: mapping.fnNumber } });
+    await tx.ofdReceiptImport.deleteMany({ where: { companyId: g.companyId, provider: mapping.provider, fnNumber: mapping.fnNumber } });
+    const idents = await tx.ofdCashierIdentity.findMany({ where: { companyId: g.companyId, ofdConnectionId: mapping.connectionId, identityKey: { contains: `|${mapping.fnNumber}|` } }, select: { id: true } });
+    if (idents.length) { await tx.ofdCashierMapping.deleteMany({ where: { cashierIdentityId: { in: idents.map((i) => i.id) } } }); await tx.ofdCashierIdentity.deleteMany({ where: { id: { in: idents.map((i) => i.id) } } }); }
+    await tx.ofdFiscalDrive.deleteMany({ where: { cashRegisterMappingId: mapping.id } });
+    await tx.ofdCashRegisterAssignment.deleteMany({ where: { cashRegisterMappingId: mapping.id } });
+    await tx.ofdCashRegisterMapping.delete({ where: { id: mapping.id } });
+  });
+  await recordAudit({ action: "ofd.cash_register_purged", entityType: "OfdCashRegisterMapping", entityId: mapping.id, companyId: g.companyId, clubId: mapping.clubId, userId: g.userId, metadata: { receipts: receiptIds.length } });
+  revalidatePath("/settings/integrations/ofd");
+  return { ok: true, notice: `Касса и все данные удалены (${receiptIds.length} чеков).` };
 }
 
 /** Enable / disable a whole Taxcom connection. A disabled connection is skipped by
