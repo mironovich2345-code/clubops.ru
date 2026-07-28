@@ -77,6 +77,12 @@ check("I-L2 карточка счёта: контрагент+сумма+ста�
 check("I-L3 AI/просрочка отражены (problem-флаг)", invList.includes('problem={r.overdue ? "просрочен"') || invList.includes("problem={r.dueDate"));
 check("I-L4 elevated summary не grid-cols-2 на 320px", invList.includes("grid-cols-1 gap-4 min-[400px]:grid-cols-2 lg:grid-cols-5"));
 
+// ============================ REFUND wizard (§12/§13) ============================
+const draft = src("../src/app/(app)/refunds/_components/RefundDraftEditor.tsx");
+check("R-W1 wizard документы: in-app DocumentLink viewer (не сырой target=_blank для open)", draft.includes("DocumentLink") && !/Открыть<\/a>/.test(draft) && draft.includes("break-anywhere"));
+check("R-W2 wizard nav: mobile StickyActions «Далее» + desktop lg:flex (без дубля) + pb-40 clear", draft.includes("<StickyActions>") && draft.includes("hidden flex-wrap items-center gap-3 lg:flex") && draft.includes("pb-40 lg:pb-0"));
+check("R-W3 wizard doc-actions ≥44px (Открыть/Заменить/Удалить/Выбрать файл), 2×2 стек на 320px", (draft.match(/min-h-\[44px\]/g) || []).length >= 4 && draft.includes("grid grid-cols-1 gap-4 md:grid-cols-2"));
+
 // ============================ REFUNDS list (§11) ============================
 const refList = src("../src/app/(app)/refunds/page.tsx");
 check("R-L1 RefundTable: desktop hidden lg:block + mobile карточки lg:hidden (покрывает список+очереди)", refList.includes("hidden overflow-x-auto lg:block") && refList.includes("space-y-3 p-3 lg:hidden") && refList.includes("<MobileListCard"));

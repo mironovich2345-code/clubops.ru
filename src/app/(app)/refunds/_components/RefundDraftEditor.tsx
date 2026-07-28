@@ -6,6 +6,8 @@ import {
   changeRefundType, uploadRefundDocument, removeRefundDocument,
   saveRefundRequisites, proceedRefundDraft, cancelRefundDraft,
 } from "../refund-document-actions";
+import { DocumentLink } from "@/components/mobile/DocumentViewer";
+import { StickyActions } from "@/components/mobile/StickyActions";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME: Record<string, true> = { "image/jpeg": true, "image/png": true, "image/webp": true, "application/pdf": true };
@@ -93,24 +95,25 @@ function SlotCard({ refundId, slot, busy, setBusy }: { refundId: string; slot: S
         ) : doc ? (
           <div className="flex items-start gap-3">
             {doc.isImage ? (
-              <a href={doc.href} target="_blank" rel="noreferrer" className="shrink-0"><img src={doc.href} alt="" className="h-14 w-14 rounded object-cover ring-1 ring-slate-200" /></a>
+              <img src={doc.href} alt="" className="h-14 w-14 shrink-0 rounded object-cover ring-1 ring-slate-200" />
             ) : (
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-rose-50 text-[11px] font-semibold text-rose-600 ring-1 ring-rose-200">PDF</div>
             )}
             <div className="min-w-0">
-              <div className="break-all text-sm text-slate-800">{doc.fileName}</div>
+              <div className="break-anywhere text-sm text-slate-800">{doc.fileName}</div>
               <div className="text-xs text-slate-500">{doc.sizeText}</div>
-              <div className="mt-1 flex flex-wrap gap-3">
-                <a href={doc.href} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand-600 hover:text-brand-700">Открыть</a>
-                <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="text-xs font-medium text-slate-600 hover:text-slate-800 disabled:opacity-60">Заменить</button>
-                <button type="button" disabled={busy} onClick={onRemove} className="text-xs font-medium text-rose-600 hover:text-rose-700 disabled:opacity-60">Удалить</button>
+              {/* Actions ≥44px, spaced so Удалить isn't mis-tapped next to Заменить (spec §13). */}
+              <div className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                <DocumentLink href={doc.href} name={doc.fileName} className="inline-flex min-h-[44px] items-center px-2 text-sm font-medium text-brand-700 hover:underline" />
+                <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="inline-flex min-h-[44px] items-center px-2 text-sm font-medium text-slate-600 hover:text-slate-800 disabled:opacity-60">Заменить</button>
+                <button type="button" disabled={busy} onClick={onRemove} className="inline-flex min-h-[44px] items-center px-2 text-sm font-medium text-rose-600 hover:text-rose-700 disabled:opacity-60">Удалить</button>
               </div>
             </div>
           </div>
         ) : (
           <div>
             <div className="mb-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">Не загружен</div>
-            <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="block rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">Выбрать файл</button>
+            <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="inline-flex min-h-[44px] items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">Выбрать файл</button>
           </div>
         )}
       </div>
@@ -177,7 +180,7 @@ export function RefundDraftEditor({ refundId, returnType, slots, requisites, can
   const reqFormRef = useRef<HTMLFormElement>(null);
 
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className="mx-auto w-full max-w-3xl pb-40 lg:pb-0">
       {/* Type switcher */}
       <fieldset className="mt-4">
         <legend className="mb-2 text-sm font-medium text-slate-700">Тип возврата</legend>
@@ -218,15 +221,27 @@ export function RefundDraftEditor({ refundId, returnType, slots, requisites, can
             <input name="bankCorrAccount" inputMode="numeric" defaultValue={requisites.bankCorrAccount} className="input w-full" placeholder="20 цифр" /></label>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="submit" disabled={busy} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">Сохранить черновик</button>
-          <button type="button" disabled={busy} onClick={() => reqFormRef.current && onProceed(reqFormRef.current)} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">Далее</button>
-          <button type="button" disabled={busy} onClick={onCancel} className="rounded-md border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60">Отменить черновик</button>
+        {/* Desktop action row (≥lg). Mobile uses the sticky bar below. */}
+        <div className="mt-4 hidden flex-wrap items-center gap-3 lg:flex">
+          <button type="submit" disabled={busy} className="inline-flex min-h-[44px] items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">Сохранить черновик</button>
+          <button type="button" disabled={busy} onClick={() => reqFormRef.current && onProceed(reqFormRef.current)} className="inline-flex min-h-[44px] items-center rounded-md bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">Далее</button>
+          <button type="button" disabled={busy} onClick={onCancel} className="inline-flex min-h-[44px] items-center rounded-md border border-rose-300 bg-white px-4 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60">Отменить черновик</button>
           {reqSaved ? <span className="text-xs text-emerald-700" role="status">Сохранено</span> : null}
           {!canProceed ? <span className="text-xs text-slate-400">Для «Далее» нужен полный комплект документов и реквизиты</span> : null}
         </div>
         {error ? <p className="mt-2 text-sm text-rose-600">{error}</p> : null}
       </form>
+
+      {/* Mobile sticky wizard nav (spec §12/§18): primary «Далее» full-width, secondary below,
+          keyboard-aware, safe-area. Handlers use the form ref, so this can live outside the form. */}
+      <StickyActions>
+        {!canProceed ? <p className="mb-1 text-center text-[11px] text-slate-500">Для «Далее» нужен полный комплект документов и реквизиты</p> : null}
+        <button type="button" disabled={busy} onClick={() => reqFormRef.current && onProceed(reqFormRef.current)} className="inline-flex min-h-[48px] w-full items-center justify-center rounded-md bg-brand-600 px-4 text-base font-semibold text-white hover:bg-brand-700 disabled:opacity-60">Далее</button>
+        <div className="mt-2 flex gap-2">
+          <button type="button" disabled={busy} onClick={() => reqFormRef.current && onSaveDraft(reqFormRef.current)} className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-60">Сохранить</button>
+          <button type="button" disabled={busy} onClick={onCancel} className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-rose-300 bg-white px-3 text-sm font-medium text-rose-700 disabled:opacity-60">Отменить</button>
+        </div>
+      </StickyActions>
     </div>
   );
 }
