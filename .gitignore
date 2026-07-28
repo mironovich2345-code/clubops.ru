@@ -21,3 +21,9 @@ next-env.d.ts
 
 # unrelated local file
 Текстовый документ.txt
+
+# Playwright visual artifacts + reports
+artifacts/
+tests/visual/.auth/
+test-results/
+playwright-report/
