@@ -1911,6 +1911,12 @@ model OfdCashRegisterMapping {
   activeMappingKey String?   @unique
   startDate        DateTime?
   endDate          DateTime?
+  // STAGE (cash-register management): explicit lifecycle status separate from isActive.
+  //   active | disabled | archived | deleted. Archived/deleted are hidden from the main
+  //   list but keep all history. Additive; backfilled from isActive.
+  status           String    @default("active")
+  archivedAt       DateTime?
+  deletedAt        DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -1918,6 +1924,53 @@ model OfdCashRegisterMapping {
   @@index([companyId, clubId])
   @@index([provider, fnNumber])
   @@index([provider, externalKktId])
+  @@index([status])
+}
+
+// Effective-dated binding history of a cash register (club / legal entity / connection /
+// type). Changing a binding CLOSES the current assignment and opens a new one — imported
+// receipts are never rewritten (they snapshot their own club/legalEntity/fn at import), and
+// new receipts take the binding in effect on the receipt date. End-exclusive intervals.
+model OfdCashRegisterAssignment {
+  id                    String    @id @default(cuid())
+  companyId             String
+  cashRegisterMappingId String
+  clubId                String
+  legalEntityId         String?
+  connectionId          String
+  cashRegisterType      String    @default("club_cashbox")
+  effectiveFrom         DateTime
+  effectiveTo           DateTime?
+  createdById           String?
+  reason                String?
+  createdAt             DateTime  @default(now())
+
+  @@index([companyId])
+  @@index([cashRegisterMappingId])
+  @@index([clubId])
+}
+
+// FN (fiscal drive) history of a physical KKT. One KKT holds several fiscal drives over time;
+// the current one is status=active. Receipts bind by the FN printed ON the receipt, so a FN
+// change never rewrites past receipts.
+model OfdFiscalDrive {
+  id                    String    @id @default(cuid())
+  companyId             String
+  provider              String    @default("taxcom")
+  connectionId          String
+  cashRegisterMappingId String
+  fiscalDriveNumber     String
+  registrationNumber    String?
+  validFrom             DateTime?
+  validTo               DateTime?
+  status                String    @default("active") // active | replaced | archived
+  externalId            String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([cashRegisterMappingId])
+  @@index([fiscalDriveNumber])
 }
 
 // A safe fiscal fingerprint of a receipt (NO buyer PII, NO items, NO raw JSON).
