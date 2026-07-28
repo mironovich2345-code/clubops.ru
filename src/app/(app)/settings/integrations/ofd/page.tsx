@@ -6,7 +6,8 @@ import { formatKopeks } from "@/lib/money";
 import { getCurrentAccessContext, userHasCompanyRole } from "@/lib/access";
 import { ofdEnabled, ofdConfigured } from "@/lib/ofd/config";
 import { toggleOfdMapping, toggleOfdConnection } from "./actions";
-import { OfdConnectionForm, OfdMappingForm, OfdMappingEditForm, OfdImportForm, OfdCheckConnection, OfdContractPicker, OfdSyncNow, OfdRecalcCategories, OfdRevenueTable, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
+import { OfdConnectionForm, OfdMappingForm, OfdImportForm, OfdCheckConnection, OfdContractPicker, OfdSyncNow, OfdRecalcCategories, OfdRevenueTable, OfdNewDocsDiagnostics, OfdDocInfoDiagnostics } from "./_components/OfdForms";
+import { CashRegisterManager, type CashRegisterVM } from "./_components/CashRegisterManager";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,12 @@ export default async function OfdIntegrationPage() {
         prisma.ofdRevenueCategoryDailySummary.findMany({ where: { companyId, provider: "taxcom", date: { startsWith: month } } }),
       ])
     : [[], [], [], null, []] as const;
+
+  // Receipts imported per fiscal drive (for the cash-register cards + delete decision).
+  const receiptCounts = mappings.length
+    ? await prisma.ofdReceiptImport.groupBy({ by: ["fnNumber"], where: { companyId }, _count: { _all: true } })
+    : [];
+  const receiptsByFn = new Map(receiptCounts.map((r) => [r.fnNumber, r._count._all]));
 
   // Active kassa count per connection (for the connection cards).
   const activeMappingCount = new Map<string, number>();
@@ -249,39 +256,20 @@ export default async function OfdIntegrationPage() {
               {/* 2) Кассы ККТ */}
               <Collapsible title="Кассы ККТ" subtitle="ФН, юрлицо, клуб и тип кассы">
                 <OfdMappingForm connections={connOptions} clubs={clubs} entities={entities} />
-                <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50"><tr><Th>ФН</Th><Th>РНМ ККТ</Th><Th>Название</Th><Th>Подключение</Th><Th>Юрлицо</Th><Th>Клуб</Th><Th>Тип кассы</Th><Th>Статус</Th><Th>Действия</Th></tr></thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {mappings.length === 0 ? <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500">Кассы не сопоставлены.</td></tr> :
-                        mappings.map((m) => (
-                          <tr key={m.id} className={m.isActive && !m.legalEntityId ? "bg-amber-50/50" : ""}>
-                            <Td>{m.fnNumber}</Td>
-                            <Td>{m.kktRegNumber ?? "—"}</Td>
-                            <Td>{m.kktName ?? "—"}</Td>
-                            <Td>{connDisplay.get(m.connectionId) ?? "—"}</Td>
-                            <Td>
-                              {/* Per-KKT legal entity ONLY — no connection fallback. Missing → prominent warning. */}
-                              {m.legalEntityId ? (legalName.get(m.legalEntityId) ?? "—") : (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">⚠ Требует привязки</span>
-                              )}
-                            </Td>
-                            <Td>{clubName.get(m.clubId) ?? "—"}</Td>
-                            <Td>{registerKindLabel(m.registerKind)}</Td>
-                            <Td>{m.isActive ? <span className="text-emerald-700">активна</span> : <span className="text-slate-500">выключена</span>}</Td>
-                            <Td>
-                              <div className="flex flex-col gap-1">
-                                <OfdMappingEditForm mappingId={m.id} clubs={clubs} entities={entities} currentClubId={m.clubId} currentLegalId={m.legalEntityId ?? null} />
-                                <form action={toggleOfdMapping}>
-                                  <input type="hidden" name="mappingId" value={m.id} />
-                                  <button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">{m.isActive ? "Выключить" : "Включить"}</button>
-                                </form>
-                              </div>
-                            </Td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
+                <div className="mt-4">
+                  <CashRegisterManager
+                    registers={mappings.map((m): CashRegisterVM => ({
+                      id: m.id, fnNumber: m.fnNumber, kktRegNumber: m.kktRegNumber, kktName: m.kktName,
+                      connectionId: m.connectionId, connectionName: connDisplay.get(m.connectionId) ?? "—",
+                      legalEntityId: m.legalEntityId, legalName: m.legalEntityId ? (legalName.get(m.legalEntityId) ?? null) : null,
+                      clubId: m.clubId, clubName: clubName.get(m.clubId) ?? "—",
+                      registerKind: m.registerKind, status: m.status, isActive: m.isActive,
+                      receipts: receiptsByFn.get(m.fnNumber) ?? 0,
+                    }))}
+                    clubs={clubs}
+                    entities={entities.map((e) => ({ id: e.id, name: e.name }))}
+                    connections={connections.map((c) => ({ id: c.id, name: c.displayName }))}
+                  />
                 </div>
               </Collapsible>
 
