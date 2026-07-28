@@ -144,8 +144,8 @@ function staticGuards() {
     actions.includes("cabinetFingerprint") && actions.includes("Подключение к этому кабинету Такском уже существует"));
   check("SG-legal addOfdMapping берёт юрлицо кассы из формы + tenant-check; updateOfdMapping есть",
     actions.includes('const legalEntityId = str(formData, "legalEntityId") ?? connection.legalEntityId') && actions.includes("export async function updateOfdMapping"));
-  check("SG-ui dropdown «Такском — N касс», предупреждение «Требует привязки», заметка о клубе header",
-    page.includes("kassaWord(n)") && page.includes("Требует привязки") && actions.includes("Синхронизировано клубов"));
+  check("SG-ui dropdown «Такском — N касс», предупреждение о юрлице (карточки), заметка о клубе header",
+    page.includes("kassaWord(n)") && src("../src/app/(app)/settings/integrations/ofd/_components/CashRegisterManager.tsx").includes("юрлицо не задано") && actions.includes("Синхронизировано клубов"));
   check("SG-ui2 форма кассы требует юрлицо; результат импорта разносится по клубам",
     forms.includes('name="legalEntityId" required') && forms.includes("Итог по клубам") && forms.includes("OfdMappingEditForm"));
   check("SG-merge dry-run по умолчанию, без DELETE чеков/DROP, dedupeKey не меняется (нет записи поля), деактивация не удаление",

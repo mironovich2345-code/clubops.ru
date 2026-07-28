@@ -45,6 +45,8 @@
     "pilot:payroll-manager-simplified-ux": "node scripts/pilot-payroll-manager-simplified-ux.mjs",
     "pilot:payroll-versioned-schemes": "node scripts/pilot-payroll-versioned-schemes.mjs",
     "pilot:payroll-ofd-cashier-mapping": "node scripts/pilot-payroll-ofd-cashier-mapping.mjs",
+    "pilot:ofd-cash-register-management": "node scripts/pilot-ofd-cash-register-management.mjs",
+    "pilot:ofd-saby": "node scripts/pilot-ofd-saby.mjs",
     "payroll:scheme-audit": "node scripts/payroll-scheme-audit.mjs",
     "payroll:scheme-backfill": "node scripts/payroll-scheme-backfill.mjs",
     "payroll:ofd-cashier-audit": "node scripts/payroll-ofd-cashier-audit.mjs",
