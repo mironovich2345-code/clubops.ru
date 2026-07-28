@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { PageHeader } from "@/components/PageHeader";
+import { CompactPageHeader } from "@/components/mobile/density";
+import { AccordionGroup, AccordionItem } from "./_components/SingleAccordion";
 import { formatKopeks } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
@@ -75,7 +76,7 @@ export default async function CollectionsPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="Инкассация" description="Наличные ООО и ИП, инкассация и изъятия. Остаток считается по фактическому движению денег." />
+      <CompactPageHeader title="Инкассация" subtitle="Наличные ООО и ИП, инкассация и изъятия. Остаток считается по фактическому движению денег." />
 
       {/* Always visible: sync + per-club ООО/ИП cards. Everything else is collapsed. */}
       <Section title="Синхронизация наличных из ОФД">
@@ -96,7 +97,8 @@ export default async function CollectionsPage() {
         ))
       )}
 
-      <Collapsible title="Контрольный остаток" subtitle="Задать фактическую сумму наличных на дату">
+      <AccordionGroup>
+      <AccordionItem id="control" title="Контрольный остаток" subtitle="Задать фактическую сумму наличных на дату">
         <p className="mb-3 text-xs text-slate-500">Фактический остаток считается от последней контрольной точки плюс движения после неё. Прошлая запись не изменяется — создаётся новая контрольная точка.</p>
         <OpeningBalanceForm clubs={clubs} today={today} />
         {openingHistory.length > 0 ? (
@@ -120,9 +122,9 @@ export default async function CollectionsPage() {
             </div>
           </div>
         ) : null}
-      </Collapsible>
+      </AccordionItem>
 
-      <Collapsible title="Фактические деньги (сверка наличных)" subtitle="Ежедневное подтверждение пересчитанных наличных до 12:00 следующего дня">
+      <AccordionItem id="recon" title="Фактические деньги (сверка наличных)" subtitle="Ежедневное подтверждение пересчитанных наличных до 12:00 следующего дня">
         {canSubmitReconciliation(roles) && reconTargets.length > 0 ? (
           <div className="mb-5 space-y-5">
             {reconTargets.map(({ club, businessDate, entities }) => {
@@ -184,17 +186,17 @@ export default async function CollectionsPage() {
             </table>
           </div>
         )}
-      </Collapsible>
+      </AccordionItem>
 
       {mayCreate ? (
         <>
-          <Collapsible title="Инкассировать ООО" subtitle="Сдать наличные ООО. Уменьшает остаток ООО"><CollectionForm clubs={clubs} today={today} /></Collapsible>
-          <Collapsible title="Изъять из ООО в ИП" subtitle="Перенос наличных из ООО в ИП. Не продажа и не доход"><WithdrawalForm clubs={clubs} today={today} /></Collapsible>
-          <Collapsible title="Пополнить ИП — приход «Иное»" subtitle="Внесение наличных от регионала, собственника или директора. Не продажа"><OtherIncomeForm clubs={clubs} today={today} /></Collapsible>
+          <AccordionItem id="collect" title="Инкассировать ООО" subtitle="Сдать наличные ООО. Уменьшает остаток ООО"><CollectionForm clubs={clubs} today={today} /></AccordionItem>
+          <AccordionItem id="withdraw" title="Изъять из ООО в ИП" subtitle="Перенос наличных из ООО в ИП. Не продажа и не доход"><WithdrawalForm clubs={clubs} today={today} /></AccordionItem>
+          <AccordionItem id="other" title="Пополнить ИП — приход «Иное»" subtitle="Внесение наличных от регионала, собственника или директора. Не продажа"><OtherIncomeForm clubs={clubs} today={today} /></AccordionItem>
         </>
       ) : null}
 
-      <Collapsible title="История операций" subtitle="Инкассации, изъятия и приходы «Иное»">
+      <AccordionItem id="history" title="История операций" subtitle="Инкассации, изъятия и приходы «Иное»">
         {history.length === 0 ? (
           <div className="text-sm text-slate-500">Операций пока нет.</div>
         ) : (
@@ -229,26 +231,9 @@ export default async function CollectionsPage() {
             </table>
           </div>
         )}
-      </Collapsible>
+      </AccordionItem>
+      </AccordionGroup>
     </div>
-  );
-}
-
-// Native <details> collapsible — works without client JS, keyboard-accessible, and
-// safe for server-action forms inside. Themed centrally (globals .dark remaps the
-// neutral classes), so it reads correctly in light and dark. Collapsed by default.
-function Collapsible({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <details className="group mb-4 rounded-lg border border-slate-200 bg-white shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
-        <div>
-          <div className="text-sm font-semibold text-slate-700">{title}</div>
-          {subtitle ? <div className="mt-0.5 text-xs text-slate-500">{subtitle}</div> : null}
-        </div>
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180"><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      </summary>
-      <div className="border-t border-slate-200 px-5 pb-5 pt-4">{children}</div>
-    </details>
   );
 }
 
@@ -259,9 +244,9 @@ function OpeningWarning({ set }: { set: boolean }) {
 
 function OooCard({ b }: { b: CashBalances }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="text-sm font-medium text-slate-500">Наличные ООО</div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{formatKopeks(b.cashOooFactBalance)}</div>
+      <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">{formatKopeks(b.cashOooFactBalance)}</div>
       <div className="mt-1 text-xs text-slate-400">{b.cashOooOpeningSet ? "Фактический остаток сейчас" : "Расчётный остаток от 0 ₽"}</div>
       <OpeningWarning set={b.cashOooOpeningSet} />
       <dl className="mt-3 space-y-1 text-sm">
@@ -280,9 +265,9 @@ function OooCard({ b }: { b: CashBalances }) {
 
 function IpCard({ b }: { b: CashBalances }) {
   return (
-    <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
+    <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-4 shadow-sm">
       <div className="text-sm font-medium text-slate-500">Наличные ИП</div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{formatKopeks(b.cashIpFactBalance)}</div>
+      <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">{formatKopeks(b.cashIpFactBalance)}</div>
       <div className="mt-1 text-xs text-slate-400">{b.cashIpOpeningSet ? "Фактический остаток сейчас" : "Расчётный остаток от 0 ₽"}</div>
       <OpeningWarning set={b.cashIpOpeningSet} />
       <dl className="mt-3 space-y-1 text-sm">
@@ -304,7 +289,7 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
   return <div className="flex items-baseline justify-between gap-2"><dt className="text-slate-500">{label}</dt><dd className={muted ? "font-medium text-slate-400" : "font-medium text-slate-800"}>{value}</dd></div>;
 }
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="mb-8"><h2 className="mb-3 text-sm font-semibold text-slate-700">{title}</h2><div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">{children}</div></div>;
+  return <div className="mb-5"><h2 className="mb-2 text-sm font-semibold text-slate-700">{title}</h2><div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">{children}</div></div>;
 }
 function Th({ children }: { children: React.ReactNode }) {
   return <th scope="col" className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</th>;

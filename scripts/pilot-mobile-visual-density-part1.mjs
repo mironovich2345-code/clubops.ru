@@ -41,5 +41,12 @@ check("AH1 history: mobile FilterSheet (chips + count) + desktop form hidden lg:
 check("AH2 history лог → desktop table hidden lg:block + mobile dense cards (details collapsed)", act.includes("hidden overflow-x-auto lg:block") && act.includes("space-y-3 p-3 lg:hidden") && act.includes("<MobileDataCard") && act.includes("details={"));
 check("AH3 history: серверная пагинация сохранена (не новая архитектура)", act.includes("result.totalPages") && act.includes("pageHref("));
 
+// ===================== Collections (§11/§12) =====================
+const acc = src("../src/app/(app)/collections/_components/SingleAccordion.tsx");
+const col = src("../src/app/(app)/collections/page.tsx");
+check("CL1 single-active accordion (открытие закрывает прочие)", acc.includes("AccordionGroup") && acc.includes("AccordionItem") && acc.includes("openId") && acc.includes("setOpenId(open ? null : id)"));
+check("CL2 collections использует single accordion (не независимые <details>)", col.includes("<AccordionGroup>") && (col.match(/<AccordionItem /g) || []).length >= 6 && !col.includes("<details"));
+check("CL3 collections: compact header + compact cards (p-4 text-xl, без rounded-2xl p-5)", col.includes("CompactPageHeader") && !col.includes("rounded-2xl border") && !col.includes("p-5 shadow-sm"));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
