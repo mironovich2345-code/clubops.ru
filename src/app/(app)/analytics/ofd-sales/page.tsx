@@ -83,7 +83,7 @@ export default async function OfdSalesAnalyticsPage({ searchParams }: { searchPa
 
   return (
     <div className="mx-auto max-w-5xl">
-      <CompactPageHeader title="ОФД-продажи" subtitle="Наличные, безнал, ОФД-возвраты, юрлица и статьи доходов по чекам ОФД." />
+      <CompactPageHeader title="ОФД-продажи" subtitle="Детализация и сверка чеков ОФД: наличные, безнал, ОФД-возвраты (фискальные коррекции по кассе — не клиентские возвраты), юрлица и статьи доходов." />
 
       {/* Today / yesterday / selected-month — compact summary cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -143,7 +143,7 @@ function SalesCard({ title, agg, highlight }: { title: string; agg: OfdMoneyAgg;
   );
 }
 
-// Desktop table (≥lg) + mobile cards (spec §9/§10) — no compressed table on phones.
+// Desktop table (≥lg) + mobile cards (spec §9/§10) — no compressed table on mobile.
 function MoneyBreakdown({ firstHeader, rows }: { firstHeader: string; rows: { label: string; agg: OfdMoneyAgg }[] }) {
   if (rows.length === 0) return <EmptyState>Нет данных.</EmptyState>;
   return (
