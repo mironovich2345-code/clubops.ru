@@ -105,6 +105,7 @@ const pilots = [
   ["Multi-account sessions", "pilot-multi-account-sessions.mjs"],
   ["Navigation + visual balance", "pilot-navigation-visual-balance.mjs"],
   ["Mobile visual density part 1", "pilot-mobile-visual-density-part1.mjs"],
+  ["Final mobile visual polish", "pilot-final-mobile-visual-polish.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;

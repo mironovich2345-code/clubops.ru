@@ -51,7 +51,7 @@ export function NavIcon({ page, className }: { page: string; className?: string 
   return <Svg className={className}>{inner}</Svg>;
 }
 
-// Small status dot for tone labels (replaces 🟢🟡🔴). Colour via className.
+// Small status dot for tone labels (replaces coloured emoji dots). Colour via className.
 export function StatusDot({ className }: { className?: string }) {
   return <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${className ?? "bg-slate-400"}`} aria-hidden />;
 }
