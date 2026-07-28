@@ -23,5 +23,11 @@ check("BN3 bottom nav: transform-hide (без layout shift), скрыт при s
 check("BN4 StickyActions скрывает bottom nav (§16)", src("../src/components/mobile/StickyActions.tsx").includes("pushStickyActions"));
 check("BN5 Sheet (drawer/sheet) скрывает bottom nav", src("../src/components/mobile/Sheet.tsx").includes("pushOverlay"));
 
+// ===================== OFD sales (§8/§9/§10) =====================
+const ofd = src("../src/app/(app)/analytics/ofd-sales/page.tsx");
+check("OF1 OFD: compact header + summary cards (DataSummaryCard, без p-5 text-2xl)", ofd.includes("CompactPageHeader") && ofd.includes("DataSummaryCard") && !ofd.includes("rounded-2xl border p-5"));
+check("OF2 OFD «По клубам»/«По юрлицам» → desktop table hidden lg:block + mobile cards", ofd.includes("hidden overflow-x-auto rounded-lg border border-slate-200 lg:block") && ofd.includes("space-y-3 lg:hidden") && ofd.includes("<MobileDataCard"));
+check("OF3 OFD: компактный month switcher + без Block mb-8", ofd.includes('aria-label="Предыдущий месяц"') && !ofd.includes("mb-8"));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

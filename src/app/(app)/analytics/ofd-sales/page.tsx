@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { PageHeader } from "@/components/PageHeader";
+import { CompactPageHeader, DataSummaryCard, MobileDataCard, SectionHeader, EmptyState } from "@/components/mobile/density";
 import { formatKopeks } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
@@ -83,49 +83,44 @@ export default async function OfdSalesAnalyticsPage({ searchParams }: { searchPa
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="ОФД-продажи" description="Детализация и сверка чеков ОФД: наличные, безнал, ОФД-возвраты (фискальные коррекции по кассе — не клиентские возвраты), юрлица и статьи доходов." />
+      <CompactPageHeader title="ОФД-продажи" subtitle="Наличные, безнал, ОФД-возвраты, юрлица и статьи доходов по чекам ОФД." />
 
-      {/* Today / yesterday / selected-month cards */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* Today / yesterday / selected-month — compact summary cards */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <SalesCard title="Сегодня" agg={todayAgg} />
         <SalesCard title="Вчера" agg={yesterdayAgg} />
         <SalesCard title={monthLabel(month)} agg={monthAgg} highlight />
       </div>
 
-      {/* Month switcher */}
-      <div className="mb-6 flex items-center gap-2 text-sm">
-        <Link href={`/analytics/ofd-sales?month=${prevMonth}`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50">← {monthLabel(prevMonth)}</Link>
-        <span className="rounded-md bg-slate-100 px-3 py-1.5 font-medium text-slate-700">{monthLabel(month)}</span>
+      {/* Compact month switcher (‹ месяц ›) */}
+      <div className="mt-4 flex items-center justify-between gap-2 text-sm">
+        <Link href={`/analytics/ofd-sales?month=${prevMonth}`} aria-label="Предыдущий месяц" className="inline-flex min-h-[44px] items-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50">‹</Link>
+        <span className="min-w-0 flex-1 truncate rounded-md bg-slate-100 px-3 py-2 text-center font-medium capitalize text-slate-700">{monthLabel(month)}</span>
         {canGoNext ? (
-          <Link href={`/analytics/ofd-sales?month=${nextMonth}`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50">{monthLabel(nextMonth)} →</Link>
+          <Link href={`/analytics/ofd-sales?month=${nextMonth}`} aria-label="Следующий месяц" className="inline-flex min-h-[44px] items-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50">›</Link>
         ) : (
-          <span className="rounded-md border border-slate-200 px-3 py-1.5 font-medium text-slate-300">следующий месяц →</span>
+          <span aria-label="Следующий месяц недоступен" className="inline-flex min-h-[44px] items-center rounded-md border border-slate-200 px-3 font-medium text-slate-300">›</span>
         )}
       </div>
 
       {!monthHasData ? (
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500 shadow-sm">
-          Нет продаж ОФД за {monthLabel(month)}.
-        </div>
+        <div className="mt-4"><EmptyState>Нет продаж ОФД за {monthLabel(month)}.</EmptyState></div>
       ) : (
         <>
-          <Block title="По клубам">
-            <MoneyTable firstHeader="Клуб" rows={byClub.map(([id, a]) => ({ label: clubName.get(id) ?? "—", agg: a }))} />
-          </Block>
+          <SectionHeader>По клубам</SectionHeader>
+          <MoneyBreakdown firstHeader="Клуб" rows={byClub.map(([id, a]) => ({ label: clubName.get(id) ?? "—", agg: a }))} />
 
-          <Block title="По юрлицам">
-            <MoneyTable firstHeader="Юрлицо" rows={byLegal.map(([key, a]) => ({ label: key === "none" ? "Без юрлица" : legalName.get(key) ?? "—", agg: a }))} />
-          </Block>
+          <SectionHeader>По юрлицам</SectionHeader>
+          <MoneyBreakdown firstHeader="Юрлицо" rows={byLegal.map(([key, a]) => ({ label: key === "none" ? "Без юрлица" : legalName.get(key) ?? "—", agg: a }))} />
 
-          <Block title="Статьи доходов">
-            {categoryRows.length === 0 ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Номенклатура за {monthLabel(month)} пока недоступна: чеки есть, но позиции товаров/услуг ещё не получены.
-              </div>
-            ) : (
-              <OfdRevenueTable rows={categoryRows} details={categoryDetails} />
-            )}
-          </Block>
+          <SectionHeader>Статьи доходов</SectionHeader>
+          {categoryRows.length === 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Номенклатура за {monthLabel(month)} пока недоступна: чеки есть, но позиции товаров/услуг ещё не получены.
+            </div>
+          ) : (
+            <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"><OfdRevenueTable rows={categoryRows} details={categoryDetails} /></div>
+          )}
         </>
       )}
     </div>
@@ -134,61 +129,60 @@ export default async function OfdSalesAnalyticsPage({ searchParams }: { searchPa
 
 function SalesCard({ title, agg, highlight }: { title: string; agg: OfdMoneyAgg; highlight?: boolean }) {
   return (
-    <div className={`rounded-2xl border p-5 shadow-sm ${highlight ? "border-brand-200 bg-brand-50/40" : "border-slate-200 bg-white"}`}>
-      <div className="text-sm font-medium capitalize text-slate-500">{title}</div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{formatKopeks(agg.income)}</div>
-      <dl className="mt-3 space-y-1 text-sm">
-        <Row label="Наличные" value={formatKopeks(agg.cash)} />
-        <Row label="Безнал" value={formatKopeks(agg.electronic)} />
-        <Row label="ОФД-возвраты" value={formatKopeks(agg.ret)} />
-        <Row label="Чеков" value={String(agg.receipts)} />
-      </dl>
-    </div>
+    <DataSummaryCard
+      title={<span className="capitalize">{title}</span>}
+      badge={highlight ? <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-700">Месяц</span> : undefined}
+      rows={[
+        { label: "Итого", value: formatKopeks(agg.income), strong: true },
+        { label: "Наличные", value: formatKopeks(agg.cash) },
+        { label: "Безнал", value: formatKopeks(agg.electronic) },
+        { label: "ОФД-возвраты", value: formatKopeks(agg.ret) },
+        { label: "Чеков", value: String(agg.receipts) },
+      ]}
+    />
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+// Desktop table (≥lg) + mobile cards (spec §9/§10) — no compressed table on phones.
+function MoneyBreakdown({ firstHeader, rows }: { firstHeader: string; rows: { label: string; agg: OfdMoneyAgg }[] }) {
+  if (rows.length === 0) return <EmptyState>Нет данных.</EmptyState>;
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="font-medium text-slate-800">{value}</dd>
-    </div>
-  );
-}
-
-function Block({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-8">
-      <h2 className="mb-3 text-sm font-semibold text-slate-700">{title}</h2>
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">{children}</div>
-    </div>
-  );
-}
-
-function MoneyTable({ firstHeader, rows }: { firstHeader: string; rows: { label: string; agg: OfdMoneyAgg }[] }) {
-  if (rows.length === 0) {
-    return <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">Нет данных.</div>;
-  }
-  return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50">
-          <tr><Th>{firstHeader}</Th><Th>Наличные</Th><Th>Безнал</Th><Th>ОФД-возвраты</Th><Th>Итого</Th><Th>Чеков</Th></tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <Td>{r.label}</Td>
-              <Td>{formatKopeks(r.agg.cash)}</Td>
-              <Td>{formatKopeks(r.agg.electronic)}</Td>
-              <Td>{formatKopeks(r.agg.ret)}</Td>
-              <Td className="font-medium text-slate-900">{formatKopeks(r.agg.net)}</Td>
-              <Td>{r.agg.receipts}</Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 lg:block">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50">
+            <tr><Th>{firstHeader}</Th><Th>Наличные</Th><Th>Безнал</Th><Th>ОФД-возвраты</Th><Th>Итого</Th><Th>Чеков</Th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <Td>{r.label}</Td>
+                <Td>{formatKopeks(r.agg.cash)}</Td>
+                <Td>{formatKopeks(r.agg.electronic)}</Td>
+                <Td>{formatKopeks(r.agg.ret)}</Td>
+                <Td className="font-medium text-slate-900">{formatKopeks(r.agg.net)}</Td>
+                <Td>{r.agg.receipts}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-3 lg:hidden">
+        {rows.map((r, i) => (
+          <MobileDataCard
+            key={i}
+            title={r.label}
+            rows={[
+              { label: "Наличные", value: formatKopeks(r.agg.cash) },
+              { label: "Безнал", value: formatKopeks(r.agg.electronic) },
+              { label: "ОФД-возвраты", value: formatKopeks(r.agg.ret) },
+              { label: "Чеков", value: String(r.agg.receipts) },
+            ]}
+            footer={<div className="flex items-baseline justify-between gap-2 text-sm"><span className="text-slate-500">Итого</span><span className="font-semibold tabular-nums text-slate-900">{formatKopeks(r.agg.net)}</span></div>}
+          />
+        ))}
+      </div>
+    </>
   );
 }
 
