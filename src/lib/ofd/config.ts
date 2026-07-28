@@ -27,5 +27,14 @@ export function ofdHealth(): { enabled: boolean; configured: boolean } {
   return { enabled: ofdEnabled(), configured: ofdConfigured() };
 }
 
+/**
+ * Saby ОФД (СБИС) is behind its own feature flag (OFF by default) — a pilot provider gated
+ * to owner/system admin until reconciled against a real cabinet. Requires the OFD feature on
+ * too. UI/actions must check this before exposing Saby.
+ */
+export function ofdSabyEnabled(): boolean {
+  return ofdEnabled() && process.env.OFD_SABY_ENABLED === "true";
+}
+
 export const OFD_SUPPORTED_PROVIDERS = ["taxcom"] as const;
 export type OfdProvider = (typeof OFD_SUPPORTED_PROVIDERS)[number];

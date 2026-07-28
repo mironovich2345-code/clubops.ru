@@ -9,7 +9,7 @@ export type OfdTestConnectionResult =
   | { ok: false; code: string; message: string };
 
 /** A provider integration status the UI/settings can surface honestly. */
-export type OfdProviderStatus = "live" | "ready_for_credentials" | "blocked_by_documentation" | "blocked_by_access";
+export type OfdProviderStatus = "live" | "ready_for_credentials" | "blocked_by_documentation" | "blocked_by_access" | "blocked_by_credentials";
 
 export interface OfdProvider {
   /** Stable provider id — matches the `provider` column (e.g. "taxcom", "astral"). */
