@@ -1,0 +1,27 @@
+// Mobile visual density pass — Part 1 (Analytics / OFD / Collections / Budgets / History).
+// Static guards on the shared density system, bottom-nav scroll-hide, and per-page balance.
+//   npm run pilot:mobile-visual-density-part1
+import { readFileSync } from "node:fs";
+
+let pass = 0, fail = 0;
+const check = (n, c, x = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${x ? "  :: " + x : ""}`); c ? pass++ : fail++; };
+const src = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
+
+// ===================== Density system (§2/§17) =====================
+const dens = src("../src/components/mobile/density.tsx");
+check("D1 density: CompactPageHeader + CompactMetricCard + DataSummaryCard + MobileDataCard", ["CompactPageHeader", "CompactMetricCard", "DataSummaryCard", "MobileDataCard"].every((c) => dens.includes(`export function ${c}`)));
+check("D2 density: SectionHeader + InfoNote + EmptyState + ActiveFilterChips (без дублей 2px)", ["SectionHeader", "InfoNote", "EmptyState", "ActiveFilterChips"].every((c) => dens.includes(`export function ${c}`)));
+check("D3 metric value не переносит ₽, clamp font (не мелкий), tabular-nums", dens.includes("whitespace-nowrap") && dens.includes("clamp(1.05rem, 5.5vw, 1.5rem)") && dens.includes("tabular-nums"));
+check("D4 breakdown cards заменяют таблицы (title + rows + details), width-safe", dens.includes("break-anywhere") && dens.includes("details") && dens.includes("Подробнее"));
+
+// ===================== Bottom-nav scroll-hide (§5/§16) =====================
+const chrome = src("../src/components/mobile/mobile-chrome.ts");
+const shell = src("../src/app/(app)/_components/MobileShell.tsx");
+check("BN1 hook: hide-on-scroll-down с hysteresis + не на клавиатуре + show at top", chrome.includes("useHideOnScrollDown") && chrome.includes("threshold") && /INPUT\|TEXTAREA\|SELECT/.test(chrome) && chrome.includes("y <= 4"));
+check("BN2 suppression store: sticky + overlay (единый, без per-page логики)", chrome.includes("pushStickyActions") && chrome.includes("pushOverlay") && chrome.includes("useChromeSuppressed") && chrome.includes("useSyncExternalStore"));
+check("BN3 bottom nav: transform-hide (без layout shift), скрыт при scroll/overlay/drawer", shell.includes("useHideOnScrollDown") && shell.includes("useChromeSuppressed") && shell.includes("translate-y-full") && shell.includes("transition-transform") && shell.includes("open || suppressed || scrollHidden"));
+check("BN4 StickyActions скрывает bottom nav (§16)", src("../src/components/mobile/StickyActions.tsx").includes("pushStickyActions"));
+check("BN5 Sheet (drawer/sheet) скрывает bottom nav", src("../src/components/mobile/Sheet.tsx").includes("pushOverlay"));
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail === 0 ? 0 : 1);

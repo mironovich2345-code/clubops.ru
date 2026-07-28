@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { pushStickyActions } from "./mobile-chrome";
 
 /**
  * Sticky bottom action bar (spec §18). Mobile-only (`lg:hidden`) so desktop keeps its inline
@@ -17,6 +18,9 @@ import { useEffect, useState, type ReactNode } from "react";
  */
 export function StickyActions({ children }: { children: ReactNode }) {
   const [lift, setLift] = useState(0);
+
+  // While a sticky action bar is mounted, suppress the mobile bottom nav (spec §16).
+  useEffect(() => pushStickyActions(), []);
 
   useEffect(() => {
     const vv = window.visualViewport;

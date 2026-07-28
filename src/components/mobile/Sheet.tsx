@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { pushOverlay } from "./mobile-chrome";
 
 /**
  * Base sheet primitive (spec §19). The finance contour had NO modal/dialog/sheet component —
@@ -32,12 +33,13 @@ export function Sheet({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Lock background scroll while open.
+  // Lock background scroll + suppress the bottom nav while open (spec §16).
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
+    const releaseOverlay = pushOverlay();
+    return () => { document.body.style.overflow = prev; releaseOverlay(); };
   }, [open]);
 
   const requestClose = () => {

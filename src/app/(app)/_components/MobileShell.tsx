@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_SECTIONS, NAV_ICONS } from "@/lib/navigation";
+import { useChromeSuppressed, useHideOnScrollDown } from "@/components/mobile/mobile-chrome";
 
 type Item = { page: string; href: string; label: string };
 
@@ -52,6 +53,12 @@ export function MobileShell({ items, header, account, bottomOrder }: { items: It
 
   useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; return () => { document.body.style.overflow = ""; }; }, [open]);
   useEffect(() => { setOpen(false); }, [pathname]);
+
+  // Bottom nav hides on scroll-down (hysteresis), when a sticky bar/overlay is active,
+  // or while the drawer is open (spec §16). Fixed bar → transform only, no layout shift.
+  const scrollHidden = useHideOnScrollDown();
+  const suppressed = useChromeSuppressed();
+  const bottomHidden = open || suppressed || scrollHidden;
 
   const primary = bottomOrder.map((p) => byPage.get(p)).filter((x): x is Item => Boolean(x)).slice(0, 4);
 
@@ -110,7 +117,7 @@ export function MobileShell({ items, header, account, bottomOrder }: { items: It
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white pb-safe lg:hidden">
+      <nav className={`fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white pb-safe transition-transform duration-200 ease-out lg:hidden ${bottomHidden ? "translate-y-full" : "translate-y-0"}`} aria-hidden={bottomHidden}>
         <ul className="flex items-stretch">
           {primary.map((it) => (
             <li key={it.href} className="flex-1">

@@ -104,6 +104,7 @@ const pilots = [
   ["Mobile WAVE2 finance", "pilot-mobile-wave2-finance.mjs"],
   ["Multi-account sessions", "pilot-multi-account-sessions.mjs"],
   ["Navigation + visual balance", "pilot-navigation-visual-balance.mjs"],
+  ["Mobile visual density part 1", "pilot-mobile-visual-density-part1.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
