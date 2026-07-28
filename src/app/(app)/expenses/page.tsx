@@ -26,6 +26,7 @@ import { V2_STATUS_LABELS } from "@/lib/expense-simplified";
 import { loadClubCashBalances } from "@/lib/cash-collections";
 import { IpCashSyncButton, OpeningBalanceForm } from "../collections/_components/CollectionForms";
 import { UnsentDrafts } from "./_components/UnsentDrafts";
+import { MobileListCard } from "@/components/mobile/MobileListCard";
 
 export const dynamic = "force-dynamic";
 
@@ -211,73 +212,116 @@ export default async function ExpensesPage({
       <UnsentDrafts drafts={myDrafts} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="xl:col-span-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50">
-              <tr>
-                <Th>Дата</Th>
-                <Th>Тип</Th>
-                <Th>Статья</Th>
-                <Th>Контрагент</Th>
-                <Th className="text-right">Сумма</Th>
-                <Th>Кто добавил</Th>
-                <Th>Действия</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {visibleExpenses.length === 0 ? (
+        <div className="min-w-0 xl:col-span-2">
+          {/* Desktop table (≥lg). Mobile uses cards below (spec §4). */}
+          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm lg:block">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50">
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                    {expenses.length === 0
-                      ? "Пока нет расходов. Загрузите чек/перевод или заполните вручную."
-                      : "Нет расходов с выбранным статусом."}
-                  </td>
+                  <Th>Дата</Th>
+                  <Th>Тип</Th>
+                  <Th>Статья</Th>
+                  <Th>Контрагент</Th>
+                  <Th className="text-right">Сумма</Th>
+                  <Th>Кто добавил</Th>
+                  <Th>Действия</Th>
                 </tr>
-              ) : (
-                visibleExpenses.map((expense) => (
-                  <tr key={expense.id} className="hover:bg-slate-50">
-                    <Td className="whitespace-nowrap">{dateFormatter.format(expense.expenseDate)}</Td>
-                    <Td className="whitespace-nowrap">
-                      {EXPENSE_TYPE_LABELS[expense.type] ?? expense.type}
-                    </Td>
-                    <Td>
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
-                        {expenseCategoryLabel(expense.category)}
-                      </span>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {multiCompany && expense.companyName ? `${expense.companyName} · ` : ""}{expense.club.name}
-                      </div>
-                      <ExpenseStatusBadge status={expense.status} />
-                    </Td>
-                    <Td>{expense.vendorName ?? expense.recipientName ?? "—"}</Td>
-                    <Td className="whitespace-nowrap text-right font-medium text-slate-900">
-                      {formatKopeks(expense.amountKopeks)}
-                    </Td>
-                    <Td className="whitespace-nowrap text-slate-600">{expense.createdBy.name}</Td>
-                    <Td>
-                      {groups ? (
-                        <form action={openStrategicExpense}>
-                          <input type="hidden" name="companyId" value={expense.companyId} />
-                          <input type="hidden" name="objectId" value={expense.id} />
-                          <input type="hidden" name="returnTo" value={returnQuery} />
-                          <button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                            Открыть
-                          </button>
-                        </form>
-                      ) : (
-                        <Link
-                          href={`/expenses/${expense.id}`}
-                          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Открыть
-                        </Link>
-                      )}
-                    </Td>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {visibleExpenses.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                      {expenses.length === 0
+                        ? "Пока нет расходов. Загрузите чек/перевод или заполните вручную."
+                        : "Нет расходов с выбранным статусом."}
+                    </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  visibleExpenses.map((expense) => (
+                    <tr key={expense.id} className="hover:bg-slate-50">
+                      <Td className="whitespace-nowrap">{dateFormatter.format(expense.expenseDate)}</Td>
+                      <Td className="whitespace-nowrap">
+                        {EXPENSE_TYPE_LABELS[expense.type] ?? expense.type}
+                      </Td>
+                      <Td>
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
+                          {expenseCategoryLabel(expense.category)}
+                        </span>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {multiCompany && expense.companyName ? `${expense.companyName} · ` : ""}{expense.club.name}
+                        </div>
+                        <ExpenseStatusBadge status={expense.status} />
+                      </Td>
+                      <Td>{expense.vendorName ?? expense.recipientName ?? "—"}</Td>
+                      <Td className="whitespace-nowrap text-right font-medium text-slate-900">
+                        {formatKopeks(expense.amountKopeks)}
+                      </Td>
+                      <Td className="whitespace-nowrap text-slate-600">{expense.createdBy.name}</Td>
+                      <Td>
+                        {groups ? (
+                          <form action={openStrategicExpense}>
+                            <input type="hidden" name="companyId" value={expense.companyId} />
+                            <input type="hidden" name="objectId" value={expense.id} />
+                            <input type="hidden" name="returnTo" value={returnQuery} />
+                            <button type="submit" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                              Открыть
+                            </button>
+                          </form>
+                        ) : (
+                          <Link
+                            href={`/expenses/${expense.id}`}
+                            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            Открыть
+                          </Link>
+                        )}
+                      </Td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards (<lg) — no horizontal scroll, one column (spec §4). */}
+          <div className="space-y-3 lg:hidden">
+            {visibleExpenses.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                {expenses.length === 0
+                  ? "Пока нет расходов. Загрузите чек/перевод или заполните вручную."
+                  : "Нет расходов с выбранным статусом."}
+              </div>
+            ) : (
+              visibleExpenses.map((expense) => {
+                const contra = expense.vendorName ?? expense.recipientName ?? null;
+                return (
+                  <MobileListCard
+                    key={expense.id}
+                    href={groups ? undefined : `/expenses/${expense.id}`}
+                    title={expenseCategoryLabel(expense.category)}
+                    amount={formatKopeks(expense.amountKopeks)}
+                    status={<ExpenseStatusBadge status={expense.status} />}
+                    meta={[
+                      { label: "Дата", value: dateFormatter.format(expense.expenseDate) },
+                      { label: "Тип", value: EXPENSE_TYPE_LABELS[expense.type] ?? expense.type },
+                      { label: "Клуб", value: `${multiCompany && expense.companyName ? expense.companyName + " · " : ""}${expense.club.name}` },
+                      ...(contra ? [{ label: "Контрагент", value: contra }] : []),
+                    ]}
+                    action={groups ? (
+                      <form action={openStrategicExpense}>
+                        <input type="hidden" name="companyId" value={expense.companyId} />
+                        <input type="hidden" name="objectId" value={expense.id} />
+                        <input type="hidden" name="returnTo" value={returnQuery} />
+                        <button type="submit" className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                          Открыть
+                        </button>
+                      </form>
+                    ) : undefined}
+                  />
+                );
+              })
+            )}
+          </div>
         </div>
 
         <CategoryAnalytics
@@ -417,7 +461,7 @@ async function IpCashFactBlock({ companyId, club, today }: { companyId: string; 
       {!b.cashIpOpeningSet ? (
         <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Начальный остаток не задан. Укажите контрольный остаток кассы ИП, чтобы расчёт был точным.</div>
       ) : null}
-      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-sm min-[400px]:grid-cols-2 sm:grid-cols-3">
         <FactRow label={`Контрольный остаток${b.cashIpOpeningDate ? ` (${b.cashIpOpeningDate})` : ""}`} value={b.cashIpOpeningSet ? formatKopeks(b.cashIpOpening) : "не задан"} />
         <FactRow label="Приход ИП вчера (ОФД)" value={formatKopeks(b.cashIpOfdYesterday)} />
         <FactRow label="Приход ИП сегодня (ОФД)" value={formatKopeks(b.cashIpOfdToday)} />

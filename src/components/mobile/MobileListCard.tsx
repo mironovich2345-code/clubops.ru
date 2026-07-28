@@ -18,7 +18,10 @@ export function MobileListCard({
   problem,
   action,
 }: {
-  href: string;
+  // Optional: when present the whole card links to the detail page; when absent (e.g. the
+  // strategic "open" flow needs a form POST) the card is a plain container and navigation
+  // lives in the `action` slot.
+  href?: string;
   title: ReactNode;
   amount?: ReactNode;
   status?: ReactNode;
@@ -28,9 +31,12 @@ export function MobileListCard({
   problem?: ReactNode;
   action?: ReactNode;
 }) {
+  const Body = href
+    ? ({ children }: { children: ReactNode }) => <Link href={href} className="block min-w-0">{children}</Link>
+    : ({ children }: { children: ReactNode }) => <div className="block min-w-0">{children}</div>;
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <Link href={href} className="block min-w-0">
+      <Body>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="break-anywhere text-sm font-semibold text-slate-900">{title}</div>
@@ -62,7 +68,7 @@ export function MobileListCard({
             <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">{problem}</span>
           ) : null}
         </div>
-      </Link>
+      </Body>
 
       {action ? <div className="mt-3 border-t border-slate-100 pt-3">{action}</div> : null}
     </div>

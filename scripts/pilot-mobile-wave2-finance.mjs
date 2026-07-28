@@ -57,5 +57,12 @@ check("O-SRV2 guard вызывает canApproveBudgetOverrunForCategory и бр�
 check("O-SRV3 guard хранит club-scope + self-approval блок", loadFn.includes("getManageableClubIds") && loadFn.includes("Нельзя согласовать собственный запрос"));
 check("O-SRV4 UI-зеркало canDecide тоже использует ту же capability", src("../src/app/(app)/budgets/page.tsx").includes("canApproveBudgetOverrunForCategory"));
 
+// ============================ EXPENSES (§3/§4) ============================
+const expList = src("../src/app/(app)/expenses/page.tsx");
+check("E1 expenses список: desktop таблица hidden lg:block + mobile карточки lg:hidden", expList.includes("hidden overflow-x-auto") && expList.includes("lg:block") && /space-y-3 lg:hidden/.test(expList) && expList.includes("<MobileListCard"));
+check("E2 expenses карточка: статья+сумма+статус+клуб+дата (не все тех-поля)", /title=\{expenseCategoryLabel/.test(expList) && /amount=\{formatKopeks/.test(expList) && expList.includes("ExpenseStatusBadge status={expense.status}"));
+check("E3 expenses list не клипает контент (overflow-hidden убран у таблицы)", !/xl:col-span-2 overflow-hidden/.test(expList));
+check("E4 IpCash факт-блок не grid-cols-2 на 320px (стек → min-[400px])", expList.includes("grid-cols-1 gap-x-6 gap-y-1 text-sm min-[400px]:grid-cols-2"));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
