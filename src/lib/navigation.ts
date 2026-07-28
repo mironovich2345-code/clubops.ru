@@ -1,10 +1,41 @@
-import type { AppPage } from "@/lib/auth";
+import { type AppPage, type Role, highestRole } from "@/lib/auth";
 
 export type NavItem = {
   page: AppPage;
   href: string;
   label: string;
 };
+
+// Lightweight emoji icons per page (no icon-font dependency). Used by the mobile
+// drawer + bottom nav; desktop text nav is unaffected.
+export const NAV_ICONS: Record<string, string> = {
+  workspace: "🗂", dashboard: "🏠", analytics: "📊", ofd_sales: "🧾",
+  expenses: "💸", collections: "💵", invoices: "📄", payments: "📆",
+  mandatory_payments: "📌", balances: "🏦", employees: "👥", payroll: "💰",
+  refunds: "↩️", budgets: "🎯", documents: "📁", activity: "🕘",
+  users: "🔑", settings: "⚙️",
+};
+
+// Role-aware bottom-navigation order (spec §15). Uses ONLY existing pages/routes —
+// there is no dedicated «Задачи» page, so each role's landing/dashboard stands in
+// (documented limitation). The mobile shell filters this to what the role can see
+// and shows the first 4 + «Ещё»; a page the role lacks is simply skipped.
+const BOTTOM_NAV_BY_ROLE: Partial<Record<Role, AppPage[]>> = {
+  owner: ["dashboard", "analytics", "payments", "ofd_sales"],
+  general_director: ["dashboard", "analytics", "payments", "ofd_sales"],
+  regional_director: ["dashboard", "analytics", "invoices", "expenses"],
+  manager: ["dashboard", "expenses", "invoices", "collections"],
+  accountant: ["workspace", "invoices", "expenses", "refunds"],
+  chief_accountant: ["workspace", "invoices", "expenses", "refunds"],
+  marketer: ["dashboard", "analytics"],
+};
+const DEFAULT_BOTTOM_NAV: AppPage[] = ["dashboard", "expenses", "invoices", "refunds"];
+
+/** Preferred bottom-nav page order for a user's effective roles (highest role wins). */
+export function bottomNavOrder(roles: readonly Role[]): AppPage[] {
+  const r = highestRole(roles);
+  return (r && BOTTOM_NAV_BY_ROLE[r]) || DEFAULT_BOTTOM_NAV;
+}
 
 export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: "workspace", href: "/workspace", label: "Рабочий стол" },

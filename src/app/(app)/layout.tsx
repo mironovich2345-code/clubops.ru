@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { canAnyRoleAccessPage, isStrategicRole } from "@/lib/auth";
 import { getCurrentAccessContext, getUserCompanies, getUserClubs } from "@/lib/access";
-import { NAV_ITEMS, ROLE_LABELS, STRATEGIC_HIDDEN_PAGES } from "@/lib/navigation";
+import { NAV_ITEMS, ROLE_LABELS, STRATEGIC_HIDDEN_PAGES, bottomNavOrder } from "@/lib/navigation";
 import { ScopeSwitcher } from "./_components/ScopeSwitcher";
 import { MobileShell } from "./_components/MobileShell";
 import { AccountSwitcher } from "./_components/AccountSwitcher";
@@ -82,7 +82,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {accountSlot}
         </header>
         {/* Mobile shell: sticky top bar + drawer + bottom nav */}
-        <MobileShell items={visibleItems.map((i) => ({ page: i.page, href: i.href, label: i.label }))} header={scopeSlot} account={accountSlot} />
+        <MobileShell items={visibleItems.map((i) => ({ page: i.page, href: i.href, label: i.label }))} header={scopeSlot} account={accountSlot} bottomOrder={bottomNavOrder(ctx.effectiveRoles)} />
         <main className="min-w-0 flex-1 px-4 py-4 pb-bottom-nav lg:px-8 lg:py-8 lg:pb-8">{children}</main>
       </div>
     </div>
