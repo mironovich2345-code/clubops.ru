@@ -70,3 +70,10 @@ Multi-account (несколько независимых аккаунтов на
 role-aware bottom nav доставлены. Density-пас визуальных страниц и sidebar-режимы — долг. Подробно:
 [navigation-multi-account-visual-balance-audit.md](navigation-multi-account-visual-balance-audit.md),
 [отчёт](../testing/navigation-visual-balance-report.md).
+
+## Обновление — Density Pass Part 1 (2026-07-29)
+
+Analytics/ОФД/Инкассация/Бюджеты/История уплотнены (density-система, tables→cards, filter-sheet,
+single-accordion) + bottom-nav scroll-hide. Отчёт:
+[mobile-visual-density-part1-report.md](../testing/mobile-visual-density-part1-report.md).
+Остаток — Part 2 (breakdown-таблицы аналитики/ОФД, истории инкассации, остальные страницы).

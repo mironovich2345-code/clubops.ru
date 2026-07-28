@@ -100,3 +100,18 @@ guard + UI); sticky «Создать расход» и sticky nav wizard (keyboa
 баланс (analytics/OFD/collections/budgets/history/остальные); bottom-nav scroll-hide + скрытие при
 StickyActions; unsaved-form guard; Playwright visual 320–1440; ручной прогон
 [iphone-navigation-multi-account-checklist.md](../testing/iphone-navigation-multi-account-checklist.md).
+
+## Статус — Density Pass Part 1 (2026-07-29)
+
+5 разделов уплотнены + density-система + bottom-nav scroll-hide. Тесты
+`pilot:mobile-visual-density-part1` 24/24. Отчёт:
+[mobile-visual-density-part1-report.md](../testing/mobile-visual-density-part1-report.md).
+
+**Сделано:** density-компоненты (`src/components/mobile/density.tsx`); bottom-nav hide-on-scroll +
+suppress при StickyActions/Sheet/drawer (`mobile-chrome.ts`); OFD summary+breakdown cards; budgets
+cards+segmented+InfoNote; action-history FilterSheet+cards; collections single-active accordion;
+analytics compact header+KPI.
+
+**Долг Part 2:** analytics breakdown-таблицы → cards; ОФД статьи → cards; collections истории →
+cards + формы на StickyActions; Playwright visual 320–1440; Dashboard/Payments/Mandatory/Employees/
+Payroll; ручной прогон [iphone-mobile-density-part1-checklist.md](../testing/iphone-mobile-density-part1-checklist.md).
