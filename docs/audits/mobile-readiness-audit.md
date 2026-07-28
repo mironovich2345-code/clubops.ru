@@ -55,3 +55,11 @@ Collections/Payments/Employees → Settings**. Детали и сроки — `d
 - Touch target ≥44px; кнопки согласования не теряются.
 - Sticky/footer с `env(safe-area-inset-*)`.
 - Ошибки рядом с полем; деструктивные действия — подтверждение.
+
+## Обновление — WAVE 2 (2026-07-28)
+
+Финансовый контур (расходы/счета/возвраты) адаптирован в рамках WAVE 2: списки → карточки,
+встроенный doc-viewer, sticky-actions, тап-таргеты ≥44px, security-фикс перерасхода (реклама →
+только ГД). Подробно: [mobile-wave2-finance-audit.md](mobile-wave2-finance-audit.md),
+[отчёт](../testing/mobile-wave2-finance-report.md), [перф](mobile-wave2-performance.md).
+Остатки (пагинация, stepper, calc-sticky, device-QA) — WAVE 3.

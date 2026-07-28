@@ -70,3 +70,19 @@ advances уже адаптированы (см. `mobile-readiness-audit.md`).
   [iphone-pwa-manual-checklist.md](../testing/iphone-pwa-manual-checklist.md) на живых устройствах.
 
 Полный статус приёмки — [mobile-pwa-report.md](../testing/mobile-pwa-report.md).
+
+## Статус — WAVE 2 (финансовый контур) доставлена частично (2026-07-28)
+
+Ядро мобильной адаптации расходов/счетов/возвратов + security-фикс перерасхода. Автотесты
+`pilot:mobile-wave2-finance` 40/40. Аудит: [mobile-wave2-finance-audit.md](../audits/mobile-wave2-finance-audit.md).
+
+**Сделано:** общий mobile-слой (`src/components/mobile/`: MobileListCard, Sheet, StickyActions,
+FilterSheet, DocumentViewer, MobileFileField, StatusBadge); все 3 списка → карточки (desktop-
+таблицы сохранены); role-логика перерасхода (реклама → только ГД, owner заблокирован, server-
+guard + UI); sticky «Создать расход» и sticky nav wizard (keyboard-aware); встроенный doc-viewer
+на расходах/счетах/возвратах; тап-таргеты ≥44px в критичных местах.
+
+**Долг WAVE 3** (см. [mobile-wave2-finance-report.md](../testing/mobile-wave2-finance-report.md) п.21):
+пагинация/lazy списков; видимый stepper wizard; sticky в calc-формах; повсеместный `StatusNote`;
+расширенные фильтры; полная унификация upload; Playwright visual 320–1440; ручной прогон
+[iphone-wave2-finance-checklist.md](../testing/iphone-wave2-finance-checklist.md) на устройстве.
