@@ -37,5 +37,15 @@ check("N13 desktop sidebar не тронут (Sidebar под lg:block, отде�
 // --- Density already shipped (WAVE 2 reference) ---
 check("N14 invoices/refunds уже карточки (эталон плотности сохранён)", src("../src/app/(app)/invoices/page.tsx").includes("space-y-3 p-3 lg:hidden") && src("../src/app/(app)/refunds/page.tsx").includes("space-y-3 p-3 lg:hidden"));
 
+// --- Server/client boundary guard (navigation must stay client-safe) ---
+const navServer = src("../src/lib/navigation-server.ts");
+const sidebar = src("../src/components/Sidebar.tsx");
+// navigation.ts is imported by client components → must NOT pull server-only runtime in.
+check("B1 navigation.ts client-safe: НЕ импортирует runtime auth/session/prisma/next-headers", !/import\s*\{[^}]*\}\s*from\s*"@\/lib\/auth"/.test(nav) && /import type \{[^}]*\} from "@\/lib\/auth"/.test(nav) && !nav.includes('from "@/lib/session"') && !nav.includes('from "next/headers"') && !nav.includes('from "@/lib/prisma"') && !nav.includes('from "@/lib/navigation-server"'));
+check("B2 client nav-компоненты (Sidebar/MobileShell) без session/next-headers/prisma/auth-runtime", [sidebar, shell].every((c) => !c.includes('from "@/lib/session"') && !c.includes('from "next/headers"') && !c.includes('from "@/lib/prisma"') && !/import\s*\{[^}]*\}\s*from\s*"@\/lib\/auth"/.test(c)));
+check("B3 server resolver navigation-server: import server-only + bottomNavOrder(roles)→highestRole", navServer.includes('import "server-only"') && navServer.includes("bottomNavOrder") && navServer.includes("highestRole") && layout.includes('from "@/lib/navigation-server"'));
+check("B4 server-only guard в session/account-container/auth", src("../src/lib/session.ts").includes('import "server-only"') && src("../src/lib/account-container.ts").includes('import "server-only"') && src("../src/lib/auth.ts").includes('import "server-only"'));
+check("B5 bottomNavOrderForRole client-safe (в navigation.ts, чистая) + серверный bottomNavOrder", nav.includes("export function bottomNavOrderForRole") && !nav.includes("highestRole"));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

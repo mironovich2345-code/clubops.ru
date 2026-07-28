@@ -1,4 +1,8 @@
-import { type AppPage, type Role, highestRole } from "@/lib/auth";
+// CLIENT-SAFE navigation config. This module is imported by client components
+// (Sidebar, MobileShell), so it MUST NOT import runtime values from auth/session/
+// prisma or next/headers — only ERASED type imports are allowed. The server-only
+// resolver (bottomNavOrder over effective roles) lives in navigation-server.ts.
+import type { AppPage, Role } from "@/lib/auth";
 
 export type NavItem = {
   page: AppPage;
@@ -31,10 +35,11 @@ const BOTTOM_NAV_BY_ROLE: Partial<Record<Role, AppPage[]>> = {
 };
 const DEFAULT_BOTTOM_NAV: AppPage[] = ["dashboard", "expenses", "invoices", "refunds"];
 
-/** Preferred bottom-nav page order for a user's effective roles (highest role wins). */
-export function bottomNavOrder(roles: readonly Role[]): AppPage[] {
-  const r = highestRole(roles);
-  return (r && BOTTOM_NAV_BY_ROLE[r]) || DEFAULT_BOTTOM_NAV;
+/** Client-safe: bottom-nav page order for a single (already-resolved) role. The
+ *  server resolver navigation-server.bottomNavOrder maps effective roles → highest
+ *  role → this. Pure; no auth/session import. */
+export function bottomNavOrderForRole(role: Role | null): AppPage[] {
+  return (role && BOTTOM_NAV_BY_ROLE[role]) || DEFAULT_BOTTOM_NAV;
 }
 
 export const NAV_ITEMS: ReadonlyArray<NavItem> = [

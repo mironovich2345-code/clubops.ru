@@ -16,6 +16,7 @@
 // The `*Record` functions carry all the DB/security logic and take explicit ids
 // (no cookies) so they are unit-testable against the dev DB. The cookie wrappers
 // below read/write the container cookie and delegate to them.
+import "server-only";
 import { cookies, headers } from "next/headers";
 import { randomBytes, createHash } from "node:crypto";
 import type { Session, User } from "@prisma/client";
