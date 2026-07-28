@@ -1,0 +1,70 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
+
+// Mobile list card for the finance contour. Rendered ONLY below `lg` (desktop keeps its
+// <table>). Shows just what the audit's card spec lists: title/category, amount, key meta,
+// status, who-must-act, documents flag, problem flag, and one primary affordance. Secondary
+// technical fields belong on the detail page (spec §4/§8/§11, §14/§15).
+export type CardMeta = { label: string; value: ReactNode };
+
+export function MobileListCard({
+  href,
+  title,
+  amount,
+  status,
+  meta = [],
+  actor,
+  hasDocs,
+  problem,
+  action,
+}: {
+  href: string;
+  title: ReactNode;
+  amount?: ReactNode;
+  status?: ReactNode;
+  meta?: CardMeta[];
+  actor?: ReactNode;
+  hasDocs?: boolean;
+  problem?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <Link href={href} className="block min-w-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="break-anywhere text-sm font-semibold text-slate-900">{title}</div>
+          </div>
+          {amount != null ? <div className="shrink-0 text-right text-base font-semibold text-slate-900">{amount}</div> : null}
+        </div>
+
+        {meta.length > 0 ? (
+          <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs text-slate-500 sm:grid-cols-2">
+            {meta.map((m, i) => (
+              <div key={i} className="flex min-w-0 items-baseline gap-1">
+                <dt className="shrink-0">{m.label}:</dt>
+                <dd className="min-w-0 break-anywhere font-medium text-slate-700">{m.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {status}
+          {actor ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+              <span aria-hidden>➜</span>
+              <span className="truncate">{actor}</span>
+            </span>
+          ) : null}
+          {hasDocs ? <span className="text-xs text-slate-400" title="Есть документы">📎</span> : null}
+          {problem ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">{problem}</span>
+          ) : null}
+        </div>
+      </Link>
+
+      {action ? <div className="mt-3 border-t border-slate-100 pt-3">{action}</div> : null}
+    </div>
+  );
+}
