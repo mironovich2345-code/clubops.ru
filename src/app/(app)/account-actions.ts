@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getValidSession } from "@/lib/session";
+import { signOut } from "@/lib/auth";
 import { recordAudit } from "@/lib/access";
 import {
   setAddAccountIntent,
@@ -52,9 +53,11 @@ export async function removeAccountAction(formData: FormData): Promise<void> {
   redirect("/");
 }
 
-/** Sign out of EVERY account on this device. */
+/** Sign out of EVERY account on this device (and the legacy single-session cookie,
+ *  so it also works when no container exists yet). */
 export async function logoutAllAction(): Promise<void> {
   await recordAudit({ action: "account.logout_all", entityType: "AccountSessionContainer" });
-  await logoutAllAccounts();
+  await logoutAllAccounts();       // revoke all container sessions + clear container/scope cookies
+  await signOut();                 // revoke + clear the legacy club_ops_session cookie too
   redirect("/login");
 }

@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
-import { UserBadge } from "@/components/UserBadge";
 import { canAnyRoleAccessPage, isStrategicRole } from "@/lib/auth";
 import { getCurrentAccessContext, getUserCompanies, getUserClubs } from "@/lib/access";
 import { NAV_ITEMS, ROLE_LABELS, STRATEGIC_HIDDEN_PAGES } from "@/lib/navigation";
-import { logoutAction } from "@/app/auth-actions";
 import { ScopeSwitcher } from "./_components/ScopeSwitcher";
 import { MobileShell } from "./_components/MobileShell";
+import { AccountSwitcher } from "./_components/AccountSwitcher";
+import { listDeviceAccounts } from "@/lib/account-container";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 // This layout reads the database and the session, so the whole (app) subtree
@@ -32,10 +32,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const roleLabel = ctx.effectiveRole ? ROLE_LABELS[ctx.effectiveRole] ?? ctx.effectiveRole : "";
 
   // Companies the user may switch between, and clubs within the active company.
-  const [companies, clubs] = await Promise.all([
+  const [companies, clubs, deviceAccounts] = await Promise.all([
     getUserCompanies(user.id),
     getUserClubs(user.id, ctx.selectedCompanyId ?? undefined),
+    listDeviceAccounts(),
   ]);
+  const selectedCompanyName = companies.find((c) => c.id === ctx.selectedCompanyId)?.name ?? null;
+  // Single-account devices have no container yet — synthesize a one-entry list so the
+  // switcher still shows the current account + «Добавить аккаунт».
+  const switcherAccounts = deviceAccounts.length > 0
+    ? deviceAccounts
+    : [{ storedId: "", userId: user.id, name: user.name, email: user.email, active: true, status: "active" as const }];
 
   const scopeSlot =
     companies.length > 0 && ctx.selectedCompanyId ? (
@@ -51,12 +58,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const accountSlot = (
     <div className="flex flex-wrap items-center gap-3">
-      <UserBadge user={user} roleLabel={roleLabel} />
+      <div className="w-full min-w-0 sm:w-64">
+        <AccountSwitcher
+          current={{ name: user.name, roleLabel, companyName: selectedCompanyName }}
+          accounts={switcherAccounts}
+        />
+      </div>
       <ThemeToggle />
       <Link href="/settings/security" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Безопасность</Link>
-      <form action={logoutAction}>
-        <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Выйти</button>
-      </form>
     </div>
   );
 
