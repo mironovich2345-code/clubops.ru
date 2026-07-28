@@ -35,5 +35,11 @@ check("BG1 budgets: compact header + compact filter + segmented control (Бюд�
 check("BG2 budgets лимиты → desktop table hidden lg:block + mobile cards + статус перерасхода", bud.includes("hidden overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:block") && bud.includes("space-y-3 lg:hidden") && bud.includes("budgetStatus(") && bud.includes("budgetRank(") && bud.includes('label: "Перерасход"'));
 check("BG3 budgets permission note компактный (InfoNote, не большая карточка)", bud.includes("<InfoNote>Управлять бюджетами"));
 
+// ===================== Action history (§17/§18/§19) =====================
+const act = src("../src/app/(app)/activity/page.tsx");
+check("AH1 history: mobile FilterSheet (chips + count) + desktop form hidden lg:grid", act.includes("<FilterSheet") && act.includes('formId="activity-filters-mobile"') && act.includes("chips={chips}") && act.includes("mb-5 hidden") && act.includes("lg:grid lg:grid-cols-6"));
+check("AH2 history лог → desktop table hidden lg:block + mobile dense cards (details collapsed)", act.includes("hidden overflow-x-auto lg:block") && act.includes("space-y-3 p-3 lg:hidden") && act.includes("<MobileDataCard") && act.includes("details={"));
+check("AH3 history: серверная пагинация сохранена (не новая архитектура)", act.includes("result.totalPages") && act.includes("pageHref("));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

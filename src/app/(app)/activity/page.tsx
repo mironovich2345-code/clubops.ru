@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
+import { CompactPageHeader, MobileDataCard, EmptyState } from "@/components/mobile/density";
+import { StatusBadge, type StatusTone } from "@/components/mobile/StatusBadge";
+import { FilterSheet } from "@/components/mobile/FilterSheet";
 import {
   requirePageAccess,
   getCurrentAccessContext,
@@ -107,12 +109,56 @@ export default async function ActivityPage({
   const from = result.total === 0 ? 0 : (result.page - 1) * result.pageSize + 1;
   const to = Math.min(result.page * result.pageSize, result.total);
 
+  const rangeLabel = ACTIVITY_RANGES.find((r) => r.key === range)?.label ?? range;
+  const typeLabel = ACTIVITY_TYPES.find((t) => t.key === type)?.label ?? type;
+  const activeUserName = userOptions.find((u) => u.id === filters.userId)?.name;
+  const activeClubName = clubs.find((c) => c.id === filters.clubId)?.name;
+  const chips = [
+    { label: `Период: ${rangeLabel}` },
+    ...(sp.from ? [{ label: `с ${sp.from}` }] : []),
+    ...(sp.to ? [{ label: `по ${sp.to}` }] : []),
+    ...(activeUserName ? [{ label: activeUserName }] : []),
+    ...(activeClubName ? [{ label: activeClubName }] : []),
+    ...(type !== "all" ? [{ label: typeLabel }] : []),
+  ];
+
+  const resultTone: Record<string, StatusTone> = { ok: "success", reject: "danger", neutral: "neutral" };
+
+  // Filter fields, shared between the desktop form and the mobile sheet form.
+  const filterFields = (
+    <>
+      <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Период</span>
+        <select name="range" defaultValue={range} className="input w-full">{ACTIVITY_RANGES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></label>
+      <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">С даты</span>
+        <input type="date" name="from" defaultValue={sp.from ?? ""} className="input w-full" /></label>
+      <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">По дату</span>
+        <input type="date" name="to" defaultValue={sp.to ?? ""} className="input w-full" /></label>
+      <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Пользователь</span>
+        <select name="userId" defaultValue={filters.userId ?? ""} className="input w-full"><option value="">Все</option>{userOptions.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+      <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Клуб</span>
+        <select name="clubId" defaultValue={filters.clubId ?? ""} className="input w-full"><option value="">Все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Тип</span>
+        <select name="type" defaultValue={type} className="input w-full">{ACTIVITY_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select></label>
+    </>
+  );
+
   return (
     <div>
-      <PageHeader title="История действий" description="Кто, что и когда сделал" />
+      <CompactPageHeader title="История действий" subtitle="Кто, что и когда сделал" />
 
-      {/* Filters */}
-      <form method="get" className="mb-5 grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-6">
+      {/* Mobile: compact filter bar → sheet + active chips + count (§17) */}
+      <div className="mb-4">
+        <FilterSheet formId="activity-filters-mobile" chips={chips}>
+          <form id="activity-filters-mobile" method="get" className="grid grid-cols-1 gap-3">
+            {filterFields}
+            <Link href="/activity" className="text-center text-sm font-medium text-slate-600 hover:text-slate-800">Сбросить фильтры</Link>
+          </form>
+        </FilterSheet>
+        <div className="mt-1 text-xs text-slate-500">{result.total === 0 ? "Нет записей" : `Найдено: ${result.total}`}</div>
+      </div>
+
+      {/* Desktop filters (≥lg) */}
+      <form method="get" className="mb-5 hidden grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:grid lg:grid-cols-6">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600">Период</span>
           <select name="range" defaultValue={range} className="input w-full">
@@ -173,7 +219,7 @@ export default async function ActivityPage({
             {result.total === 0 ? "Нет записей" : `${from}–${to} из ${result.total}`}
           </span>
         </div>
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto lg:block">
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
@@ -214,6 +260,27 @@ export default async function ActivityPage({
               )}
             </tbody>
           </table>
+        </div>
+        {/* Mobile cards — dense (§18/§19); technical fields collapsed. Desktop table above. */}
+        <div className="space-y-3 p-3 lg:hidden">
+          {result.rows.length === 0 ? (
+            <EmptyState>Записи не найдены.</EmptyState>
+          ) : (
+            result.rows.map((row) => (
+              <MobileDataCard
+                key={row.id}
+                title={row.actionLabel}
+                badge={<StatusBadge tone={resultTone[row.result.tone] ?? "neutral"}>{row.result.label}</StatusBadge>}
+                rows={[
+                  { label: "Когда", value: dtFormatter.format(row.createdAt), tone: "muted" },
+                  { label: "Кто", value: row.userName, strong: true },
+                  { label: "Роль", value: row.roleLabel },
+                  { label: "Клуб", value: row.clubName },
+                ]}
+                details={<div className="break-anywhere text-slate-600">Объект: {row.objectLabel}</div>}
+              />
+            ))
+          )}
         </div>
         {result.totalPages > 1 ? (
           <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
