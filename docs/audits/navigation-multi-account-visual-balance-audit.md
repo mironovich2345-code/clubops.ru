@@ -209,3 +209,71 @@ system · 12 analytics/OFD balance · 13 collections/budgets/history balance · 
 сгруппирован и компактен; sidebar expanded/compact/hidden; bottom-nav role-aware + scroll-hide;
 Analytics/OFD/Budgets/History без обрезанных mobile-таблиц; единая плотность; нет общего h-scroll на
 320px; desktop не ухудшился. Продуктовая приёмка — только после ручного прогона на реальном iPhone.
+
+---
+
+# ДОПОЛНЕНИЕ — Density Pass Part 1 (2026-07-29): 5 разделов, постранично (15 метрик §1)
+
+Скоуп: Analytics, ОФД-продажи, Инкассация/остатки, Бюджеты, История действий. Только density/
+tables→cards/filters/hierarchy + bottom-nav scroll-hide. Бизнес-логику/формулы/права не трогаем.
+Эталон плотности — WAVE-2 карточки (`MobileListCard` `p-3`, `space-y-3`, `StatusBadge` width-safe).
+
+## Общее (влияет на все 5)
+- `PageHeader` всегда `mb-6` + `text-2xl` (нет mobile-ужатия) — на 320px заголовок съедает ~1/5
+  экрана. Нужен компактный mobile-вариант.
+- Паттерн oversized-KPI `p-5` + `text-2xl/3xl` повторяется (analytics/ofd/collections). Нужен единый
+  compact metric.
+- Bottom nav статична (нет scroll-hide) и `fixed bottom-0 z-30` конфликтует с WAVE-2 `StickyActions`
+  на формах (collections) — оба снизу.
+- Нет общих mobile density-токенов/компонентов — каждая страница верстает по-своему.
+
+## Analytics — `analytics/page.tsx` (+ `analytics/expenses`)
+| # | метрика | факт |
+|---|---|---|
+|1-3|первый viewport / данные / header+filters|header `mb-6` + период-форма `flex flex-wrap p-2` (select+2 date+«Показать») + KPI `grid-cols-2` → до данных ~1.5 экрана|
+|4-6|overflow / внутр.скролл / обрезка|5 raw tables `min-w-full`+`whitespace-nowrap` (by-network :165, weekday/manager/topExpenses :605-758) — внутренний h-scroll|
+|7|высокие карточки|`KpiCard p-5 text-3xl` (:515,520)|
+|8-10|убрать/оставить/в sheet|постоянно: период; в sheet: точные даты/доп.параметры|
+|11|иерархия|несколько крупных заголовков + «Показать» ломает ряд|
+|12-13|bottom nav|перекрывает низ; конфликт со StickyActions — нет (нет форм)|
+|14-15|light/dark, унификация|KPI карточки и period-форма — кандидаты в общий compact-компонент|
+
+**План:** compact PageHeader; `CompactFilterBar` (период + «Фильтры»→sheet); metric-cards
+объединить связанное (Выручка ОФД/Абонементы/ПТ → 1 summary или compact grid); breakdown-таблицы —
+вне Part-1 приоритета (главное — верхний блок и период; таблицы можно оставить в `overflow-x-auto`).
+
+## ОФД-продажи — `analytics/ofd-sales/page.tsx` (+ `OfdForms.tsx`)
+- `Block mb-8` (32px разрывы), `SalesCard p-5 text-2xl` (:137); month switcher отдельный `mb-6 flex`.
+- `MoneyTable` «По клубам»/«По юрлицам» — raw `min-w-full` 6-кол (:173-192); `OfdRevenueTable` 5×
+  `min-w-full/whitespace-nowrap`. Внутренний h-scroll, desktop-заголовки на mobile.
+- Sales cards `grid-cols-1 sm:grid-cols-3` — на 320 ок.
+**План:** summary → компактный dl (месяц/итог/нал/безнал/возвраты/чеки); month nav компактный
+(‹ месяц ›); «По клубам»/«По юрлицам» → mobile cards (desktop-таблицы `hidden lg:block`).
+
+## Инкассация — `collections/page.tsx`
+- `Section mb-8`; `OooCard/IpCard p-5 text-2xl` + 8-9-строчный `dl` → очень высокие (:262,283).
+- `Collapsible` = native `<details>`, **независимые** (можно раскрыть все) → длинная лента форм.
+- Истории (opening/recon/ops) — raw `min-w-full` 9-кол (:153,203).
+- `IpCashFactBlock`-подобные grid ок после WAVE-2 фикса в expenses (здесь свои).
+**План:** single-active accordion (открытие закрывает прочие); collapsed summary; уплотнить формы;
+history → cards + collapsed/lazy; bottom-nav скрыта при активной форме (StickyActions).
+
+## Бюджеты — `budgets/page.tsx`
+- Первый экран = контролы: club+month `flex flex-wrap p-4` (:129) + Бюджеты/План-факт `flex gap-2`
+  (:150) + limit-форма → таблица далеко.
+- «Лимиты» raw `min-w-full` 5-кол (:191); requests `min-w-full` 10-кол `whitespace-nowrap` (:242).
+- Permission note «Управлять бюджетами может…» — крупный блок.
+**План:** compact фильтр (клуб/месяц/Показать stacked); Бюджеты/План-факт → segmented; лимиты →
+compact cards (статья/лимит/использовано/остаток/%/статус, progress опц.); permission → compact note.
+
+## История действий — `activity/page.tsx`
+- Фильтр `grid ... lg:grid-cols-6` 6 полей стеком (:115-166) → журнал за экраном.
+- Лог raw `min-w-full` 8-кол `whitespace-nowrap` (:177-216); result-бейджи без `max-w`.
+**План:** compact bar (период + «Фильтры»→sheet + chips + счётчик); полный набор в `FilterSheet`;
+лог → плотные cards (дата/время muted, пользователь/действие main, роль/статус, details collapsed);
+desktop-таблица `hidden lg:block`; серверная пагинация — если уже есть, не вводить новую.
+
+## Вывод
+Общие компоненты (compact PageHeader, CompactMetricCard, DataSummaryCard, MobileDataCard,
+CompactFilterBar, ActiveFilterChips, SectionHeader, EmptyState) + bottom-nav scroll-hide hook +
+suppress-under-StickyActions/overlay — фундамент Part-1; далее 5 страниц применяют их.
