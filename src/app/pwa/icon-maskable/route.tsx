@@ -3,7 +3,6 @@ import { ImageResponse } from "next/og";
 // PWA MASKABLE icon 512×512. The monogram sits inside the ~80% safe zone so Android's
 // adaptive-icon mask (circle/squircle) never clips it; the navy field bleeds to the edges.
 export const runtime = "nodejs";
-export const contentType = "image/png";
 
 export function GET() {
   return new ImageResponse(

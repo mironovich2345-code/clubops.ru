@@ -3,7 +3,6 @@ import { ImageResponse } from "next/og";
 // PWA icon 192×192 (purpose: any). Navy field, white "C" + blue "O" monogram — matches
 // the favicon/apple-icon. Full-bleed square (letterbox handled by the OS for `any`).
 export const runtime = "nodejs";
-export const contentType = "image/png";
 
 export function GET() {
   return new ImageResponse(

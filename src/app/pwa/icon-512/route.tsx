@@ -2,7 +2,6 @@ import { ImageResponse } from "next/og";
 
 // PWA icon 512×512 (purpose: any).
 export const runtime = "nodejs";
-export const contentType = "image/png";
 
 export function GET() {
   return new ImageResponse(
