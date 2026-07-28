@@ -1,4 +1,6 @@
 import { PageHeader } from "@/components/PageHeader";
+import { MobileDataCard } from "@/components/mobile/density";
+import { StatusBadge } from "@/components/mobile/StatusBadge";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import {
@@ -121,7 +123,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
                 <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{employeePositionLabel(position)}</span>
                 <span className="text-xs text-slate-400">{byPosition.get(position)!.length}</span>
               </div>
-              <div className="overflow-x-auto">
+              {/* Desktop table (≥lg) */}
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
                   <thead className="bg-slate-50 dark:bg-slate-800/50">
                     <tr>
@@ -158,6 +161,23 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
                     ))}
                   </tbody>
                 </table>
+              </div>
+              {/* Mobile cards (<lg) — no compressed table (§15) */}
+              <div className="space-y-3 p-3 lg:hidden">
+                {byPosition.get(position)!.map((e) => (
+                  <MobileDataCard
+                    key={e.id}
+                    title={e.fullName}
+                    badge={e.status === "dismissed"
+                      ? <StatusBadge tone="neutral">Уволен{e.dismissedAt ? ` · ${dateFmt.format(e.dismissedAt)}` : ""}</StatusBadge>
+                      : <StatusBadge tone="success">Активен</StatusBadge>}
+                    rows={[
+                      ...(showClubColumn ? [{ label: "Клуб", value: e.clubName }] : []),
+                      ...(e.comment ? [{ label: "Комментарий", value: e.comment }] : []),
+                    ]}
+                    footer={canManage && e.status === "active" ? <div className="flex justify-end"><DismissEmployeeButton id={e.id} name={e.fullName} /></div> : undefined}
+                  />
+                ))}
               </div>
             </div>
           ))}
