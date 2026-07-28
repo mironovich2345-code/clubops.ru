@@ -64,5 +64,12 @@ check("E2 expenses карточка: статья+сумма+статус+клу
 check("E3 expenses list не клипает контент (overflow-hidden убран у таблицы)", !/xl:col-span-2 overflow-hidden/.test(expList));
 check("E4 IpCash факт-блок не grid-cols-2 на 320px (стек → min-[400px])", expList.includes("grid-cols-1 gap-x-6 gap-y-1 text-sm min-[400px]:grid-cols-2"));
 
+// ============================ INVOICES (§8) ============================
+const invList = src("../src/app/(app)/invoices/page.tsx");
+check("I-L1 все 3 таблицы счетов hidden lg:block + mobile карточки lg:hidden", (invList.match(/hidden overflow-x-auto lg:block/g) || []).length === 3 && (invList.match(/space-y-3 p-3 lg:hidden/g) || []).length === 3);
+check("I-L2 карточка счёта: контрагент+сумма+статус+клуб+срок (StatusBadge)", invList.includes("<MobileListCard") && invList.includes("invoiceTone(") && /title=\{r\.counterpartyName/.test(invList));
+check("I-L3 AI/просрочка отражены (problem-флаг)", invList.includes('problem={r.overdue ? "просрочен"') || invList.includes("problem={r.dueDate"));
+check("I-L4 elevated summary не grid-cols-2 на 320px", invList.includes("grid-cols-1 gap-4 min-[400px]:grid-cols-2 lg:grid-cols-5"));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

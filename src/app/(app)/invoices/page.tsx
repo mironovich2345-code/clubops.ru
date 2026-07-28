@@ -11,11 +11,22 @@ import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities"
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 import { HistoricalInvoiceForm } from "./_components/HistoricalInvoiceForm";
 import { InvoiceFilters } from "./_components/InvoiceFilters";
+import { MobileListCard } from "@/components/mobile/MobileListCard";
+import { StatusBadge, type StatusTone } from "@/components/mobile/StatusBadge";
 
 export const dynamic = "force-dynamic";
 
 const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 const CARD = "rounded-lg border border-slate-200 bg-white shadow-sm";
+
+// Status → semantic tone for the mobile invoice cards (label text stays authoritative).
+function invoiceTone(status: string, overdue?: boolean): StatusTone {
+  if (overdue) return "danger";
+  if (status === "paid") return "success";
+  if (status === "rejected" || status === "canceled") return "danger";
+  if (status === "draft") return "neutral";
+  return "info";
+}
 
 export default async function InvoicesPage({
   searchParams,
@@ -163,7 +174,7 @@ function ElevatedCards({ view }: { view: InvoicesView }) {
   const total = "totalInvoiceAmountKopeks" in s ? s.totalInvoiceAmountKopeks : 0;
   const paid = "paidAmountKopeks" in s ? s.paidAmountKopeks : 0;
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+    <div className="grid grid-cols-1 gap-4 min-[400px]:grid-cols-2 lg:grid-cols-5">
       <Stat label="Сумма счетов" value={formatKopeks(total)} />
       <Stat label="Оплачено" value={formatKopeks(paid)} accent="text-emerald-700" />
       <Stat label="Ожидает оплаты" value={formatKopeks(s.pendingPaymentAmountKopeks)} accent="text-amber-700" />
@@ -283,7 +294,7 @@ function CarriedOverdue({ view }: { view: InvoicesView }) {
       <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
         Просроченные долги прошлых периодов
       </div>
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto lg:block">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Срок оплаты</Th><Th>Просрочка</Th><Th>Статус</Th><Th>Действия</Th></tr>
@@ -305,6 +316,20 @@ function CarriedOverdue({ view }: { view: InvoicesView }) {
           </tbody>
         </table>
       </div>
+      {/* Mobile cards (<lg) */}
+      <div className="space-y-3 p-3 lg:hidden">
+        {view.carriedOverdueInvoices.map((r) => (
+          <MobileListCard
+            key={r.id}
+            href={`/invoices/${r.id}`}
+            title={r.counterpartyName ?? "— без контрагента —"}
+            amount={formatKopeks(r.amountKopeks)}
+            status={<StatusBadge tone="danger">{INVOICE_STATUS_LABELS[r.status] ?? r.status}</StatusBadge>}
+            problem={r.dueDate ? `просрочен ${daysOverdue(r.dueDate)} дн.` : "долг прошлого периода"}
+            meta={[{ label: "Срок оплаты", value: r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—" }]}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -322,29 +347,49 @@ function ReviewQueue({ view }: { view: InvoicesView }) {
       {rows.length === 0 ? (
         <div className="px-4 py-6 text-center text-sm text-slate-500">Нет счетов, ожидающих проверки</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50">
-              <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Управляющий</Th><Th>Клуб</Th><Th>Отправлен</Th><Th>Срок оплаты</Th><Th>Действия</Th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50">
-                  <Td>
-                    <div className="font-medium text-slate-900">{r.counterpartyName ?? "— без контрагента —"}</div>
-                    {r.invoiceNumber ? <div className="text-xs text-slate-500">№ {r.invoiceNumber}</div> : null}
-                  </Td>
-                  <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
-                  <Td className="whitespace-nowrap text-slate-600">{r.createdByName}</Td>
-                  <Td className="whitespace-nowrap text-slate-600">{r.clubName}</Td>
-                  <Td className="whitespace-nowrap text-slate-500">{dateFmt.format(new Date(r.submittedAt ?? r.createdAt))}</Td>
-                  <Td className="whitespace-nowrap text-slate-500">{r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—"}</Td>
-                  <Td><OpenLink id={r.id} /></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Управляющий</Th><Th>Клуб</Th><Th>Отправлен</Th><Th>Срок оплаты</Th><Th>Действия</Th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {rows.map((r) => (
+                  <tr key={r.id} className="hover:bg-slate-50">
+                    <Td>
+                      <div className="font-medium text-slate-900">{r.counterpartyName ?? "— без контрагента —"}</div>
+                      {r.invoiceNumber ? <div className="text-xs text-slate-500">№ {r.invoiceNumber}</div> : null}
+                    </Td>
+                    <Td className="whitespace-nowrap text-right font-medium text-slate-900">{formatKopeks(r.amountKopeks)}</Td>
+                    <Td className="whitespace-nowrap text-slate-600">{r.createdByName}</Td>
+                    <Td className="whitespace-nowrap text-slate-600">{r.clubName}</Td>
+                    <Td className="whitespace-nowrap text-slate-500">{dateFmt.format(new Date(r.submittedAt ?? r.createdAt))}</Td>
+                    <Td className="whitespace-nowrap text-slate-500">{r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—"}</Td>
+                    <Td><OpenLink id={r.id} /></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Mobile cards (<lg) */}
+          <div className="space-y-3 p-3 lg:hidden">
+            {rows.map((r) => (
+              <MobileListCard
+                key={r.id}
+                href={`/invoices/${r.id}`}
+                title={r.counterpartyName ?? "— без контрагента —"}
+                amount={formatKopeks(r.amountKopeks)}
+                status={<StatusBadge tone="warning">Ожидает проверки</StatusBadge>}
+                meta={[
+                  ...(r.invoiceNumber ? [{ label: "№", value: r.invoiceNumber }] : []),
+                  { label: "Клуб", value: r.clubName },
+                  { label: "Управляющий", value: r.createdByName },
+                  { label: "Срок оплаты", value: r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—" },
+                ]}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -357,7 +402,7 @@ function MainList({ view }: { view: InvoicesView }) {
   return (
     <div className={`mt-6 overflow-hidden ${CARD}`}>
       <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Счета за период</div>
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto lg:block">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Статья</Th><Th>Статус</Th><Th>Клуб</Th><Th>Срок / Оплачен</Th><Th>Действия</Th></tr>
@@ -383,6 +428,32 @@ function MainList({ view }: { view: InvoicesView }) {
             )}
           </tbody>
         </table>
+      </div>
+      {/* Mobile cards (<lg) */}
+      <div className="space-y-3 p-3 lg:hidden">
+        {rows.length === 0 ? (
+          <div className="py-8 text-center text-sm text-slate-500">Нет счетов в выбранном месяце.</div>
+        ) : (
+          rows.map((r) => (
+            <MobileListCard
+              key={r.id}
+              href={`/invoices/${r.id}`}
+              title={r.counterpartyName ?? "— без контрагента —"}
+              amount={formatKopeks(r.amountKopeks)}
+              status={<StatusBadge tone={invoiceTone(r.status, r.overdue)}>{INVOICE_STATUS_LABELS[r.status] ?? r.status}</StatusBadge>}
+              problem={r.overdue ? "просрочен" : undefined}
+              meta={[
+                ...(r.invoiceNumber ? [{ label: "№", value: r.invoiceNumber }] : []),
+                { label: "Статья", value: expenseCategoryLabel(r.expenseCategory) },
+                { label: "Клуб", value: r.clubName },
+                { label: r.status === "paid" ? "Оплачен" : "Срок", value: r.status === "paid" ? (r.paidAt ? dateFmt.format(new Date(r.paidAt)) : "оплачен") : r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—" },
+              ]}
+              action={r.status === "draft" ? (
+                <Link href={`/invoices/${r.id}`} className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700">Продолжить заполнение</Link>
+              ) : undefined}
+            />
+          ))
+        )}
       </div>
     </div>
   );
