@@ -115,3 +115,16 @@ analytics compact header+KPI.
 **Долг Part 2:** analytics breakdown-таблицы → cards; ОФД статьи → cards; collections истории →
 cards + формы на StickyActions; Playwright visual 320–1440; Dashboard/Payments/Mandatory/Employees/
 Payroll; ручной прогон [iphone-mobile-density-part1-checklist.md](../testing/iphone-mobile-density-part1-checklist.md).
+
+## Статус — Final mobile visual polish (2026-07-29)
+
+Убраны ВСЕ эмодзи (единый SVG icon-set `src/components/mobile/icons.tsx`); полностью удалено нижнее
+мобильное меню + dead-code (navigation-server, mobile-chrome, bottom-nav config, .pb-bottom-nav);
+drawer bounded (`w-[min(88vw,360px)]` + overflow-x-hidden + min-w-0); симметричный header (44/1fr/44);
+company/club stack; глобальный box-sizing для input/select/date; employees → карточки. Тесты
+`pilot:final-mobile-visual-polish` 10/10. Отчёт:
+[final-mobile-visual-polish-report.md](../testing/final-mobile-visual-polish-report.md).
+
+**Остаток:** единый Button-variants компонент; глубокая пиксельная переверстка expenses top-actions/
+status-tabs/dashboard month-nav; замена текст-глифов ✓/⚠ в payroll/sales; Playwright 320–1440; ручной
+прогон [iphone-final-mobile-visual-polish-checklist.md](../testing/iphone-final-mobile-visual-polish-checklist.md).

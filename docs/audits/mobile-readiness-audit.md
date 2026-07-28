@@ -77,3 +77,10 @@ Analytics/ОФД/Инкассация/Бюджеты/История уплотн
 single-accordion) + bottom-nav scroll-hide. Отчёт:
 [mobile-visual-density-part1-report.md](../testing/mobile-visual-density-part1-report.md).
 Остаток — Part 2 (breakdown-таблицы аналитики/ОФД, истории инкассации, остальные страницы).
+
+## Обновление — Final mobile visual polish (2026-07-29)
+
+Эмодзи убраны (SVG icon-set); нижнее меню удалено полностью (+dead-code); drawer/header/controls
+bounded; company/club stack; employees → карточки. Отчёт:
+[final-mobile-visual-polish-report.md](../testing/final-mobile-visual-polish-report.md). Остаток:
+Button-variants, глубокий per-page pixel-polish, Playwright, реальный iPhone.
