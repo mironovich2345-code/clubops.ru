@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSimplifiedExpenseDraft, submitExpense } from "../simplified-actions";
 import { uploadExpenseDocuments } from "../document-actions";
+import { StickyActions } from "@/components/mobile/StickyActions";
 
 type Category = { key: string; name: string };
 
@@ -165,7 +166,7 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl">
+    <form ref={formRef} onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl pb-28 lg:pb-0">
       {/* Category name carried so the title is built from the human label. */}
       <input type="hidden" name="categoryName" value={categories.find((c) => c.key === category)?.name ?? ""} />
 
@@ -272,11 +273,22 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
         </div>
       </div>
 
-      {/* Main action — full width under both columns. One click: create → send to regional. */}
-      <button type="submit" disabled={busy} className="mt-6 min-h-[44px] w-full rounded-md bg-brand-600 px-4 py-3 text-base font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-        {busy ? "Создание…" : "Создать расход"}
-      </button>
-      <p className="mt-2 text-center text-xs text-slate-500">После создания расход будет отправлен региональному директору на проверку.</p>
+      {/* Desktop action — inline under both columns. One click: create → send to regional. */}
+      <div className="mt-6 hidden lg:block">
+        <button type="submit" disabled={busy} className="min-h-[44px] w-full rounded-md bg-brand-600 px-4 py-3 text-base font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+          {busy ? "Создание…" : "Создать расход"}
+        </button>
+        <p className="mt-2 text-center text-xs text-slate-500">После создания расход будет отправлен региональному директору на проверку.</p>
+      </div>
+
+      {/* Mobile action — sticky, keyboard-aware, safe-area (spec §5/§18). Не дублируется:
+          десктопная кнопка выше скрыта на мобильном (lg:block). */}
+      <StickyActions>
+        <button type="submit" disabled={busy} className="inline-flex min-h-[48px] w-full items-center justify-center rounded-md bg-brand-600 px-4 text-base font-semibold text-white hover:bg-brand-700 disabled:opacity-60">
+          {busy ? "Создание…" : "Создать расход"}
+        </button>
+        <p className="mt-1 text-center text-[11px] text-slate-500">После создания расход отправится региональному директору.</p>
+      </StickyActions>
     </form>
   );
 }

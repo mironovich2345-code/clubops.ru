@@ -2,6 +2,7 @@
 
 import { useFormState, useFormStatus } from "react-dom";
 import { uploadExpenseDocuments, removeExpenseDocument } from "../../document-actions";
+import { DocumentLink } from "@/components/mobile/DocumentViewer";
 
 type Attachment = {
   key: string;
@@ -47,7 +48,7 @@ function RemoveForm({ expenseId, documentId }: { expenseId: string; documentId: 
       <input type="hidden" name="expenseId" value={expenseId} />
       <input type="hidden" name="documentId" value={documentId} />
       <input type="hidden" name="reason" value="" />
-      <button type="submit" className="text-xs font-medium text-rose-600 hover:text-rose-700">Удалить</button>
+      <button type="submit" className="inline-flex min-h-[44px] items-center px-2 text-sm font-medium text-rose-600 hover:text-rose-700">Удалить</button>
       {state.error ? <span className="ml-2 text-xs text-rose-600">{state.error}</span> : null}
     </form>
   );
@@ -89,12 +90,14 @@ export function ExpenseAttachments({
                   {[a.typeLabel, a.sizeText, a.createdText, a.kind === "legacy" ? "старый формат" : null].filter(Boolean).join(" · ")}
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <a href={a.previewHref} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand-600 hover:text-brand-700">
-                  {a.canPreview ? "Открыть" : "Скачать"}
-                </a>
+              <div className="flex shrink-0 flex-wrap items-center gap-1">
                 {a.canPreview ? (
-                  <a href={a.downloadHref} className="text-xs font-medium text-slate-500 hover:text-slate-700">Скачать</a>
+                  <DocumentLink href={a.previewHref} name={a.filename} />
+                ) : (
+                  <a href={a.previewHref} target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center px-2 text-sm font-medium text-brand-700 hover:underline">Скачать</a>
+                )}
+                {a.canPreview ? (
+                  <a href={a.downloadHref} className="inline-flex min-h-[44px] items-center px-2 text-sm font-medium text-slate-500 hover:text-slate-700">Скачать</a>
                 ) : null}
                 {editable && a.canRemove && a.id ? <RemoveForm expenseId={expenseId} documentId={a.id} /> : null}
               </div>

@@ -64,6 +64,12 @@ check("E2 expenses карточка: статья+сумма+статус+клу
 check("E3 expenses list не клипает контент (overflow-hidden убран у таблицы)", !/xl:col-span-2 overflow-hidden/.test(expList));
 check("E4 IpCash факт-блок не grid-cols-2 на 320px (стек → min-[400px])", expList.includes("grid-cols-1 gap-x-6 gap-y-1 text-sm min-[400px]:grid-cols-2"));
 
+// ============================ EXPENSE create + documents (§5/§7/§16/§18) ============================
+const simpleForm = src("../src/app/(app)/expenses/simple/SimpleExpenseForm.tsx");
+check("E5 создание расхода: mobile StickyActions + desktop lg:block (без дубля), keyboard-clear pb", simpleForm.includes("<StickyActions>") && simpleForm.includes("hidden lg:block") && simpleForm.includes("pb-28 lg:pb-0"));
+const expAtt = src("../src/app/(app)/expenses/[id]/_components/ExpenseAttachments.tsx");
+check("E6 документы расхода: in-app DocumentLink viewer + tap-target ≥44px (нет сырого target=_blank для preview)", expAtt.includes("DocumentLink") && expAtt.includes("min-h-[44px]") && !/canPreview \? \(\s*<a href=\{a\.previewHref\} target="_blank"/.test(expAtt));
+
 // ============================ INVOICES (§8) ============================
 const invList = src("../src/app/(app)/invoices/page.tsx");
 check("I-L1 все 3 таблицы счетов hidden lg:block + mobile карточки lg:hidden", (invList.match(/hidden overflow-x-auto lg:block/g) || []).length === 3 && (invList.match(/space-y-3 p-3 lg:hidden/g) || []).length === 3);
