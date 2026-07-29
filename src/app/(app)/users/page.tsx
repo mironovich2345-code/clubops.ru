@@ -12,8 +12,10 @@ import {
   type CompanyMember,
 } from "@/lib/access";
 import { countActiveSessionsForUser } from "@/lib/session";
-import { INVITE_ROLE_LABELS, deriveInviteStatus, INVITE_STATUS_LABELS, type InviteStatus } from "@/lib/invites";
+import { INVITE_ROLE_LABELS, deriveInviteStatus, INVITE_STATUS_LABELS, isClubScopedRole, type InviteStatus } from "@/lib/invites";
 import { ROLE_LABELS } from "@/lib/navigation";
+import { MobileDataCard } from "@/components/mobile/density";
+import { StatusBadge } from "@/components/mobile/StatusBadge";
 import { prisma } from "@/lib/prisma";
 import { classifyRoleShape } from "@/lib/employee-roles";
 import { InviteForm } from "./_components/InviteForm";
@@ -33,6 +35,7 @@ export default async function UsersPage() {
     return <NoCompanyState title="Пользователи" description="Сотрудники, роли и доступ к клубам" />;
   }
   const companyId = scope.company.id;
+  const companyName = scope.company.name;
 
   const [members, invitableRoles, clubs, manageableClubIds, isOwner, isGeneralDirector] =
     await Promise.all([
@@ -49,6 +52,10 @@ export default async function UsersPage() {
     value,
     label: INVITE_ROLE_LABELS[value] ?? value,
   }));
+  // Single source of truth for which invitable roles need a club (mirrors the
+  // server's isClubScopedRole). The invite form uses this to drive its scope
+  // control instead of hardcoding "manager".
+  const clubScopedRoles = invitableRoles.filter((r) => isClubScopedRole(r));
 
   // Invitations visible to the actor: owner / general director see every invite
   // in the company; a regional director sees only invites for the clubs they
@@ -90,8 +97,13 @@ export default async function UsersPage() {
       }
     }),
   );
-  // Show the per-user admin block once (on the first row of each user).
-  const seenUser = new Set<string>();
+  // Show the per-user admin block once — on the FIRST access row of each user.
+  // Precomputed (not a mutable set consumed during render) so the desktop table
+  // and the mobile cards render independently and identically.
+  const firstAccessIdByUser = new Map<string, string>();
+  for (const m of members) if (!firstAccessIdByUser.has(m.user.id)) firstAccessIdByUser.set(m.user.id, m.accessId);
+  const showsAdminBlock = (member: CompanyMember) =>
+    adminUsers.has(member.user.id) && firstAccessIdByUser.get(member.user.id) === member.accessId;
 
   // GD-only manager↔regional conversions: per-user role shape + active clubs.
   const activeClubs = isGeneralDirector
@@ -114,16 +126,74 @@ export default async function UsersPage() {
     return member.clubId !== null && manageable.has(member.clubId);
   }
 
+  // Actions column — identical on desktop table + mobile card (spec §11: no critical
+  // access info hidden behind overflow).
+  const MemberActions = ({ member }: { member: CompanyMember }) => {
+    const removable = canRemove(member);
+    const showAdmin = showsAdminBlock(member);
+    return (
+      <div className="flex flex-col gap-2">
+        {removable ? (
+          <form action={removeAccess}>
+            <input type="hidden" name="scope" value={member.scope} />
+            <input type="hidden" name="accessId" value={member.accessId} />
+            <button type="submit" className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-500/10 dark:text-rose-300">
+              Удалить доступ
+            </button>
+          </form>
+        ) : null}
+        {showAdmin ? (
+          <>
+            <UserAdminControls targetUserId={member.user.id} isActive={member.user.isActive} sessionCount={sessionCounts.get(member.user.id) ?? 0} />
+            {isGeneralDirector && member.user.isActive && roleShapeOf(member.user.id) ? (
+              <RoleControls userId={member.user.id} userName={member.user.name} shape={roleShapeOf(member.user.id)!} clubs={activeClubs} />
+            ) : null}
+            {isOwner ? <OwnerDeleteControl targetUserId={member.user.id} /> : null}
+          </>
+        ) : null}
+        {!removable && !adminUsers.has(member.user.id) ? <span className="text-xs text-slate-400">—</span> : null}
+      </div>
+    );
+  };
+
   return (
     <div>
       <PageHeader title="Пользователи" description="Сотрудники, роли и доступ к клубам" />
 
       {roleOptions.length > 0 ? (
-        <InviteForm roles={roleOptions} clubs={clubs} companyName={scope.company.name} />
+        <InviteForm roles={roleOptions} clubs={clubs} companyName={scope.company.name} clubScopedRoles={clubScopedRoles} />
       ) : null}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-slate-200">
+      {/* Mobile: cards (no clipped columns). Desktop: the full table. */}
+      {members.length === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          Пока нет пользователей с доступом.
+        </div>
+      ) : (
+        <div className="space-y-3 lg:hidden">
+          {members.map((member) => (
+            <MobileDataCard
+              key={`m-${member.scope}-${member.accessId}`}
+              title={member.user.name}
+              badge={
+                <StatusBadge tone={member.user.isActive ? "success" : "neutral"}>
+                  {member.user.isActive ? "Активен" : "Отключён"}
+                </StatusBadge>
+              }
+              rows={[
+                { label: "Email", value: member.user.email },
+                { label: "Роль", value: ROLE_LABELS[member.role] ?? member.role },
+                { label: "Доступ", value: member.scope === "club" ? `Клуб: ${member.clubName}` : "Вся компания" },
+                { label: "Компания", value: companyName },
+              ]}
+              footer={<MemberActions member={member} />}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="hidden overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:block dark:border-slate-800 dark:bg-slate-900">
+        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
           <thead className="bg-slate-50">
             <tr>
               <Th>Пользователь</Th>
@@ -163,47 +233,7 @@ export default async function UsersPage() {
                     )}
                   </Td>
                   <Td>
-                    <div className="flex flex-col gap-2">
-                      {canRemove(member) ? (
-                        <form action={removeAccess}>
-                          <input type="hidden" name="scope" value={member.scope} />
-                          <input type="hidden" name="accessId" value={member.accessId} />
-                          <button
-                            type="submit"
-                            className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
-                          >
-                            Удалить доступ
-                          </button>
-                        </form>
-                      ) : null}
-                      {(() => {
-                        // Per-user admin block, rendered once per user.
-                        if (seenUser.has(member.user.id)) return null;
-                        seenUser.add(member.user.id);
-                        if (!adminUsers.has(member.user.id)) return null;
-                        return (
-                          <>
-                            <UserAdminControls
-                              targetUserId={member.user.id}
-                              isActive={member.user.isActive}
-                              sessionCount={sessionCounts.get(member.user.id) ?? 0}
-                            />
-                            {isGeneralDirector && member.user.isActive && roleShapeOf(member.user.id) ? (
-                              <RoleControls
-                                userId={member.user.id}
-                                userName={member.user.name}
-                                shape={roleShapeOf(member.user.id)!}
-                                clubs={activeClubs}
-                              />
-                            ) : null}
-                            {isOwner ? <OwnerDeleteControl targetUserId={member.user.id} /> : null}
-                          </>
-                        );
-                      })()}
-                      {!canRemove(member) && !adminUsers.has(member.user.id) ? (
-                        <span className="text-xs text-slate-400">—</span>
-                      ) : null}
-                    </div>
+                    <MemberActions member={member} />
                   </Td>
                 </tr>
               ))

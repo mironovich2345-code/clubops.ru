@@ -7,6 +7,8 @@ import type { OfdSyncSummary, OfdClubResult } from "../actions";
 import type { OfdCheckDiagnostics, OfdSafeContract } from "@/lib/ofd/contract";
 import type { NewDocumentsShape, DocumentInfoShape } from "@/lib/ofd/types";
 import { formatKopeks } from "@/lib/money";
+import { DateField } from "@/components/mobile/DateField";
+import { buttonClass } from "@/components/mobile/buttons";
 
 type State = { ok: boolean; error?: string; notice?: string; code?: string; diagnostics?: OfdCheckDiagnostics; matchedContract?: OfdSafeContract; currentSession?: string | null; sync?: OfdSyncSummary; perClub?: OfdClubResult[]; unboundKkts?: number; clubNote?: string; newDocsShape?: NewDocumentsShape; docInfoShape?: DocumentInfoShape };
 const initial: State = { ok: false };
@@ -14,10 +16,10 @@ const initial: State = { ok: false };
 type ClubOpt = { id: string; name: string };
 type EntityOpt = { id: string; name: string };
 
-function Submit({ idle, busy }: { idle: string; busy: string }) {
+function Submit({ idle, busy, className = "" }: { idle: string; busy: string; className?: string }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60">
+    <button type="submit" disabled={pending} className={`rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60 ${className}`}>
       {pending ? busy : idle}
     </button>
   );
@@ -298,17 +300,24 @@ export function OfdMappingEditForm({ mappingId, clubs, entities, currentClubId, 
 
 export function OfdImportForm({ connections }: { connections: ConnOpt[] }) {
   const [state, action] = useFormState(runOfdImport, initial);
+  // Mobile: everything stacks full-width (connection, both dates, action) with a 12px
+  // gap so «Дата от»/«Дата до» never overlap. Desktop: dates share two columns then the
+  // row wraps compactly. (spec §14)
   return (
-    <form action={action} className="flex flex-wrap items-end gap-3">
-      <Field label="Подключение (кабинет)">
-        <select name="connectionId" required defaultValue={connections[0]?.id ?? ""} className="input">
-          {connections.length === 0 ? <option value="" disabled>Нет подключений</option> : null}
-          {connections.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-        </select>
-      </Field>
-      <Field label="Дата от"><input type="date" name="dateFrom" required defaultValue="2026-07-01" className="input" /></Field>
-      <Field label="Дата до"><input type="date" name="dateTo" required defaultValue="2026-07-31" className="input" /></Field>
-      <Submit idle="Импортировать" busy="Импорт..." />
+    <form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
+      <div className="sm:col-span-2 lg:w-auto">
+        <Field label="Подключение (кабинет)">
+          <select name="connectionId" required defaultValue={connections[0]?.id ?? ""} className="input w-full">
+            {connections.length === 0 ? <option value="" disabled>Нет подключений</option> : null}
+            {connections.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label="Дата от"><DateField name="dateFrom" required defaultValue="2026-07-01" ariaLabel="Дата от" /></Field>
+      <Field label="Дата до"><DateField name="dateTo" required defaultValue="2026-07-31" ariaLabel="Дата до" /></Field>
+      <div className="sm:col-span-2 lg:w-auto">
+        <Submit idle="Импортировать" busy="Импорт..." className="w-full lg:w-auto" />
+      </div>
       <div className="w-full"><Msg s={state} /></div>
       {state.ok && state.perClub && state.perClub.length ? (
         <div className="w-full rounded-lg border border-slate-200">
@@ -332,8 +341,8 @@ export function OfdSyncNow() {
   const sync = state.ok ? state.sync : undefined;
   return (
     <form action={action}>
-      <div className="flex flex-wrap items-center gap-3">
-        <Submit idle="Синхронизировать сейчас" busy="Синхронизация..." />
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <Submit idle="Синхронизировать сейчас" busy="Синхронизация..." className="w-full sm:w-auto" />
         <span className="text-xs text-slate-500">Подтягивает чеки за текущий день. Повторный запуск безопасен — дубли не создаются.</span>
       </div>
       {sync ? (

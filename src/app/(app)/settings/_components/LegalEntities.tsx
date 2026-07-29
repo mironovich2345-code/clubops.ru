@@ -11,6 +11,7 @@ import {
 } from "../legal-entity-actions";
 import { LEGAL_ENTITY_TYPES, legalEntityTypeLabel, normalizeEntityType } from "@/lib/legal-entities";
 import { legalEntityFieldWarning } from "@/lib/legal-entity-format";
+import { buttonClass } from "@/components/mobile/buttons";
 
 type EntityView = {
   id: string;
@@ -121,32 +122,42 @@ export function LegalEntities({
     }
   }
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 text-sm font-semibold text-slate-700">Юридические лица</div>
-      <div className="mb-3 text-xs text-slate-500">Допустимо одно активное ООО и одно активное ИП на клуб.</div>
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Юридические лица</div>
+      <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">Допустимо одно активное ООО и одно активное ИП на клуб.</div>
 
       {entities.length === 0 ? (
-        <div className="mb-3 text-sm text-slate-500">Юрлица не добавлены.</div>
+        <div className="mb-3 text-sm text-slate-500 dark:text-slate-400">Юрлица не добавлены.</div>
       ) : (
         <div className="space-y-3">
           {entities.map((e) => (
-            <div key={e.id} className={`rounded-md border p-3 ${e.isActive ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-slate-100/60"}`}>
+            // Inactive = a semantic state, NOT a faded card (spec §13): same neutral
+            // theme surface + full-contrast text; the "Неактивно" badge carries the
+            // meaning. No opacity wash — every field stays readable in light and dark.
+            <div
+              key={e.id}
+              className={`rounded-md border p-3 ${
+                e.isActive
+                  ? "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+                  : "border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60"
+              }`}
+            >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-slate-900">{e.name}</span>
-                <span className="inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">{legalEntityTypeLabel(e.type)}</span>
-                {!e.isActive ? <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 ring-1 ring-inset ring-slate-200">Неактивно</span> : null}
-                {e.inn ? <span className="text-xs text-slate-500">ИНН {e.inn}</span> : null}
-                {e.kpp ? <span className="text-xs text-slate-500">КПП {e.kpp}</span> : null}
-                {e.directorName ? <span className="text-xs text-slate-500">Рук.: {e.directorName}</span> : null}
+                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{e.name}</span>
+                <span className="inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200">{legalEntityTypeLabel(e.type)}</span>
+                {!e.isActive ? <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/25">Неактивно</span> : null}
+                {e.inn ? <span className="text-xs text-slate-500 dark:text-slate-400">ИНН {e.inn}</span> : null}
+                {e.kpp ? <span className="text-xs text-slate-500 dark:text-slate-400">КПП {e.kpp}</span> : null}
+                {e.directorName ? <span className="text-xs text-slate-500 dark:text-slate-400">Рук.: {e.directorName}</span> : null}
               </div>
 
               {/* Attached clubs */}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {e.clubs.length === 0 ? (
-                  <span className="text-xs text-slate-400">Не привязано к клубам</span>
+                  <span className="text-xs text-slate-400 dark:text-slate-500">Не привязано к клубам</span>
                 ) : (
                   e.clubs.map((c) => (
-                    <span key={c.clubId} className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-600 ring-1 ring-inset ring-slate-200">
+                    <span key={c.clubId} className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
                       {c.clubName}
                       {canAssign ? (
                         <form action={detachLegalEntityFromClub} className="inline">
@@ -178,12 +189,13 @@ export function LegalEntities({
                   <form action={setLegalEntityActive}>
                     <input type="hidden" name="legalEntityId" value={e.id} />
                     <input type="hidden" name="active" value={e.isActive ? "false" : "true"} />
-                    <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    {/* Reactivate is the primary way out of the inactive state; deactivate is secondary. */}
+                    <button type="submit" className={buttonClass({ variant: e.isActive ? "secondary" : "primary", size: "sm" })}>
                       {e.isActive ? "Деактивировать" : "Активировать"}
                     </button>
                   </form>
                   <details className="w-full">
-                    <summary className="cursor-pointer text-xs font-medium text-brand-600">Профиль / редактировать</summary>
+                    <summary className="cursor-pointer text-xs font-medium text-brand-600 dark:text-brand-400">Профиль / редактировать</summary>
                     <EditForm entity={e} />
                   </details>
                 </div>
