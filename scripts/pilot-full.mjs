@@ -110,6 +110,7 @@ const pilots = [
   ["UI consistency color/filter pass", "pilot-ui-consistency-color-filter-pass.mjs"],
   ["Final iPhone 13 residuals", "pilot-final-iphone-13-residuals.mjs"],
   ["Final iPhone deferred residuals", "pilot-final-iphone-deferred-residuals.mjs"],
+  ["Owner cabinet acceptance", "pilot-owner-cabinet-acceptance.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
