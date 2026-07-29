@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MonthField } from "@/components/mobile/DateField";
 import { useFormState, useFormStatus } from "react-dom";
 import { savePayScheme, type PayrollFormState } from "../actions";
 import { PAYROLL_SCHEME_LABELS } from "@/lib/payroll/enums";
@@ -90,7 +91,7 @@ export function PaySchemeForm({
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Действует с месяца</span>
-          <input type="month" name="effectiveMonth" required className="input w-full" />
+          <MonthField name="effectiveMonth" required ariaLabel="Действует с месяца" />
           {state.fieldErrors?.effectiveMonth ? <span className="mt-1 block text-xs text-rose-600">{state.fieldErrors.effectiveMonth}</span> : null}
         </label>
       </div>

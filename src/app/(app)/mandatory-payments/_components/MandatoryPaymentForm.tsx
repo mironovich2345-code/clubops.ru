@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DateField } from "@/components/mobile/DateField";
 import { useFormState, useFormStatus } from "react-dom";
 import { createOrUpdateMandatoryPayment } from "../actions";
 
@@ -96,7 +97,7 @@ export function MandatoryPaymentForm({
           </Field>
         ) : (
           <Field label="Дата оплаты">
-            <input name="dueDate" type="date" defaultValue={editing?.dueDate ?? ""} className="input" />
+            <DateField name="dueDate" defaultValue={editing?.dueDate ?? ""} ariaLabel="Дата оплаты" />
           </Field>
         )}
 

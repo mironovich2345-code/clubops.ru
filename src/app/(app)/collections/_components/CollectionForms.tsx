@@ -2,6 +2,8 @@
 
 import { useFormState, useFormStatus } from "react-dom";
 import { buttonClass } from "@/components/mobile/buttons";
+import { DateField } from "@/components/mobile/DateField";
+import { MobileFileField } from "@/components/mobile/MobileFileField";
 import {
   createCashCollection,
   createCashWithdrawal,
@@ -84,7 +86,7 @@ export function OpeningBalanceForm({ clubs, today, entity }: { clubs: ClubOpt[];
           </select>
         )}
       </label>
-      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Дата контрольного остатка</span><input type="date" name="snapshotDate" required defaultValue={today} className="input" /></label>
+      <DateField label="Дата контрольного остатка" name="snapshotDate" required defaultValue={today} />
       <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Сумма в кассе, ₽</span><input name="amount" inputMode="decimal" required placeholder="0" className="input" /></label>
       <label className="block md:col-span-2"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий (обязательно)</span><input name="comment" required className="input" /></label>
       <div className="md:col-span-2 flex items-center justify-between gap-3">
@@ -111,11 +113,11 @@ export function CollectionForm({ clubs, today }: { clubs: ClubOpt[]; today: stri
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <ClubSelect clubs={clubs} />
       <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Сумма, ₽</span><input name="amount" inputMode="decimal" required placeholder="0" className="input" /></label>
-      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Дата инкассации</span><input type="date" name="operationDate" required defaultValue={today} className="input" /></label>
+      <DateField label="Дата инкассации" name="operationDate" required defaultValue={today} />
       <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий</span><input name="comment" className="input" /></label>
       <label className="block md:col-span-2">
         <span className="mb-1 block text-sm font-medium text-slate-700">Подтверждающие документы (1–3: JPG, PNG, WEBP, PDF)</span>
-        <input type="file" name="documents" multiple required accept="image/jpeg,image/png,image/webp,application/pdf" className="block w-full text-sm" />
+        <MobileFileField name="documents" maxFiles={3} required />
       </label>
       <div className="md:col-span-2 flex items-center justify-between gap-3">
         <Msg s={state} />
@@ -131,11 +133,11 @@ export function WithdrawalForm({ clubs, today }: { clubs: ClubOpt[]; today: stri
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <ClubSelect clubs={clubs} />
       <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Сумма, ₽</span><input name="amount" inputMode="decimal" required placeholder="0" className="input" /></label>
-      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Дата изъятия</span><input type="date" name="operationDate" required defaultValue={today} className="input" /></label>
+      <DateField label="Дата изъятия" name="operationDate" required defaultValue={today} />
       <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий</span><input name="comment" className="input" /></label>
       <label className="block md:col-span-2">
         <span className="mb-1 block text-sm font-medium text-slate-700">Подтверждающий документ (1–3: JPG, PNG, WEBP, PDF)</span>
-        <input type="file" name="documents" multiple required accept="image/jpeg,image/png,image/webp,application/pdf" className="block w-full text-sm" />
+        <MobileFileField name="documents" maxFiles={3} required />
       </label>
       <div className="md:col-span-2 flex items-center justify-between gap-3">
         <Msg s={state} />
@@ -151,7 +153,7 @@ export function OtherIncomeForm({ clubs, today }: { clubs: ClubOpt[]; today: str
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <ClubSelect clubs={clubs} />
       <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Сумма, ₽</span><input name="amount" inputMode="decimal" required placeholder="0" className="input" /></label>
-      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Дата поступления</span><input type="date" name="operationDate" required defaultValue={today} className="input" /></label>
+      <DateField label="Дата поступления" name="operationDate" required defaultValue={today} />
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-slate-700">Источник</span>
         <select name="source" defaultValue="regional" className="input">
@@ -164,7 +166,7 @@ export function OtherIncomeForm({ clubs, today }: { clubs: ClubOpt[]; today: str
       <label className="block md:col-span-2"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий (обязательно)</span><input name="comment" required className="input" /></label>
       <label className="block md:col-span-2">
         <span className="mb-1 block text-sm font-medium text-slate-700">Документы (необязательно, до 3: JPG, PNG, WEBP, PDF)</span>
-        <input type="file" name="documents" multiple accept="image/jpeg,image/png,image/webp,application/pdf" className="block w-full text-sm" />
+        <MobileFileField name="documents" maxFiles={3} />
       </label>
       <div className="md:col-span-2 flex items-center justify-between gap-3">
         <Msg s={state} />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import { MonthField } from "@/components/mobile/DateField";
 import { saveRegionalCityPayroll, recordRegionalCityPayment, type RegionalState } from "../regional/actions";
 
 const initial: RegionalState = { ok: false };
@@ -27,7 +28,7 @@ export function RegionalCreateForm({ cities, currentMonth }: { cities: string[];
       </label>
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Месяц</span>
-        <input type="month" name="month" defaultValue={currentMonth} required className="input w-full" />
+        <MonthField name="month" defaultValue={currentMonth} required ariaLabel="Месяц" />
       </label>
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">ФИО регионала</span>

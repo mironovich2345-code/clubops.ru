@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { buttonClass } from "@/components/mobile/buttons";
+import { MonthField } from "@/components/mobile/DateField";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
@@ -76,13 +78,15 @@ export default async function PayrollPaymentsPage({ searchParams }: { searchPara
         <Card label="Сторно" value={String(reversals)} accent={reversals > 0} />
       </div>
 
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
-        <label className="text-xs text-slate-500">Месяц<input type="month" name="month" defaultValue={month} className="input ml-1 py-1 text-sm" /></label>
+      <form method="get" className="mb-4 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
+        <MonthField label="Месяц" name="month" defaultValue={month} />
         {clubs.length > 1 ? (
-          <label className="text-xs text-slate-500">Клуб<select name="club" defaultValue={clubFilter ?? ""} className="input ml-1 py-1 text-sm"><option value="">все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Клуб</span>
+            <select name="club" defaultValue={clubFilter ?? ""} className="input w-full"><option value="">все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         ) : null}
-        <label className="text-xs text-slate-500">Показать<select name="view" defaultValue={view} className="input ml-1 py-1 text-sm"><option value="all">все</option><option value="topay">к выплате</option><option value="paid">выплаченные</option></select></label>
-        <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Показать</button>
+        <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Показать</span>
+          <select name="view" defaultValue={view} className="input w-full"><option value="all">все</option><option value="topay">к выплате</option><option value="paid">выплаченные</option></select></label>
+        <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full min-[380px]:col-span-2 lg:col-span-1 lg:w-auto`}>Показать</button>
       </form>
 
       {rows.length === 0 ? (

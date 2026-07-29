@@ -103,6 +103,7 @@
     "pilot:final-mobile-visual-polish": "node scripts/pilot-final-mobile-visual-polish.mjs",
     "pilot:final-mobile-visual-polish-part2": "node scripts/pilot-final-mobile-visual-polish-part2.mjs",
     "pilot:ui-consistency-color-filter-pass": "node scripts/pilot-ui-consistency-color-filter-pass.mjs",
+    "pilot:final-iphone-13-residuals": "node scripts/pilot-final-iphone-13-residuals.mjs",
     "test:visual": "playwright test --config playwright.config.ts",
     "test:visual:contact": "node tests/visual/contact-sheet.mjs"
   },

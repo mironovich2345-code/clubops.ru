@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import { DateField } from "@/components/mobile/DateField";
 import { assignEmployeeAction, excludeIdentityAction, type CashierActionState } from "../ofd-cashiers/actions";
 
 const initial: CashierActionState = { ok: false };
@@ -35,7 +36,7 @@ export function CashierMappingActions({ identityId, employees, suggestedEmployee
         <div className="flex flex-wrap items-end gap-2">
           <label className="block">
             <span className="mb-1 block text-[11px] text-slate-500">Действует с</span>
-            <input name="effectiveFrom" type="date" defaultValue={firstSeen} className="input text-sm" />
+            <DateField name="effectiveFrom" defaultValue={firstSeen} ariaLabel="Действует с" />
           </label>
           <label className="block grow">
             <span className="mb-1 block text-[11px] text-slate-500">Комментарий</span>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import { DateField } from "@/components/mobile/DateField";
 import { updatePayrollProfile, type PayrollFormState } from "../actions";
 
 const initial: PayrollFormState = { ok: false };
@@ -33,7 +34,7 @@ export function PayrollProfileForm({
       <input type="hidden" name="employeeId" value={employeeId} />
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Дата приёма</span>
-        <input type="date" name="hireDate" defaultValue={init.hireDate} className="input w-full" />
+        <DateField name="hireDate" defaultValue={init.hireDate} ariaLabel="Дата приёма" />
         {state.fieldErrors?.hireDate ? <span className="mt-1 block text-xs text-rose-600">{state.fieldErrors.hireDate}</span> : null}
       </label>
       <label className="block">

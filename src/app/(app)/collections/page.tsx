@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { CompactPageHeader } from "@/components/mobile/density";
+import { CompactPageHeader, MobileDataCard } from "@/components/mobile/density";
 import { AccordionGroup, AccordionItem } from "./_components/SingleAccordion";
 import { formatKopeks } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
@@ -104,7 +104,8 @@ export default async function CollectionsPage() {
         {openingHistory.length > 0 ? (
           <div className="mt-5">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">История контрольных остатков</div>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
+            {/* Desktop table (≥lg) */}
+            <div className="hidden overflow-x-auto rounded-lg border border-slate-200 lg:block">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Юрлицо</Th><Th>Сумма</Th><Th>Комментарий</Th><Th>Кто задал</Th></tr></thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -119,6 +120,21 @@ export default async function CollectionsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            {/* Mobile cards — no clipped table (§4) */}
+            <div className="space-y-3 lg:hidden">
+              {openingHistory.map((o, i) => (
+                <MobileDataCard
+                  key={i}
+                  title={dfmt.format(o.snapshotDate)}
+                  badge={<span className="text-xs font-medium text-[var(--text-muted)]">{o.entityType ? legalEntityTypeLabel(o.entityType) : "—"}</span>}
+                  rows={[
+                    { label: "Сумма", value: formatKopeks(o.amountKopeks), strong: true },
+                    { label: "Кто задал", value: authorName.get(o.createdById) ?? "—" },
+                    ...(o.comment ? [{ label: "Комментарий", value: o.comment }] : []),
+                  ]}
+                />
+              ))}
             </div>
           </div>
         ) : null}

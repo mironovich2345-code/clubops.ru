@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MonthField } from "@/components/mobile/DateField";
 import { useFormState, useFormStatus } from "react-dom";
 import { recordEmployeeAdvance, type AdvanceState } from "../advance-actions";
 
@@ -59,7 +60,7 @@ export function AdvanceCreateForm({ employees, defaultMonth, canManage }: { empl
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Месяц аванса</span>
-          <input type="month" name="month" defaultValue={defaultMonth} className="input w-full" />
+          <MonthField name="month" defaultValue={defaultMonth} ariaLabel="Месяц аванса" />
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Запрашиваемая сумма, ₽</span>

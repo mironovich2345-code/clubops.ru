@@ -23,8 +23,11 @@ export function DateField({
   max?: string;
   ariaLabel?: string;
 }) {
+  // Root is a <div> (not <label>) so it can nest safely inside an existing <label>
+  // (e.g. a form field that already renders its own label + span). When used standalone
+  // the label text is a <span> and the input carries an aria-label for its name.
   return (
-    <label className="block min-w-0">
+    <div className="min-w-0">
       {label ? <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">{label}</span> : null}
       <span className="flex h-12 w-full max-w-full items-center rounded-md border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3">
         <input
@@ -39,7 +42,7 @@ export function DateField({
           style={{ fontSize: 16 }}
         />
       </span>
-    </label>
+    </div>
   );
 }
 

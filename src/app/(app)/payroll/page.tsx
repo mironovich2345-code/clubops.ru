@@ -11,6 +11,8 @@ import { PayrollNav } from "./_components/PayrollNav";
 import { PayrollWorkspace } from "./_components/PayrollWorkspace";
 import { PayrollScopeBar } from "./_components/PayrollScopeBar";
 import { PayrollEmptyPeriod } from "./_components/PayrollEmptyPeriod";
+import { MonthField } from "@/components/mobile/DateField";
+import { buttonClass } from "@/components/mobile/buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -102,10 +104,9 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       <PageHeader title="Зарплата (ФОТ)" description="Обзор: настройка, начисления, авансы и выплаты по клубам." />
       <PayrollNav mode="full" />
 
-      <form method="get" className="mb-4 flex items-center gap-2">
-        <label className="text-sm text-slate-500 dark:text-slate-400">Месяц</label>
-        <input type="month" name="month" defaultValue={month} className="input py-1 text-sm" />
-        <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Показать</button>
+      <form method="get" className="mb-4 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:items-end lg:gap-2">
+        <MonthField label="Месяц" name="month" defaultValue={month} />
+        <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full min-[380px]:col-span-2 lg:col-span-1 lg:w-auto`}>Показать</button>
       </form>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

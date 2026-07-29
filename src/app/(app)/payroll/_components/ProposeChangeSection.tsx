@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { DateField } from "@/components/mobile/DateField";
 import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
 import { proposeChange, type ChangeRequestState } from "../change-requests/actions";
@@ -156,7 +157,7 @@ export function ProposeChangeSection({
                 <>
                   <label className="inline-flex items-center gap-1">
                     Действует с:
-                    <input name="effectiveFrom" type="date" className="input text-xs" />
+                    <DateField name="effectiveFrom" ariaLabel="Действует с" />
                   </label>
                   <label className="inline-flex items-center gap-1">
                     Область:

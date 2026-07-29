@@ -42,11 +42,13 @@ export function PayrollScopeBar({
         >
           ‹
         </button>
+        {/* datefield-exempt: live month navigator (not a form field) */}
         <input
           type="month"
           value={month}
           onChange={(e) => e.target.value && go({ month: e.target.value })}
           className="h-11 w-[10.5rem] border-x border-slate-200 bg-transparent px-2 text-center text-sm font-medium text-slate-800 focus:outline-none dark:border-slate-800 dark:text-slate-100"
+          style={{ fontSize: 16 }}
           aria-label={`Месяц: ${monthTitle(month)}`}
         />
         <button

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { buttonClass } from "@/components/mobile/buttons";
+import { MonthField } from "@/components/mobile/DateField";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
@@ -96,19 +98,17 @@ export default async function PayrollAdvancesPage({ searchParams }: { searchPara
         <Card label="Выплачено за месяц" value={formatKopeks(sumOf("paid"))} />
       </div>
 
-      {/* Filters */}
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
-        <label className="text-xs text-slate-500">Месяц<input type="month" name="month" defaultValue={month} className="input ml-1 py-1 text-sm" /></label>
+      {/* Filters — mobile stack (2-col), desktop inline. Checkbox + button own rows. */}
+      <form method="get" className="mb-4 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
+        <MonthField label="Месяц" name="month" defaultValue={month} />
         {clubs.length > 1 ? (
-          <label className="text-xs text-slate-500">Клуб
-            <select name="club" defaultValue={clubFilter ?? ""} className="input ml-1 py-1 text-sm"><option value="">все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-          </label>
+          <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Клуб</span>
+            <select name="club" defaultValue={clubFilter ?? ""} className="input w-full"><option value="">все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         ) : null}
-        <label className="text-xs text-slate-500">Статус
-          <select name="status" defaultValue={statusFilter ?? ""} className="input ml-1 py-1 text-sm"><option value="">все</option>{Object.entries(STATUS_UI).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-        </label>
-        <label className="flex items-center gap-1 text-xs text-slate-500"><input type="checkbox" name="needs" value="1" defaultChecked={onlyNeeds} /> только требующие решения</label>
-        <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Показать</button>
+        <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Статус</span>
+          <select name="status" defaultValue={statusFilter ?? ""} className="input w-full"><option value="">все</option>{Object.entries(STATUS_UI).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
+        <label className="flex min-h-[44px] items-center gap-2 text-sm text-[var(--text-secondary)] min-[380px]:col-span-2 lg:min-h-0 lg:pb-2"><input type="checkbox" name="needs" value="1" defaultChecked={onlyNeeds} className="h-4 w-4" /> только требующие решения</label>
+        <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full min-[380px]:col-span-2 lg:col-span-1 lg:w-auto`}>Показать</button>
       </form>
 
       {/* Mobile cards (§19 — no horizontal table on narrow screens) */}

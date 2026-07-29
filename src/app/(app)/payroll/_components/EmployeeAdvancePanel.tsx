@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import { MonthField } from "@/components/mobile/DateField";
 import { recordEmployeeAdvance, approveEmployeeAdvance, cancelEmployeeAdvance, type AdvanceState } from "../advance-actions";
 import { formatKopeks } from "@/lib/money";
 
@@ -82,7 +83,7 @@ export function EmployeeAdvancePanel({
           <input type="hidden" name="clubId" value={clubId} />
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Месяц</span>
-            <input type="month" name="month" defaultValue={currentMonth} className="input w-full" />
+            <MonthField name="month" defaultValue={currentMonth} ariaLabel="Месяц" />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Сумма, ₽</span>

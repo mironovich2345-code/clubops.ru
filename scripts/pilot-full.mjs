@@ -108,6 +108,7 @@ const pilots = [
   ["Final mobile visual polish", "pilot-final-mobile-visual-polish.mjs"],
   ["Final mobile visual polish part 2", "pilot-final-mobile-visual-polish-part2.mjs"],
   ["UI consistency color/filter pass", "pilot-ui-consistency-color-filter-pass.mjs"],
+  ["Final iPhone 13 residuals", "pilot-final-iphone-13-residuals.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
