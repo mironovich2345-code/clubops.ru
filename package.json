@@ -102,6 +102,7 @@
     "pilot:mobile-visual-density-part1": "node scripts/pilot-mobile-visual-density-part1.mjs",
     "pilot:final-mobile-visual-polish": "node scripts/pilot-final-mobile-visual-polish.mjs",
     "pilot:final-mobile-visual-polish-part2": "node scripts/pilot-final-mobile-visual-polish-part2.mjs",
+    "pilot:ui-consistency-color-filter-pass": "node scripts/pilot-ui-consistency-color-filter-pass.mjs",
     "test:visual": "playwright test --config playwright.config.ts",
     "test:visual:contact": "node tests/visual/contact-sheet.mjs"
   },

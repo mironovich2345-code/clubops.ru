@@ -141,3 +141,12 @@ NB: скриншоты приёмки были со старой сборки �
 
 **Остаток:** DateField wrapper; общий FilterStack/FilterActionRow (invoices/analytics/ofd/budgets/
 history); Refunds/Payroll/Settings pixel-pass; запуск Playwright + ручной iPhone.
+
+## Статус — UI consistency pass (color/filters/date/buttons) (2026-07-29)
+
+По свежим прод-скриншотам: нейтрализована dark-палитра (navy→graphite) + семантические токены;
+theme-меню → inline segmented в drawer; company/club — один neutral surface; shared DateField/
+MonthField; Analytics/Budgets/Payroll фильтры → grid-стек + DateField + full-width primary;
+Collections sync → equal secondary; Payroll periods → cards. `pilot:ui-consistency-color-filter-pass`
+15/15. Отчёт: [ui-consistency-pass-report.md](../testing/ui-consistency-pass-report.md).
+Остаток: остальные payroll-фильтры, Refunds/Settings, Playwright-запуск + ручной iPhone.
