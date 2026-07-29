@@ -192,21 +192,26 @@ export default async function ExpensesPage({
         )}
       </div>
 
-      {/* Status filter — single row, horizontal scroll inside the container (no chaotic wrap). */}
-      <div className="mb-3 -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-wrap lg:px-0">
-        {STATUS_FILTERS.map((f) => (
-          <Link
-            key={f.key}
-            href={f.key === DEFAULT_FILTER_KEY ? "/expenses" : `/expenses?status=${f.key}`}
-            className={`inline-flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border px-3.5 text-sm font-medium ${
-              statusFilter.key === f.key
-                ? "border-brand-600 bg-brand-600 text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-            }`}
-          >
-            {f.label}
-          </Link>
-        ))}
+      {/* Status filter — single row, horizontal scroll inside the container (no chaotic
+          wrap); a right-edge fade signals that more statuses are scrollable (spec §6).
+          Chips keep a fixed size whether active or not. */}
+      <div className="relative -mx-4 mb-3 lg:mx-0">
+        <div className="flex gap-2 overflow-x-auto px-4 pb-1 lg:flex-wrap lg:px-0">
+          {STATUS_FILTERS.map((f) => (
+            <Link
+              key={f.key}
+              href={f.key === DEFAULT_FILTER_KEY ? "/expenses" : `/expenses?status=${f.key}`}
+              className={`inline-flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border px-3.5 text-sm font-medium ${
+                statusFilter.key === f.key
+                  ? "border-brand-600 bg-brand-600 text-white"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              }`}
+            >
+              {f.label}
+            </Link>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--background)] to-transparent lg:hidden" aria-hidden />
       </div>
 
       <UnsentDrafts drafts={myDrafts} />

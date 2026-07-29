@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CompactPageHeader } from "@/components/mobile/density";
+import { CompactPageHeader, MobileDataCard } from "@/components/mobile/density";
 import { DateField } from "@/components/mobile/DateField";
 import { buttonClass } from "@/components/mobile/buttons";
 import { NoCompanyState } from "@/components/NoCompanyState";
@@ -125,6 +125,7 @@ export default async function AnalyticsPage({
       return {
         companyId: p.g.companyId,
         companyName: p.g.companyName,
+        clubs: p.g.clubIds.length,
         ab: useOfd ? p.ofd!.totals.subscriptionsKopeks : p.r.summary.subscriptionsKopeks,
         pt: useOfd ? p.ofd!.totals.personalTrainingKopeks : p.r.summary.personalTrainingKopeks,
         rev: p.ofd?.totals.incomeKopeks ?? 0,
@@ -162,7 +163,24 @@ export default async function AnalyticsPage({
           {financials ? <KpiCard label="Расходы (все сети)" value={formatKopeks(tExp)} accent="text-rose-600 dark:text-rose-400" /> : null}
           <KpiCard label="Клубов в выборке" value={String(groups.filteredClubIds.length)} />
         </div>
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        {/* Mobile: one card per network (no clipped table). Desktop: the full table. */}
+        <div className="space-y-3 lg:hidden">
+          {netRows.map((r) => (
+            <MobileDataCard
+              key={`net-${r.companyId}`}
+              title={r.companyName}
+              rows={[
+                ...(anyOfd ? [{ label: "Выручка ОФД", value: formatKopeks(r.rev), strong: true }] : []),
+                { label: "Продажи АБ", value: formatKopeks(r.ab) },
+                { label: "Продажи ПТ", value: formatKopeks(r.pt) },
+                ...(financials ? [{ label: "Расходы", value: formatKopeks(r.exp) }] : []),
+                ...(financials && anyOfd ? [{ label: "Результат", value: formatKopeks(r.rev - r.exp), strong: true, tone: (r.rev - r.exp) < 0 ? "danger" as const : "success" as const }] : []),
+                { label: "Клубов", value: String(r.clubs) },
+              ]}
+            />
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm lg:block dark:border-slate-800 dark:bg-slate-900">
           <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">По сетям</div>
           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
             <thead className="bg-slate-50 dark:bg-slate-800/50">

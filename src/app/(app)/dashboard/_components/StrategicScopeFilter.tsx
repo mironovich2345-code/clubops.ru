@@ -20,8 +20,9 @@ type Props = {
   extra?: Record<string, string>;
 };
 
+// Mobile: full-width, 48px tall, 16px text (no iOS auto-zoom). Desktop: compact inline.
 const selectCls =
-  "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200";
+  "min-h-[48px] w-full rounded-md border border-slate-300 bg-white px-3 text-[16px] text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:min-h-0 sm:w-auto sm:py-1.5 sm:text-sm";
 
 export function StrategicScopeFilter({ companies, clubs, mode, companyId, city, clubId, month, basePath = "/dashboard", extra }: Props) {
   const router = useRouter();
@@ -64,71 +65,80 @@ export function StrategicScopeFilter({ companies, clubs, mode, companyId, city, 
     router.push(`${basePath}?${params.toString()}`);
   }
 
-  const CompanyField = (
-    <label className="flex items-center gap-1.5">
-      <span className="text-xs text-slate-500 dark:text-slate-400">Компания</span>
-      <select className={selectCls} value={companyId ?? ALL} onChange={(e) => navigate({ companyId: e.target.value, clubId: ALL })}>
-        <option value={ALL}>Все компании</option>
-        {companiesForCity.map((c) => (
-          <option key={c.id} value={c.id}>{c.name}</option>
-        ))}
-      </select>
+  // Fields: label ABOVE control (spec §2), full-width column on mobile, inline on desktop.
+  const Field = (label: string, select: React.ReactNode) => (
+    <label className="flex min-w-0 flex-col gap-1">
+      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
+      {select}
     </label>
   );
-  const CityField = (
-    <label className="flex items-center gap-1.5">
-      <span className="text-xs text-slate-500 dark:text-slate-400">Город</span>
-      <select className={selectCls} value={city ?? ALL} onChange={(e) => navigate({ city: e.target.value, clubId: ALL })}>
-        <option value={ALL}>Все города</option>
-        {citiesForCompany.map((ct) => (
-          <option key={ct} value={ct}>{ct}</option>
-        ))}
-      </select>
-    </label>
+  const CompanyField = Field(
+    "Компания",
+    <select className={selectCls} value={companyId ?? ALL} onChange={(e) => navigate({ companyId: e.target.value, clubId: ALL })}>
+      <option value={ALL}>Все компании</option>
+      {companiesForCity.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+    </select>,
   );
-  const ClubField = (
-    <label className="flex items-center gap-1.5">
-      <span className="text-xs text-slate-500 dark:text-slate-400">Клуб</span>
-      <select className={selectCls} value={clubId ?? ALL} onChange={(e) => navigate({ clubId: e.target.value })}>
-        <option value={ALL}>Все клубы</option>
-        {clubPool.map((c) => (
-          <option key={c.id} value={c.id}>{c.name}{c.city ? ` · ${c.city}` : ""}</option>
-        ))}
-      </select>
-    </label>
+  const CityField = Field(
+    "Город",
+    <select className={selectCls} value={city ?? ALL} onChange={(e) => navigate({ city: e.target.value, clubId: ALL })}>
+      <option value={ALL}>Все города</option>
+      {citiesForCompany.map((ct) => (<option key={ct} value={ct}>{ct}</option>))}
+    </select>,
+  );
+  const ClubField = Field(
+    "Клуб",
+    <select className={selectCls} value={clubId ?? ALL} onChange={(e) => navigate({ clubId: e.target.value })}>
+      <option value={ALL}>Все клубы</option>
+      {clubPool.map((c) => (<option key={c.id} value={c.id}>{c.name}{c.city ? ` · ${c.city}` : ""}</option>))}
+    </select>,
   );
 
+  // Compact scope summary — what's actually selected, so the collapsed filter reads clearly.
+  const selectedCompany = companyId ? companies.find((c) => c.id === companyId)?.name : null;
+  const selectedClub = clubId ? clubs.find((c) => c.id === clubId)?.name : null;
+  const chips = [
+    mode === "city" ? "По городу" : "По компании",
+    selectedCompany,
+    city,
+    selectedClub,
+  ].filter(Boolean) as string[];
+
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="inline-flex overflow-hidden rounded-md border border-slate-300 dark:border-slate-700">
+    <div className="mb-5 space-y-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      {/* Mode switch: full-width segmented on mobile, inline on desktop. */}
+      <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800 sm:inline-flex sm:w-auto">
         <button
           type="button"
           onClick={() => navigate({ mode: "city" })}
-          className={`px-3 py-1.5 text-sm font-medium ${mode === "city" ? "bg-brand-600 text-white" : "bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-200"}`}
+          className={`min-h-[40px] rounded-md px-4 text-sm font-medium transition ${mode === "city" ? "bg-white text-brand-700 shadow-sm dark:bg-slate-900 dark:text-brand-300" : "text-slate-500 dark:text-slate-400"}`}
         >
           По городу
         </button>
         <button
           type="button"
           onClick={() => navigate({ mode: "company" })}
-          className={`px-3 py-1.5 text-sm font-medium ${mode === "company" ? "bg-brand-600 text-white" : "bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-200"}`}
+          className={`min-h-[40px] rounded-md px-4 text-sm font-medium transition ${mode === "company" ? "bg-white text-brand-700 shadow-sm dark:bg-slate-900 dark:text-brand-300" : "text-slate-500 dark:text-slate-400"}`}
         >
           По компании
         </button>
       </div>
-      {mode === "city" ? (
-        <>
-          {CityField}
-          {CompanyField}
-          {ClubField}
-        </>
-      ) : (
-        <>
-          {CompanyField}
-          {CityField}
-          {ClubField}
-        </>
-      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:items-end">
+        {mode === "city" ? (<>{CityField}{CompanyField}{ClubField}</>) : (<>{CompanyField}{CityField}{ClubField}</>)}
+      </div>
+
+      {chips.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {chips.map((c, i) => (
+            <span key={i} className="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">{c}</span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
+
+// Spec §2 names this OwnerScopeFilter — it is the single shared implementation; the
+// alias avoids forking a second copy across owner pages.
+export const OwnerScopeFilter = StrategicScopeFilter;

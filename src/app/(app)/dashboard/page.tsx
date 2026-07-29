@@ -28,6 +28,8 @@ import { SalesPlanImport } from "./_components/SalesPlanImport";
 import { PlanImportPanel } from "./_components/PlanImportPanel";
 import { OwnerReopenApprovals, type ReopenRow } from "./_components/OwnerReopenApprovals";
 import { DashboardMonthSelector } from "./_components/DashboardMonthSelector";
+import { MonthField } from "@/components/mobile/DateField";
+import { buttonClass } from "@/components/mobile/buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -159,7 +161,9 @@ export default async function DashboardPage({
               {strategic.selectedCity ? ` · Город: ${strategic.selectedCity}` : ""} · {monthLabel}
             </div>
           </div>
-          <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
+          <div className="w-full sm:w-auto">
+            <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
+          </div>
         </div>
 
         {strategic.accessibleClubs.length > 0 ? (
@@ -250,7 +254,9 @@ export default async function DashboardPage({
     <div className="mx-auto max-w-[1440px]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <PageHeader title="Дашборд" description="Обзор клубов" />
-        <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
+        <div className="w-full sm:w-auto">
+          <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
+        </div>
       </div>
 
       {ofdStatus && anyOfdProvider ? (
@@ -352,16 +358,15 @@ async function ManagementSection({
 
       {(canEditPlan || canImportPlans) && clubs.length > 0 ? (
         <div className={`mt-4 p-4 ${CARD}`}>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between">
             <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
               Планы продаж · {capitalize(monthFormatter.format(new Date(`${selectedPlanMonth}-01T00:00:00`)))}
             </div>
-            <form method="get" action="/dashboard" className="flex items-end gap-2">
-              <label className="block">
-                <span className="sr-only">Месяц</span>
-                <input type="month" name="month" defaultValue={selectedPlanMonth} className="input" />
-              </label>
-              <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+            {/* MonthField + «Показать» never overlap: full-width stack on mobile,
+                inline on desktop. (spec §5) */}
+            <form method="get" action="/dashboard" className="grid grid-cols-1 gap-3 sm:flex sm:items-end sm:gap-2">
+              <MonthField label="Месяц" name="month" defaultValue={selectedPlanMonth} />
+              <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}>
                 Показать
               </button>
             </form>

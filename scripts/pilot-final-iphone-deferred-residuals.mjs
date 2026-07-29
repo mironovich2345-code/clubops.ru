@@ -97,10 +97,10 @@ const converted = [
 ];
 check("FU-CONV expenses/refunds/invoices/sales-uploads переведены на MobileFileField (8 форм)",
   converted.every((rel) => src(rel).includes("MobileFileField")), converted.filter((rel) => !src(rel).includes("MobileFileField")).join(", "));
-// Exempt files are honestly marked (not silently skipped).
+// Exempt files are honestly marked (not silently skipped). Plan/Budget imports were
+// later converted to MobileFileField (owner acceptance §15) so only the two bespoke
+// uploaders remain exempt.
 const exempt = [
-  "src/app/(app)/dashboard/_components/PlanImportPanel.tsx",
-  "src/app/(app)/budgets/_components/BudgetImportPanel.tsx",
   "src/app/(app)/expenses/simple/SimpleExpenseForm.tsx",
   "src/app/(app)/refunds/_components/RefundDraftEditor.tsx",
 ];

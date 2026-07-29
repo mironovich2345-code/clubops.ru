@@ -61,19 +61,27 @@ export function MobileFileField({
 
   const remove = (i: number) => sync(files.filter((_, idx) => idx !== i));
 
+  // Camera capture only makes sense when images are actually accepted — spreadsheet
+  // imports (xlsx/csv) hide it and show a single full-width "Выбрать файлы" button.
+  const acceptsImages = /image|\*|\.(jpe?g|png|webp|heic)/i.test(accept);
+
   return (
     <div className="space-y-2">
       {/* The real, submitted input — kept in sync via DataTransfer; visually hidden. */}
       <input ref={inputRef} type="file" name={name} accept={accept} multiple={maxFiles > 1} required={required && files.length === 0} className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => add(e.currentTarget.files)} />
       {/* Camera-only helper input (not submitted); its picks are merged into the real input. */}
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => { add(e.currentTarget.files); e.currentTarget.value = ""; }} />
+      {acceptsImages ? (
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => { add(e.currentTarget.files); e.currentTarget.value = ""; }} />
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={pending || files.length >= maxFiles} onClick={() => cameraRef.current?.click()} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50">
-          <CameraIcon className="h-4 w-4" /> Камера
-        </button>
-        <button type="button" disabled={pending || files.length >= maxFiles} onClick={() => inputRef.current?.click()} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50">
-          <PaperclipIcon className="h-4 w-4" /> Из файлов
+        {acceptsImages ? (
+          <button type="button" disabled={pending || files.length >= maxFiles} onClick={() => cameraRef.current?.click()} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50">
+            <CameraIcon className="h-4 w-4" /> Камера
+          </button>
+        ) : null}
+        <button type="button" disabled={pending || files.length >= maxFiles} onClick={() => inputRef.current?.click()} className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-50 ${acceptsImages ? "" : "w-full"}`}>
+          <PaperclipIcon className="h-4 w-4" /> {acceptsImages ? "Из файлов" : "Выбрать файлы"}
         </button>
       </div>
 

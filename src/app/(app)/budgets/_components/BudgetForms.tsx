@@ -2,6 +2,7 @@
 
 import { useFormState, useFormStatus } from "react-dom";
 import { createOrUpdateBudget } from "../actions";
+import { buttonClass } from "@/components/mobile/buttons";
 
 type CategoryOption = { key: string; label: string };
 
@@ -11,11 +12,7 @@ const budgetInitial: BudgetState = { ok: false };
 function Submit({ idle, busy }: { idle: string; busy: string }) {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
-    >
+    <button type="submit" disabled={pending} className={`${buttonClass({ variant: "primary", size: "cta" })} w-full`}>
       {pending ? busy : idle}
     </button>
   );
@@ -32,14 +29,15 @@ export function BudgetLimitForm({
 }) {
   const [state, action] = useFormState(createOrUpdateBudget, budgetInitial);
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 text-sm font-semibold text-slate-700">Установить лимит</div>
-      <form action={action} className="flex flex-wrap items-end gap-3">
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Установить лимит</div>
+      {/* Mobile: Статья / Лимит / Сохранить each full-width, 12px gaps, equal heights. (spec §9) */}
+      <form action={action} className="grid grid-cols-1 gap-3">
         <input type="hidden" name="clubId" value={clubId} />
         <input type="hidden" name="month" value={month} />
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Статья</span>
-          <select name="category" defaultValue="" required className="input">
+          <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Статья</span>
+          <select name="category" defaultValue="" required className="input w-full">
             <option value="" disabled>Выберите</option>
             {categories.map((c) => (
               <option key={c.key} value={c.key}>{c.label}</option>
@@ -47,14 +45,14 @@ export function BudgetLimitForm({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Лимит, ₽</span>
-          <input name="amount" inputMode="decimal" required className="input" />
+          <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Лимит, ₽</span>
+          <input name="amount" inputMode="decimal" required className="input w-full" />
         </label>
         <Submit idle="Сохранить лимит" busy="Сохранение..." />
         {state.ok ? (
-          <span className="text-sm text-emerald-700">Лимит сохранён</span>
+          <span className="text-sm text-emerald-700 dark:text-emerald-400">Лимит сохранён</span>
         ) : state.error ? (
-          <span className="text-sm text-rose-600">{state.error}</span>
+          <span className="text-sm text-rose-600 dark:text-rose-400">{state.error}</span>
         ) : null}
       </form>
     </div>

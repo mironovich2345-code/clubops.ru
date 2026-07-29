@@ -3,6 +3,8 @@
 import { useFormState } from "react-dom";
 import { previewBudgetImport, applyBudgetImport, type BudgetImportState } from "../budget-import-actions";
 import { formatKopeksThousands } from "@/lib/imports/amount";
+import { MobileFileField } from "@/components/mobile/MobileFileField";
+import { buttonClass } from "@/components/mobile/buttons";
 
 const initial: BudgetImportState = { ok: false };
 
@@ -18,16 +20,18 @@ export function BudgetImportPanel({ month }: { month: string }) {
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Импорт бюджетов из шаблона</div>
-      <div className="flex flex-wrap items-center gap-3">
-        <a href={`/api/budgets/template?month=${encodeURIComponent(month)}`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+      {/* Mobile: template download (full-width secondary, centered) → file field →
+          upload (full-width primary), one column, equal heights. Desktop: compact. (spec §9) */}
+      <div className="flex flex-col gap-3">
+        <a href={`/api/budgets/template?month=${encodeURIComponent(month)}`} className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}>
           Скачать шаблон
         </a>
-        <form action={previewAction} className="flex flex-wrap items-center gap-2">
+        <form action={previewAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <input type="hidden" name="month" value={month} />
-          {/* mobilefilefield-exempt: spreadsheet (xlsx/xls/csv) data import, not a
-              photo/PDF document capture — MobileFileField's camera/image UX does not apply. */}
-          <input type="file" name="file" accept=".xlsx,.xls,.csv" required className="text-sm text-slate-600 dark:text-slate-300" />
-          <button type="submit" className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700">Загрузить бюджеты</button>
+          <div className="min-w-0 flex-1">
+            <MobileFileField name="file" accept=".xlsx,.xls,.csv" maxFiles={1} required />
+          </div>
+          <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}>Загрузить бюджеты</button>
         </form>
       </div>
       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Бюджет клуба за месяц = сумма строк по статьям. Суммы можно писать как 2 500 000, 2.500.000 или 2500000. Пустые суммы пропускаются.</p>
