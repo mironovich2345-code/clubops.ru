@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
+import { MobileFileField } from "@/components/mobile/MobileFileField";
 import { UPLOAD_ERROR_MESSAGES, type UploadErrorCode } from "@/lib/upload-errors";
 import { uploadAndAnalyzePayroll, savePayrollStatement } from "../payroll-actions";
 
@@ -150,12 +151,7 @@ export function PayrollUpload({ clubs, companyName }: { clubs: ClubOption[]; com
         </Field>
         <div className="md:col-span-2">
           <Field label="Файл ведомости (JPG, PNG, WEBP, PDF — до 10 МБ; можно без файла и заполнить вручную)">
-            <input
-              type="file"
-              name="file"
-              accept=".jpg,.jpeg,.png,.webp,.pdf"
-              className="input file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-sm file:text-slate-700"
-            />
+            <MobileFileField name="file" maxFiles={1} />
           </Field>
         </div>
         <div className="md:col-span-2 flex items-center justify-between gap-3">

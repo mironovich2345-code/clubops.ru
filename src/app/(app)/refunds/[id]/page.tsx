@@ -5,7 +5,8 @@ import { getCurrentAccessContext, hasActiveRegionalApproverForClub, userHasClubR
 import { canAnyRoleAccessPage, canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
 import { formatKopeks } from "@/lib/money";
 import { formatUserDisplayName } from "@/lib/user-display";
-import { DocumentLink } from "@/components/mobile/DocumentViewer";
+import { FileRow } from "@/components/mobile/FileRow";
+import { StatusBadge, type StatusTone } from "@/components/mobile/StatusBadge";
 import {
   getRefundForContext,
   getActiveRefundDocuments,
@@ -80,9 +81,10 @@ export default async function RefundDetailPage({
 
     return (
       <div className="max-w-3xl">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <PageHeader title="Возврат" description={`${refund.club.name} · ${statusLabel}`} />
-          <Link href={back.href} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">{back.label}</Link>
+        <BackLink href={back.href} label={back.label} />
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <PageHeader title="Возврат" description={refund.club.name} />
+          <StatusBadge tone={refundStatusTone(refund.status)} className="shrink-0">{statusLabel}</StatusBadge>
         </div>
 
         {sp.submitted === "1" ? (
@@ -115,16 +117,16 @@ export default async function RefundDetailPage({
         </Section>
 
         <Section title="Документы">
-          <ul className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-100">
             {slots.map((s, i) => (
-              <li key={i} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <span className="text-slate-700">{s.label}</span>
-                {s.doc ? (
-                  <DocumentLink href={`/api/refunds/${id}/file?key=${encodeURIComponent(s.doc.storageKey)}`} name={s.doc.originalFilename} className="inline-flex min-h-[44px] items-center break-anywhere px-2 text-sm font-medium text-brand-700 hover:underline">{s.doc.originalFilename} · Открыть</DocumentLink>
-                ) : <span className="text-rose-600">не загружен</span>}
-              </li>
+              <FileRow
+                key={i}
+                label={s.label}
+                filename={s.doc?.originalFilename ?? null}
+                href={s.doc ? `/api/refunds/${id}/file?key=${encodeURIComponent(s.doc.storageKey)}` : null}
+              />
             ))}
-          </ul>
+          </div>
         </Section>
 
         <Section title="Реквизиты для возврата">
@@ -228,9 +230,10 @@ export default async function RefundDetailPage({
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <PageHeader title="Возврат" description={`${view.clubName} · ${APPROVAL_STATUS_LABELS[refund.status] ?? refund.status}`} />
-        <Link href={back.href} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">{back.label}</Link>
+      <BackLink href={back.href} label={back.label} />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <PageHeader title="Возврат" description={view.clubName} />
+        <StatusBadge tone={refundStatusTone(refund.status)} className="shrink-0">{APPROVAL_STATUS_LABELS[refund.status] ?? refund.status}</StatusBadge>
       </div>
       {expectedApprover ? <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{expectedApprover}</div> : null}
       <RefundEditForm
@@ -255,6 +258,24 @@ async function getLegalEntityName(legalEntityId: string): Promise<string | null>
   return le ? (le.shortName || le.name) : null;
 }
 const money = (k: number | null | undefined) => (k != null ? formatKopeks(k) : "—");
+
+// Compact text back-link (spec §1) — replaces the heavy bordered button.
+function BackLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link href={href} className="mb-3 inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-700">
+      <span aria-hidden>←</span> {label}
+    </Link>
+  );
+}
+
+// Semantic tone for a refund status badge (covers both v2 workflow + legacy approval).
+function refundStatusTone(status: string): StatusTone {
+  if (status === "paid") return "success";
+  if (status === "needs_correction" || status === "needs_review") return "warning";
+  if (status === "rejected" || status === "canceled") return "danger";
+  if (status === "pending_regional_review" || status === "accounting_in_progress" || status === "approved") return "info";
+  return "neutral";
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

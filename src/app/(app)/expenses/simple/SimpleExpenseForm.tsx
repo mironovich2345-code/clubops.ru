@@ -254,6 +254,10 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
           ) : (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-slate-600">Добавить файл (JPG, PNG, WEBP, PDF)</span>
+              {/* mobilefilefield-exempt: bespoke incremental uploader — per-file object-URL
+                  previews, draft creation, and per-file server upload (uploadExpenseDocuments)
+                  are managed here; it does not submit files through a form action, so the
+                  shared MobileFileField (which owns its own FileList/preview) does not fit. */}
               <input
                 type="file"
                 multiple

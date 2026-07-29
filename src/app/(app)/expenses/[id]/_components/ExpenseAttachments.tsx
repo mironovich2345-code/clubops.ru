@@ -3,6 +3,7 @@
 import { useFormState, useFormStatus } from "react-dom";
 import { uploadExpenseDocuments, removeExpenseDocument } from "../../document-actions";
 import { DocumentLink } from "@/components/mobile/DocumentViewer";
+import { MobileFileField } from "@/components/mobile/MobileFileField";
 
 type Attachment = {
   key: string;
@@ -126,7 +127,7 @@ export function ExpenseAttachments({
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-slate-600">Чек/документы (JPEG, PNG, WEBP, PDF; можно несколько)</span>
-                <input type="file" name="documents" multiple accept="image/jpeg,image/png,image/webp,application/pdf" className="block w-full text-sm" />
+                <MobileFileField name="documents" maxFiles={3} />
               </label>
               <div className="flex flex-wrap items-center gap-3">
                 <UploadButton />

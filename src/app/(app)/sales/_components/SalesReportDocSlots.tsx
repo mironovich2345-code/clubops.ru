@@ -2,6 +2,7 @@
 
 import { useFormStatus } from "react-dom";
 import { uploadSalesReportDocSlots } from "../report-actions";
+import { MobileFileField } from "@/components/mobile/MobileFileField";
 import { REPORT_ACCEPT_ATTR } from "@/lib/sales-report-rows";
 
 // Labeled upload slots shown on the report detail page (one input per type).
@@ -32,16 +33,10 @@ export function SalesReportDocSlots({ reportId }: { reportId: string }) {
       <input type="hidden" name="reportId" value={reportId} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {SLOTS.map((slot) => (
-          <label key={slot.type} className="block">
+          <div key={slot.type} className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">{slot.label}</span>
-            <input
-              type="file"
-              name={`file_${slot.type}`}
-              multiple={slot.type === "other"}
-              accept={REPORT_ACCEPT_ATTR}
-              className="block w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
-            />
-          </label>
+            <MobileFileField name={`file_${slot.type}`} accept={REPORT_ACCEPT_ATTR} maxFiles={slot.type === "other" ? 5 : 1} />
+          </div>
         ))}
       </div>
       <p className="text-xs text-slate-500">Прикрепите файлы к нужным слотам и нажмите «Загрузить документы». Можно загружать по одному типу за раз.</p>

@@ -24,6 +24,8 @@ export function PlanImportPanel({ month }: { month: string }) {
         </a>
         <form action={previewAction} className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="month" value={month} />
+          {/* mobilefilefield-exempt: spreadsheet (xlsx/xls/csv) data import, not a
+              photo/PDF document capture — MobileFileField's camera/image UX does not apply. */}
           <input type="file" name="file" accept=".xlsx,.xls,.csv" required className="text-sm text-slate-600 dark:text-slate-300" />
           <button type="submit" className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700">Загрузить планы</button>
         </form>

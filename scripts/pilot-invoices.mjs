@@ -717,7 +717,7 @@ async function main() {
   check("392 new file downloads via the SAME scoped + safe route", fileRouteSrc.includes("getInvoiceForContext(ctx, id)") && fileRouteSrc.includes("safeDownloadHeaders(invoice.originalFileStorageKey"));
   // Static: the UI control (author + draft/needs_correction only, allowed formats, confirmation).
   check("393 detail page gates canReplaceFile on author + draft/needs_correction", detailSrc.includes("canReplaceFile=") && detailSrc.includes('invoice.status === "draft" || invoice.status === "needs_correction"') && detailSrc.includes("invoice.createdByUserId === ctx.user.id"));
-  check("394 edit form renders the replace control (file input + accept list)", editForm.includes("canReplaceFile && !isCorrection ? (") && editForm.includes('name="file"') && editForm.includes('accept="application/pdf,image/jpeg,image/png,image/webp"') && editForm.includes("replaceAction"));
+  check("394 edit form renders the replace control (shared MobileFileField + replaceAction)", editForm.includes("canReplaceFile && !isCorrection ? (") && editForm.includes('<MobileFileField name="file"') && editForm.includes("MobileFileField") && editForm.includes("replaceAction"));
   check("395 success confirmation shown after replace", editForm.includes("Файл счёта обновлён"));
 
   // ===== Block B: draftless create + submit + one-button correction ==========

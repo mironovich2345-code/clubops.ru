@@ -8,6 +8,7 @@ import {
   saveAndResubmitInvoice,
 } from "../../actions";
 import { DocumentLink } from "@/components/mobile/DocumentViewer";
+import { MobileFileField } from "@/components/mobile/MobileFileField";
 
 type InvoiceView = {
   id: string;
@@ -206,16 +207,12 @@ export function InvoiceEditForm({
         {canReplaceFile && !isCorrection ? (
           <form action={replaceAction} className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
             <input type="hidden" name="invoiceId" value={invoice.id} />
-            <label className="block text-xs font-medium text-slate-700">
-              {invoice.fileStatus === "no_metadata" ? "Загрузить файл счёта" : "Заменить файл счёта"}
-              <input
-                type="file"
-                name="file"
-                required
-                accept="application/pdf,image/jpeg,image/png,image/webp"
-                className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
-              />
-            </label>
+            <div className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-700">
+                {invoice.fileStatus === "no_metadata" ? "Загрузить файл счёта" : "Заменить файл счёта"}
+              </span>
+              <MobileFileField name="file" maxFiles={1} required />
+            </div>
             <p className="mt-1 text-xs text-slate-400">PDF, JPEG, PNG или WEBP, до 10 МБ. Файл проверяется на сервере.</p>
             {replaced.ok ? (
               <div className="mt-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">
@@ -287,15 +284,10 @@ function CorrectionForm({
       <FieldsGrid invoice={invoice} categories={categories} />
 
       <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
-        <label className="block text-xs font-medium text-slate-700">
-          Заменить файл счёта (необязательно)
-          <input
-            type="file"
-            name="file"
-            accept="application/pdf,image/jpeg,image/png,image/webp"
-            className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
-          />
-        </label>
+        <div className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-700">Заменить файл счёта (необязательно)</span>
+          <MobileFileField name="file" maxFiles={1} />
+        </div>
         <p className="mt-1 text-xs text-slate-400">Оставьте пустым, чтобы сохранить текущий файл. PDF, JPEG, PNG или WEBP, до 10 МБ.</p>
       </div>
 

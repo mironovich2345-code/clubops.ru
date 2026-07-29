@@ -2,6 +2,7 @@
 
 import { useFormState, useFormStatus } from "react-dom";
 import { DateField } from "@/components/mobile/DateField";
+import { buttonClass } from "@/components/mobile/buttons";
 import { updatePayrollProfile, type PayrollFormState } from "../actions";
 
 const initial: PayrollFormState = { ok: false };
@@ -9,11 +10,7 @@ const initial: PayrollFormState = { ok: false };
 function Submit() {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
-    >
+    <button type="submit" disabled={pending} className={`${buttonClass({ variant: "primary", size: "cta" })} w-full sm:w-auto`}>
       {pending ? "Сохранение..." : "Сохранить профиль"}
     </button>
   );
@@ -58,7 +55,7 @@ export function PayrollProfileForm({
         <input type="checkbox" name="isOfficial" defaultChecked={init.isOfficial} className="h-4 w-4 rounded border-slate-300" />
         <span className="text-sm text-slate-700 dark:text-slate-200">Официальное оформление</span>
       </label>
-      <div className="flex items-center gap-3 sm:col-span-2 lg:col-span-4">
+      <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:items-center sm:gap-3 lg:col-span-4">
         <Submit />
         {state.ok ? (
           <span className="text-sm text-emerald-700 dark:text-emerald-400">Сохранено</span>

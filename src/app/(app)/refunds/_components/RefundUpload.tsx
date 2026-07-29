@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import { MobileFileField } from "@/components/mobile/MobileFileField";
 import type { RefundExtraction } from "@/lib/ai/refund-analyzer";
 import type { RefundDocument } from "@/lib/refunds";
 import { uploadAndAnalyzeRefund, saveRefund } from "../actions";
@@ -79,13 +80,7 @@ export function RefundUpload({
           </select>
         </Field>
         <Field label="Файлы (JPG, PNG, WEBP, PDF — можно несколько; необязательно)">
-          <input
-            type="file"
-            name="files"
-            multiple
-            accept=".jpg,.jpeg,.png,.webp,.pdf"
-            className="input file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-sm file:text-slate-700"
-          />
+          <MobileFileField name="files" maxFiles={5} />
         </Field>
         <div className="md:col-span-2 flex items-center justify-between gap-3">
           {!analyze.ok && analyze.error ? (

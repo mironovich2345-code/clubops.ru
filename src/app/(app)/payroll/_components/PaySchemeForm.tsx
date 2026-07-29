@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MonthField } from "@/components/mobile/DateField";
+import { buttonClass } from "@/components/mobile/buttons";
 import { useFormState, useFormStatus } from "react-dom";
 import { savePayScheme, type PayrollFormState } from "../actions";
 import { PAYROLL_SCHEME_LABELS } from "@/lib/payroll/enums";
@@ -44,11 +45,7 @@ const SCHEME_ORDER = Object.keys(SCHEME_FIELDS);
 function Submit() {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
-    >
+    <button type="submit" disabled={pending} className={`${buttonClass({ variant: "primary", size: "cta" })} w-full sm:w-auto`}>
       {pending ? "Сохранение..." : "Сохранить схему"}
     </button>
   );
@@ -105,7 +102,7 @@ export function PaySchemeForm({
         ))}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <Submit />
         {state.ok ? (
           <span className="text-sm text-emerald-700 dark:text-emerald-400">Схема сохранена</span>

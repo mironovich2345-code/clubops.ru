@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
+import { MonthNav } from "@/components/mobile/MonthNav";
+import { buttonClass } from "@/components/mobile/buttons";
 import { formatKopeks, formatKopeksShort } from "@/lib/money";
 import { requirePageAccess, getCurrentCompanyAndClub, getCurrentAccessContext } from "@/lib/access";
 import { isStrategicRole } from "@/lib/auth";
@@ -204,38 +206,31 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="mx-auto max-w-[1440px]">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <PageHeader title="Календарь платежей" description="Что и когда нужно оплатить" />
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Company-scoped actions: in a multi-Company strategic view they need
-              one Company selected first (a plan/balance belongs to one Company). */}
-          {groups && groups.multiCompany ? (
-            <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-              Выберите одну компанию, чтобы добавить обязательный платёж или обновить остаток
-            </span>
-          ) : (
-            <>
-              <Link
-                href="/mandatory-payments"
-                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                + Обязательный платёж
-              </Link>
-              <Link
-                href="/collections"
-                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                Обновить остаток
-              </Link>
-            </>
-          )}
-          {/* Part 2 — month navigation */}
-          <div className={`inline-flex items-center gap-1 p-1 ${CARD}`}>
-            <Link href={`/payments?month=${prevMonth}`} aria-label="Предыдущий месяц" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">‹</Link>
-            <span className="min-w-[8.5rem] text-center text-sm font-semibold text-slate-800 dark:text-slate-100">{monthLabel}</span>
-            <Link href={`/payments?month=${nextMonth}`} aria-label="Следующий месяц" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">›</Link>
+      <div className="mb-5 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <PageHeader title="Календарь платежей" description="Что и когда нужно оплатить" />
+          {/* Part 2 — shared month navigator (symmetric arrows, centered label) */}
+          <div className="sm:w-72">
+            <MonthNav prevHref={`/payments?month=${prevMonth}`} nextHref={`/payments?month=${nextMonth}`} label={monthLabel} />
           </div>
         </div>
+        {/* Company-scoped actions: in a multi-Company strategic view they need one
+            Company selected first (a plan/balance belongs to one Company). Full-width
+            and stacked on mobile; primary = add mandatory, secondary = update balance. */}
+        {groups && groups.multiCompany ? (
+          <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+            Выберите одну компанию, чтобы добавить обязательный платёж или обновить остаток
+          </span>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link href="/mandatory-payments" className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}>
+              + Обязательный платёж
+            </Link>
+            <Link href="/collections" className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}>
+              Обновить остаток
+            </Link>
+          </div>
+        )}
       </div>
 
       {groups && groups.scope.accessibleClubs.length > 0 ? (
@@ -254,8 +249,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         </div>
       ) : null}
 
-      {/* Part 1 — KPI cards */}
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {/* Part 1 — deadlines KPIs (what is due, by horizon) */}
+      <SectionLabel>Сроки оплаты</SectionLabel>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <KpiCard label="Сегодня к оплате" value={formatKopeks(kpis.todayKopeks)} />
         <KpiCard label="На этой неделе" value={formatKopeks(kpis.weekKopeks)} />
         <KpiCard label="До конца месяца" value={formatKopeks(kpis.monthEndKopeks)} />
@@ -267,10 +263,12 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         />
       </div>
 
-      {/* Current balances (ООО / ИП kept separate; Всего is display-only). In a
-          multi-Company view balances are NOT merged — pick one Company. */}
+      {/* Current balances — visually a separate block from deadlines (ООО / ИП kept
+          separate; Всего is display-only). In a multi-Company view balances are NOT
+          merged — pick one Company. On mobile the single trailing card spans full width. */}
+      <SectionLabel>Текущие остатки</SectionLabel>
       {financialOne ? (
-        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
           <KpiCard
             label="Остаток ООО"
             value={oooBalanceKopeks === null ? "нет данных" : formatKopeks(oooBalanceKopeks)}
@@ -278,6 +276,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
           />
           <KpiCard label="Остаток ИП" value={ipBalanceKopeks === null ? "нет данных" : formatKopeks(ipBalanceKopeks)} />
           <KpiCard
+            className="col-span-2 lg:col-span-1"
             label="Всего доступно"
             value={totalAvailableKopeks === null ? "нет данных" : formatKopeks(totalAvailableKopeks)}
             sub="ООО + ИП (справочно)"
@@ -392,12 +391,17 @@ function Legend() {
   );
 }
 
-function KpiCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: Tone }) {
+// Small uppercase group label — visually separates deadlines from balances (spec §2).
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">{children}</div>;
+}
+
+function KpiCard({ label, value, sub, tone, className }: { label: string; value: string; sub?: string; tone?: Tone; className?: string }) {
   const valueCls = tone === "bad" ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100";
   return (
-    <div className={`flex h-full flex-col p-5 ${CARD}`}>
-      <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</div>
-      <div className={`mt-2 truncate text-2xl font-semibold tracking-tight ${valueCls}`}>{value}</div>
+    <div className={`flex h-full flex-col p-3 sm:p-5 ${CARD} ${className ?? ""}`}>
+      <div className="text-xs font-medium text-slate-500 dark:text-slate-400 sm:text-sm">{label}</div>
+      <div className={`mt-1.5 truncate text-xl font-semibold tracking-tight sm:mt-2 sm:text-2xl ${valueCls}`}>{value}</div>
       {sub ? <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{sub}</div> : null}
     </div>
   );

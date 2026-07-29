@@ -118,6 +118,10 @@ function SlotCard({ refundId, slot, busy, setBusy }: { refundId: string; slot: S
         )}
       </div>
 
+      {/* mobilefilefield-exempt: bespoke per-slot uploader — a hidden input triggered by
+          the slot's own "Выбрать файл" button, with slot-scoped preview/replace and its own
+          immediate upload pipeline. The shared MobileFileField (own FileList + button chrome)
+          does not fit a hidden, button-driven single-slot control. */}
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={onPick} className="hidden" />
       {error ? <div className="mt-2 break-words text-xs text-rose-600">{error}</div> : null}
     </div>

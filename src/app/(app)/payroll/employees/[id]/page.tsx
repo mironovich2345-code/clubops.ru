@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
+import { ChevronDownIcon } from "@/components/mobile/icons";
 import { requirePageAccess, getCurrentAccessContext, getUserClubs } from "@/lib/access";
 import { getEmployeeForScope } from "@/lib/club-employees";
 import { getClubLegalEntities } from "@/lib/legal-entities";
@@ -69,8 +71,8 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
         description={`${PAYROLL_POSITION_LABELS[employee.position] ?? employee.position} · ${clubName(employee.clubId)}`}
       />
 
-      {/* Profile */}
-      <section className={`mb-6 p-5 ${CARD}`}>
+      {/* Платёжный профиль — primary section, always open. */}
+      <section className={`mb-4 p-4 sm:p-5 ${CARD}`}>
         <h2 className="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-200">Платёжный профиль</h2>
         {canAssign ? (
           <PayrollProfileForm
@@ -84,13 +86,12 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
             legalEntities={legalOptions}
           />
         ) : (
-          <div className="text-sm text-slate-500 dark:text-slate-400">Только просмотр.</div>
+          <p className="text-xs text-slate-400 dark:text-slate-500">Только просмотр.</p>
         )}
       </section>
 
-      {/* Assignments */}
-      <section className={`mb-6 p-5 ${CARD}`}>
-        <h2 className="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-200">Закрепления за клубами</h2>
+      {/* Закрепления — secondary, collapsible. */}
+      <AccordionSection title="Закрепления за клубами" hint={`${assignments.length}`}>
         {assignments.length === 0 ? (
           <div className="mb-4 text-sm text-slate-500 dark:text-slate-400">Нет закреплений.</div>
         ) : (
@@ -109,18 +110,13 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
           </ul>
         )}
         {canAssign ? <AssignmentForm employeeId={employee.id} clubs={clubs} /> : null}
-      </section>
+      </AccordionSection>
 
-      {/* Pay schemes */}
-      <section className={`mb-6 p-5 ${CARD}`}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Схемы оплаты (история)</h2>
-          {effective ? (
-            <span className="text-xs text-emerald-600 dark:text-emerald-400">
-              Действует: {PAYROLL_SCHEME_LABELS[effective.schemeType] ?? effective.schemeType}
-            </span>
-          ) : null}
-        </div>
+      {/* Схема оплаты — secondary, collapsible. */}
+      <AccordionSection
+        title="Схема оплаты"
+        hint={effective ? `Действует: ${PAYROLL_SCHEME_LABELS[effective.schemeType] ?? effective.schemeType}` : undefined}
+      >
         {schemes.length === 0 ? (
           <div className="mb-4 text-sm text-slate-500 dark:text-slate-400">Схема оплаты не задана.</div>
         ) : (
@@ -152,15 +148,14 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
         {canScheme ? (
           <PaySchemeForm employeeId={employee.id} clubs={clubs} defaultClubId={employee.clubId} />
         ) : (
-          <div className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             Настройка схем доступна региональному директору, главному бухгалтеру или собственнику.
-          </div>
+          </p>
         )}
-      </section>
+      </AccordionSection>
 
-      {/* Advances (pre-period — открытый текущий месяц до расчётного периода) */}
-      <section className={`mb-6 p-5 ${CARD}`}>
-        <h2 className="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-200">Авансы</h2>
+      {/* Авансы — secondary, collapsible (pre-period — открытый текущий месяц). */}
+      <AccordionSection title="Авансы">
         <EmployeeAdvancePanel
           employeeId={employee.id}
           clubId={employee.clubId}
@@ -169,21 +164,20 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
           canApprove={canApproveAdvance}
           advances={advanceRows}
         />
-      </section>
+      </AccordionSection>
 
-      {/* Obligations (survive dismissal — never auto-written-off) */}
-      <section className={`mb-6 p-5 ${CARD}`}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Долги и обязательства</h2>
-          <Link href="/payroll/obligations" className="text-xs text-brand-600 hover:text-brand-700">Погашение →</Link>
-        </div>
+      {/* Долги — secondary, collapsible (survive dismissal — never auto-written-off). */}
+      <AccordionSection
+        title="Долги и обязательства"
+        action={<Link href="/payroll/obligations" className="text-xs text-brand-600 hover:text-brand-700">Погашение →</Link>}
+      >
         {employee.status === "dismissed" ? (
           <p className="mb-3 text-xs text-amber-600 dark:text-amber-400">
             Сотрудник уволен. Обязательства сохраняются и не списываются автоматически.
           </p>
         ) : null}
         {obligations.length === 0 ? (
-          <div className="text-sm text-slate-500 dark:text-slate-400">Обязательств нет.</div>
+          <p className="text-xs text-slate-400 dark:text-slate-500">Обязательств нет.</p>
         ) : (
           <ul className="space-y-1 text-sm">
             {obligations.map((o) => (
@@ -201,8 +195,31 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
             ))}
           </ul>
         )}
-      </section>
+      </AccordionSection>
     </div>
+  );
+}
+
+/**
+ * Collapsible secondary section (spec §3). Native <details> so it stays
+ * Server-Component-safe (no client JS). Consistent card padding/gaps with the
+ * primary profile section; the chevron rotates on open.
+ */
+function AccordionSection({ title, hint, action, children }: { title: string; hint?: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <details className={`group mb-4 ${CARD}`}>
+      <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 p-4 [&::-webkit-details-marker]:hidden">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</span>
+          {hint ? <span className="truncate text-xs font-normal text-slate-400 dark:text-slate-500">{hint}</span> : null}
+        </span>
+        <span className="flex shrink-0 items-center gap-3">
+          {action}
+          <ChevronDownIcon className="h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
+        </span>
+      </summary>
+      <div className="px-4 pb-5 sm:px-5">{children}</div>
+    </details>
   );
 }
 

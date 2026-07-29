@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import { buttonClass } from "@/components/mobile/buttons";
 import { saveClubAssignment, type PayrollFormState } from "../actions";
 import { PAYROLL_POSITIONS, PAYROLL_POSITION_LABELS } from "@/lib/payroll/enums";
 
@@ -9,11 +10,7 @@ const initial: PayrollFormState = { ok: false };
 function Submit() {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
-    >
+    <button type="submit" disabled={pending} className={`${buttonClass({ variant: "primary", size: "cta" })} w-full sm:w-auto`}>
       {pending ? "Сохранение..." : "Добавить закрепление"}
     </button>
   );
@@ -42,7 +39,7 @@ export function AssignmentForm({ employeeId, clubs }: { employeeId: string; club
         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Доля начисления, % (опц.)</span>
         <input name="earningSharePercent" type="number" min="0" max="100" step="1" className="input w-full" placeholder="100" />
       </label>
-      <div className="flex items-end gap-3">
+      <div className="flex items-end sm:col-span-2 lg:col-span-1">
         <Submit />
       </div>
       {state.ok ? (
