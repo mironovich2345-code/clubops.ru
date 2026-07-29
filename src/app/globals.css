@@ -20,24 +20,57 @@
   --destructive: #e11d48;     /* rose-600 */
   --success: #059669;         /* emerald-600 */
   --warning: #d97706;         /* amber-600 */
+
+  /* Semantic token layer (UI consistency pass). Named surfaces/borders/text/accents
+     so components read intent, not raw palette. Accent (blue) is reserved for primary
+     action / active / focus / selected / key links — NOT generic card backgrounds. */
+  --surface-page: var(--background);
+  --surface-card: var(--card);
+  --surface-elevated: #ffffff;
+  --surface-muted: var(--muted);
+  --border-subtle: var(--border);
+  --border-strong: #cbd5e1;
+  --text-primary: var(--foreground);
+  --text-secondary: #334155;
+  --text-muted: var(--muted-foreground);
+  --accent-primary: var(--primary);
+  --accent-primary-hover: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.10);
+  --info: #0284c7;
 }
 
 :root.dark,
 .dark {
   color-scheme: dark;
-  /* Not pure black: dark slate background, cards a touch lighter, visible borders. */
-  --background: #0b1220;
-  --foreground: #e2e8f0;
-  --card: #111827;
-  --card-foreground: #e2e8f0;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --border: #273244;
-  --input: #0e1626;
+  /* Neutral GRAPHITE dark (not navy). Removes the "blue-on-blue" tint: near-neutral page,
+     cards a touch lighter, neutral borders/inputs. Blue stays only as the accent. */
+  --background: #101114;
+  --foreground: #e7e8ea;
+  --card: #191a1e;
+  --card-foreground: #e7e8ea;
+  --muted: #212227;
+  --muted-foreground: #9ca0a6;
+  --border: #2c2e34;
+  --input: #16171b;
   --primary: #3b82f6;
   --destructive: #fb7185;
   --success: #34d399;
   --warning: #fbbf24;
+
+  /* Semantic layer (dark) */
+  --surface-page: var(--background);
+  --surface-card: var(--card);
+  --surface-elevated: #23252b;
+  --surface-muted: var(--muted);
+  --border-subtle: var(--border);
+  --border-strong: #3a3d44;
+  --text-primary: var(--foreground);
+  --text-secondary: #b8bcc2;
+  --text-muted: var(--muted-foreground);
+  --accent-primary: var(--primary);
+  --accent-primary-hover: #2f6fe0;
+  --accent-soft: rgba(59, 130, 246, 0.14);
+  --info: #38bdf8;
 }
 
 @layer components {

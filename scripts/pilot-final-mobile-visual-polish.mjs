@@ -36,7 +36,7 @@ check("BN2 нет bottom-nav spacer (.pb-bottom-nav удалён; main — safe-
 // ===================== Drawer + header bounds =====================
 check("DR1 drawer bounded (w-[min(88vw,360px)], overflow-x-hidden, min-w-0 children)", shell.includes("w-[min(88vw,360px)]") && shell.includes("overflow-x-hidden") && (shell.match(/min-w-0/g) || []).length >= 3);
 check("DR2 symmetric top bar grid 44/1fr/44 + 44px hamburger", shell.includes("grid-cols-[44px_1fr_44px]") && shell.includes("h-11 w-11") && shell.includes('aria-label="Меню"'));
-check("DR3 company/club stack на mobile (ScopeSwitcher flex-col + w-full, не 2 select в ряд)", src("../src/app/(app)/_components/ScopeSwitcher.tsx").includes("flex flex-col gap-2") && src("../src/app/(app)/_components/ScopeSwitcher.tsx").includes("lg:flex-row") && src("../src/app/(app)/_components/ScopeSwitcher.tsx").includes("w-full min-w-0"));
+check("DR3 company/club stack на mobile (ScopeSwitcher flex-col, не 2 select в ряд)", src("../src/app/(app)/_components/ScopeSwitcher.tsx").includes("flex flex-col gap-3") && src("../src/app/(app)/_components/ScopeSwitcher.tsx").includes("lg:flex-row") && src("../src/app/(app)/_components/ScopeSwitcher.tsx").includes("block min-w-0"));
 
 // ===================== Form controls =====================
 check("FC1 глобально: input/select/textarea max-width:100% + box-sizing; date/month width clamp (§18)", /input,\s*\n\s*select,\s*\n\s*textarea\s*\{[\s\S]*?max-width: 100%;[\s\S]*?box-sizing: border-box;/.test(globals) && /input\[type="date"\][\s\S]*?width: 100%/.test(globals));

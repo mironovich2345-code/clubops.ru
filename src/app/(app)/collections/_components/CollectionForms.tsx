@@ -24,11 +24,12 @@ import {
 const initial: CashState = { ok: false };
 type ClubOpt = { id: string; name: string };
 
-function Submit({ idle, busy }: { idle: string; busy: string }) {
+function Submit({ idle, busy, variant = "primary", fluid = false }: { idle: string; busy: string; variant?: "primary" | "secondary"; fluid?: boolean }) {
   const { pending } = useFormStatus();
-  // Primary CTA — full-width on mobile (48px), auto on desktop.
+  // Primary CTA — full-width on mobile (48px), auto on desktop. `fluid` keeps it full-width
+  // everywhere (used for the equal-width sync buttons).
   return (
-    <button type="submit" disabled={pending} className={`${buttonClass({ variant: "primary", size: "cta", block: true })} sm:w-auto`}>
+    <button type="submit" disabled={pending} className={`${buttonClass({ variant, size: "cta", block: true })} ${fluid ? "" : "sm:w-auto"}`}>
       {pending ? busy : idle}
     </button>
   );
@@ -53,11 +54,12 @@ function ClubSelect({ clubs }: { clubs: ClubOpt[] }) {
 export function CashSyncButtons() {
   const [ipState, ipAction] = useFormState(syncIpCashAction, initial);
   const [oooState, oooAction] = useFormState(syncOooCashAction, initial);
+  // Two equal-width SECONDARY buttons (system operation — not the page's primary CTA, §8).
   return (
-    <div className="flex flex-wrap items-center gap-4">
-      <form action={ipAction}><Submit idle="Синхронизировать наличные ИП" busy="Синхронизация..." /></form>
-      <form action={oooAction}><Submit idle="Синхронизировать наличные ООО" busy="Синхронизация..." /></form>
-      <div className="w-full"><Msg s={ipState.ok || ipState.error ? ipState : oooState} /></div>
+    <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+      <form action={ipAction} className="min-w-0"><Submit idle="Синхронизировать наличные ИП" busy="Синхронизация..." variant="secondary" fluid /></form>
+      <form action={oooAction} className="min-w-0"><Submit idle="Синхронизировать наличные ООО" busy="Синхронизация..." variant="secondary" fluid /></form>
+      <div className="min-[420px]:col-span-2"><Msg s={ipState.ok || ipState.error ? ipState : oooState} /></div>
     </div>
   );
 }

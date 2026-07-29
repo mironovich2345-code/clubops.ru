@@ -107,6 +107,7 @@ const pilots = [
   ["Mobile visual density part 1", "pilot-mobile-visual-density-part1.mjs"],
   ["Final mobile visual polish", "pilot-final-mobile-visual-polish.mjs"],
   ["Final mobile visual polish part 2", "pilot-final-mobile-visual-polish-part2.mjs"],
+  ["UI consistency color/filter pass", "pilot-ui-consistency-color-filter-pass.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;

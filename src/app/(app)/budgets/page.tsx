@@ -4,6 +4,7 @@ import { NoCompanyState } from "@/components/NoCompanyState";
 import { CompactPageHeader, MobileDataCard, InfoNote, EmptyState } from "@/components/mobile/density";
 import { StatusBadge, type StatusTone } from "@/components/mobile/StatusBadge";
 import { SegmentedControl, segmentClass, buttonClass } from "@/components/mobile/buttons";
+import { MonthField } from "@/components/mobile/DateField";
 import { formatKopeks } from "@/lib/money";
 import {
   requirePageAccess,
@@ -144,23 +145,20 @@ export default async function BudgetsPage({
     <div>
       <CompactPageHeader title="Бюджеты" subtitle="Месячные лимиты по статьям и согласование перерасхода" />
 
-      {/* Club + month selector — compact */}
-      <form method="get" className="mb-4 grid grid-cols-1 items-end gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm min-[420px]:grid-cols-[1fr_auto_auto]">
-        <label className="block min-w-0">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Клуб</span>
+      {/* Club + month selector — full-width stack on mobile, inline row on desktop. */}
+      <form method="get" className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4 shadow-sm lg:flex lg:flex-wrap lg:items-end lg:gap-3 lg:p-3">
+        <label className="block min-w-0 lg:w-56">
+          <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Клуб</span>
           <select name="clubId" defaultValue={selectedClubId} className="input w-full">
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         </label>
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Месяц</span>
-          <input type="month" name="month" defaultValue={month} className="input w-full" />
-        </label>
+        <MonthField label="Месяц" name="month" defaultValue={month} />
         <input type="hidden" name="tab" value={tab} />
         <input type="hidden" name="view" value={view} />
-        <button type="submit" className={buttonClass({ variant: "primary" })}>
+        <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full lg:w-auto`}>
           Показать
         </button>
       </form>

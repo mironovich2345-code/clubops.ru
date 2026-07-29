@@ -68,36 +68,57 @@ export function ThemeToggle() {
   const current = OPTIONS.find((o) => o.value === theme) ?? OPTIONS[2];
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Тема: ${current.label}`}
-        title={`Тема: ${current.label}`}
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-      >
-        <Icon theme={theme} />
-        <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden className="text-slate-400"><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      </button>
-      {open ? (
-        <div role="menu" className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
-          {OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="menuitemradio"
-              aria-checked={theme === o.value}
-              onClick={() => choose(o.value)}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${theme === o.value ? "bg-brand-50 text-brand-700" : "text-slate-700 hover:bg-slate-50"}`}
-            >
-              <Icon theme={o.value} />
-              {o.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <>
+      {/* Mobile / drawer: INLINE segmented — no floating popover that could escape the
+          drawer (UI consistency §2). Equal segments, accent-soft active. */}
+      <div className="flex w-full rounded-lg bg-[var(--surface-muted)] p-1 lg:hidden" role="radiogroup" aria-label="Тема">
+        {OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={theme === o.value}
+            onClick={() => choose(o.value)}
+            className={`inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium transition ${theme === o.value ? "bg-[var(--accent-soft)] text-brand-700 dark:text-brand-300" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+          >
+            <Icon theme={o.value} />
+            <span className="truncate">{o.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Desktop header: compact popover. */}
+      <div className="relative hidden lg:block" ref={ref}>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`Тема: ${current.label}`}
+          title={`Тема: ${current.label}`}
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+        >
+          <Icon theme={theme} />
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden className="text-slate-400"><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+        {open ? (
+          <div role="menu" className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+            {OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="menuitemradio"
+                aria-checked={theme === o.value}
+                onClick={() => choose(o.value)}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${theme === o.value ? "bg-brand-50 text-brand-700" : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"}`}
+              >
+                <Icon theme={o.value} />
+                {o.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }

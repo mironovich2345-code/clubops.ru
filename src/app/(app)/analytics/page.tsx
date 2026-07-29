@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { CompactPageHeader } from "@/components/mobile/density";
+import { DateField } from "@/components/mobile/DateField";
+import { buttonClass } from "@/components/mobile/buttons";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
 import { SalesDynamicsChart } from "@/components/SalesDynamicsChart";
@@ -266,7 +268,9 @@ export default async function AnalyticsPage({
       {/* Header + period selector */}
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <CompactPageHeader title="Аналитика" subtitle="Бизнес-обзор клуба" />
-        <form method="get" className={`flex flex-wrap items-end gap-2 p-2 ${CARD}`}>
+        {/* Mobile: one column, full-width controls + full-width primary on its own row
+            (no button/date overlap, §5). Desktop: compact horizontal row. */}
+        <form method="get" className={`grid grid-cols-1 gap-3 p-4 ${CARD} lg:flex lg:flex-wrap lg:items-end lg:gap-2 lg:p-2`}>
           {groups ? (
             <>
               <input type="hidden" name="scopeMode" value={groups.scope.mode} />
@@ -275,23 +279,17 @@ export default async function AnalyticsPage({
               {groups.scope.selectedClubId ? <input type="hidden" name="clubId" value={groups.scope.selectedClubId} /> : null}
             </>
           ) : null}
-          <label className="block">
-            <span className="mb-1 block px-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Период</span>
-            <select name="period" defaultValue={periodKey} className="input">
+          <label className="block min-w-0">
+            <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Период</span>
+            <select name="period" defaultValue={periodKey} className="input w-full">
               {PERIOD_OPTIONS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
             </select>
           </label>
-          <label className="block">
-            <span className="mb-1 block px-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">С даты</span>
-            <input type="date" name="from" defaultValue={fromValue} className="input" />
-          </label>
-          <label className="block">
-            <span className="mb-1 block px-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">По дату</span>
-            <input type="date" name="to" defaultValue={toValue} className="input" />
-          </label>
-          <button type="submit" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand-700">
+          <DateField label="С даты" name="from" defaultValue={fromValue} />
+          <DateField label="По дату" name="to" defaultValue={toValue} />
+          <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full lg:w-auto`}>
             Показать
           </button>
         </form>

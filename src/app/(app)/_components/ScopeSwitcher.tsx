@@ -59,41 +59,41 @@ export function ScopeSwitcher({
   }
 
   return (
-    // Mobile: full-width vertical stack (never two wide selects in a row, §5).
-    // Desktop: inline pills as before.
-    <div className="flex flex-col gap-2 text-sm lg:flex-row lg:items-center">
-      <label className="flex min-h-[44px] w-full min-w-0 items-center gap-1.5 rounded-md bg-slate-100 px-2.5 lg:min-h-0 lg:w-auto lg:py-1">
-        <span className="shrink-0 text-xs text-slate-400">Компания</span>
-        <select
-          value={companyId}
-          onChange={onCompanyChange}
-          disabled={isPending}
-          className="min-w-0 flex-1 truncate bg-transparent font-medium text-slate-700 focus:outline-none disabled:opacity-60 lg:flex-none"
-        >
-          {companies.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+    // Mobile: full-width vertical stack, label above, ONE neutral surface (no double-dark,
+    // §2). Desktop: inline row. 48px controls.
+    <div className="flex flex-col gap-3 text-sm lg:flex-row lg:items-end lg:gap-2">
+      <label className="block min-w-0 lg:w-56">
+        <span className="mb-1 block text-xs font-medium text-[var(--text-muted)] lg:sr-only">Компания</span>
+        <span className="flex h-12 w-full items-center rounded-md border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 lg:h-9">
+          <select
+            value={companyId}
+            onChange={onCompanyChange}
+            disabled={isPending}
+            className="min-w-0 flex-1 truncate border-0 bg-transparent p-0 font-medium text-[var(--text-primary)] focus:outline-none focus:ring-0 disabled:opacity-60"
+          >
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </span>
       </label>
 
       {clubs.length > 0 ? (
-        <label className="flex min-h-[44px] w-full min-w-0 items-center gap-1.5 rounded-md bg-slate-100 px-2.5 lg:min-h-0 lg:w-auto lg:py-1">
-          <span className="shrink-0 text-xs text-slate-400">Клуб</span>
-          <select
-            value={clubId}
-            onChange={onClubChange}
-            disabled={isPending}
-            className="min-w-0 flex-1 truncate bg-transparent font-medium text-slate-700 focus:outline-none disabled:opacity-60 lg:flex-none"
-          >
-            <option value="">Все клубы</option>
-            {clubs.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+        <label className="block min-w-0 lg:w-48">
+          <span className="mb-1 block text-xs font-medium text-[var(--text-muted)] lg:sr-only">Клуб</span>
+          <span className="flex h-12 w-full items-center rounded-md border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 lg:h-9">
+            <select
+              value={clubId}
+              onChange={onClubChange}
+              disabled={isPending}
+              className="min-w-0 flex-1 truncate border-0 bg-transparent p-0 font-medium text-[var(--text-primary)] focus:outline-none focus:ring-0 disabled:opacity-60"
+            >
+              <option value="">Все клубы</option>
+              {clubs.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </span>
         </label>
       ) : null}
     </div>

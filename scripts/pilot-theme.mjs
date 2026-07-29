@@ -37,7 +37,7 @@ for (const [name, src] of Object.entries(PAGES)) {
 const themedUi = { ...PAGES, toggle, appLayout, rootLayout };
 const offenders = Object.entries(themedUi).filter(([, s]) => /background(-color)?\s*:\s*(#fff|#ffffff|white)\b/i.test(s) || /\bbg-\[#(fff|ffffff)\]/i.test(s));
 check("THEME8 нет массового нового hardcoded white/black фона, ломающего dark mode", offenders.length === 0, offenders.map(([k]) => k).join(","));
-check("THEME8b тёмная тема не pure black: фон/карта тёмно-серые, borders видимые (токены заданы)", /--background:\s*#0b1220/i.test(globals) && /--card:\s*#111827/i.test(globals) && /--border:\s*#273244/i.test(globals) && globals.includes(".dark input"));
+check("THEME8b тёмная тема не pure black: фон/карта нейтрально-тёмные (graphite), borders видимые", /--background:\s*#101114/i.test(globals) && /--card:\s*#191a1e/i.test(globals) && /--border:\s*#2c2e34/i.test(globals) && globals.includes(".dark input"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

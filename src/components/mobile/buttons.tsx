@@ -50,10 +50,11 @@ export function ActionButtonRow({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">{items}</div>;
 }
 
-/** Segmented control for 2–3 mutually exclusive options (Part 2 §1). */
+/** Segmented control for 2–3 mutually exclusive options. Neutral track; the active
+ *  segment is accent-SOFT (not a bright blue plate). Full-width, equal segments. */
 export function SegmentedControl({ children }: { children: ReactNode }) {
-  return <div className="inline-flex rounded-lg bg-slate-100 p-1 dark:bg-slate-800">{children}</div>;
+  return <div className="flex w-full rounded-lg bg-[var(--surface-muted)] p-1 sm:inline-flex sm:w-auto">{children}</div>;
 }
 export function segmentClass(active: boolean): string {
-  return `inline-flex min-h-[40px] items-center justify-center rounded-md px-4 text-sm font-medium transition ${active ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100" : "text-slate-500 hover:text-slate-700 dark:text-slate-400"}`;
+  return `inline-flex min-h-[44px] flex-1 items-center justify-center rounded-md px-4 text-sm font-medium transition ${active ? "bg-[var(--accent-soft)] text-brand-700 dark:text-brand-300" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`;
 }

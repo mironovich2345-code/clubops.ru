@@ -33,7 +33,7 @@ const inv = src("../src/app/(app)/invoices/page.tsx");
 check("I1 invoices KPI: 5-я карта full-width (не одинокая половинная); value не truncate", inv.includes('className="min-[400px]:col-span-2 lg:col-span-1"') && inv.includes("whitespace-nowrap text-lg font-semibold tabular-nums"));
 
 // ===================== Collections + Employees CTA (§5) =====================
-check("CE1 Collections + Employees primary CTA full-width на mobile (buttonClass cta block)", src("../src/app/(app)/collections/_components/CollectionForms.tsx").includes('buttonClass({ variant: "primary", size: "cta", block: true })') && src("../src/app/(app)/employees/_components/EmployeeForm.tsx").includes('buttonClass({ variant: "primary", size: "cta", block: true })'));
+check("CE1 Collections + Employees primary CTA full-width на mobile (buttonClass cta block)", src("../src/app/(app)/collections/_components/CollectionForms.tsx").includes('buttonClass({ variant, size: "cta", block: true })') && src("../src/app/(app)/employees/_components/EmployeeForm.tsx").includes('buttonClass({ variant: "primary", size: "cta", block: true })'));
 
 // ===================== Filter system (§6) =====================
 const flt = src("../src/components/mobile/filters.tsx");

@@ -9,6 +9,10 @@ import { canManagePayrollAssignments, payrollNavMode } from "@/lib/payroll/acces
 import { formatKopeks } from "@/lib/money";
 import { CreatePeriodForm } from "../_components/CreatePeriodForm";
 import { PayrollNav } from "../_components/PayrollNav";
+import { MonthField } from "@/components/mobile/DateField";
+import { buttonClass } from "@/components/mobile/buttons";
+import { MobileDataCard } from "@/components/mobile/density";
+import { StatusBadge } from "@/components/mobile/StatusBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -89,14 +93,17 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
       ) : null}
 
       {/* Filters */}
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
-        <label className="text-xs text-slate-500">Месяц<input type="month" name="month" defaultValue={monthF ?? ""} className="input ml-1 py-1 text-sm" /></label>
+      {/* Filters — mobile stack (2-col), desktop inline. Checkbox + button own rows. */}
+      <form method="get" className="mb-4 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
+        <MonthField label="Месяц" name="month" defaultValue={monthF ?? ""} />
         {clubs.length > 1 ? (
-          <label className="text-xs text-slate-500">Клуб<select name="club" defaultValue={clubF ?? ""} className="input ml-1 py-1 text-sm"><option value="">все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Клуб</span>
+            <select name="club" defaultValue={clubF ?? ""} className="input w-full"><option value="">все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         ) : null}
-        <label className="text-xs text-slate-500">Статус<select name="status" defaultValue={statusF ?? ""} className="input ml-1 py-1 text-sm"><option value="">все</option><option value="draft">Черновик</option><option value="review">На согласовании</option><option value="needs_correction">Возвращён</option><option value="approved">Утверждён</option><option value="partially_paid">Частично выплачен</option><option value="paid">Выплачен</option><option value="closed">Закрыт</option></select></label>
-        <label className="flex items-center gap-1 text-xs text-slate-500"><input type="checkbox" name="problems" value="1" defaultChecked={onlyProblems} /> только проблемные</label>
-        <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Показать</button>
+        <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Статус</span>
+          <select name="status" defaultValue={statusF ?? ""} className="input w-full"><option value="">все</option><option value="draft">Черновик</option><option value="review">На согласовании</option><option value="needs_correction">Возвращён</option><option value="approved">Утверждён</option><option value="partially_paid">Частично выплачен</option><option value="paid">Выплачен</option><option value="closed">Закрыт</option></select></label>
+        <label className="flex min-h-[44px] items-center gap-2 text-sm text-[var(--text-secondary)] min-[380px]:col-span-2 lg:min-h-0 lg:pb-2"><input type="checkbox" name="problems" value="1" defaultChecked={onlyProblems} className="h-4 w-4" /> только проблемные</label>
+        <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full min-[380px]:col-span-2 lg:col-span-1 lg:w-auto`}>Показать</button>
       </form>
 
       {periods.length === 0 ? (
@@ -105,7 +112,7 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
         </div>
       ) : (
         <div className={`overflow-hidden ${CARD}`}>
-          <div className="overflow-x-auto">
+          <div className="hidden overflow-x-auto lg:block">
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr>
@@ -152,10 +159,40 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
               </tbody>
             </table>
           </div>
+          {/* Mobile cards — no clipped table (§11). */}
+          <div className="space-y-3 p-3 lg:hidden">
+            {periods.map((p) => {
+              const s = sumBy.get(p.id);
+              const problems = problemsBy.get(p.id) ?? 0;
+              return (
+                <MobileDataCard
+                  key={p.id}
+                  title={clubName(p.clubId)}
+                  badge={<StatusBadge tone={periodTone(p.status)}>{periodStatusLabel(p.status)}</StatusBadge>}
+                  rows={[
+                    { label: "Месяц", value: periodLabel(p) },
+                    { label: "Сотрудников", value: String(s?.count ?? 0) },
+                    { label: "Начислено", value: formatKopeks(s?.gross ?? 0) },
+                    { label: "Выплачено", value: formatKopeks(s?.paid ?? 0) },
+                    { label: "Остаток", value: formatKopeks(s?.remaining ?? 0), tone: (s?.remaining ?? 0) > 0 ? "danger" : undefined },
+                    ...(problems > 0 ? [{ label: "Проблем", value: String(problems), tone: "danger" as const }] : []),
+                  ]}
+                  footer={<div className="flex justify-end"><Link href={`/payroll/periods/${p.id}`} className={buttonClass({ variant: "secondary", size: "sm" })}>Открыть</Link></div>}
+                />
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
+}
+
+function periodTone(status: string): "neutral" | "info" | "success" | "warning" | "danger" {
+  if (status === "approved" || status === "paid") return "success";
+  if (status === "needs_correction") return "warning";
+  if (status === "review" || status === "partially_paid") return "info";
+  return "neutral";
 }
 
 function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
