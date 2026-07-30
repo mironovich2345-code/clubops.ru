@@ -611,6 +611,14 @@ model MandatoryPaymentPlan {
 // Append-only cash-balance log per club + legal entity. The latest snapshot (by
 // snapshotDate) is the current balance. Old rows are never updated/deleted — a
 // new balance is a new row (financial control history).
+// A control (opening) cash balance checkpoint for a club's legal entity on an effective
+// date (`snapshotDate`). APPEND-ONLY: a control point is never destructively edited — a
+// correction creates a NEW version row that supersedes the previous one (status flips to
+// `superseded`), so the full history is auditable. At most ONE `active` version may exist
+// per (clubId, legalEntityId, snapshotDate); a plain same-date duplicate is refused (use
+// «Скорректировать»). The balance resolver uses the latest ACTIVE version whose
+// snapshotDate ≤ the calculation instant — so a backdated earlier point never changes the
+// current balance (governed by a later point) and only fills the interval before it.
 model BalanceSnapshot {
   id                  String   @id @default(cuid())
   companyId           String
@@ -622,6 +630,11 @@ model BalanceSnapshot {
   createdById         String
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+  // Versioning (additive; legacy rows default to active/v1 with no supersede pointer).
+  status              String   @default("active") // active | superseded
+  version             Int      @default(1)
+  supersedesSnapshotId String?
+  correctionReason    String?
 
   company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
@@ -632,6 +645,7 @@ model BalanceSnapshot {
   @@index([clubId])
   @@index([legalEntityId])
   @@index([clubId, legalEntityId, snapshotDate])
+  @@index([clubId, legalEntityId, status, snapshotDate])
 }
 
 // Approval request raised when an operation would exceed the monthly budget.
@@ -2383,6 +2397,41 @@ model CashOtherIncome {
   @@index([clubId, legalEntityId, status])
   @@index([status])
   @@index([operationDate])
+}
+
+// «Передать деньги региональному директору» — internal cash movement: ИП cash physically
+// handed from the club to a regional director. NOT a sale, NOT revenue, NOT OFD, NOT an
+// expense, NOT инкассация, NOT изъятие ООО→ИП. Only a CONFIRMED transfer reduces the ИП
+// fact balance (the club manager confirms the cash actually left). pending_confirmation
+// moves nothing; cancelled never counts. recipientNameSnapshot freezes the recipient's
+// name so history survives later user edits. idempotencyKey blocks duplicate submits.
+model CashRegionalTransfer {
+  id                          String    @id @default(cuid())
+  companyId                   String
+  clubId                      String
+  legalEntityId               String // active ИП of the club
+  amountKopeks                Int
+  operationDate               DateTime // effective / transfer date
+  recipientRegionalDirectorId String
+  recipientNameSnapshot       String
+  comment                     String?
+  // pending_confirmation | confirmed | cancelled
+  status                      String    @default("pending_confirmation")
+  createdById                 String
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  confirmedById               String?
+  confirmedAt                 DateTime?
+  cancelledById               String?
+  cancelledAt                 DateTime?
+  cancellationReason          String?
+  idempotencyKey              String    @unique
+
+  @@index([companyId, clubId])
+  @@index([clubId, legalEntityId, status])
+  @@index([status])
+  @@index([operationDate])
+  @@index([recipientRegionalDirectorId])
 }
 
 // Supporting document for a cash collection / withdrawal / other-income. Binary stays
