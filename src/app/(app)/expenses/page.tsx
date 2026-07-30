@@ -471,6 +471,7 @@ async function IpCashFactBlock({ companyId, club, today }: { companyId: string; 
         <FactRow label="ОФД наличные за месяц" value={formatKopeks(b.cashIpOfdMonth)} />
         <FactRow label="Изъятия из ООО" value={formatKopeks(b.cashIpWithdrawalsFromOoo)} />
         <FactRow label="Приход «Иное»" value={formatKopeks(b.cashIpOtherIncome)} />
+        <FactRow label="Передано регионалу (подтв.)" value={formatKopeks(b.cashIpRegionalTransfers)} />
         <FactRow label="Расходы ИП на проверке" value={formatKopeks(b.cashIpPendingExpenses)} />
         <FactRow label="Подтверждённые расходы ИП" value={formatKopeks(b.cashIpApprovedExpenses)} />
       </div>

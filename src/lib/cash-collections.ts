@@ -30,9 +30,11 @@ export async function loadClubCashBalances(companyId: string, clubId: string, no
   if (oooId) typeById.set(oooId, "ooo");
   if (ipId) typeById.set(ipId, "ip");
 
-  const [snapshots, ofd, collections, withdrawals, ipExpenses, otherIncome] = await Promise.all([
+  const [snapshots, ofd, collections, withdrawals, ipExpenses, otherIncome, regionalTransfers] = await Promise.all([
+    // Only ACTIVE versions on/ before `now` — a backdated earlier point never overrides a
+    // later one (later snapshotDate wins), and superseded correction versions are ignored.
     entityIds.length
-      ? prisma.balanceSnapshot.findMany({ where: { clubId, legalEntityId: { in: entityIds } }, orderBy: [{ snapshotDate: "desc" }, { createdAt: "desc" }], select: { legalEntityId: true, actualBalanceKopeks: true, snapshotDate: true } })
+      ? prisma.balanceSnapshot.findMany({ where: { clubId, legalEntityId: { in: entityIds }, status: "active", snapshotDate: { lte: now } }, orderBy: [{ snapshotDate: "desc" }, { createdAt: "desc" }], select: { legalEntityId: true, actualBalanceKopeks: true, snapshotDate: true } })
       : Promise.resolve([]),
     prisma.ofdDailySalesSummary.findMany({ where: { companyId, clubId, provider: "taxcom" }, select: { legalEntityId: true, date: true, incomeCashKopeks: true, returnCashKopeks: true } }),
     prisma.cashCollection.findMany({ where: { clubId }, select: { status: true, amountKopeks: true, operationDate: true } }),
@@ -43,9 +45,12 @@ export async function loadClubCashBalances(companyId: string, clubId: string, no
     ipId
       ? prisma.cashOtherIncome.findMany({ where: { clubId, legalEntityId: ipId }, select: { status: true, amountKopeks: true, operationDate: true } })
       : Promise.resolve([]),
+    ipId
+      ? prisma.cashRegionalTransfer.findMany({ where: { clubId, legalEntityId: ipId }, select: { status: true, amountKopeks: true, operationDate: true } })
+      : Promise.resolve([]),
   ]);
 
-  // Latest snapshot per entity (rows already desc-ordered → first wins).
+  // Latest ACTIVE snapshot per entity (rows already desc-ordered → first wins).
   const openingByEntity = new Map<string, { amount: number; date: string }>();
   for (const s of snapshots) if (!openingByEntity.has(s.legalEntityId)) openingByEntity.set(s.legalEntityId, { amount: s.actualBalanceKopeks, date: ymdLocal(s.snapshotDate) });
   const oooOpen = oooId ? openingByEntity.get(oooId) ?? null : null;
@@ -65,6 +70,7 @@ export async function loadClubCashBalances(companyId: string, clubId: string, no
     withdrawals: withdrawals.map((w) => ({ status: w.status, amountKopeks: w.amountKopeks, date: ymdLocal(w.operationDate) })),
     ipExpenses: ipExpenses.map((e) => ({ status: e.status, amountKopeks: e.amountKopeks, date: ymdLocal(e.expenseDate) })),
     ipOtherIncome: otherIncome.map((o) => ({ status: o.status, amountKopeks: o.amountKopeks, date: ymdLocal(o.operationDate) })),
+    ipRegionalTransfers: regionalTransfers.map((t) => ({ status: t.status, amountKopeks: t.amountKopeks, date: ymdLocal(t.operationDate) })),
   });
 
   return { balances, oooId, ipId, oooName: ooo?.name ?? null, ipName: ip?.name ?? null };

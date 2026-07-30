@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
@@ -9,6 +10,7 @@ import { getActiveClubLegalEntities } from "@/lib/legal-entities";
 import { runSyncNowForCompany } from "@/lib/ofd/daily";
 import { validateAndStoreCashDocument, type StoredCashDocument, MIN_CASH_OPERATION_DOCUMENTS, MAX_CASH_OPERATION_DOCUMENTS } from "@/lib/cash-document-storage";
 import { isUploadedFile } from "@/lib/uploaded-file";
+import { getActiveSnapshotOnDate, isExplicitClubManager, getEligibleRegionalDirectorsForClub } from "@/lib/cash-transfers";
 
 export type CashState = { ok: boolean; error?: string; notice?: string; sync?: { found: number; imported: number; skipped: number } };
 
@@ -77,20 +79,65 @@ export async function setCashOpeningBalance(_p: CashState | undefined, formData:
   const amountKopeks = rublesToKopeks(amount);
   const snapshotDate = parseDate(String(formData.get("snapshotDate") ?? ""));
   if (!snapshotDate) return { ok: false, error: "Укажите дату контрольного остатка." };
+  // A physical cash count cannot be dated in the future.
+  const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+  if (snapshotDate.getTime() > todayEnd.getTime()) return { ok: false, error: "Дата контрольного остатка не может быть в будущем." };
   const comment = String(formData.get("comment") ?? "").trim();
   if (!comment) return { ok: false, error: "Комментарий обязателен." };
   const { ooo, ip } = await getActiveClubLegalEntities(clubId);
   const target = entity === "ooo" ? ooo : ip;
   if (!target) return { ok: false, error: `У клуба нет активного ${entity === "ooo" ? "ООО" : "ИП"}.` };
 
+  // Same-date guard (§11): at most ONE active point per (club, entity, date). A backdated
+  // EARLIER date is allowed (it only fills the historical interval before the next point);
+  // a plain duplicate on an existing date is refused — use «Скорректировать» instead.
+  const clash = await getActiveSnapshotOnDate(clubId, target.id, snapshotDate);
+  if (clash) return { ok: false, error: "На эту дату уже существует контрольная точка. Используйте корректировку." };
+
   const created = await prisma.balanceSnapshot.create({
-    data: { companyId: g.companyId, clubId, legalEntityId: target.id, snapshotDate, actualBalanceKopeks: amountKopeks, comment: comment.slice(0, 500), createdById: g.userId },
+    data: { companyId: g.companyId, clubId, legalEntityId: target.id, snapshotDate, actualBalanceKopeks: amountKopeks, comment: comment.slice(0, 500), createdById: g.userId, status: "active", version: 1 },
   });
-  await recordAudit({ action: "cash.opening_balance_set", entityType: "BalanceSnapshot", entityId: created.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { entity, amountKopeks } });
+  await recordAudit({ action: "cash.opening_balance_set", entityType: "BalanceSnapshot", entityId: created.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { entity, amountKopeks, snapshotDate: snapshotDate.toISOString().slice(0, 10) } });
   revalidatePath("/collections");
   revalidatePath("/expenses");
   revalidatePath("/dashboard");
-  return { ok: true, notice: `Контрольный остаток ${entity === "ooo" ? "ООО" : "ИП"} сохранён. Фактический остаток пересчитан от новой контрольной точки.` };
+  return { ok: true, notice: `Контрольная точка ${entity === "ooo" ? "ООО" : "ИП"} на ${snapshotDate.toISOString().slice(0, 10)} сохранена. Текущий остаток считается от последней применимой точки.` };
+}
+
+/** «Скорректировать контрольную точку» (§12): append-only correction. Creates a NEW
+ *  version that supersedes the previous ACTIVE one on that date (old row flips to
+ *  superseded — never edited), requires a reason, and keeps the full version chain. The
+ *  balance always uses the latest active version for a date. Roles = as for setting one. */
+export async function correctBalanceSnapshot(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const snapshotId = String(formData.get("snapshotId") ?? "").trim();
+  const g = await ctxForWrite(null);
+  if (!g.ok) return { ok: false, error: g.error };
+  if (!canSetOpeningBalance(g.roles)) return { ok: false, error: "Недостаточно прав для корректировки." };
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!reason) return { ok: false, error: "Укажите причину корректировки." };
+  const amountRaw = String(formData.get("amount") ?? "").replace(",", ".").replace(/\s/g, "");
+  const amount = Number(amountRaw);
+  if (!Number.isFinite(amount) || amount < 0) return { ok: false, error: "Укажите корректную сумму." };
+  const amountKopeks = rublesToKopeks(amount);
+
+  const old = await prisma.balanceSnapshot.findFirst({ where: { id: snapshotId, clubId: { in: g.clubIds }, status: "active" }, select: { id: true, companyId: true, clubId: true, legalEntityId: true, snapshotDate: true, version: true } });
+  if (!old) return { ok: false, error: "Активная контрольная точка не найдена." };
+
+  const created = await prisma.$transaction(async (tx) => {
+    // Race-safe: only supersede a still-active row.
+    const flip = await tx.balanceSnapshot.updateMany({ where: { id: old.id, status: "active" }, data: { status: "superseded" } });
+    if (flip.count !== 1) throw new Error("superseded");
+    return tx.balanceSnapshot.create({
+      data: { companyId: old.companyId, clubId: old.clubId, legalEntityId: old.legalEntityId, snapshotDate: old.snapshotDate, actualBalanceKopeks: amountKopeks, comment: `Корректировка: ${reason}`.slice(0, 500), createdById: g.userId, status: "active", version: old.version + 1, supersedesSnapshotId: old.id, correctionReason: reason.slice(0, 500) },
+    });
+  }).catch(() => null);
+  if (!created) return { ok: false, error: "Точка только что изменилась. Обновите страницу." };
+
+  await recordAudit({ action: "cash.opening_balance_corrected", entityType: "BalanceSnapshot", entityId: created.id, companyId: created.companyId, clubId: created.clubId, userId: g.userId, metadata: { supersedes: old.id, version: created.version, amountKopeks } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: `Контрольная точка скорректирована (версия ${created.version}). Прежняя версия сохранена в истории.` };
 }
 
 /** Инкассация ООО — reduces the ООО fact balance immediately (pending). */
@@ -303,6 +350,99 @@ export async function approveCashOtherIncome(_p: CashState | undefined, formData
 }
 export async function rejectCashOtherIncome(_p: CashState | undefined, formData: FormData): Promise<CashState> {
   return reviewOtherIncome(formData, "rejected", "cash.other_income_rejected");
+}
+
+// ===================== Передача региональному директору (§2–§5) =====================
+// Internal cash movement: ИП cash physically handed from the club to a regional director.
+// NOT a sale/revenue/expense/инкассация/изъятие. Only CONFIRMED (by the club manager)
+// reduces the ИП fact balance. Return path is «Приход Иное» (source=regional) — no reverse op.
+
+/** Create a transfer (pending_confirmation). Author = club manager OR a regional director
+ *  with club access (same as other cash ops). Recipient must be an eligible active regional
+ *  director. idempotencyKey blocks duplicate submits. */
+export async function createRegionalTransfer(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const clubId = String(formData.get("clubId") ?? "").trim() || null;
+  const g = await ctxForWrite(clubId);
+  if (!g.ok) return { ok: false, error: g.error };
+  if (!canCreateOperational(g.roles)) return { ok: false, error: "Передать деньги регионалу может управляющий или региональный директор." };
+  if (!clubId) return { ok: false, error: "Выберите клуб." };
+  const amountKopeks = parseAmountKopeks(String(formData.get("amount") ?? ""));
+  if (!amountKopeks) return { ok: false, error: "Укажите сумму." };
+  const operationDate = parseDate(String(formData.get("operationDate") ?? ""));
+  if (!operationDate) return { ok: false, error: "Укажите дату передачи." };
+  const recipientId = String(formData.get("recipientRegionalDirectorId") ?? "").trim();
+  if (!recipientId) return { ok: false, error: "Выберите получателя (регионального директора)." };
+  const comment = String(formData.get("comment") ?? "").trim();
+  const idempotencyKey = String(formData.get("idempotencyKey") ?? "").trim() || randomUUID();
+
+  const { ip } = await getActiveClubLegalEntities(clubId);
+  if (!ip) return { ok: false, error: "У клуба нет активного ИП." };
+  // Recipient must be an eligible ACTIVE regional director of this club/company — never an
+  // arbitrary or archived user. The display name is snapshotted so history survives edits.
+  const eligible = await getEligibleRegionalDirectorsForClub(g.companyId, clubId);
+  const recipient = eligible.find((r) => r.id === recipientId);
+  if (!recipient) return { ok: false, error: "Получатель не является активным региональным директором этого клуба." };
+
+  try {
+    const created = await prisma.cashRegionalTransfer.create({
+      data: { companyId: g.companyId, clubId, legalEntityId: ip.id, amountKopeks, operationDate, recipientRegionalDirectorId: recipientId, recipientNameSnapshot: recipient.name, comment: comment.slice(0, 500) || null, status: "pending_confirmation", createdById: g.userId, idempotencyKey },
+    });
+    await recordAudit({ action: "cash.regional_transfer_created", entityType: "CashRegionalTransfer", entityId: created.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { amountKopeks, recipientId } });
+    revalidatePath("/collections");
+    revalidatePath("/expenses");
+    revalidatePath("/dashboard");
+    return { ok: true, notice: "Передача создана. Ожидает подтверждения управляющего клуба." };
+  } catch (e) {
+    // Duplicate submit (same idempotencyKey) is a no-op success, not an error.
+    if (e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "P2002") {
+      return { ok: true, notice: "Передача уже создана (повторная отправка)." };
+    }
+    throw e;
+  }
+}
+
+/** Confirm receipt (pending_confirmation → confirmed). ONLY an explicit manager of the
+ *  transfer's club — a regional director cannot self-confirm; accountant/owner/GD/other-club
+ *  users cannot stand in. Idempotent + transactional. Only confirmed affects the balance. */
+export async function confirmRegionalTransfer(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const id = String(formData.get("id") ?? "").trim();
+  const g = await ctxForWrite(null);
+  if (!g.ok) return { ok: false, error: g.error };
+  const row = await prisma.cashRegionalTransfer.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, select: { id: true, clubId: true, amountKopeks: true, status: true } });
+  if (!row) return { ok: false, error: "Передача не найдена." };
+  if (!(await isExplicitClubManager(g.userId, row.clubId))) {
+    return { ok: false, error: "Подтвердить передачу может только управляющий этого клуба." };
+  }
+  const n = await prisma.cashRegionalTransfer.updateMany({ where: { id, status: "pending_confirmation" }, data: { status: "confirmed", confirmedById: g.userId, confirmedAt: new Date() } });
+  if (n.count === 0) return { ok: false, error: "Передача уже обработана." };
+  await recordAudit({ action: "cash.regional_transfer_confirmed", entityType: "CashRegionalTransfer", entityId: id, companyId: g.companyId, clubId: row.clubId, userId: g.userId, metadata: { amountKopeks: row.amountKopeks } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: "Передача подтверждена. Остаток ИП уменьшен." };
+}
+
+/** Cancel a still-pending transfer (pending_confirmation → cancelled). The author or an
+ *  explicit club manager may cancel; a CONFIRMED transfer cannot be cancelled (return the
+ *  money via «Приход Иное»). Never affects the balance. */
+export async function cancelRegionalTransfer(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const id = String(formData.get("id") ?? "").trim();
+  const g = await ctxForWrite(null);
+  if (!g.ok) return { ok: false, error: g.error };
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 200) || null;
+  const row = await prisma.cashRegionalTransfer.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, select: { id: true, clubId: true, createdById: true, status: true } });
+  if (!row) return { ok: false, error: "Передача не найдена." };
+  const isAuthor = row.createdById === g.userId;
+  if (!isAuthor && !(await isExplicitClubManager(g.userId, row.clubId))) {
+    return { ok: false, error: "Отменить может автор или управляющий клуба." };
+  }
+  const n = await prisma.cashRegionalTransfer.updateMany({ where: { id, status: "pending_confirmation" }, data: { status: "cancelled", cancelledById: g.userId, cancelledAt: new Date(), cancellationReason: reason } });
+  if (n.count === 0) return { ok: false, error: "Подтверждённую передачу нельзя отменить — верните деньги через «Приход Иное»." };
+  await recordAudit({ action: "cash.regional_transfer_cancelled", entityType: "CashRegionalTransfer", entityId: id, companyId: g.companyId, clubId: row.clubId, userId: g.userId, metadata: { reason } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: "Передача отменена." };
 }
 
 /** Отмена «Приход Иное» (soft-cancel → status "cancelled"). */
