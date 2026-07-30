@@ -112,6 +112,7 @@ const pilots = [
   ["Final iPhone deferred residuals", "pilot-final-iphone-deferred-residuals.mjs"],
   ["Owner cabinet acceptance", "pilot-owner-cabinet-acceptance.mjs"],
   ["Expense document + total consistency", "pilot-expense-document-total-consistency.mjs"],
+  ["Cash transfer + backdated snapshot", "pilot-cash-transfer-backdated-snapshot.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
