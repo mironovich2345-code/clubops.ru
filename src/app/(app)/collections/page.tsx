@@ -6,7 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
 import { canCreateOperational, type Role } from "@/lib/auth";
 import { legalEntityTypeLabel } from "@/lib/legal-entities";
-import { loadClubCashBalances, loadCashOpsHistory, loadClubOpeningHistory } from "@/lib/cash-collections";
+import { loadClubCashBalances, loadCashOpsHistory } from "@/lib/cash-collections";
+import { getEligibleRegionalDirectorsForClub, getRegionalTransfersForClub, getSnapshotTimeline } from "@/lib/cash-transfers";
 import type { CashBalances } from "@/lib/cash-balances";
 import {
   buildReconciliationTargets,
@@ -18,6 +19,7 @@ import {
   isReconciliationOverdue,
 } from "@/lib/cash-reconciliation";
 import { CashSyncButtons, CollectionForm, WithdrawalForm, OtherIncomeForm, ReviewButtons, CancelButton, OpeningBalanceForm } from "./_components/CollectionForms";
+import { RegionalTransferForm, TransferConfirmButton, TransferCancelButton, SnapshotCorrectionButton } from "./_components/CashTransferForms";
 import { ReconciliationForm, type ReconEntity } from "./_components/ReconciliationForm";
 import { ReconciliationReview } from "./_components/ReconciliationReview";
 
@@ -29,7 +31,9 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 const STATUS_LABELS: Record<string, string> = {
   pending_accountant_review: "На проверке",
   pending_review: "На проверке",
+  pending_confirmation: "Ожидает подтверждения управляющего",
   approved: "Подтверждено",
+  confirmed: "Подтверждено",
   rejected: "Отклонено",
   cancelled: "Отменено",
   draft: "Черновик",
@@ -57,22 +61,38 @@ export default async function CollectionsPage() {
   const clubs = clubIds.length ? await prisma.club.findMany({ where: { companyId, id: { in: clubIds } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
   const clubName = new Map(clubs.map((c) => [c.id, c.name]));
   const now = new Date();
-  const [perClub, history, openingHistory, reconTargets, reconHistory] = await Promise.all([
+  const [perClub, history, reconTargets, reconHistory, directorsPairs, transfers] = await Promise.all([
     Promise.all(clubs.map(async (c) => ({ club: c, res: await loadClubCashBalances(companyId, c.id) }))),
     loadCashOpsHistory(companyId, clubIds, 50),
-    clubs.length ? Promise.all(clubs.map((c) => loadClubOpeningHistory(c.id, 10))).then((r) => r.flat()) : Promise.resolve([]),
     canSubmitReconciliation(roles) && clubs.length
       ? Promise.all(clubs.map(async (c) => ({ club: c, ...(await buildReconciliationTargets(companyId, c.id, now)) })))
       : Promise.resolve([]),
     getReconciliationsForScope(companyId, clubIds, { limit: 40 }),
+    clubs.length ? Promise.all(clubs.map(async (c) => [c.id, await getEligibleRegionalDirectorsForClub(companyId, c.id)] as const)) : Promise.resolve([]),
+    clubs.length ? Promise.all(clubs.map((c) => getRegionalTransfersForClub(c.id, 30))).then((r) => r.flat()) : Promise.resolve([]),
   ]);
+  const directorsByClub: Record<string, { id: string; name: string }[]> = Object.fromEntries(directorsPairs);
+  // Version timelines of control points, per club + legal entity (active + superseded).
+  const timelines = (
+    await Promise.all(
+      perClub.flatMap(({ club, res }) =>
+        [res.oooId ? { leId: res.oooId, type: "ooo" as const } : null, res.ipId ? { leId: res.ipId, type: "ip" as const } : null]
+          .filter((x): x is { leId: string; type: "ooo" | "ip" } => Boolean(x))
+          .map(async (e) => ({ clubId: club.id, clubName: club.name, entityType: e.type, rows: await getSnapshotTimeline(club.id, e.leId) })),
+      ),
+    )
+  ).filter((t) => t.rows.length > 0);
   const mayRegionalRecon = canRegionalReview(roles);
   const mayAccountingRecon = canAccountingReview(roles);
 
   // Author names for the history tables (SAFE: display name only, no personal data).
-  const authorIds = [...new Set([...history.map((h) => h.createdByUserId), ...openingHistory.map((o) => o.createdById), ...reconHistory.map((r) => r.submittedById).filter((x): x is string => Boolean(x))])];
+  const authorIds = [...new Set([...history.map((h) => h.createdByUserId), ...timelines.flatMap((t) => t.rows.map((r) => r.createdById)), ...transfers.flatMap((t) => [t.createdById, t.confirmedById].filter((x): x is string => Boolean(x))), ...reconHistory.map((r) => r.submittedById).filter((x): x is string => Boolean(x))])];
   const authors = authorIds.length ? await prisma.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, name: true } }) : [];
   const authorName = new Map(authors.map((a) => [a.id, a.name]));
+  // Clubs where the current user is an EXPLICIT manager → may confirm a transfer receipt.
+  const myManagerClubIds = new Set(
+    clubIds.length ? (await prisma.clubUserAccess.findMany({ where: { userId: myUserId, role: "manager", clubId: { in: clubIds } }, select: { clubId: true } })).map((r) => r.clubId) : [],
+  );
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -98,44 +118,55 @@ export default async function CollectionsPage() {
       )}
 
       <AccordionGroup>
-      <AccordionItem id="control" title="Контрольный остаток" subtitle="Задать фактическую сумму наличных на дату">
-        <p className="mb-3 text-xs text-slate-500">Фактический остаток считается от последней контрольной точки плюс движения после неё. Прошлая запись не изменяется — создаётся новая контрольная точка.</p>
+      <AccordionItem id="control" title="Контрольный остаток" subtitle="Задать фактическую сумму наличных на дату (можно раньше существующих)">
+        <p className="mb-3 text-xs text-slate-500">Текущий остаток считается от последней применимой контрольной точки (effectiveDate ≤ сегодня) плюс движения после неё. Можно добавить более раннюю точку — она изменит только исторический расчёт до следующей точки и не изменит сегодняшний остаток. Записи append-only: сумма правится только через «Скорректировать» (создаётся новая версия).</p>
         <OpeningBalanceForm clubs={clubs} today={today} />
-        {openingHistory.length > 0 ? (
-          <div className="mt-5">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">История контрольных остатков</div>
-            {/* Desktop table (≥lg) */}
-            <div className="hidden overflow-x-auto rounded-lg border border-slate-200 lg:block">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Юрлицо</Th><Th>Сумма</Th><Th>Комментарий</Th><Th>Кто задал</Th></tr></thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {openingHistory.map((o, i) => (
-                    <tr key={i}>
-                      <Td>{dfmt.format(o.snapshotDate)}</Td>
-                      <Td>{o.entityType ? legalEntityTypeLabel(o.entityType) : "—"}</Td>
-                      <Td>{formatKopeks(o.amountKopeks)}</Td>
-                      <Td>{o.comment ?? "—"}</Td>
-                      <Td>{authorName.get(o.createdById) ?? "—"}</Td>
-                    </tr>
+        {timelines.length > 0 ? (
+          <div className="mt-5 space-y-5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Хронология контрольных точек</div>
+            {timelines.map((t) => (
+              <div key={`${t.clubId}-${t.entityType}`}>
+                <div className="mb-2 text-xs font-medium text-slate-600">{t.clubName} · {legalEntityTypeLabel(t.entityType)}</div>
+                {/* Desktop timeline table (≥lg) */}
+                <div className="hidden overflow-x-auto rounded-lg border border-slate-200 lg:block">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50"><tr><Th>Дата (effective)</Th><Th>Сумма</Th><Th>Период действия</Th><Th>Версия</Th><Th>Статус</Th><Th>Создано</Th><Th>Автор</Th><Th>Комментарий</Th><Th>Действия</Th></tr></thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {t.rows.map((r) => (
+                        <tr key={r.id} className={r.status === "superseded" ? "text-slate-400" : undefined}>
+                          <Td>{dfmt.format(r.snapshotDate)}</Td>
+                          <Td>{formatKopeks(r.actualBalanceKopeks)}</Td>
+                          <Td>{r.status === "active" ? `с ${r.effectiveFrom}${r.effectiveTo ? ` до ${r.effectiveTo}` : " по настоящее время"}` : "—"}</Td>
+                          <Td>v{r.version}</Td>
+                          <Td>{r.status === "active" ? "активна" : "скорректирована"}{r.supersedesSnapshotId ? " (коррекция)" : ""}</Td>
+                          <Td>{dfmt.format(r.createdAt)}</Td>
+                          <Td>{authorName.get(r.createdById) ?? "—"}</Td>
+                          <Td>{r.correctionReason ?? r.comment ?? "—"}</Td>
+                          <Td>{mayCreate && r.status === "active" ? <SnapshotCorrectionButton snapshotId={r.id} /> : "—"}</Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Mobile cards — no clipped table */}
+                <div className="space-y-3 lg:hidden">
+                  {t.rows.map((r) => (
+                    <MobileDataCard
+                      key={r.id}
+                      title={`${dfmt.format(r.snapshotDate)} · v${r.version}`}
+                      badge={<span className="text-xs font-medium text-[var(--text-muted)]">{r.status === "active" ? "активна" : "скорректирована"}</span>}
+                      rows={[
+                        { label: "Сумма", value: formatKopeks(r.actualBalanceKopeks), strong: true },
+                        { label: "Период", value: r.status === "active" ? `с ${r.effectiveFrom}${r.effectiveTo ? ` до ${r.effectiveTo}` : " — н.в."}` : "—" },
+                        { label: "Автор", value: authorName.get(r.createdById) ?? "—" },
+                        ...(r.correctionReason || r.comment ? [{ label: "Комментарий", value: r.correctionReason ?? r.comment ?? "" }] : []),
+                      ]}
+                      footer={mayCreate && r.status === "active" ? <SnapshotCorrectionButton snapshotId={r.id} /> : undefined}
+                    />
                   ))}
-                </tbody>
-              </table>
-            </div>
-            {/* Mobile cards — no clipped table (§4) */}
-            <div className="space-y-3 lg:hidden">
-              {openingHistory.map((o, i) => (
-                <MobileDataCard
-                  key={i}
-                  title={dfmt.format(o.snapshotDate)}
-                  badge={<span className="text-xs font-medium text-[var(--text-muted)]">{o.entityType ? legalEntityTypeLabel(o.entityType) : "—"}</span>}
-                  rows={[
-                    { label: "Сумма", value: formatKopeks(o.amountKopeks), strong: true },
-                    { label: "Кто задал", value: authorName.get(o.createdById) ?? "—" },
-                    ...(o.comment ? [{ label: "Комментарий", value: o.comment }] : []),
-                  ]}
-                />
-              ))}
-            </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : null}
       </AccordionItem>
@@ -208,9 +239,50 @@ export default async function CollectionsPage() {
         <>
           <AccordionItem id="collect" title="Инкассировать ООО" subtitle="Сдать наличные ООО. Уменьшает остаток ООО"><CollectionForm clubs={clubs} today={today} /></AccordionItem>
           <AccordionItem id="withdraw" title="Изъять из ООО в ИП" subtitle="Перенос наличных из ООО в ИП. Не продажа и не доход"><WithdrawalForm clubs={clubs} today={today} /></AccordionItem>
-          <AccordionItem id="other" title="Пополнить ИП — приход «Иное»" subtitle="Внесение наличных от регионала, собственника или директора. Не продажа"><OtherIncomeForm clubs={clubs} today={today} /></AccordionItem>
+          <AccordionItem id="other" title="Пополнить ИП — приход «Иное»" subtitle="Внесение наличных от регионала, собственника или директора. Не продажа (это и есть возврат денег от регионала)"><OtherIncomeForm clubs={clubs} today={today} /></AccordionItem>
+          <AccordionItem id="transfer" title="Передать деньги региональному директору" subtitle="Наличные ИП физически переданы регионалу. Не расход и не доход — движение денег">
+            <p className="mb-3 text-xs text-slate-500">Уменьшает фактический остаток ИП только ПОСЛЕ подтверждения управляющим клуба. Возврат денег от регионала оформляется как «Приход Иное» с источником «Региональный директор».</p>
+            <RegionalTransferForm clubs={clubs} directorsByClub={directorsByClub} today={today} />
+          </AccordionItem>
         </>
       ) : null}
+
+      <AccordionItem id="transfer-history" title="Передачи региональному директору" subtitle="История передач наличных ИП регионалу и подтверждения">
+        {transfers.length === 0 ? (
+          <div className="text-sm text-slate-500">Передач пока нет.</div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Клуб</Th><Th>Сумма</Th><Th>Получатель</Th><Th>Статус</Th><Th>Автор</Th><Th>Подтвердил</Th><Th>Комментарий</Th><Th>Действия</Th></tr></thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {transfers.map((t) => {
+                  const canConfirm = t.status === "pending_confirmation" && myManagerClubIds.has(t.clubId);
+                  const canCancelT = t.status === "pending_confirmation" && (t.createdById === myUserId || myManagerClubIds.has(t.clubId));
+                  return (
+                    <tr key={t.id}>
+                      <Td>{dfmt.format(t.operationDate)}</Td>
+                      <Td>{clubName.get(t.clubId) ?? "—"}</Td>
+                      <Td><span className="font-medium text-rose-600">−{formatKopeks(t.amountKopeks)}</span></Td>
+                      <Td>{t.recipientNameSnapshot}</Td>
+                      <Td>{STATUS_LABELS[t.status] ?? t.status}</Td>
+                      <Td>{authorName.get(t.createdById) ?? "—"}</Td>
+                      <Td>{t.confirmedById ? authorName.get(t.confirmedById) ?? "—" : "—"}</Td>
+                      <Td>{t.cancellationReason ? `Отменено: ${t.cancellationReason}` : t.comment ?? "—"}</Td>
+                      <Td>
+                        <div className="flex flex-wrap items-start gap-2">
+                          {canConfirm ? <TransferConfirmButton id={t.id} /> : null}
+                          {canCancelT ? <TransferCancelButton id={t.id} /> : null}
+                          {!canConfirm && !canCancelT ? "—" : null}
+                        </div>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </AccordionItem>
 
       <AccordionItem id="history" title="История операций" subtitle="Инкассации, изъятия и приходы «Иное»">
         {history.length === 0 ? (
@@ -294,6 +366,7 @@ function IpCard({ b }: { b: CashBalances }) {
         <Row label="ОФД наличные за месяц" value={formatKopeks(b.cashIpOfdMonth)} muted />
         <Row label="Изъятия из ООО" value={formatKopeks(b.cashIpWithdrawalsFromOoo)} />
         <Row label="Приход «Иное»" value={formatKopeks(b.cashIpOtherIncome)} />
+        <Row label="Передано регионалу (подтв.)" value={formatKopeks(b.cashIpRegionalTransfers)} />
         <Row label="Расходы ИП на проверке" value={formatKopeks(b.cashIpPendingExpenses)} />
         <Row label="Подтверждённые расходы ИП" value={formatKopeks(b.cashIpApprovedExpenses)} />
       </dl>
