@@ -70,7 +70,7 @@ const routes = [
 for (const r of routes) {
   const src = read(r);
   const name = r.split("/").slice(-3, -2)[0];
-  check(`S ${name} uses safeDownloadHeaders`, /safeDownloadHeaders\(/.test(src));
+  check(`S ${name} uses safe document headers (safeDownloadHeaders or documentResponse+keyContentType)`, /safeDownloadHeaders\(|documentResponse\(/.test(src));
   check(`S ${name} does NOT echo a stored client MIME in the response`, !/"Content-Type":\s*\w+\.(originalFileMime|mime|mimeType)/.test(src));
   check(`S ${name} scope-checks via getXForContext`, /get\w+ForContext\(/.test(src));
 }

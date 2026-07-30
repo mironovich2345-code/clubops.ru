@@ -438,7 +438,7 @@ async function main() {
   check("216 object absent → controlled INVOICE_FILE_NOT_FOUND", routeResult(iA, mgrCtx, false).code === "INVOICE_FILE_NOT_FOUND");
   check("217 Content-Type derived safely, NOT from client-stored mime", fileRoute.includes("safeDownloadHeaders(") && !fileRoute.includes("invoice.originalFileMime"));
   check("218 response headers via safeDownloadHeaders (nosniff + safe disposition)", fileRoute.includes("safeDownloadHeaders(invoice.originalFileStorageKey"));
-  check("219 file name sanitized in disposition", readFileSync(new URL("../src/lib/document-access.ts", import.meta.url), "utf8").includes("encodeURIComponent(fileName)"));
+  check("219 file name sanitized in disposition (RFC 6266: ASCII fallback + filename*=UTF-8'')", (() => { const s = readFileSync(new URL("../src/lib/document-access.ts", import.meta.url), "utf8"); return s.includes("filename*=UTF-8''") && s.includes("replace(/[^\\x20-\\x7E]/g") && s.includes("encodeURIComponent(name)"); })());
   check("220 bucket/storageKey never in response (only mime + disposition headers)", !fileRoute.includes("originalFileStorageKey ??") && !/headers:\s*{[^}]*storageKey/.test(fileRoute));
   check("221 no public URL returned (streams bytes)", fileRoute.includes("new NextResponse(new Uint8Array(buffer)") && !fileRoute.includes("getSignedUrl"));
   check("222 raw 'Not found' only for generic A-case, controlled messages otherwise", fileRoute.includes('"К счёту не прикреплён файл."') && fileRoute.includes("не найден в хранилище"));

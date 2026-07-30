@@ -269,18 +269,13 @@ export async function createCashOtherIncome(_p: CashState | undefined, formData:
   if (!comment) return { ok: false, error: "Комментарий обязателен." };
   const { ip } = await getActiveClubLegalEntities(clubId);
   if (!ip) return { ok: false, error: "У клуба нет активного ИП." };
-  // Documents are OPTIONAL here (передача от регионала может быть без чека).
-  const docs = await collectDocuments(formData, 0);
-  if (!docs.ok) return { ok: false, error: docs.error };
-
-  const created = await prisma.$transaction(async (tx) => {
-    const o = await tx.cashOtherIncome.create({
-      data: { companyId: g.companyId, clubId, legalEntityId: ip.id, amountKopeks, operationDate, source, comment: comment.slice(0, 500), status: "pending_review", createdByUserId: g.userId },
-    });
-    if (docs.docs.length) await tx.cashOperationDocument.createMany({ data: docs.docs.map((d) => ({ otherIncomeId: o.id, companyId: g.companyId, clubId, storageKey: d.storageKey, originalFilename: d.originalFilename, safeFilename: d.safeFilename, mimeType: d.mimeType, sizeBytes: d.sizeBytes, sha256: d.sha256, uploadedByUserId: g.userId })) });
-    return o;
+  // Приход «Иное» НЕ принимает подтверждающие документы: поле убрано из формы и любые
+  // attachments из запроса игнорируются (сервер файла не ожидает). Исторические документы
+  // прошлых операций остаются в БД и доступны read-only — здесь ничего не удаляется.
+  const created = await prisma.cashOtherIncome.create({
+    data: { companyId: g.companyId, clubId, legalEntityId: ip.id, amountKopeks, operationDate, source, comment: comment.slice(0, 500), status: "pending_review", createdByUserId: g.userId },
   });
-  await recordAudit({ action: "cash.other_income_created", entityType: "CashOtherIncome", entityId: created.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { amountKopeks, source, documents: docs.docs.length } });
+  await recordAudit({ action: "cash.other_income_created", entityType: "CashOtherIncome", entityId: created.id, companyId: g.companyId, clubId, userId: g.userId, metadata: { amountKopeks, source, documents: 0 } });
   revalidatePath("/collections");
   revalidatePath("/expenses");
   revalidatePath("/dashboard");

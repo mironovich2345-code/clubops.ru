@@ -2,10 +2,12 @@
 
 // The Content-Security-Policy is now set PER REQUEST with a nonce in
 // src/middleware.ts (so 'unsafe-inline' is dropped from script-src) — it must NOT
-// also be set here or the two would conflict. These are the static headers that
-// don't need a nonce; Permissions-Policy is added by the middleware, HSTS by Caddy.
+// also be set here or the two would conflict. Clickjacking protection (X-Frame-Options
+// + CSP frame-ancestors) is ALSO set per-request in the middleware, because the
+// document-serving API routes must allow SAME-ORIGIN framing (the in-app viewer embeds
+// a PDF in an <iframe>) while every page stays DENY. A blanket DENY here would win over
+// any per-route override and break the viewer, so it is intentionally NOT set here.
 const securityHeaders = [
-  { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
 ];

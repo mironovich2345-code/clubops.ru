@@ -106,6 +106,8 @@
     "pilot:final-iphone-13-residuals": "node scripts/pilot-final-iphone-13-residuals.mjs",
     "pilot:final-iphone-deferred-residuals": "node scripts/pilot-final-iphone-deferred-residuals.mjs",
     "pilot:owner-cabinet-acceptance": "node scripts/pilot-owner-cabinet-acceptance.mjs",
+    "pilot:expense-document-total-consistency": "node scripts/pilot-expense-document-total-consistency.mjs",
+    "audit:expense-summary-consistency": "node scripts/audit-expense-summary-consistency.mjs",
     "test:visual": "playwright test --config playwright.config.ts",
     "test:visual:contact": "node tests/visual/contact-sheet.mjs"
   },

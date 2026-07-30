@@ -9,12 +9,22 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const isProd = process.env.NODE_ENV === "production";
 
-function buildCsp(nonce: string): string {
+// Document-serving API routes are meant to be embedded in the in-app viewer's
+// same-origin <iframe> (PDF preview). They must allow SAME-ORIGIN framing; every other
+// route stays un-framable. Matches /api/<entity>/<id>/file and
+// /api/<entity>/<id>/documents/<docId>.
+const DOC_EMBED_ROUTE = /^\/api\/[^/]+\/[^/]+\/(file|documents)(\/|$)/;
+function isDocEmbedPath(pathname: string): boolean {
+  return DOC_EMBED_ROUTE.test(pathname);
+}
+
+function buildCsp(nonce: string, frameable: boolean): string {
   return [
     "default-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    // Who may frame THIS response: pages/none; document responses allow our own origin.
+    frameable ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
     "frame-src 'self'",
     "object-src 'none'",
     "img-src 'self' data: blob:",
@@ -41,7 +51,10 @@ export function middleware(request: NextRequest): NextResponse {
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
   const nonce = btoa(binary);
-  const csp = buildCsp(nonce);
+  // Same-origin document embeds (viewer <iframe>) may be framed by our own origin;
+  // everything else is DENY / frame-ancestors 'none' (clickjacking protection).
+  const frameable = isDocEmbedPath(request.nextUrl.pathname);
+  const csp = buildCsp(nonce, frameable);
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
@@ -51,6 +64,7 @@ export function middleware(request: NextRequest): NextResponse {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("content-security-policy", csp);
   response.headers.set("permissions-policy", PERMISSIONS_POLICY);
+  response.headers.set("x-frame-options", frameable ? "SAMEORIGIN" : "DENY");
   return response;
 }
 

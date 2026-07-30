@@ -164,10 +164,7 @@ export function OtherIncomeForm({ clubs, today }: { clubs: ClubOpt[]; today: str
         </select>
       </label>
       <label className="block md:col-span-2"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий (обязательно)</span><input name="comment" required className="input" /></label>
-      <label className="block md:col-span-2">
-        <span className="mb-1 block text-sm font-medium text-slate-700">Документы (необязательно, до 3: JPG, PNG, WEBP, PDF)</span>
-        <MobileFileField name="documents" maxFiles={3} />
-      </label>
+      {/* Приход «Иное» не требует подтверждающих документов — поле загрузки убрано намеренно. */}
       <div className="md:col-span-2 flex items-center justify-between gap-3">
         <Msg s={state} />
         <Submit idle="Добавить приход «Иное»" busy="Отправка..." />

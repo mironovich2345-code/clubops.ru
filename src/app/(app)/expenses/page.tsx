@@ -23,6 +23,7 @@ import {
 } from "@/lib/expenses";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { V2_STATUS_LABELS } from "@/lib/expense-simplified";
+import { isExpenseOnReview, isExpenseNeedsCorrection, isExpenseVerified, isExpenseCancelled } from "@/lib/expense-status";
 import { loadClubCashBalances } from "@/lib/cash-collections";
 import { IpCashSyncButton, OpeningBalanceForm } from "../collections/_components/CollectionForms";
 import { UnsentDrafts } from "./_components/UnsentDrafts";
@@ -42,19 +43,16 @@ const monthFormatter = new Intl.DateTimeFormat("ru-RU", {
   year: "numeric",
 });
 
-// Four review-stage filters. Drafts are intentionally EXCLUDED from every filter
-// (they live only in the author's "Не отправленные черновики" block). Legacy
-// statuses stay visible in their bucket and are never rewritten in the DB:
-// waiting_budget_approval → На проверке; confirmed → Проверенные;
-// canceled/import_reverted → Отменённые.
-const ON_REVIEW = ["pending_regional_budget_approval", "pending_owner_budget_approval", "pending_accountant_verification", "waiting_budget_approval"];
-const VERIFIED = ["verified", "confirmed"];
-const CANCELLED = ["cancelled", "canceled", "import_reverted"];
+// Four review-stage filters, driven by the SHARED status buckets (src/lib/expense-status.ts)
+// — the exact same definitions the ИП cash card uses, so the two can't drift. Drafts are
+// intentionally EXCLUDED from every filter (author's "Не отправленные черновики" block).
+// `submitted` now lives in «На проверке» (previously it was in NO filter yet counted by
+// the card — the invisible-expense reconciliation gap).
 const STATUS_FILTERS: { key: string; label: string; match: (s: string) => boolean }[] = [
-  { key: "needs_correction", label: "Требуют исправления", match: (s) => s === "needs_correction" },
-  { key: "review", label: "На проверке", match: (s) => ON_REVIEW.includes(s) },
-  { key: "verified", label: "Проверенные", match: (s) => VERIFIED.includes(s) },
-  { key: "cancelled", label: "Отменённые", match: (s) => CANCELLED.includes(s) },
+  { key: "needs_correction", label: "Требуют исправления", match: isExpenseNeedsCorrection },
+  { key: "review", label: "На проверке", match: isExpenseOnReview },
+  { key: "verified", label: "Проверенные", match: isExpenseVerified },
+  { key: "cancelled", label: "Отменённые", match: isExpenseCancelled },
 ];
 // Default view when no ?status= is provided.
 const DEFAULT_FILTER_KEY = "review";
@@ -476,6 +474,13 @@ async function IpCashFactBlock({ companyId, club, today }: { companyId: string; 
         <FactRow label="Расходы ИП на проверке" value={formatKopeks(b.cashIpPendingExpenses)} />
         <FactRow label="Подтверждённые расходы ИП" value={formatKopeks(b.cashIpApprovedExpenses)} />
       </div>
+      {/* The card is deliberately a NARROWER set than the list below: only THIS club's
+          наличные-ИП расходы (paymentMethod=cash, ИП, v2). «На проверке» здесь = статусы
+          «На проверке» + «Требуют исправления» из общего списка. Поэтому суммы карточки и
+          общего списка расходов совпадать не обязаны (общий список шире по клубам/юрлицам). */}
+      <p className="mt-2 text-xs text-slate-400">
+        Только наличные расходы ИП этого клуба (на проверке = ожидают проверки и на исправлении). Общий список расходов ниже шире — по всем клубам и юрлицам в выборке.
+      </p>
       <details className="mt-3">
         <summary className="cursor-pointer text-xs font-medium text-brand-700">Задать контрольный остаток ИП</summary>
         <div className="mt-3 border-t border-brand-100 pt-3">

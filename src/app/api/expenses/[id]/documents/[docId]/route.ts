@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { getExpenseForContext } from "@/lib/expenses";
 import { readExpenseDocument, canPreviewInline } from "@/lib/expense-document-storage";
-import { wantsAttachment, dispositionHeader, isInitialDocumentRequest } from "@/lib/document-access";
+import { wantsAttachment, dispositionHeader, documentResponse, isInitialDocumentRequest } from "@/lib/document-access";
 
 export const dynamic = "force-dynamic";
 
@@ -40,12 +40,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
   }
 
-  return new NextResponse(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": doc.mimeType,
-      "Content-Disposition": dispositionHeader(attachment, doc.safeFilename || "document"),
-      "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "private, no-store",
-    },
+  return documentResponse(req, buffer, {
+    contentType: doc.mimeType,
+    disposition: dispositionHeader(attachment, doc.originalFilename || doc.safeFilename || "document"),
   });
 }

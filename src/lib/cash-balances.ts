@@ -51,15 +51,12 @@ export const OTHER_INCOME_FACT_STATUSES: readonly string[] = [OTHER_INCOME_STATU
 // is submitted for review, so every non-draft/non-terminal status reduces the fact
 // balance. Profit/budget analytics keep their own stricter "realized" set (verified/
 // confirmed) — we do NOT change that; the two views are intentionally separate.
-export const IP_EXPENSE_PENDING_STATUSES: readonly string[] = [
-  "submitted",
-  "pending_regional_budget_approval",
-  "pending_owner_budget_approval",
-  "pending_accountant_verification",
-  "needs_correction",
-  "waiting_budget_approval", // legacy v1 pending
-];
-export const IP_EXPENSE_APPROVED_STATUSES: readonly string[] = ["verified", "confirmed"];
+// Sourced from the shared status buckets (src/lib/expense-status.ts) so the ИП cash
+// «на проверке»/«подтверждённые» figures use the EXACT same status definitions as the
+// expenses list. Do not re-list statuses here.
+import { EXPENSE_CASH_PENDING_STATUSES, EXPENSE_VERIFIED_STATUSES } from "@/lib/expense-status";
+export const IP_EXPENSE_PENDING_STATUSES: readonly string[] = EXPENSE_CASH_PENDING_STATUSES;
+export const IP_EXPENSE_APPROVED_STATUSES: readonly string[] = EXPENSE_VERIFIED_STATUSES;
 
 // --- Inputs / outputs ------------------------------------------------------
 export type EntityType = "ooo" | "ip";

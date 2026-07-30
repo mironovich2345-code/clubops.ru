@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
 import { getExpenseForContext } from "@/lib/expenses";
 import { readExpenseFile } from "@/lib/expense-storage";
-import { wantsAttachment, safeDownloadHeaders, isInitialDocumentRequest } from "@/lib/document-access";
+import { wantsAttachment, keyContentType, isInlineSafeKey, dispositionHeader, documentResponse, isInitialDocumentRequest } from "@/lib/document-access";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,10 @@ export async function GET(
   const buffer = await readExpenseFile(expense.originalFileStorageKey);
   if (!buffer) return new NextResponse("Not found", { status: 404 });
 
-  const attachment = wantsAttachment(req, ctx.effectiveRoles);
+  // Content type from the SERVER-set storage-key extension (never the client MIME);
+  // anything outside the inline allowlist — or an explicit download — is an attachment.
+  const key = expense.originalFileStorageKey;
+  const attachment = wantsAttachment(req, ctx.effectiveRoles) || !isInlineSafeKey(key);
 
   if (isInitialDocumentRequest(req)) {
     await recordAudit({
@@ -41,8 +44,8 @@ export async function GET(
     });
   }
 
-  return new NextResponse(new Uint8Array(buffer), {
-    // Safe content type from the storage-key extension + nosniff (stored-XSS hardening).
-    headers: safeDownloadHeaders(expense.originalFileStorageKey, expense.originalFileName ?? "expense", attachment),
+  return documentResponse(req, buffer, {
+    contentType: keyContentType(key),
+    disposition: dispositionHeader(attachment, expense.originalFileName ?? "expense"),
   });
 }
