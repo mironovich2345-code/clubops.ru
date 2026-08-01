@@ -9,6 +9,7 @@ import {
   confirmRegionalTransfer,
   cancelRegionalTransfer,
   correctBalanceSnapshot,
+  cancelBalanceSnapshot,
   type CashState,
 } from "../actions";
 
@@ -112,6 +113,27 @@ export function SnapshotCorrectionButton({ snapshotId }: { snapshotId: string })
         <input name="amount" inputMode="decimal" required placeholder="Новая сумма, ₽" className="input text-xs" />
         <input name="reason" required placeholder="Причина корректировки (обязательно)" className="input text-xs" />
         <button type="submit" className={`${buttonClass({ variant: "primary", size: "sm" })}`}>Сохранить новую версию</button>
+        <Msg s={state} />
+      </form>
+    </details>
+  );
+}
+
+/**
+ * «Отменить контрольную точку» — makes the point non-applicable without deleting it
+ * (append-only). Requires a reason and an explicit confirm; the resolver then uses the
+ * previous applicable point. No hard delete exists.
+ */
+export function SnapshotCancelButton({ snapshotId }: { snapshotId: string }) {
+  const [state, action] = useFormState(cancelBalanceSnapshot, initial);
+  return (
+    <details className="inline-block">
+      <summary className="cursor-pointer text-xs font-medium text-rose-600 dark:text-rose-400">Отменить</summary>
+      <form action={action} className="mt-2 flex flex-col gap-1.5 rounded-md border border-rose-200 bg-white p-2 shadow-sm dark:border-rose-800 dark:bg-slate-900">
+        <input type="hidden" name="snapshotId" value={snapshotId} />
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">После отмены расчёт будет выполнен от предыдущей действующей контрольной точки. Запись останется в истории.</p>
+        <input name="reason" required placeholder="Причина отмены (обязательно)" className="input text-xs" />
+        <button type="submit" className="rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-500/10 dark:text-rose-300">Подтвердить отмену</button>
         <Msg s={state} />
       </form>
     </details>
