@@ -114,6 +114,7 @@ const pilots = [
   ["Expense document + total consistency", "pilot-expense-document-total-consistency.mjs"],
   ["Cash transfer + backdated snapshot", "pilot-cash-transfer-backdated-snapshot.mjs"],
   ["Collections operations polish", "pilot-collections-operations-polish.mjs"],
+  ["Invoice partial payment + post-factum", "pilot-invoice-partial-payment-postfactum.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
