@@ -39,6 +39,22 @@ chain; there are never two parallel active versions. The old versions stay in hi
 balance always uses the latest active version for a date. Rows are never deleted; nothing is
 edited destructively.
 
+## Cancellation (append-only, no hard delete)
+«Отменить контрольную точку» makes a point **non-applicable** without deleting it. It flips
+`status active→cancelled` and records `cancelledById` / `cancelledAt` / `cancellationReason`; the
+**amount and date are never edited** and the row stays in the timeline. There is deliberately **no
+hard-delete** action — a financial fact is never physically removed.
+
+- **Resolver after cancellation:** the balance resolver only ever considers `status = "active"`
+  points, so a cancelled point is skipped automatically and the **previous applicable active point**
+  (latest active with `snapshotDate ≤ now`) becomes the basis. **Later active points are unchanged.**
+- **Who may cancel:** the same roles that may manage a control point — `canManageControlSnapshot`
+  (manager of the club / regional with club access / accountant with company access; owner/GD/chief
+  inherit) — scope enforced by `ctxForWrite`. A reason is **required**; the confirm text reads
+  «После отмены расчёт будет выполнен от предыдущей действующей контрольной точки».
+- **Version chains** (all preserved): active → corrected → superseded; active → cancelled; a
+  corrected active version → cancelled; a backdated point → cancelled; a later point stays a fact.
+
 ## Backdated form + timeline (§13/§14)
 - The control-balance form allows an **earlier** date (not limited to the latest point) and blocks a
   **future** date. When a later point exists, the UI warns that a new earlier record changes only

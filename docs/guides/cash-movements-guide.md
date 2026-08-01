@@ -42,6 +42,27 @@ Use the existing **«Пополнить ИП — приход "Иное"»** wit
 increases the ИП fact balance (pending|approved), is not a sale and not profit revenue, and keeps
 its source + comment. **No separate reverse operation** exists — the model already covers it.
 
+## Collections page structure (daily working order)
+1. Header + **MonthNav** (history month).
+2. **«Фактические деньги» — сверка наличных** (first working block). This is the **daily count** of
+   real cash in the till (A) — it is **NOT** a control point (B). A daily reconciliation never
+   automatically becomes a control point.
+3. **Current ООО / ИП balance cards** («Фактический остаток сейчас»).
+4. **Контрольный остаток** (control point B: a new calculation base) + version timeline.
+5. **Операции с наличными** split into two columns — **ООО** (Инкассировать ООО, Изъять ООО→ИП) and
+   **ИП** (Приход «Иное», Передать регионалу). Mobile stacks ООО then ИП.
+6. **Единая история операций** for the selected month, with compact filters (type / entity /
+   status / author) and monthly totals.
+
+**A daily reconciliation (fact count) and a control point are different operations** and are never
+conflated. **The current balance does not depend on the selected history month** — the cards are
+always «Сейчас»; the MonthNav + filters change only the history rows and the monthly totals.
+
+The regional transfer has **no separate history block** — every transfer (pending / confirmed /
+cancelled) appears in the **common history** (sign «−» only for confirmed; recipient, author, and
+the confirming manager shown). The `CashRegionalTransfer` model, RBAC, confirmation, recipient
+snapshot, audit, and balance effect are unchanged.
+
 ## Roles (unchanged RBAC)
 - Create cash operations (collection/withdrawal/other-income/transfer): club manager or regional
   director with club access.
