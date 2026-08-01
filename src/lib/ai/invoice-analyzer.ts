@@ -9,6 +9,17 @@ import {
   selectedAiProvider, bufferToDataUrl, callOpenAIVision, callOpenAIText, invoiceAiModels, aiTimeoutMs, type VisionCall,
 } from "@/lib/ai/openai-client";
 import { resolveCounterparty } from "@/lib/ai/invoice-party";
+import { normalizeSupplierName, supplierNameWarnings, type SupplierWarning } from "@/lib/ai/invoice-quality";
+
+const SUPPLIER_WARN_TEXT: Record<SupplierWarning, string> = {
+  empty: "Не распознан поставщик — заполните вручную",
+  looks_like_address: "В названии поставщика похоже на адрес — проверьте",
+  looks_like_bank: "В названии поставщика похоже на банковские реквизиты — проверьте",
+  looks_like_fio: "Название поставщика похоже на ФИО — проверьте",
+  conflicts_payer_name: "Поставщик совпал с плательщиком — проверьте",
+  matches_payer_different_inn: "Поставщик совпал с плательщиком, но ИНН разные — проверьте",
+  low_confidence: "Низкая уверенность распознавания — проверьте поставщика",
+};
 import { prepareDocumentInput, detectMime, extractPdfText, hasSufficientInvoiceText, type DocDiagnostics, type DocErrorCode } from "@/lib/ai/document-input";
 import { yandexConfigured, yandexAiTimeoutMs, toYandexOcrMime } from "@/lib/ai/yandex-config";
 import { recognizeText } from "@/lib/ai/yandex-ocr-client";
@@ -95,9 +106,15 @@ export function mapInvoiceJson(json: Record<string, unknown>, raw: string): Invo
   const party = resolveCounterparty({ counterpartyName: vStr(json.counterpartyName), supplierName: vStr(json.supplierName), payerName: vStr(json.payerName) });
   let confidence = vConfidence(json.confidence);
   if (party.payerConflict) { warnings.push("Возможно, ИИ выбрал плательщика вместо поставщика"); confidence = "low"; }
+  // Normalize the supplier name without losing meaning (trim/collapse/quotes; no translate).
+  const supplierClean = normalizeSupplierName(party.counterpartyName);
+  for (const w of supplierNameWarnings({ supplierName: supplierClean, payerName: vStr(json.payerName), supplierInn: vStr(json.counterpartyInn), payerInn: vStr(json.payerInn), confidence })) {
+    const msg = SUPPLIER_WARN_TEXT[w];
+    if (msg && !warnings.includes(msg)) warnings.push(msg);
+  }
 
   return {
-    counterpartyName: party.counterpartyName,
+    counterpartyName: supplierClean,
     counterpartyInn: vStr(json.counterpartyInn),
     counterpartyKpp: vStr(json.counterpartyKpp),
     counterpartyBankName: vStr(json.counterpartyBankName),

@@ -5,7 +5,8 @@
 import { prisma } from "@/lib/prisma";
 
 // Invoices that are still an obligation to pay (not paid / rejected / canceled).
-export const OBLIGATION_STATUSES = ["draft", "needs_review", "approved_by_regional", "approved_by_owner"];
+// A partially_paid invoice is still an obligation — for its REMAINING amount only (below).
+export const OBLIGATION_STATUSES = ["draft", "needs_review", "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner", "partially_paid"];
 
 export function dayStart(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -111,7 +112,19 @@ export async function loadPaymentInvoices(
         })
       : Promise.resolve([]),
   ]);
-  return { obligations: obligations.map(toPayment), paid: paid.map(toPayment) };
+  // The obligation amount is the REMAINING (invoiceTotal − confirmed payments), so a
+  // partially_paid invoice shows only the unpaid part as due and the paid part is never
+  // double-counted. Fully-approved-unpaid invoices have no payments → full amount.
+  const obIds = obligations.map((o) => o.id);
+  const paidByInvoice = new Map<string, number>();
+  if (obIds.length) {
+    const sums = await prisma.invoicePayment.groupBy({ by: ["invoiceId"], where: { invoiceId: { in: obIds }, status: "confirmed" }, _sum: { amountKopeks: true } });
+    for (const s of sums) paidByInvoice.set(s.invoiceId, s._sum.amountKopeks ?? 0);
+  }
+  const obligationsRemaining = obligations
+    .map((o) => ({ ...o, amountKopeks: o.amountKopeks - (paidByInvoice.get(o.id) ?? 0) }))
+    .filter((o) => o.amountKopeks > 0); // fully covered → not an outstanding obligation
+  return { obligations: obligationsRemaining.map(toPayment), paid: paid.map(toPayment) };
 }
 
 /** End of the current Monday-first week (Sunday), at day-start. */
