@@ -555,9 +555,16 @@ export function isInvoiceOverdue(inv: { status: string; dueDate: Date | null }, 
   return inv.dueDate.getTime() < now.getTime();
 }
 
-/** «Добавить оплаченный счёт» — accountant / chief accountant only. */
+/** «Добавить оплаченный счёт» + отметить оплату (full/partial) — accountant / chief only. */
 export function canAddPaidInvoice(roles: readonly Role[]): boolean {
   return roles.includes("accountant") || roles.includes("chief_accountant");
+}
+export const canRecordInvoicePayment = canAddPaidInvoice;
+
+/** «Сторнировать платёж» — ТОЛЬКО главный бухгалтер. Owner/GD/accountant НЕ получают это
+ *  право автоматически (§7/§18). Reversal is append-only (flips a payment to `reversed`). */
+export function canReverseInvoicePayment(roles: readonly Role[]): boolean {
+  return roles.includes("chief_accountant");
 }
 
 export type StatusSummary = {

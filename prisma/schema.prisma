@@ -755,8 +755,11 @@ model Invoice {
   dueDate         DateTime?
   paidAt          DateTime?
 
-  // draft | needs_review | needs_correction | approved_* | paid | rejected | canceled
+  // draft | needs_review | needs_correction | approved_* | partially_paid | paid | rejected | canceled
   status String @default("draft")
+  // The approved status the invoice held just BEFORE its first payment — restored
+  // verbatim if all payments are reversed (so approval transitions are never guessed).
+  prePaymentStatus String?
   // low | medium | high (document recognition confidence)
   confidence String @default("low")
 
@@ -803,6 +806,7 @@ model Invoice {
   club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
   legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   createdBy   User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  payments    InvoicePayment[]
 
   @@index([companyId])
   @@index([clubId])
@@ -810,6 +814,42 @@ model Invoice {
   @@index([status])
   @@index([dueDate])
   @@index([importBatchId])
+}
+
+// Append-only payment ledger for an invoice — supports partial + multiple payments and
+// post-factum entry. A payment is NEVER physically deleted; a chief accountant may
+// reverse one (status confirmed→reversed). paidTotal = Σ confirmed − Σ reversed; the
+// invoice status (approved/partially_paid/paid) is derived from it. Integer kopeks only.
+// This is a CASH-payment ledger — analytics/budgets keep reflecting the invoice by its
+// expensePeriod (accrual) and do NOT read this table, so the amount never double-counts.
+model InvoicePayment {
+  id                 String    @id @default(cuid())
+  companyId          String
+  invoiceId          String
+  amountKopeks       Int
+  paymentDate        DateTime  // the financial-fact date of THIS payment
+  source             String    // bank | edo | cash | other | legacy_backfill
+  method             String?
+  comment            String?
+  proofDocumentId    String?
+  createdById        String
+  createdAt          DateTime  @default(now())
+  // confirmed | reversed
+  status             String    @default("confirmed")
+  reversedById       String?
+  reversedAt         DateTime?
+  reversalReason     String?
+  reversesPaymentId  String?
+  idempotencyKey     String?   @unique
+  enteredAfterPayment Boolean  @default(false)
+  legacyBackfill     Boolean   @default(false)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([invoiceId, status])
+  @@index([paymentDate])
+  @@index([status])
 }
 
 // Server-side proof that an uploaded invoice document belongs to the uploader and
