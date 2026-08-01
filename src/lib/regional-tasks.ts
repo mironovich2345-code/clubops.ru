@@ -53,6 +53,48 @@ function buildCard(rows: Row[], clubName: Map<string, string>, base: "invoices" 
   };
 }
 
+// ---- Filtered list for the list pages (?task=regional_review) ----
+export type RegionalTaskListRow = { id: string; clubId: string; clubName: string; title: string; amountKopeks: number; dueIso: string | null; overdue: boolean };
+
+/**
+ * The regional's task rows for ONE type, scoped + optionally narrowed to a single accessible
+ * club, sorted by nearest due first (rows without a due date last). `clubIds` MUST already be
+ * the regional's ACTIVE accessible clubs — a foreign clubId can never widen scope.
+ */
+export async function loadRegionalTaskList(type: "invoices" | "expenses" | "refunds", companyId: string, clubIds: string[], clubName: Map<string, string>, onlyClubId: string | null, now: Date = new Date()): Promise<RegionalTaskListRow[]> {
+  const scope = onlyClubId && clubIds.includes(onlyClubId) ? [onlyClubId] : clubIds; // URL clubId cannot widen
+  if (scope.length === 0) return [];
+  const today = dayStart(now).getTime();
+  const mk = (id: string, clubId: string, title: string, amountKopeks: number, due: Date | null): RegionalTaskListRow => ({
+    id, clubId, clubName: clubName.get(clubId) ?? clubId, title, amountKopeks,
+    dueIso: due ? iso(due) : null, overdue: due !== null && dayStart(due).getTime() < today,
+  });
+  let rows: RegionalTaskListRow[] = [];
+  if (type === "invoices") {
+    const r = await prisma.invoice.findMany({ where: { companyId, clubId: { in: scope }, status: { in: [...INVOICE_REGIONAL_TASK_STATUSES] } }, select: { id: true, clubId: true, counterpartyName: true, amountKopeks: true, dueDate: true } });
+    rows = r.map((x) => mk(x.id, x.clubId, x.counterpartyName ?? "Счёт", x.amountKopeks, x.dueDate));
+  } else if (type === "expenses") {
+    const r = await prisma.expense.findMany({ where: { companyId, clubId: { in: scope }, entryVersion: 2, status: { in: [...EXPENSE_REGIONAL_TASK_STATUSES] } }, select: { id: true, clubId: true, generatedTitle: true, category: true, amountKopeks: true } });
+    rows = r.map((x) => mk(x.id, x.clubId, x.generatedTitle || x.category || "Расход", x.amountKopeks, null));
+  } else {
+    const r = await prisma.refund.findMany({ where: { companyId, clubId: { in: scope }, entryVersion: 2, status: { in: [...REFUND_REGIONAL_TASK_STATUSES] } }, select: { id: true, clubId: true, clientName: true, amountKopeks: true, refundResultAmountKopeks: true, plannedRefundDate: true } });
+    rows = r.map((x) => mk(x.id, x.clubId, x.clientName ?? "Возврат", x.refundResultAmountKopeks ?? x.amountKopeks, x.plannedRefundDate));
+  }
+  return rows.sort((a, b) => {
+    if (a.dueIso && b.dueIso) return a.dueIso < b.dueIso ? -1 : a.dueIso > b.dueIso ? 1 : 0;
+    if (a.dueIso) return -1; if (b.dueIso) return 1; return 0;
+  });
+}
+
+/** Resolve the regional task panel for a list page: active accessible clubs + scoped rows +
+ *  the club chip. Scope (companyId + active allowed clubs) is enforced here, before any rows. */
+export async function loadRegionalTaskPanel(type: "invoices" | "expenses" | "refunds", companyId: string, allowedClubIds: string[], onlyClubId: string | null, now: Date = new Date()): Promise<{ rows: RegionalTaskListRow[]; clubChip: string | null }> {
+  const activeClubs = allowedClubIds.length ? await prisma.club.findMany({ where: { id: { in: allowedClubIds }, companyId, isActive: true }, select: { id: true, name: true } }) : [];
+  const clubName = new Map(activeClubs.map((c) => [c.id, c.name]));
+  const rows = await loadRegionalTaskList(type, companyId, activeClubs.map((c) => c.id), clubName, onlyClubId, now);
+  return { rows, clubChip: onlyClubId && clubName.has(onlyClubId) ? clubName.get(onlyClubId)! : null };
+}
+
 function mergeCard(parts: RegionalTaskCard[], base: "invoices" | "expenses" | "refunds"): RegionalTaskCard {
   const clubs = parts.flatMap((p) => p.clubs).sort((a, b) => b.overdue - a.overdue || b.count - a.count);
   const nearest = parts.map((p) => p.nearestDueIso).filter((x): x is string => Boolean(x)).sort()[0] ?? null;

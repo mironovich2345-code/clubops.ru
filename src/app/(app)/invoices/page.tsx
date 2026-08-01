@@ -8,6 +8,8 @@ import { getInvoicesView, type InvoicesView } from "@/lib/invoice-view";
 import { INVOICE_STATUS_LABELS, formatExpensePeriod } from "@/lib/invoices";
 import { EXPENSE_CATEGORY_OPTIONS, expenseCategoryLabel } from "@/lib/expenses";
 import { getClubLegalEntities, normalizeEntityType } from "@/lib/legal-entities";
+import { REGIONAL_TASK_FILTER, loadRegionalTaskPanel } from "@/lib/regional-tasks";
+import { RegionalTaskPanel } from "@/components/RegionalTaskPanel";
 import { InvoiceUpload } from "./_components/InvoiceUpload";
 import { HistoricalInvoiceForm } from "./_components/HistoricalInvoiceForm";
 import { InvoiceFilters } from "./_components/InvoiceFilters";
@@ -31,7 +33,7 @@ function invoiceTone(status: string, overdue?: boolean): StatusTone {
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ year?: string; month?: string; city?: string; clubId?: string }>;
+  searchParams?: Promise<{ year?: string; month?: string; city?: string; clubId?: string; task?: string }>;
 }) {
   await requirePageAccess("invoices");
   const ctx = await getCurrentAccessContext();
@@ -40,6 +42,9 @@ export default async function InvoicesPage({
   }
 
   const sp = searchParams ? await searchParams : {};
+  // Regional review-task filter (from the dashboard card). Additive top panel; scoped to the
+  // regional's active clubs — a URL clubId can't widen it. Reset clears back to the list.
+  const regionalTask = sp.task === REGIONAL_TASK_FILTER ? await loadRegionalTaskPanel("invoices", ctx.selectedCompanyId, ctx.allowedClubIds, sp.clubId ?? null) : null;
   // The ONE data source for this page — cards, list, debts, categories, filters
   // and permissions all come from here. No second full invoice query.
   const view = await getInvoicesView(ctx, sp);
@@ -73,6 +78,7 @@ export default async function InvoicesPage({
     <div>
       {/* 1–2. Title + subtitle */}
       <PageHeader title="Счета" description="Загрузка, распознавание и учёт счетов" />
+      {regionalTask ? <RegionalTaskPanel base="invoices" rows={regionalTask.rows} hasDue resetHref="/invoices" clubChip={regionalTask.clubChip} /> : null}
 
       {/* 3. Regular invoice upload — TOP for a MANAGER (creating is their main job).
           A regional director mainly APPROVES, so their upload block is moved BELOW

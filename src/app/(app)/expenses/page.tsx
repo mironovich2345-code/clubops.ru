@@ -24,6 +24,8 @@ import {
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { V2_STATUS_LABELS } from "@/lib/expense-simplified";
 import { isExpenseOnReview, isExpenseNeedsCorrection, isExpenseVerified, isExpenseCancelled } from "@/lib/expense-status";
+import { REGIONAL_TASK_FILTER, loadRegionalTaskPanel } from "@/lib/regional-tasks";
+import { RegionalTaskPanel } from "@/components/RegionalTaskPanel";
 import { loadClubCashBalances } from "@/lib/cash-collections";
 import { IpCashSyncButton, OpeningBalanceForm } from "../collections/_components/CollectionForms";
 import { UnsentDrafts } from "./_components/UnsentDrafts";
@@ -62,7 +64,7 @@ type ExpenseRow = Awaited<ReturnType<typeof getExpensesForScope>>[number] & { co
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; scopeMode?: string; companyId?: string; city?: string; clubId?: string }>;
+  searchParams: Promise<{ status?: string; scopeMode?: string; companyId?: string; city?: string; clubId?: string; task?: string }>;
 }) {
   const user = await requirePageAccess("expenses");
 
@@ -77,6 +79,8 @@ export default async function ExpensesPage({
   // Non-strategic roles keep the single-Company experience.
   const strategic = ctx ? isStrategicRole(ctx.effectiveRoles) : false;
   const groups = strategic && ctx ? await resolveStrategicGroups(ctx, sp) : null;
+  // Regional review-task filter (dashboard card). Scoped to active clubs; URL can't widen.
+  const regionalTask = sp.task === REGIONAL_TASK_FILTER && ctx ? await loadRegionalTaskPanel("expenses", ctx.selectedCompanyId!, ctx.allowedClubIds, sp.clubId ?? null) : null;
   // A plain manager sees only their OWN expenses everywhere on this page (list,
   // drafts, category summary). Elevated roles see all records of their clubs.
   const ownCreatorId = ctx ? managerOwnFilter(ctx).createdByUserId : undefined;
@@ -165,6 +169,8 @@ export default async function ExpensesPage({
           </div>
         ) : null}
       </div>
+
+      {regionalTask ? <div className="mt-4"><RegionalTaskPanel base="expenses" rows={regionalTask.rows} hasDue={false} resetHref="/expenses" clubChip={regionalTask.clubChip} /></div> : null}
 
       {groups && groups.scope.accessibleClubs.length > 0 ? (
         <div className="mt-3">

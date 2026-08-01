@@ -8,6 +8,8 @@ import { APPROVAL_STATUS_LABELS } from "@/lib/approval";
 import { REFUND_V2_STATUS_LABELS } from "@/lib/refund-workflow";
 import { MobileListCard } from "@/components/mobile/MobileListCard";
 import { StatusBadge, type StatusTone } from "@/components/mobile/StatusBadge";
+import { REGIONAL_TASK_FILTER, loadRegionalTaskPanel } from "@/lib/regional-tasks";
+import { RegionalTaskPanel } from "@/components/RegionalTaskPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +26,11 @@ function refundTone(status: string): StatusTone {
   return "neutral";
 }
 
-export default async function RefundsPage() {
+export default async function RefundsPage({ searchParams }: { searchParams?: Promise<{ task?: string; clubId?: string }> }) {
   const user = await requirePageAccess("refunds");
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) return <NoCompanyState title="Возвраты" description="Загрузка и согласование возвратов" />;
+  const sp = searchParams ? await searchParams : {};
 
   // Manager-only actors get an own-only query (no all-club refunds ever fetched);
   // elevated viewers get the whole scope. The in-memory `mine`/`visible` split
@@ -50,6 +53,9 @@ export default async function RefundsPage() {
   const accountingQueue = isAccounting ? refunds.filter((r) => r.entryVersion === 2 && r.status === "accounting_in_progress") : [];
   const managerCorrections = isManager ? mine.filter((r) => r.entryVersion === 2 && r.status === "needs_correction") : [];
 
+  // Regional review-task filter (dashboard card). Scoped to active clubs; URL can't widen.
+  const regionalTask = sp.task === REGIONAL_TASK_FILTER && ctx?.selectedCompanyId ? await loadRegionalTaskPanel("refunds", ctx.selectedCompanyId, ctx.allowedClubIds, sp.clubId ?? null) : null;
+
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -60,6 +66,8 @@ export default async function RefundsPage() {
           </Link>
         ) : null}
       </div>
+
+      {regionalTask ? <RegionalTaskPanel base="refunds" rows={regionalTask.rows} hasDue resetHref="/refunds" clubChip={regionalTask.clubChip} /> : null}
 
       {managerCorrections.length > 0 ? <Queue title="Требуют исправления" rows={managerCorrections} tone="amber" /> : null}
       {regionalQueue.length > 0 ? <Queue title="Ожидают моей проверки" rows={regionalQueue} tone="sky" /> : null}
