@@ -23,11 +23,15 @@ import { prisma } from "@/lib/prisma";
 import { resolveInvoiceFileStatus } from "@/lib/invoice-storage";
 import { EXPENSE_CATEGORY_OPTIONS } from "@/lib/expenses";
 import { safeBackLink } from "@/lib/strategic-return";
+import { canRecordInvoicePayment, canReverseInvoicePayment } from "@/lib/invoices";
+import { paidTotalKopeks } from "@/lib/invoice-payments";
 import { InvoiceEditForm } from "./_components/InvoiceEditForm";
 import { InvoiceDataReview, type InvoiceReviewView } from "./_components/InvoiceDataReview";
 import { CancelInvoiceForm } from "./_components/CancelInvoiceForm";
+import { InvoicePaymentPanel } from "./_components/InvoicePaymentPanel";
 
-const INVOICE_CANCELABLE = ["draft", "needs_review", "approved_by_regional", "approved_by_owner", "paid"];
+// §8: paid / partially_paid are NOT cancelable here — only a payment reversal (chief) adjusts them.
+const INVOICE_CANCELABLE = ["draft", "needs_review", "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
 const CANCEL_ROLES = ["manager", "regional_director", "general_director", "owner", "accountant"];
 
 export const dynamic = "force-dynamic";
@@ -66,12 +70,24 @@ export default async function InvoiceDetailPage({
   // never-attached file must NEVER 404 the card; it only changes the file block.
   const fileStatus = await resolveInvoiceFileStatus(invoice.originalFileStorageKey);
 
-  const isManagerOnly = ctx.effectiveRoles.includes("manager") && !ctx.effectiveRoles.some((r) => ["regional_director", "general_director", "owner", "accountant"].includes(r));
   const canCancel =
     canMutateOperationalRecords(ctx.effectiveRoles) &&
     ctx.effectiveRoles.some((r) => CANCEL_ROLES.includes(r)) &&
-    INVOICE_CANCELABLE.includes(invoice.status) &&
-    !(isManagerOnly && invoice.status === "paid");
+    INVOICE_CANCELABLE.includes(invoice.status);
+
+  // Payment ledger (append-only) → paid / remaining + history for the payment panel.
+  const payments = await prisma.invoicePayment.findMany({ where: { invoiceId: invoice.id }, orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }], select: { id: true, amountKopeks: true, paymentDate: true, source: true, method: true, comment: true, status: true, createdById: true, reversedById: true, reversalReason: true, enteredAfterPayment: true, legacyBackfill: true } });
+  const paidTotal = paidTotalKopeks(payments);
+  const remainingTotal = invoice.amountKopeks - paidTotal;
+  const payAuthorIds = [...new Set(payments.flatMap((p) => [p.createdById, p.reversedById].filter((x): x is string => Boolean(x))))];
+  const payAuthors = payAuthorIds.length ? await prisma.user.findMany({ where: { id: { in: payAuthorIds } }, select: { id: true, name: true } }) : [];
+  const payAuthorName = new Map(payAuthors.map((a) => [a.id, a.name]));
+  const canRecordPayment = canRecordInvoicePayment(ctx.effectiveRoles) && ["approved_by_regional", "approved_by_chief_accountant", "approved_by_owner", "partially_paid"].includes(invoice.status);
+  const canReversePayment = canReverseInvoicePayment(ctx.effectiveRoles);
+  const paymentView = {
+    invoiceTotalKopeks: invoice.amountKopeks, paidTotalKopeks: paidTotal, remainingTotalKopeks: remainingTotal, status: invoice.status,
+    rows: payments.map((p) => ({ id: p.id, amountKopeks: p.amountKopeks, paymentDate: isoDay(p.paymentDate), source: p.source, method: p.method, comment: p.comment, status: p.status, author: payAuthorName.get(p.createdById) ?? "—", reversedBy: p.reversedById ? payAuthorName.get(p.reversedById) ?? "—" : null, reversalReason: p.reversalReason, enteredAfterPayment: p.enteredAfterPayment, legacyBackfill: p.legacyBackfill })),
+  };
 
   // Approver routing (live): who is expected to approve, and the action context.
   const hasActiveRegional = await hasActiveRegionalApproverForClub(invoice.companyId, invoice.clubId);
@@ -237,6 +253,9 @@ export default async function InvoiceDetailPage({
           canReview={canReviewData}
         />
       </div>
+
+      {/* Payments (append-only): totals + «Отметить оплату» + history + reversal (chief). */}
+      <InvoicePaymentPanel invoiceId={invoice.id} view={paymentView} canRecord={canRecordPayment} canReverse={canReversePayment} today={isoDay(new Date())} />
 
       {canCancel ? (
         <div className="mt-6 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">
