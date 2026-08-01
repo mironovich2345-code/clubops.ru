@@ -23,6 +23,7 @@ export type ClubTaskBreakdown = { clubId: string; clubName: string; count: numbe
 export type RegionalTaskCard = {
   count: number; sumKopeks: number; overdue: number; noDue: number;
   nearestDueIso: string | null; clubCount: number; clubs: ClubTaskBreakdown[]; href: string;
+  error?: boolean; // this category failed to load — shown locally, does not break the others
 };
 export type RegionalReviewTasks = { invoices: RegionalTaskCard; expenses: RegionalTaskCard; refunds: RegionalTaskCard };
 
@@ -52,6 +53,25 @@ function buildCard(rows: Row[], clubName: Map<string, string>, base: "invoices" 
   };
 }
 
+function mergeCard(parts: RegionalTaskCard[], base: "invoices" | "expenses" | "refunds"): RegionalTaskCard {
+  const clubs = parts.flatMap((p) => p.clubs).sort((a, b) => b.overdue - a.overdue || b.count - a.count);
+  const nearest = parts.map((p) => p.nearestDueIso).filter((x): x is string => Boolean(x)).sort()[0] ?? null;
+  return {
+    count: parts.reduce((a, p) => a + p.count, 0), sumKopeks: parts.reduce((a, p) => a + p.sumKopeks, 0),
+    overdue: parts.reduce((a, p) => a + p.overdue, 0), noDue: parts.reduce((a, p) => a + p.noDue, 0),
+    nearestDueIso: nearest, clubCount: clubs.length, clubs, href: taskListHref(base), error: parts.some((p) => p.error),
+  };
+}
+/** Merge per-company task summaries into one (a regional is normally single-company). */
+export function mergeRegionalTasks(parts: RegionalReviewTasks[]): RegionalReviewTasks {
+  if (parts.length === 1) return parts[0];
+  return {
+    invoices: mergeCard(parts.map((p) => p.invoices), "invoices"),
+    expenses: mergeCard(parts.map((p) => p.expenses), "expenses"),
+    refunds: mergeCard(parts.map((p) => p.refunds), "refunds"),
+  };
+}
+
 /**
  * Load the regional review-task summary for a scope. `clubIds` MUST already be the regional's
  * ACTIVE accessible clubs (archived/foreign clubs excluded upstream). Each type loads only its
@@ -59,18 +79,18 @@ function buildCard(rows: Row[], clubName: Map<string, string>, base: "invoices" 
  * over-fetch. Empty scope → all-zero cards.
  */
 export async function loadRegionalReviewTasks(companyId: string, clubIds: string[], clubName: Map<string, string>, now: Date = new Date()): Promise<RegionalReviewTasks> {
-  const zero = (base: "invoices" | "expenses" | "refunds"): RegionalTaskCard => ({ count: 0, sumKopeks: 0, overdue: 0, noDue: 0, nearestDueIso: null, clubCount: 0, clubs: [], href: taskListHref(base) });
+  const zero = (base: "invoices" | "expenses" | "refunds", error = false): RegionalTaskCard => ({ count: 0, sumKopeks: 0, overdue: 0, noDue: 0, nearestDueIso: null, clubCount: 0, clubs: [], href: taskListHref(base), error });
   if (clubIds.length === 0) return { invoices: zero("invoices"), expenses: zero("expenses"), refunds: zero("refunds") };
 
-  const [inv, exp, ref] = await Promise.all([
-    prisma.invoice.findMany({ where: { companyId, clubId: { in: clubIds }, status: { in: [...INVOICE_REGIONAL_TASK_STATUSES] } }, select: { clubId: true, amountKopeks: true, dueDate: true } }),
-    prisma.expense.findMany({ where: { companyId, clubId: { in: clubIds }, entryVersion: 2, status: { in: [...EXPENSE_REGIONAL_TASK_STATUSES] } }, select: { clubId: true, amountKopeks: true } }),
-    prisma.refund.findMany({ where: { companyId, clubId: { in: clubIds }, entryVersion: 2, status: { in: [...REFUND_REGIONAL_TASK_STATUSES] } }, select: { clubId: true, amountKopeks: true, refundResultAmountKopeks: true, plannedRefundDate: true } }),
-  ]);
-
-  return {
-    invoices: buildCard(inv.map((r) => ({ clubId: r.clubId, amountKopeks: r.amountKopeks, due: r.dueDate })), clubName, "invoices", now),
-    expenses: buildCard(exp.map((r) => ({ clubId: r.clubId, amountKopeks: r.amountKopeks, due: null })), clubName, "expenses", now), // no review deadline
-    refunds: buildCard(ref.map((r) => ({ clubId: r.clubId, amountKopeks: r.refundResultAmountKopeks ?? r.amountKopeks, due: r.plannedRefundDate })), clubName, "refunds", now),
+  // Each category is loaded + built independently — one failure yields a LOCAL error card,
+  // never a broken dashboard (§11).
+  const safe = async (base: "invoices" | "expenses" | "refunds", fn: () => Promise<RegionalTaskCard>): Promise<RegionalTaskCard> => {
+    try { return await fn(); } catch (e) { console.error(`regional-tasks:${base} failed`, e); return zero(base, true); }
   };
+  const [invoices, expenses, refunds] = await Promise.all([
+    safe("invoices", async () => buildCard((await prisma.invoice.findMany({ where: { companyId, clubId: { in: clubIds }, status: { in: [...INVOICE_REGIONAL_TASK_STATUSES] } }, select: { clubId: true, amountKopeks: true, dueDate: true } })).map((r) => ({ clubId: r.clubId, amountKopeks: r.amountKopeks, due: r.dueDate })), clubName, "invoices", now)),
+    safe("expenses", async () => buildCard((await prisma.expense.findMany({ where: { companyId, clubId: { in: clubIds }, entryVersion: 2, status: { in: [...EXPENSE_REGIONAL_TASK_STATUSES] } }, select: { clubId: true, amountKopeks: true } })).map((r) => ({ clubId: r.clubId, amountKopeks: r.amountKopeks, due: null })), clubName, "expenses", now)),
+    safe("refunds", async () => buildCard((await prisma.refund.findMany({ where: { companyId, clubId: { in: clubIds }, entryVersion: 2, status: { in: [...REFUND_REGIONAL_TASK_STATUSES] } }, select: { clubId: true, amountKopeks: true, refundResultAmountKopeks: true, plannedRefundDate: true } })).map((r) => ({ clubId: r.clubId, amountKopeks: r.refundResultAmountKopeks ?? r.amountKopeks, due: r.plannedRefundDate })), clubName, "refunds", now)),
+  ]);
+  return { invoices, expenses, refunds };
 }

@@ -28,6 +28,9 @@ import { SalesPlanImport } from "./_components/SalesPlanImport";
 import { PlanImportPanel } from "./_components/PlanImportPanel";
 import { OwnerReopenApprovals, type ReopenRow } from "./_components/OwnerReopenApprovals";
 import { DashboardMonthSelector } from "./_components/DashboardMonthSelector";
+import { RegionalReviewCards } from "./_components/RegionalReviewCards";
+import { loadRegionalReviewTasks, mergeRegionalTasks, type RegionalReviewTasks } from "@/lib/regional-tasks";
+import { prisma } from "@/lib/prisma";
 import { MonthField } from "@/components/mobile/DateField";
 import { buttonClass } from "@/components/mobile/buttons";
 
@@ -151,6 +154,23 @@ export default async function DashboardPage({
       ? companyNameById.get(strategic.selectedCompanyId) ?? "Сеть"
       : "Все доступные сети";
 
+    // Regional director «Требуют внимания»: review tasks in the regional's ACTIVE accessible
+    // clubs (within the filtered scope). Scoped/loaded server-side — counts are computed AFTER
+    // the authorization filter, so a foreign clubId can never widen it. Owner/GD don't see it.
+    let regionalTasks: RegionalReviewTasks | null = null;
+    if (roles.includes("regional_director")) {
+      const scopedClubIds = strategic.filteredClubs.map((c) => c.id);
+      const activeClubs = scopedClubIds.length
+        ? await prisma.club.findMany({ where: { id: { in: scopedClubIds }, isActive: true }, select: { id: true, name: true, companyId: true } })
+        : [];
+      const clubNameById = new Map(activeClubs.map((c) => [c.id, c.name]));
+      // One loader per company (a regional is normally a single company; merge is safe otherwise).
+      const byCo = new Map<string, string[]>();
+      for (const c of activeClubs) byCo.set(c.companyId, [...(byCo.get(c.companyId) ?? []), c.id]);
+      const parts = await Promise.all([...byCo.entries()].map(([cid, ids]) => loadRegionalReviewTasks(cid, ids, clubNameById, now)));
+      regionalTasks = mergeRegionalTasks(parts);
+    }
+
     return (
       <div className="mx-auto max-w-[1440px]">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -165,6 +185,9 @@ export default async function DashboardPage({
             <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
           </div>
         </div>
+
+        {/* Regional director: review tasks — the top working block, before secondary analytics. */}
+        {regionalTasks ? <RegionalReviewCards tasks={regionalTasks} /> : null}
 
         {strategic.accessibleClubs.length > 0 ? (
           <StrategicScopeFilter
