@@ -1,10 +1,13 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage, canCreateOperational, canMutateOperationalRecords, STRATEGIC_READONLY_ERROR } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
+import { canRecordInvoicePayment, canReverseInvoicePayment } from "@/lib/invoices";
+import { paidTotalKopeks, remainingKopeks, derivedInvoiceStatus, validatePaymentAmount, INVOICE_PAYMENT_SOURCES } from "@/lib/invoice-payments";
 import {
   getCurrentAccessContext,
   canAccessClub,
@@ -532,26 +535,35 @@ export async function saveHistoricalInvoice(
     legalEntityId = attached.some((e) => e.id === requestedEntityId) ? requestedEntityId : null;
   }
 
-  const invoice = await prisma.invoice.create({
-    data: {
-      companyId,
-      clubId,
-      createdByUserId: ctx.user.id,
-      legalEntityId,
-      counterpartyName: str(formData, "counterpartyName"),
-      amountKopeks: rublesToKopeks(amount),
-      currency: "RUB",
-      expenseCategory: str(formData, "expenseCategory"),
-      // Expense belongs to its period; money may leave in a different month.
-      expensePeriod: resolveExpensePeriod(formData, invoiceDate),
-      invoiceNumber: str(formData, "invoiceNumber"),
-      invoiceDate,
-      paidAt,
-      // Historical entry: paid immediately, no approval workflow.
-      status: "paid",
-      confidence: "high",
-      comment: str(formData, "comment"),
-    },
+  const totalKopeks = rublesToKopeks(amount);
+  // Paid amount — defaults to the full total; a smaller value creates a partially_paid entry.
+  const paidRaw = String(formData.get("paidAmount") ?? "").trim().replace(",", ".");
+  const paidAmount = paidRaw === "" ? amount : Number(paidRaw);
+  if (!Number.isFinite(paidAmount) || paidAmount <= 0) return { ok: false, error: "Укажите положительную оплаченную сумму" };
+  const paidKopeks = rublesToKopeks(paidAmount);
+  if (paidKopeks > totalKopeks) return { ok: false, error: "Оплаченная сумма не может превышать сумму счёта" };
+  const histSource = ["edo", "bank", "other"].includes(str(formData, "source") ?? "") ? str(formData, "source")! : "other";
+  const histStatus = paidKopeks >= totalKopeks ? "paid" : "partially_paid";
+
+  const invoice = await prisma.$transaction(async (tx) => {
+    const inv = await tx.invoice.create({
+      data: {
+        companyId, clubId, createdByUserId: ctx.user.id, legalEntityId,
+        counterpartyName: str(formData, "counterpartyName"), counterpartyInn: str(formData, "counterpartyInn"),
+        amountKopeks: totalKopeks, currency: "RUB", expenseCategory: str(formData, "expenseCategory"),
+        // Expense belongs to its period; money may leave in a different month.
+        expensePeriod: resolveExpensePeriod(formData, invoiceDate),
+        invoiceNumber: str(formData, "invoiceNumber"), invoiceDate,
+        paidAt: histStatus === "paid" ? paidAt : null,
+        // Post-factum entry: no approval workflow; status derived from the paid amount.
+        status: histStatus, confidence: "high", comment: str(formData, "comment"),
+      },
+    });
+    // The cash-payment fact — entered after the money left the account.
+    await tx.invoicePayment.create({
+      data: { companyId, invoiceId: inv.id, amountKopeks: paidKopeks, paymentDate: paidAt, source: histSource, comment: str(formData, "comment"), createdById: ctx.user.id, status: "confirmed", enteredAfterPayment: true, idempotencyKey: str(formData, "idempotencyKey") || randomUUID() },
+    });
+    return inv;
   });
 
   await recordAudit({
@@ -581,6 +593,114 @@ export async function saveHistoricalInvoice(
   revalidatePath("/budgets");
   revalidatePath("/analytics");
   return { ok: true, invoiceId: invoice.id };
+}
+
+// ===================== Payments: full / partial / multiple (§3–§5) =====================
+type PaymentState = { ok: boolean; error?: string };
+
+/** Sum the confirmed/reversed payments of an invoice → paidTotal + remaining. */
+async function loadPaymentAggregate(invoiceId: string): Promise<{ payments: { id: string; status: string; amountKopeks: number }[]; paid: number }> {
+  const payments = await prisma.invoicePayment.findMany({ where: { invoiceId }, select: { id: true, status: true, amountKopeks: true } });
+  return { payments, paid: paidTotalKopeks(payments) };
+}
+
+/**
+ * «Отметить оплату» — record a full or partial payment (accountant / chief). Creates an
+ * append-only InvoicePayment (confirmed), recomputes paidTotal and derives the invoice
+ * status (approved → partially_paid → paid). Never lets the actor pick the final status.
+ * idempotencyKey blocks a double submit. Payable only from an approved / partially_paid state.
+ */
+export async function recordInvoicePayment(_prev: PaymentState | undefined, formData: FormData): Promise<PaymentState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) return { ok: false, error: "Нет доступа" };
+  if (!canRecordInvoicePayment(ctx.effectiveRoles)) return { ok: false, error: "Отметить оплату может только бухгалтер или главный бухгалтер." };
+
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  const invoice = await getInvoiceForContext(ctx, invoiceId);
+  if (!invoice) return { ok: false, error: "Счёт не найден или нет доступа" };
+  const PAYABLE = ["approved_by_regional", "approved_by_chief_accountant", "approved_by_owner", "partially_paid"];
+  if (!PAYABLE.includes(invoice.status)) return { ok: false, error: "Оплату можно отметить только по согласованному или частично оплаченному счёту." };
+
+  const paymentDate = parseDate(str(formData, "paymentDate"));
+  if (!paymentDate) return { ok: false, error: "Укажите дату платежа." };
+  const closed = await monthClosedError(invoice.companyId, invoice.clubId, paymentDate);
+  if (closed) return { ok: false, error: closed };
+  const source = INVOICE_PAYMENT_SOURCES.includes(str(formData, "source") as never) ? str(formData, "source")! : "bank";
+  const mode = str(formData, "mode") === "partial" ? "partial" : "full";
+  const idempotencyKey = str(formData, "idempotencyKey") || randomUUID();
+
+  const { paid } = await loadPaymentAggregate(invoice.id);
+  const remaining = invoice.amountKopeks - paid;
+  // Full payment → amount = remaining; partial → amount from the form.
+  let amountKopeks = remaining;
+  if (mode === "partial") {
+    const raw = String(formData.get("amount") ?? "").trim().replace(",", ".");
+    const n = raw === "" ? NaN : Number(raw);
+    if (!Number.isFinite(n)) return { ok: false, error: "Укажите сумму платежа." };
+    amountKopeks = rublesToKopeks(n);
+  }
+  const invalid = validatePaymentAmount(amountKopeks, remaining, mode);
+  if (invalid === "no_remaining") return { ok: false, error: "Счёт уже полностью оплачен." };
+  if (invalid === "not_positive") return { ok: false, error: "Сумма платежа должна быть больше нуля." };
+  if (invalid === "over_remaining") return { ok: false, error: `Сумма платежа не может превышать остаток ${(remaining / 100).toFixed(2)} ₽.` };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Capture the pre-payment approved state once (for exact restore on full reversal).
+      if (!invoice.prePaymentStatus && INVOICE_APPROVED_UNPAID_STATUSES.includes(invoice.status as never)) {
+        await tx.invoice.update({ where: { id: invoice.id }, data: { prePaymentStatus: invoice.status } });
+      }
+      await tx.invoicePayment.create({
+        data: { companyId: invoice.companyId, invoiceId: invoice.id, amountKopeks, paymentDate, source, method: str(formData, "method"), comment: str(formData, "comment"), createdById: ctx.user.id, status: "confirmed", idempotencyKey },
+      });
+      const fresh = await tx.invoicePayment.findMany({ where: { invoiceId: invoice.id }, select: { status: true, amountKopeks: true } });
+      const newPaid = paidTotalKopeks(fresh);
+      const pre = invoice.prePaymentStatus ?? (INVOICE_APPROVED_UNPAID_STATUSES.includes(invoice.status as never) ? invoice.status : null);
+      const nextStatus = derivedInvoiceStatus(newPaid, invoice.amountKopeks, pre, invoice.status);
+      await tx.invoice.update({ where: { id: invoice.id }, data: { status: nextStatus, paidAt: newPaid >= invoice.amountKopeks ? paymentDate : null } });
+    });
+  } catch (e) {
+    if (e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "P2002") return { ok: true }; // duplicate submit
+    throw e;
+  }
+
+  await recordAudit({ action: "invoice.payment_recorded", entityType: "Invoice", entityId: invoice.id, companyId: invoice.companyId, clubId: invoice.clubId, userId: ctx.user.id, metadata: { amountKopeks, mode, source, paymentDate: paymentDate.toISOString().slice(0, 10) } });
+  revalidateInvoiceFinancial();
+  return { ok: true };
+}
+
+/**
+ * «Сторнировать платёж» — chief accountant ONLY (§7). Flips a specific confirmed payment to
+ * `reversed` (append-only — never deleted), records who/when/why, recomputes paidTotal and the
+ * derived invoice status. A reason is required.
+ */
+export async function reverseInvoicePayment(_prev: PaymentState | undefined, formData: FormData): Promise<PaymentState> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !canAnyRoleAccessPage(ctx.effectiveRoles, "invoices")) return { ok: false, error: "Нет доступа" };
+  if (!canReverseInvoicePayment(ctx.effectiveRoles)) return { ok: false, error: "Сторнировать платёж может только главный бухгалтер." };
+  const paymentId = String(formData.get("paymentId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!reason) return { ok: false, error: "Укажите причину сторно." };
+
+  const payment = await prisma.invoicePayment.findUnique({ where: { id: paymentId }, select: { id: true, invoiceId: true, companyId: true, status: true } });
+  if (!payment) return { ok: false, error: "Платёж не найден." };
+  const invoice = await getInvoiceForContext(ctx, payment.invoiceId); // tenant + scope check
+  if (!invoice) return { ok: false, error: "Счёт не найден или нет доступа" };
+  const closed = await monthClosedError(invoice.companyId, invoice.clubId, invoice.invoiceDate ?? invoice.createdAt);
+  if (closed) return { ok: false, error: closed };
+
+  await prisma.$transaction(async (tx) => {
+    const n = await tx.invoicePayment.updateMany({ where: { id: payment.id, status: "confirmed" }, data: { status: "reversed", reversedById: ctx.user.id, reversedAt: new Date(), reversalReason: reason.slice(0, 500) } });
+    if (n.count !== 1) throw new Error("already");
+    const fresh = await tx.invoicePayment.findMany({ where: { invoiceId: invoice.id }, select: { status: true, amountKopeks: true } });
+    const newPaid = paidTotalKopeks(fresh);
+    const nextStatus = derivedInvoiceStatus(newPaid, invoice.amountKopeks, invoice.prePaymentStatus, invoice.status);
+    await tx.invoice.update({ where: { id: invoice.id }, data: { status: nextStatus, paidAt: newPaid >= invoice.amountKopeks && invoice.amountKopeks > 0 ? invoice.paidAt : null } });
+  }).catch(() => null);
+
+  await recordAudit({ action: "invoice.payment_reversed", entityType: "Invoice", entityId: invoice.id, companyId: invoice.companyId, clubId: invoice.clubId, userId: ctx.user.id, metadata: { paymentId: payment.id, reason: reason.slice(0, 200) } });
+  revalidateInvoiceFinancial();
+  return { ok: true };
 }
 
 export async function updateInvoice(
@@ -970,7 +1090,10 @@ function isManagerOnly(roles: readonly Role[]): boolean {
   return roles.includes("manager") && !roles.some((r) => r === "regional_director" || r === "general_director" || r === "owner" || r === "accountant");
 }
 
-const INVOICE_CANCELABLE = ["draft", "needs_review", "approved_by_regional", "approved_by_owner", "paid"];
+// §8: a paid / partially_paid invoice can NO LONGER be cancelled via the legacy path — the
+// only adjustment is reversing a specific payment (chief accountant). No status here that has
+// a confirmed payment. Invoices are never hard-deleted; payment history is preserved.
+const INVOICE_CANCELABLE = ["draft", "needs_review", "approved_by_regional", "approved_by_chief_accountant", "approved_by_owner"];
 
 type CancelState = { ok: boolean; error?: string };
 
@@ -996,11 +1119,11 @@ export async function cancelInvoice(
   const existing = await getInvoiceForContext(ctx, invoiceId);
   if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
 
+  if (existing.status === "paid" || existing.status === "partially_paid") {
+    return { ok: false, error: "Оплаченный (или частично оплаченный) счёт нельзя отменить — сторнируйте конкретный платёж (главный бухгалтер)." };
+  }
   if (!INVOICE_CANCELABLE.includes(existing.status)) {
     return { ok: false, error: "Этот счёт нельзя отменить" };
-  }
-  if (isManagerOnly(ctx.effectiveRoles) && existing.status === "paid") {
-    return { ok: false, error: "Управляющий не может отменить оплаченный счёт" };
   }
   const closed = await monthClosedError(existing.companyId, existing.clubId, existing.invoiceDate ?? existing.createdAt);
   if (closed) return { ok: false, error: closed };
