@@ -8,9 +8,11 @@ const ymd = (d) => d.toISOString().slice(0, 10);
 
 async function main() {
   const snaps = await prisma.balanceSnapshot.findMany({
-    select: { id: true, clubId: true, legalEntityId: true, snapshotDate: true, status: true, actualBalanceKopeks: true, version: true },
+    select: { id: true, clubId: true, legalEntityId: true, snapshotDate: true, status: true, actualBalanceKopeks: true, version: true, supersedesSnapshotId: true },
   });
-  console.log(`Всего контрольных точек: ${snaps.length}\n`);
+  const byId = new Map(snaps.map((s) => [s.id, s]));
+  const cancelledCount = snaps.filter((s) => s.status === "cancelled").length;
+  console.log(`Всего контрольных точек: ${snaps.length} (отменённых: ${cancelledCount})\n`);
 
   // 1) Duplicate ACTIVE points on the same (club, legalEntity, date) — must be reconciled.
   const activeKey = new Map();
@@ -45,12 +47,17 @@ async function main() {
   console.log(`[4] Точки на архивных клубах: ${archived.length}`);
   for (const s of archived) console.log(`    ${s.id} · club=${s.clubId}`);
 
-  // 5) Incompatible status / version (base rows should be active/v1 after migration).
-  const bad = snaps.filter((s) => (s.status !== "active" && s.status !== "superseded") || !Number.isInteger(s.version) || s.version < 1);
+  // 5) Incompatible status / version (allowed: active | superseded | cancelled; version ≥ 1).
+  const bad = snaps.filter((s) => !["active", "superseded", "cancelled"].includes(s.status) || !Number.isInteger(s.version) || s.version < 1);
   console.log(`[5] Некорректный status/version: ${bad.length}`);
   for (const s of bad) console.log(`    ${s.id} · status=${s.status} · version=${s.version}`);
 
-  const total = dupes.length + future.length + orphanLE.length + archived.length + bad.length;
+  // 6) Broken version chain (supersedesSnapshotId points to a non-existent row).
+  const brokenChain = snaps.filter((s) => s.supersedesSnapshotId && !byId.has(s.supersedesSnapshotId));
+  console.log(`[6] Битая цепочка версий (supersedes → несуществующая запись): ${brokenChain.length}`);
+  for (const s of brokenChain) console.log(`    ${s.id} · supersedes=${s.supersedesSnapshotId}`);
+
+  const total = dupes.length + future.length + orphanLE.length + archived.length + bad.length + brokenChain.length;
   console.log(`\nИтого записей, требующих внимания: ${total}. Данные НЕ изменялись (read-only).`);
   process.exit(0);
 }

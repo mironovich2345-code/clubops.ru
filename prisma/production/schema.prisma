@@ -634,10 +634,15 @@ model BalanceSnapshot {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   // Versioning (additive; legacy rows default to active/v1 with no supersede pointer).
-  status              String   @default("active") // active | superseded
+  status              String   @default("active") // active | superseded | cancelled
   version             Int      @default(1)
   supersedesSnapshotId String?
   correctionReason    String?
+  // Cancellation (append-only): a cancelled point stays in history but is skipped by the
+  // resolver. amount/date are NEVER edited — only these metadata + status are set.
+  cancelledAt         DateTime?
+  cancelledById       String?
+  cancellationReason  String?
 
   company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)

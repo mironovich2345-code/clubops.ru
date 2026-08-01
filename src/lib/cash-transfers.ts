@@ -76,18 +76,19 @@ export async function getNextActiveSnapshotAfter(clubId: string, legalEntityId: 
 export type SnapshotTimelineRow = {
   id: string; legalEntityId: string; snapshotDate: Date; actualBalanceKopeks: number; comment: string | null;
   status: string; version: number; supersedesSnapshotId: string | null; correctionReason: string | null;
+  cancelledById: string | null; cancellationReason: string | null;
   createdById: string; createdAt: Date;
   effectiveFrom: string; effectiveTo: string | null; // "с 01.07 до 02.07" / "с 02.07 по настоящее время"
 };
 
 /** Timeline of control points for a club's legal entity: every version (active +
- *  superseded), each active point annotated with its coverage interval (until the next
- *  active point, else «по настоящее время»). */
+ *  superseded + cancelled), each active point annotated with its coverage interval (until
+ *  the next active point, else «по настоящее время»). */
 export async function getSnapshotTimeline(clubId: string, legalEntityId: string): Promise<SnapshotTimelineRow[]> {
   const rows = await prisma.balanceSnapshot.findMany({
     where: { clubId, legalEntityId },
     orderBy: [{ snapshotDate: "desc" }, { version: "desc" }, { createdAt: "desc" }],
-    select: { id: true, legalEntityId: true, snapshotDate: true, actualBalanceKopeks: true, comment: true, status: true, version: true, supersedesSnapshotId: true, correctionReason: true, createdById: true, createdAt: true },
+    select: { id: true, legalEntityId: true, snapshotDate: true, actualBalanceKopeks: true, comment: true, status: true, version: true, supersedesSnapshotId: true, correctionReason: true, cancelledById: true, cancellationReason: true, createdById: true, createdAt: true },
   });
   const activeAsc = rows.filter((r) => r.status === "active").sort((a, b) => a.snapshotDate.getTime() - b.snapshotDate.getTime());
   const nextByActiveId = new Map<string, Date | null>();

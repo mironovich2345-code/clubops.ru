@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
-import { canCreateOperational, type Role } from "@/lib/auth";
+import { canCreateOperational, canManageControlSnapshot, type Role } from "@/lib/auth";
 import { rublesToKopeks } from "@/lib/money";
 import { getActiveClubLegalEntities } from "@/lib/legal-entities";
 import { runSyncNowForCompany } from "@/lib/ofd/daily";
@@ -17,11 +17,10 @@ export type CashState = { ok: boolean; error?: string; notice?: string; sync?: {
 function canReviewCollection(roles: readonly Role[]): boolean {
   return roles.some((r) => r === "accountant" || r === "chief_accountant" || r === "owner" || r === "general_director");
 }
-// A control (opening) balance is the physical club cash count — the manager /
-// regional director who run the till may set it, as may owner / GD / accountant.
-function canSetOpeningBalance(roles: readonly Role[]): boolean {
-  return roles.some((r) => r === "manager" || r === "regional_director" || r === "owner" || r === "general_director" || r === "accountant" || r === "chief_accountant");
-}
+// A control (opening) balance is the physical club cash count — managed via the shared
+// canManageControlSnapshot role gate (manager / regional / owner / GD / accountant / chief);
+// club/company scope is enforced separately by ctxForWrite.
+const canSetOpeningBalance = canManageControlSnapshot;
 function canReviewWithdrawal(roles: readonly Role[]): boolean {
   return roles.some((r) => r === "accountant" || r === "chief_accountant" || r === "owner" || r === "general_director" || r === "regional_director");
 }
@@ -138,6 +137,30 @@ export async function correctBalanceSnapshot(_p: CashState | undefined, formData
   revalidatePath("/expenses");
   revalidatePath("/dashboard");
   return { ok: true, notice: `Контрольная точка скорректирована (версия ${created.version}). Прежняя версия сохранена в истории.` };
+}
+
+/** «Отменить контрольную точку» (§10): make an active point non-applicable WITHOUT deleting
+ *  it. Requires a reason; flips status active→cancelled and records who/when/why; amount + date
+ *  are NEVER edited. After cancellation the resolver (status = active only) automatically uses
+ *  the previous applicable point; later active points are untouched. No hard delete exists. */
+export async function cancelBalanceSnapshot(_p: CashState | undefined, formData: FormData): Promise<CashState> {
+  const snapshotId = String(formData.get("snapshotId") ?? "").trim();
+  const g = await ctxForWrite(null);
+  if (!g.ok) return { ok: false, error: g.error };
+  if (!canSetOpeningBalance(g.roles)) return { ok: false, error: "Недостаточно прав для отмены контрольной точки." };
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!reason) return { ok: false, error: "Укажите причину отмены." };
+
+  const old = await prisma.balanceSnapshot.findFirst({ where: { id: snapshotId, clubId: { in: g.clubIds }, status: "active" }, select: { id: true, companyId: true, clubId: true } });
+  if (!old) return { ok: false, error: "Активная контрольная точка не найдена." };
+  // Race-safe: only cancel a still-active row. amount/date untouched — append-only.
+  const n = await prisma.balanceSnapshot.updateMany({ where: { id: old.id, status: "active" }, data: { status: "cancelled", cancelledById: g.userId, cancelledAt: new Date(), cancellationReason: reason.slice(0, 500) } });
+  if (n.count === 0) return { ok: false, error: "Точка только что изменилась. Обновите страницу." };
+  await recordAudit({ action: "cash.opening_balance_cancelled", entityType: "BalanceSnapshot", entityId: old.id, companyId: old.companyId, clubId: old.clubId, userId: g.userId, metadata: { reason: reason.slice(0, 200) } });
+  revalidatePath("/collections");
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: true, notice: "Контрольная точка отменена. Расчёт выполняется от предыдущей действующей точки." };
 }
 
 /** Инкассация ООО — reduces the ООО fact balance immediately (pending). */

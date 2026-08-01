@@ -255,6 +255,17 @@ export function canManageBalances(roles: readonly Role[]): boolean {
 }
 
 /**
+ * Shared authorization for control-balance (BalanceSnapshot) management — creating,
+ * correcting, and cancelling a control point. ROLE gate only; the caller must ALSO
+ * enforce club/company scope (ctxForWrite → allowedClubIds + selectedCompanyId), which
+ * denies a cross-company accountant, a cross-club manager, and a regional without club
+ * access. Used identically by the UI, every server action, and the tests.
+ */
+export function canManageControlSnapshot(roles: readonly Role[]): boolean {
+  return roles.some((r) => r === "manager" || r === "regional_director" || r === "owner" || r === "general_director" || r === "accountant" || r === "chief_accountant");
+}
+
+/**
  * Accounting contour: who may explicitly DOWNLOAD a supporting document
  * (Content-Disposition: attachment) — accountant + chief accountant, via the
  * accounting.documents.download capability. Every other role may still VIEW
