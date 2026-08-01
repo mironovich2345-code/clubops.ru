@@ -66,9 +66,9 @@ check("11 Double confirmation idempotent (conditional pending→confirmed update
 check("12 Cancelled transfer does NOT affect balance",
   factIp({ opening: 100000, transfers: [{ status: "cancelled", amountKopeks: 40000, date: "2026-07-05" }] }) === 100000);
 check("13 Other Income remains the return path from a regional (source=regional увеличивает ИП)",
-  schema.includes("model CashOtherIncome") && actions.includes("createCashOtherIncome") && page.includes("это и есть возврат денег от регионала"));
-check("14 Historical transfer visible (history loader + table with confirmer)",
-  cashTransfers.includes("getRegionalTransfersForClub") && page.includes("Передачи региональному директору") && page.includes("recipientNameSnapshot"));
+  schema.includes("model CashOtherIncome") && actions.includes("createCashOtherIncome") && page.includes("возврат денег от регионала"));
+check("14 Historical transfer visible (в общей истории: read model + confirmer column)",
+  readFileSync(new URL("../src/lib/collections-history.ts", import.meta.url), "utf8").includes("recipientNameSnapshot") && readFileSync(new URL("../src/lib/collections-history.ts", import.meta.url), "utf8").includes('kind: "transfer"') && page.includes("loadCollectionsHistory") && page.includes("Подтвердил"));
 
 // ===================== Snapshot versioning / backdated =====================
 check("15 Existing latest-snapshot behavior unchanged (latest active by date desc still wins)",
