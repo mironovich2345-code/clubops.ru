@@ -110,6 +110,8 @@
     "pilot:cash-transfer-backdated-snapshot": "node scripts/pilot-cash-transfer-backdated-snapshot.mjs",
     "audit:expense-summary-consistency": "node scripts/audit-expense-summary-consistency.mjs",
     "preflight:balance-snapshots": "node scripts/preflight-balance-snapshots.mjs",
+    "diag:regional-transfer": "node scripts/diag-regional-transfer.mjs",
+    "diag:snapshot-chain": "node scripts/diag-snapshot-chain.mjs",
     "test:visual": "playwright test --config playwright.config.ts",
     "test:visual:contact": "node tests/visual/contact-sheet.mjs"
   },
