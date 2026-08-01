@@ -8,6 +8,7 @@ import { canAnyRoleAccessPage, canCreateOperational, canMutateOperationalRecords
 import { rublesToKopeks } from "@/lib/money";
 import { canRecordInvoicePayment, canReverseInvoicePayment } from "@/lib/invoices";
 import { paidTotalKopeks, remainingKopeks, derivedInvoiceStatus, validatePaymentAmount, INVOICE_PAYMENT_SOURCES } from "@/lib/invoice-payments";
+import { findInvoiceDuplicates } from "@/lib/invoice-dedupe";
 import {
   getCurrentAccessContext,
   canAccessClub,
@@ -544,6 +545,24 @@ export async function saveHistoricalInvoice(
   if (paidKopeks > totalKopeks) return { ok: false, error: "Оплаченная сумма не может превышать сумму счёта" };
   const histSource = ["edo", "bank", "other"].includes(str(formData, "source") ?? "") ? str(formData, "source")! : "other";
   const histStatus = paidKopeks >= totalKopeks ? "paid" : "partially_paid";
+
+  // §11 duplicate guard. Exact (file hash / EDO id) always blocks; probable (INN+number+
+  // date+total) requires an explicit confirm. Weak matches pass. Overrides are audited.
+  const confirmDuplicate = str(formData, "confirmDuplicate") === "1";
+  const dupes = await findInvoiceDuplicates(companyId, {
+    counterpartyInn: str(formData, "counterpartyInn"), invoiceNumber: str(formData, "invoiceNumber"),
+    invoiceDateIso: invoiceDate.toISOString().slice(0, 10), amountKopeks: totalKopeks,
+    fileHash: str(formData, "fileHash"), edoDocumentId: str(formData, "edoDocumentId"),
+  });
+  const exact = dupes.find((d) => d.level === "exact");
+  const probable = dupes.find((d) => d.level === "probable");
+  if (exact) return { ok: false, error: "Точный дубль: такой счёт уже есть в системе (совпал файл или ЭДО-ID)." };
+  if (probable && !confirmDuplicate) {
+    return { ok: false, error: `Вероятный дубль: счёт «${probable.number ?? "—"}» с той же суммой уже существует. Подтвердите повторно, чтобы всё равно добавить.` };
+  }
+  if (probable && confirmDuplicate) {
+    await recordAudit({ action: "invoice.duplicate_override", entityType: "Invoice", entityId: probable.invoiceId, companyId, clubId, userId: ctx.user.id, metadata: { level: "probable" } });
+  }
 
   const invoice = await prisma.$transaction(async (tx) => {
     const inv = await tx.invoice.create({
