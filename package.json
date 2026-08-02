@@ -110,6 +110,7 @@
     "pilot:cash-transfer-backdated-snapshot": "node scripts/pilot-cash-transfer-backdated-snapshot.mjs",
     "pilot:collections-operations-polish": "node scripts/pilot-collections-operations-polish.mjs",
     "pilot:invoice-partial-payment-postfactum": "node scripts/pilot-invoice-partial-payment-postfactum.mjs",
+    "pilot:regional-dashboard-review-tasks": "node scripts/pilot-regional-dashboard-review-tasks.mjs",
     "backfill:invoice-payments": "node scripts/backfill-invoice-payments.mjs",
     "audit:expense-summary-consistency": "node scripts/audit-expense-summary-consistency.mjs",
     "preflight:balance-snapshots": "node scripts/preflight-balance-snapshots.mjs",

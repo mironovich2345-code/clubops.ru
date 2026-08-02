@@ -86,6 +86,15 @@ export async function loadRegionalTaskList(type: "invoices" | "expenses" | "refu
   });
 }
 
+/** Dashboard summary for a company: filters the allowed clubs to ACTIVE ones (archived
+ *  excluded) + builds the name map here (keeps raw club queries out of the page), then loads
+ *  the review-task cards. */
+export async function loadRegionalReviewTasksScoped(companyId: string, allowedClubIds: string[], now: Date = new Date()): Promise<RegionalReviewTasks> {
+  const activeClubs = allowedClubIds.length ? await prisma.club.findMany({ where: { id: { in: allowedClubIds }, companyId, isActive: true }, select: { id: true, name: true } }) : [];
+  const clubName = new Map(activeClubs.map((c) => [c.id, c.name]));
+  return loadRegionalReviewTasks(companyId, activeClubs.map((c) => c.id), clubName, now);
+}
+
 /** Resolve the regional task panel for a list page: active accessible clubs + scoped rows +
  *  the club chip. Scope (companyId + active allowed clubs) is enforced here, before any rows. */
 export async function loadRegionalTaskPanel(type: "invoices" | "expenses" | "refunds", companyId: string, allowedClubIds: string[], onlyClubId: string | null, now: Date = new Date()): Promise<{ rows: RegionalTaskListRow[]; clubChip: string | null }> {

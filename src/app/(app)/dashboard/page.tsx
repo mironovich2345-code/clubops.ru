@@ -29,8 +29,7 @@ import { PlanImportPanel } from "./_components/PlanImportPanel";
 import { OwnerReopenApprovals, type ReopenRow } from "./_components/OwnerReopenApprovals";
 import { DashboardMonthSelector } from "./_components/DashboardMonthSelector";
 import { RegionalReviewCards } from "./_components/RegionalReviewCards";
-import { loadRegionalReviewTasks, mergeRegionalTasks, type RegionalReviewTasks } from "@/lib/regional-tasks";
-import { prisma } from "@/lib/prisma";
+import { loadRegionalReviewTasksScoped, mergeRegionalTasks, type RegionalReviewTasks } from "@/lib/regional-tasks";
 import { MonthField } from "@/components/mobile/DateField";
 import { buttonClass } from "@/components/mobile/buttons";
 
@@ -159,15 +158,11 @@ export default async function DashboardPage({
     // the authorization filter, so a foreign clubId can never widen it. Owner/GD don't see it.
     let regionalTasks: RegionalReviewTasks | null = null;
     if (roles.includes("regional_director")) {
-      const scopedClubIds = strategic.filteredClubs.map((c) => c.id);
-      const activeClubs = scopedClubIds.length
-        ? await prisma.club.findMany({ where: { id: { in: scopedClubIds }, isActive: true }, select: { id: true, name: true, companyId: true } })
-        : [];
-      const clubNameById = new Map(activeClubs.map((c) => [c.id, c.name]));
-      // One loader per company (a regional is normally a single company; merge is safe otherwise).
+      // Group the already access-scoped clubs by company; the scoped loader filters each to
+      // ACTIVE clubs + builds names (raw club queries stay in the lib, not the page).
       const byCo = new Map<string, string[]>();
-      for (const c of activeClubs) byCo.set(c.companyId, [...(byCo.get(c.companyId) ?? []), c.id]);
-      const parts = await Promise.all([...byCo.entries()].map(([cid, ids]) => loadRegionalReviewTasks(cid, ids, clubNameById, now)));
+      for (const c of strategic.filteredClubs) byCo.set(c.companyId, [...(byCo.get(c.companyId) ?? []), c.id]);
+      const parts = await Promise.all([...byCo.entries()].map(([cid, ids]) => loadRegionalReviewTasksScoped(cid, ids, now)));
       regionalTasks = mergeRegionalTasks(parts);
     }
 
