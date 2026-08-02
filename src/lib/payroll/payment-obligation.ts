@@ -5,8 +5,15 @@
 // record the obligation but leave dueDate null (never faked) and keep it off the dated calendar.
 
 import { prisma } from "@/lib/prisma";
+import type { Role } from "@/lib/auth";
 import type { PaymentObligation, PaymentObligationStatus } from "@/lib/payment-obligations";
 import { forecastCategoryOfPosition, type ForecastCategory } from "@/lib/payroll/forecast";
+
+/** Reversing/cancelling a payroll obligation is chief-accountant only (spec §18), mirroring
+ * canReverseInvoicePayment. Reason is required; the row is never deleted, only flipped. */
+export function canReversePayrollObligation(roles: readonly Role[]): boolean {
+  return roles.includes("chief_accountant");
+}
 
 // Period is "approved enough" to owe money once it reaches approved (or beyond). Draft /
 // submitted / regional_approved are still in review → no obligation yet.
@@ -146,6 +153,29 @@ export async function generateObligationsForPeriod(periodId: string, now: Date =
     }
   }
   return res;
+}
+
+/**
+ * Cancel an obligation (append-only): status → "cancelled" with a required reason; it is never
+ * deleted and generation will never resurrect it. Use when a period is voided or an obligation
+ * was raised in error. Caller must have passed canReversePayrollObligation.
+ */
+export async function cancelPayrollObligation(args: {
+  companyId: string;
+  obligationId: string;
+  reason: string;
+  now?: Date;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const reason = args.reason.trim();
+  if (!reason) return { ok: false, error: "Укажите причину отмены." };
+  const o = await prisma.payrollPaymentObligation.findUnique({ where: { id: args.obligationId } });
+  if (!o || o.companyId !== args.companyId) return { ok: false, error: "Обязательство не найдено." };
+  if (o.status === "cancelled") return { ok: false, error: "Обязательство уже отменено." };
+  await prisma.payrollPaymentObligation.update({
+    where: { id: o.id },
+    data: { status: "cancelled", cancelledAt: args.now ?? new Date(), cancellationReason: reason },
+  });
+  return { ok: true };
 }
 
 // --- Calendar wire ----------------------------------------------------------
