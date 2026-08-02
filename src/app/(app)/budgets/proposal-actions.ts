@@ -11,6 +11,7 @@ import {
   canApproveBudgetChange,
   createBudgetChangeProposal,
   decideBudgetChangeProposal,
+  isSyncMode,
 } from "@/lib/payroll/budget-linkage";
 
 type State = { ok: boolean; error?: string };
@@ -73,4 +74,37 @@ export async function approveBudgetChangeProposal(formData: FormData): Promise<v
 }
 export async function rejectBudgetChangeProposal(formData: FormData): Promise<void> {
   await decide(formData, "rejected");
+}
+
+/** Salary-planning company settings (owner/GD only): sync mode, taxes-in-budget flag, pay
+ * schedule days + weekend rule. Invalid input is ignored (defaults preserved; never faked). */
+export async function updateSalaryPlanningSettings(formData: FormData): Promise<void> {
+  const ctx = await getCurrentAccessContext();
+  if (!ctx || !ctx.selectedCompanyId || !canApproveBudgetChange(ctx.effectiveRoles)) return; // owner/GD only
+
+  const rawMode = String(formData.get("syncMode") ?? "").trim();
+  const includesTaxes = String(formData.get("includesTaxes") ?? "") === "on";
+  const advanceDay = clampDay(formData.get("advanceDay"));
+  const finalDay = clampDay(formData.get("finalDay"));
+  const rawWeekend = String(formData.get("weekendRule") ?? "").trim();
+  const weekendRule = ["shift_earlier", "shift_later", "none"].includes(rawWeekend) ? rawWeekend : null;
+
+  await prisma.company.update({
+    where: { id: ctx.selectedCompanyId },
+    data: {
+      salaryBudgetSyncMode: isSyncMode(rawMode) ? rawMode : undefined,
+      salaryBudgetIncludesTaxes: includesTaxes,
+      payrollAdvanceDay: advanceDay,
+      payrollFinalDay: finalDay,
+      payrollWeekendRule: weekendRule,
+    },
+  });
+  await recordAudit({ action: "salary_planning_settings_updated", entityType: "Company", companyId: ctx.selectedCompanyId, userId: ctx.user.id, entityId: ctx.selectedCompanyId });
+  revalidatePath("/budgets");
+}
+
+function clampDay(v: FormDataEntryValue | null): number | null {
+  const n = Number(String(v ?? "").trim());
+  if (!Number.isFinite(n) || n < 1 || n > 28) return null; // 1..28 → valid in every month; else unset
+  return Math.trunc(n);
 }

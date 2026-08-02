@@ -398,11 +398,16 @@ export type PayrollObligation = {
  * become PaymentObligation[] consumed by the same calc layer.
  */
 export async function buildPayrollObligations(
-  _companyId: string,
-  _clubIds: string[],
-  _loadEnd: Date,
+  companyId: string,
+  clubIds: string[],
+  loadEnd: Date,
 ): Promise<PaymentObligation[]> {
-  return [];
+  // WAVE 3 — payroll obligations now flow into the same PaymentObligation pipeline. Only
+  // dated, non-cancelled, still-owed rows from APPROVED periods appear (see
+  // loadPayrollCalendarObligations). Lazy import avoids a cycle (payment-obligation.ts imports
+  // forecast.ts, which is unrelated to this module's invoice/mandatory paths).
+  const { loadPayrollCalendarObligations } = await import("@/lib/payroll/payment-obligation");
+  return loadPayrollCalendarObligations(companyId, clubIds, loadEnd);
 }
 
 // ---------------------------------------------------------------------------

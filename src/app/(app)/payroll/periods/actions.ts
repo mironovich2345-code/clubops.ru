@@ -37,6 +37,17 @@ async function accessibleClubIds(userId: string, companyId: string): Promise<str
 }
 const fail = (error: string): PayrollPeriodFormState => ({ ok: false, error });
 
+/** WAVE 3/4 — refresh «Зарплата к выплате» obligations after a payment change so remaining
+ * stays exact (idempotent; a no-op unless the period is approved). Never blocks the caller. */
+async function refreshPeriodObligations(periodId: string): Promise<void> {
+  try {
+    const { generateObligationsForPeriod } = await import("@/lib/payroll/payment-obligation");
+    await generateObligationsForPeriod(periodId);
+  } catch {
+    /* non-blocking */
+  }
+}
+
 const rub = (fd: FormData, name: string): number => {
   const raw = String(fd.get(name) ?? "").trim().replace(/\s/g, "").replace(",", ".");
   const n = raw === "" ? 0 : Number(raw);
@@ -429,6 +440,15 @@ export async function transitionPeriod(
       where: { payrollPeriodId: periodId, status: "calculated" },
       data: { status: "approved", approvedAt: new Date() },
     });
+    // WAVE 3 — an approved period creates «Зарплата к выплате» obligations for the payment
+    // calendar (from the calc's own netPayable, advances folded → no double count). Idempotent.
+    // Best-effort: a scheduling gap warns inside the generator, it never blocks approval.
+    try {
+      const { generateObligationsForPeriod } = await import("@/lib/payroll/payment-obligation");
+      await generateObligationsForPeriod(periodId);
+    } catch {
+      /* obligation generation is non-blocking; the period is still approved */
+    }
   }
   if (decision.to === "closed") {
     // Turn every remainder / overpayment into a SPECIFIC obligation (spec §8): unpaid →
@@ -748,6 +768,7 @@ export async function recordPayment(
   await prisma.payrollPayment.update({ where: { id: payment.id }, data: { expenseId } });
 
   await recomputeCalculationTotals(calc.id);
+  await refreshPeriodObligations(calc.payrollPeriodId);
   try {
     await recordAudit({
       action: "payroll.payment_recorded",
@@ -783,6 +804,7 @@ export async function cancelPayment(formData: FormData): Promise<void> {
   await cancelSalaryExpense(payment.expenseId, scope.ctx.user.id, "Отмена выплаты зарплаты");
   await prisma.payrollPayment.update({ where: { id: payment.id }, data: { status: "canceled" } });
   await recomputeCalculationTotals(calc.id);
+  await refreshPeriodObligations(calc.payrollPeriodId);
   try {
     await recordAudit({
       action: "payroll.payment_canceled",

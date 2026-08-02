@@ -612,6 +612,41 @@ model BudgetChangeProposal {
   @@index([status])
 }
 
+// WAVE 3 — payroll payment obligation: the «Зарплата к выплате» rail on the payment calendar.
+// Generated from an APPROVED PayrollPeriod (never forecast, never draft). Granularity =
+// legalEntity + club + category + payout kind + dueDate. amountKopeks = Σ netPayableKopeks for
+// the slice (advances already folded → no double count). remaining is recomputed from confirmed
+// PayrollPayment minus reversals — there is NO parallel payment ledger. dueDate is nullable: if
+// the company pay schedule is unset we still record the obligation but never fabricate a date
+// (it stays off the dated calendar until a schedule exists). Append-only; cancel flips status.
+model PayrollPaymentObligation {
+  id                  String    @id @default(cuid())
+  companyId           String
+  clubId              String?
+  legalEntityId       String
+  payrollPeriodId     String
+  payrollType         String    // advance | final_salary (payout kind → drives dueDate)
+  payrollCategory     String    // forecast rollup: management|administrative|gym_trainers|group_trainers|other
+  employeeId          String?
+  amountKopeks        Int
+  paidKopeks          Int       @default(0)
+  remainingKopeks     Int
+  dueDate             DateTime? // null when the company pay schedule is unset (never faked)
+  status              String    @default("planned") // planned | due | partially_paid | paid | cancelled
+  sourceCalculationId String?
+  idempotencyKey      String    @unique
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([clubId, dueDate])
+  @@index([payrollPeriodId])
+  @@index([legalEntityId])
+  @@index([status])
+}
+
 // Recurring or one-time mandatory payment (rent, salary, cleaning, security…).
 // Feeds the payment calendar via PaymentObligation (sourceType = mandatory_payment).
 // Allowed values enforced in src/lib/mandatory-payments.ts:

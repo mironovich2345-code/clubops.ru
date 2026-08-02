@@ -12,7 +12,7 @@ import {
   isSyncMode,
   type SalaryBudgetSyncMode,
 } from "@/lib/payroll/budget-linkage";
-import { SalaryProposalActions } from "./SalaryProposalActions";
+import { SalaryProposalActions, PlanningSettingsForm } from "./SalaryProposalActions";
 
 function pctLabel(p: number | null): string {
   if (p == null) return "— (прогноз неполный)";
@@ -42,7 +42,7 @@ export async function SalaryBudgetPanel({
       where: { companyId, clubId: { in: clubIds }, category: "salary", month, status: "pending" },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.company.findUnique({ where: { id: companyId }, select: { salaryBudgetSyncMode: true } }),
+    prisma.company.findUnique({ where: { id: companyId }, select: { salaryBudgetSyncMode: true, salaryBudgetIncludesTaxes: true, payrollAdvanceDay: true, payrollFinalDay: true, payrollWeekendRule: true } }),
   ]);
 
   const canDecide = canApproveBudgetChange(roles);
@@ -115,6 +115,16 @@ export async function SalaryBudgetPanel({
             ))}
           </ul>
         </div>
+      )}
+
+      {canDecide && company && (
+        <PlanningSettingsForm
+          syncMode={syncMode}
+          includesTaxes={company.salaryBudgetIncludesTaxes}
+          advanceDay={company.payrollAdvanceDay}
+          finalDay={company.payrollFinalDay}
+          weekendRule={company.payrollWeekendRule}
+        />
       )}
     </section>
   );
