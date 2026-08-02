@@ -40,6 +40,16 @@ model Company {
   settingsPinFailedAttempts Int       @default(0)
   settingsPinLockedUntil    DateTime?
 
+  // WAVE 2/3 — salary-budget & payroll-payment-planning settings (additive, all defaulted
+  // or nullable → legacy rows unaffected). Sync mode default "suggested": the forecast NEVER
+  // silently overwrites the budget; "auto_sync" applies proposals only when explicitly set.
+  salaryBudgetSyncMode      String    @default("suggested") // manual | suggested | auto_sync
+  salaryBudgetIncludesTaxes Boolean   @default(false)       // budget covers taxes/contributions?
+  payrollAdvanceDay         Int?      // day-of-month for the advance payout (1..28)
+  payrollFinalDay           Int?      // day-of-month for the final payout (1..28)
+  payrollWeekendRule        String?   // shift_earlier | shift_later | none
+  payrollTimezone           String?   // IANA tz for pay-date resolution
+
   clubs         Club[]
   legalEntities LegalEntity[]
   userAccess    CompanyUserAccess[]
@@ -571,6 +581,35 @@ model Budget {
   @@unique([clubId, category, month])
   @@index([companyId])
   @@index([clubId])
+}
+
+// WAVE 2 — append-only proposal to change a salary Budget limit. The forecast NEVER edits a
+// Budget directly; a drift (or a manual/scheme-driven change) raises a proposal that an
+// approver (owner/GD) accepts or rejects. Status flips, rows are never deleted. Scalar FKs
+// only (append-only pattern, mirrors CashRegionalTransfer). Applies only to category="salary".
+model BudgetChangeProposal {
+  id                  String    @id @default(cuid())
+  companyId           String
+  clubId              String
+  category            String    // "salary" for this epic; kept general for future use
+  month               String    // "YYYY-MM" — matches Budget.month
+  currentLimitKopeks  Int       // budget limit at proposal time (0 if no budget yet)
+  proposedLimitKopeks Int
+  forecastKopeks      Int?      // forecast that motivated the proposal (context, nullable)
+  reason              String
+  sourceType          String    // forecast_drift | manual | scheme_change
+  status              String    @default("pending") // pending | approved | rejected | superseded
+  proposedByUserId    String
+  decidedByUserId     String?
+  decidedAt           DateTime?
+  decisionNote        String?
+  appliedBudgetId     String?   // Budget row created/updated on approval (audit link)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([clubId, category, month])
+  @@index([status])
 }
 
 // Recurring or one-time mandatory payment (rent, salary, cleaning, security…).

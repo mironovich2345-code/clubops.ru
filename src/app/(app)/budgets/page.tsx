@@ -30,6 +30,7 @@ import { BudgetFactTable } from "@/components/BudgetFactTable";
 import { BudgetLimitForm } from "./_components/BudgetForms";
 import { BudgetImportPanel } from "./_components/BudgetImportPanel";
 import { RequestActions } from "./_components/RequestActions";
+import { SalaryBudgetPanel } from "./_components/SalaryBudgetPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -171,6 +172,18 @@ export default async function BudgetsPage({
           ))}
         </SegmentedControl>
       </div>
+
+      {view === "budgets" && (
+        <div className="mb-4">
+          <SalaryBudgetPanel
+            companyId={scope.company.id}
+            clubIds={clubs.map((c) => c.id)}
+            clubNames={Object.fromEntries(clubs.map((c) => [c.id, c.name]))}
+            month={month}
+            roles={effectiveRoles}
+          />
+        </div>
+      )}
 
       {view === "plan-fact" ? (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
