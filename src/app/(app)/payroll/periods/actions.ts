@@ -20,6 +20,8 @@ import { ensureClubCashWallet, ensureRegionalCashWallet } from "@/lib/cash-walle
 import { getActiveClubLegalEntities } from "@/lib/legal-entities";
 import { advanceWithinEarned } from "@/lib/payroll/payments";
 import { createSalaryExpense, cancelSalaryExpense } from "@/lib/payroll/salary-expense";
+import { executePayrollPayment, executePayrollReversal } from "@/lib/payroll/payment-service";
+import { randomUUID } from "node:crypto";
 import { recomputeGymTrainerCalculation } from "@/app/(app)/payroll/periods/trainer-actions";
 import { applyPayrollAction, isPayrollPeriodLocked, isPayrollPeriodClosed, PAYROLL_ACTION_AUDIT, type PayrollAction } from "@/lib/payroll/period";
 import {
@@ -732,58 +734,59 @@ export async function recordPayment(
 
   const employeeName = (await prisma.clubEmployee.findUnique({ where: { id: calc.employeeId }, select: { fullName: true } }))?.fullName ?? calc.employeeId;
 
-  const payment = await prisma.payrollPayment.create({
-    data: {
-      companyId: scope.companyId,
-      payrollCalculationId: calc.id,
-      employeeId: calc.employeeId,
-      clubId: calc.clubId,
-      legalEntityId,
-      amountKopeks,
-      paymentDate,
-      paymentMethod: method,
-      sourceType: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : "bank_account",
-      status: "confirmed",
-      documentKey,
-      comment,
-      paidByUserId: scope.ctx.user.id,
-    },
-  });
-
-  // The payout IS the salary expense: ONE Expense (P&L + fact balance) + ONE cash
-  // movement for cash. No separate payroll CashMovement (no double deduction).
-  const { expenseId } = await createSalaryExpense({
+  // REM-01: one atomic + idempotent effect via the shared service. The client sends a stable
+  // idempotencyKey per attempt (double-click/retry safe); if absent we generate one server-side.
+  const idempotencyKey = String(formData.get("idempotencyKey") ?? "").trim() || `srv:${randomUUID()}`;
+  const res = await executePayrollPayment({
     companyId: scope.companyId,
     clubId: calc.clubId,
     legalEntityId,
     method,
-    amountKopeks,
-    paidByUserId: scope.ctx.user.id,
-    cashWalletId: cash?.walletId ?? null,
+    sourceType: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : "bank_account",
+    paymentType: "regular",
+    payrollCalculationId: calc.id,
     employeeId: calc.employeeId,
     employeeName,
     payrollPeriodId: calc.payrollPeriodId,
-    kind: "payment",
+    cashWalletId: cash?.walletId ?? null,
+    amountKopeks,
+    paymentDate,
+    paidByUserId: scope.ctx.user.id,
+    comment,
+    documentKey,
+    idempotencyKey,
+    remaining: { currentRemainingKopeks: calc.remainingKopeks, allowOverpayment: false, useCalcRemaining: true },
+    refreshObligationsForPeriodId: calc.payrollPeriodId,
+    expenseKind: "payment",
   });
-  await prisma.payrollPayment.update({ where: { id: payment.id }, data: { expenseId } });
+  if (!res.ok) return { ok: false, error: payoutErrorMessage(res.code, res.message) };
 
-  await recomputeCalculationTotals(calc.id);
-  await refreshPeriodObligations(calc.payrollPeriodId);
   try {
     await recordAudit({
-      action: "payroll.payment_recorded",
+      action: res.replayed ? "payroll.payment_replayed" : "payroll.payment_recorded",
       entityType: "PayrollCalculation",
       entityId: calc.id,
       companyId: scope.companyId,
       clubId: calc.clubId,
       userId: scope.ctx.user.id,
-      metadata: { paymentId: payment.id, method, amountKopeks },
+      metadata: { paymentId: res.paymentId, method, amountKopeks, replayed: res.replayed },
     });
   } catch {
     /* ignore */
   }
   revalidatePath(`/payroll/periods/${calc.payrollPeriodId}`);
   return { ok: true };
+}
+
+/** Map a service error code to a safe, non-technical user message (spec §17). */
+function payoutErrorMessage(code: string, fallback: string): string {
+  switch (code) {
+    case "INVALID_AMOUNT": return "Сумма должна быть больше нуля.";
+    case "PAYMENT_EXCEEDS_REMAINING": return "Сумма превышает остаток к выплате.";
+    case "IDEMPOTENCY_CONFLICT": return "Эта операция уже выполнена с другими параметрами. Обновите страницу.";
+    case "SERIALIZATION_RETRY_EXHAUSTED": return "Операция временно заблокирована, повторите попытку.";
+    default: return fallback || "Не удалось провести выплату.";
+  }
 }
 
 /** Cancel a payment. A confirmed cash movement is reversed with a compensating inflow
@@ -800,20 +803,20 @@ export async function cancelPayment(formData: FormData): Promise<void> {
   const roles = scope.ctx.effectiveRoles;
   if (payment.paymentMethod === "cash" ? !isOperational(roles) : !isAccounting(roles)) return;
 
-  // Cancel the salary expense (drops from P&L / fact balance) + reverse its cash movement.
-  await cancelSalaryExpense(payment.expenseId, scope.ctx.user.id, "Отмена выплаты зарплаты");
-  await prisma.payrollPayment.update({ where: { id: payment.id }, data: { status: "canceled" } });
-  await recomputeCalculationTotals(calc.id);
-  await refreshPeriodObligations(calc.payrollPeriodId);
+  // REM-01: atomic + idempotent reversal (payment→canceled + salary Expense cancelled + compensating
+  // cash inflow + calc recompute + obligation refresh in ONE transaction). Authorization is unchanged
+  // (the same role that recorded the payment cancels it — RBAC not modified by REM-01).
+  const rev = await executePayrollReversal({ paymentId: payment.id, userId: scope.ctx.user.id, reason: "Отмена выплаты зарплаты", refreshObligationsForPeriodId: calc.payrollPeriodId });
+  if (!rev.ok) return;
   try {
     await recordAudit({
-      action: "payroll.payment_canceled",
+      action: rev.reversed ? "payroll.payment_canceled" : "payroll.payment_cancel_replayed",
       entityType: "PayrollCalculation",
       entityId: calc.id,
       companyId: scope.companyId,
       clubId: calc.clubId,
       userId: scope.ctx.user.id,
-      metadata: { paymentId: payment.id },
+      metadata: { paymentId: payment.id, reversed: rev.reversed },
     });
   } catch {
     /* ignore */
@@ -874,42 +877,47 @@ export async function recordAdvance(
   }
   const employeeName = (await prisma.clubEmployee.findUnique({ where: { id: calc.employeeId }, select: { fullName: true } }))?.fullName ?? calc.employeeId;
 
-  const advance = await prisma.payrollAdvance.create({
-    data: {
+  // REM-01: the in-period advance keeps its own PayrollAdvance record (month-unique guard already
+  // prevents a duplicate), but its money writes are now ATOMIC — advance + salary Expense + cash
+  // movement + calc recompute commit all-or-nothing in ONE transaction (closes the ARCH-004 orphan
+  // risk). No model/formula change.
+  const advance = await prisma.$transaction(async (tx) => {
+    const adv = await tx.payrollAdvance.create({
+      data: {
+        companyId: scope.companyId,
+        employeeId: calc.employeeId,
+        clubId: calc.clubId,
+        periodYear: scope.period.year,
+        periodMonth: scope.period.month,
+        earnedToDateKopeks: earnedToDate,
+        amountKopeks,
+        paymentMethod: method,
+        cashSource: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : null,
+        documentKey,
+        status: "paid",
+        approvedByUserId: scope.ctx.user.id,
+        paidByUserId: scope.ctx.user.id,
+        paidAt: now,
+      },
+    });
+    const { expenseId } = await createSalaryExpense({
       companyId: scope.companyId,
-      employeeId: calc.employeeId,
       clubId: calc.clubId,
-      periodYear: scope.period.year,
-      periodMonth: scope.period.month,
-      earnedToDateKopeks: earnedToDate,
+      legalEntityId,
+      method,
       amountKopeks,
-      paymentMethod: method,
-      cashSource: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : null,
-      documentKey,
-      status: "paid",
-      approvedByUserId: scope.ctx.user.id,
       paidByUserId: scope.ctx.user.id,
-      paidAt: now,
-    },
-  });
+      cashWalletId: cash?.walletId ?? null,
+      employeeId: calc.employeeId,
+      employeeName,
+      payrollPeriodId: calc.payrollPeriodId,
+      kind: "advance",
+    }, tx);
+    await tx.payrollAdvance.update({ where: { id: adv.id }, data: { expenseId } });
+    await recomputeCalculationTotals(calc.id, tx);
+    return adv;
+  }, { timeout: 15_000, maxWait: 10_000 });
 
-  // The advance is part of the actual payout → one salary Expense + one cash movement.
-  const { expenseId } = await createSalaryExpense({
-    companyId: scope.companyId,
-    clubId: calc.clubId,
-    legalEntityId,
-    method,
-    amountKopeks,
-    paidByUserId: scope.ctx.user.id,
-    cashWalletId: cash?.walletId ?? null,
-    employeeId: calc.employeeId,
-    employeeName,
-    payrollPeriodId: calc.payrollPeriodId,
-    kind: "advance",
-  });
-  await prisma.payrollAdvance.update({ where: { id: advance.id }, data: { expenseId } });
-
-  await recomputeCalculationTotals(calc.id);
   try {
     await recordAudit({
       action: "payroll.advance_recorded",
