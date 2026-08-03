@@ -120,6 +120,7 @@ const pilots = [
   ["Full audit 01 — code architecture", "pilot-full-audit-01-code-architecture.mjs"],
   ["Full audit 03 — accounting", "pilot-full-audit-03-accounting.mjs"],
   ["Full audit 04 — deploy/ops", "pilot-full-audit-04-deploy-ops.mjs"],
+  ["REM-01 payroll payment safety", "pilot-rem-01-payroll-payment-safety.mjs"],
   ["Full audit 05 — security", "pilot-full-audit-05-security.mjs"],
   ["Full audit 06 — product/ux", "pilot-full-audit-06-product-ux.mjs"],
   ["Full audit 02 — data model", "pilot-full-audit-02-data-model.mjs"],

@@ -1,0 +1,84 @@
+{
+  "generatedAt": "db-read-only",
+  "checks": 11,
+  "totalOffendingRows": 0,
+  "results": [
+    {
+      "id": "PP-01",
+      "title": "duplicate semantic PayrollPayment (same calc+amount within 1 min)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-02",
+      "title": "confirmed PayrollPayment with null expenseId (phantom payment)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-03",
+      "title": "PayrollPayment.expenseId → missing Expense",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-04",
+      "title": "PayrollPayment amount ≠ linked Expense amount",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-05",
+      "title": "PayrollPayment.companyId ≠ its PayrollCalculation.companyId",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-06",
+      "title": "duplicate (companyId, idempotencyKey) on PayrollPayment/RegionalCityPayment",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-07",
+      "title": "Σ confirmed payments > netPayable for a calc (overpaid)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-08",
+      "title": "PayrollPaymentObligation totals lag the period's calc totals",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-09",
+      "title": "confirmed RegionalCityPayment with null expenseId",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-10",
+      "title": "EmployeeFinancialObligation.employeeId is a RegionalCityPayroll.id (DATA-010)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "PP-11",
+      "title": "legacy PayrollPayment without idempotencyKey (expected; not auto-backfilled)",
+      "severity": "S3",
+      "offendingRows": 0,
+      "sample": []
+    }
+  ]
+}
