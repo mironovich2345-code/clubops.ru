@@ -1,0 +1,686 @@
+{
+  "total": 97,
+  "unsuffixed": 0,
+  "nonInteger": 0,
+  "fields": [
+    {
+      "model": "Refund",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Refund",
+      "field": "contractAmountKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Refund",
+      "field": "refundResultAmountKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Refund",
+      "field": "ptTerminationSessionPriceKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Refund",
+      "field": "ptRawResultKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Budget",
+      "field": "limitAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetChangeProposal",
+      "field": "currentLimitKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetChangeProposal",
+      "field": "proposedLimitKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetChangeProposal",
+      "field": "forecastKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollPaymentObligation",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollPaymentObligation",
+      "field": "paidKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollPaymentObligation",
+      "field": "remainingKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BalanceSnapshot",
+      "field": "actualBalanceKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "field": "requestedAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "field": "currentLimitAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "field": "overByAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "field": "budgetAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "field": "currentSpentKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "field": "projectedSpentKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "field": "overrunKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Invoice",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "InvoicePayment",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Expense",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Expense",
+      "field": "budgetOverrunKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "CashMovement",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "CashNotification",
+      "field": "thresholdKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "CashNotification",
+      "field": "balanceKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "Sale",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollStatement",
+      "field": "totalSignedAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollStatement",
+      "field": "newSignedAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollStatementRow",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "baseSalaryKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "salesBaseKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "revenueBaseKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "profitBaseKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "planKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "actualKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "automaticAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "bonusesKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "deductionsKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "advancesKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "grossAccruedKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "netPayableKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "paidKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "remainingKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "employeeDebtKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "companyDebtKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "manualOverrideKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "automaticSalesKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "manualSalesOverrideKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollCalculation",
+      "field": "effectiveSalesKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollAdjustment",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollAdvance",
+      "field": "earnedToDateKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollAdvance",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollAdvance",
+      "field": "requestedAmountKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollAdvance",
+      "field": "approvedAmountKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollAdvancePayment",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollChangeRequest",
+      "field": "calculatedImpactKopeks",
+      "type": "Int",
+      "nullable": true,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollPayment",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "EmployeeFinancialObligation",
+      "field": "originalAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "EmployeeFinancialObligation",
+      "field": "outstandingAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "SalesPlan",
+      "field": "targetAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "SalesReportLine",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdReceiptImport",
+      "field": "totalKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdReceiptImport",
+      "field": "cashKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdReceiptImport",
+      "field": "electronicKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdCashierIdentity",
+      "field": "salesAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollSalesAttribution",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdDailySalesSummary",
+      "field": "incomeTotalKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdDailySalesSummary",
+      "field": "incomeCashKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdDailySalesSummary",
+      "field": "incomeElectronicKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdDailySalesSummary",
+      "field": "returnTotalKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdDailySalesSummary",
+      "field": "returnCashKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdDailySalesSummary",
+      "field": "returnElectronicKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdDailySalesSummary",
+      "field": "netTotalKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdSyncRun",
+      "field": "totalIncomeKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdSyncRun",
+      "field": "totalReturnKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdReceiptItem",
+      "field": "priceKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdReceiptItem",
+      "field": "totalKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdRevenueCategoryDailySummary",
+      "field": "incomeTotalKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdRevenueCategoryDailySummary",
+      "field": "returnTotalKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "OfdRevenueCategoryDailySummary",
+      "field": "netTotalKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "CashCollection",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "CashWithdrawal",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "CashOtherIncome",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "CashRegionalTransfer",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "DailyCashReconciliation",
+      "field": "ofdCashRevenueKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "DailyCashReconciliation",
+      "field": "expectedCashBalanceKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "DailyCashReconciliation",
+      "field": "actualCashBalanceKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "DailyCashReconciliation",
+      "field": "differenceKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollTrainerPackage",
+      "field": "contractAmountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollTrainerPackage",
+      "field": "sessionPriceKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "PayrollTrainerPackage",
+      "field": "refundKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "RegionalCityPayroll",
+      "field": "baseKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "RegionalCityPayroll",
+      "field": "accruedKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    },
+    {
+      "model": "RegionalCityPayment",
+      "field": "amountKopeks",
+      "type": "Int",
+      "nullable": false,
+      "unit": "kopeks"
+    }
+  ]
+}

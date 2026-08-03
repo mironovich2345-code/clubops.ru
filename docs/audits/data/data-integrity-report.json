@@ -1,0 +1,157 @@
+{
+  "generatedAt": "db-read-only-scan",
+  "checks": 21,
+  "totalOffendingRows": 1,
+  "checksWithErrors": 0,
+  "results": [
+    {
+      "id": "DATA-CHK-01",
+      "title": "company/club mismatch (row.companyId ≠ club.companyId)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-02",
+      "title": "company/legalEntity mismatch (LE belongs to another company)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-03",
+      "title": "club/legalEntity used without a ClubLegalEntity association",
+      "severity": "S2",
+      "offendingRows": 1,
+      "sample": [
+        "expense:cms29wl1d000ctqx6dy7amrwa"
+      ]
+    },
+    {
+      "id": "DATA-CHK-04",
+      "title": "InvoicePayment.companyId ≠ its Invoice.companyId",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-06",
+      "title": "payroll payment/calc employeeId not a ClubEmployee of the same company",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-08",
+      "title": "orphan links (PayrollPayment.expenseId → missing Expense); confirmed payments with null expenseId=0",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-09",
+      "title": "duplicate active BalanceSnapshot per (club, legalEntity, date)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-10",
+      "title": "broken snapshot chain (supersedesSnapshotId → missing snapshot)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-11",
+      "title": "paid/partially_paid invoice with NO confirmed InvoicePayment (ledgerless)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-12",
+      "title": "confirmed InvoicePayment sum exceeds Invoice.amountKopeks (overpayment)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-13",
+      "title": "PayrollCalculation.paidKopeks > netPayableKopeks (overpaid)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-14",
+      "title": "duplicate idempotencyKey values",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-16",
+      "title": "records in an unreachable status (under_review/superseded/pending) (changeReq under_review=0, proposal superseded=0, payment pending=0)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-18",
+      "title": "future-dated records (BalanceSnapshot.snapshotDate > now)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-19",
+      "title": "PayrollPeriod month/year out of range",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-21",
+      "title": "legacy v1 records present (Expense/Refund entryVersion=1) (expense v1=0, refund v1=0)",
+      "severity": "S3",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-23",
+      "title": "cross-tenant documents (ExpenseDocument.companyId ≠ parent Expense.companyId)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-07",
+      "title": "PayrollPaymentObligation.companyId ≠ its PayrollPeriod.companyId",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-17",
+      "title": "paid invoice with null expensePeriod (accrual month unknown)",
+      "severity": "S3",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-05",
+      "title": "Refund.legalEntityId belongs to another company (app-only scope)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "DATA-CHK-25",
+      "title": "cascade-exposure inventory (Company has no soft-delete): companies=11; hard-deleting one cascades Invoice/Expense/Refund/Budget/Snapshot and orphans scalar-id payroll/cash/OFD rows (see relation-risks.json)",
+      "severity": "S3",
+      "offendingRows": 0,
+      "sample": []
+    }
+  ]
+}

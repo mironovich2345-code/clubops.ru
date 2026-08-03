@@ -1,0 +1,2966 @@
+{
+  "totalModels": 82,
+  "models": [
+    {
+      "name": "Company",
+      "fieldCount": 40,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 0,
+      "relations": []
+    },
+    {
+      "name": "LegalEntity",
+      "fieldCount": 30,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 1,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "fieldCount": 39,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 0,
+      "relations": [
+        {
+          "name": "expenses",
+          "target": "Expense",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "expensesPaidBy",
+          "target": "Expense",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "budgetsCreated",
+          "target": "Budget",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "budgetRequestsRequested",
+          "target": "BudgetApprovalRequest",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "budgetRequestsDecided",
+          "target": "BudgetApprovalRequest",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "salesReportsCreated",
+          "target": "SalesReport",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "mandatoryPaymentsCreated",
+          "target": "MandatoryPaymentPlan",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "mandatoryPaymentsResponsible",
+          "target": "MandatoryPaymentPlan",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "balanceSnapshotsCreated",
+          "target": "BalanceSnapshot",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        }
+      ]
+    },
+    {
+      "name": "AccountDeletion",
+      "fieldCount": 16,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": [
+        {
+          "name": "user",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "userId"
+        }
+      ]
+    },
+    {
+      "name": "Session",
+      "fieldCount": 13,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "user",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "userId"
+        }
+      ]
+    },
+    {
+      "name": "AccountSessionContainer",
+      "fieldCount": 10,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "StoredAccountSession",
+      "fieldCount": 8,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": false,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([containerId, userId])"
+      ],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "EmailOtpChallenge",
+      "fieldCount": 18,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": [
+        {
+          "name": "user",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "userId"
+        }
+      ]
+    },
+    {
+      "name": "Club",
+      "fieldCount": 27,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 1,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        }
+      ]
+    },
+    {
+      "name": "ClubLegalEntity",
+      "fieldCount": 10,
+      "tenant": {
+        "companyId": false,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([clubId, legalEntityId])"
+      ],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "legalEntity",
+          "target": "LegalEntity",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "legalEntityId"
+        }
+      ]
+    },
+    {
+      "name": "CompanyUserAccess",
+      "fieldCount": 8,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([companyId, userId, role])"
+      ],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "user",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "userId"
+        }
+      ]
+    },
+    {
+      "name": "ClubUserAccess",
+      "fieldCount": 8,
+      "tenant": {
+        "companyId": false,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([clubId, userId, role])"
+      ],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "user",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "userId"
+        }
+      ]
+    },
+    {
+      "name": "Invite",
+      "fieldCount": 21,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": true,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "invitedBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "invitedByUserId"
+        }
+      ]
+    },
+    {
+      "name": "Refund",
+      "fieldCount": 62,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "contractAmountKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        },
+        {
+          "field": "refundResultAmountKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        },
+        {
+          "field": "ptTerminationSessionPriceKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        },
+        {
+          "field": "ptRawResultKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "draft",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        }
+      ]
+    },
+    {
+      "name": "RefundDocument",
+      "fieldCount": 18,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "refund",
+          "target": "Refund",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "refundId"
+        }
+      ]
+    },
+    {
+      "name": "Budget",
+      "fieldCount": 12,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "limitAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([clubId, category, month])"
+      ],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        }
+      ]
+    },
+    {
+      "name": "BudgetChangeProposal",
+      "fieldCount": 18,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "currentLimitKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "proposedLimitKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "forecastKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "PayrollPaymentObligation",
+      "fieldCount": 19,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "paidKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "remainingKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "planned",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": true,
+      "uniques": [],
+      "indexCount": 5,
+      "relations": []
+    },
+    {
+      "name": "MandatoryPaymentPlan",
+      "fieldCount": 22,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "planned",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "legalEntity",
+          "target": "LegalEntity",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "legalEntityId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        },
+        {
+          "name": "responsible",
+          "target": "User",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "responsibleUserId"
+        }
+      ]
+    },
+    {
+      "name": "BalanceSnapshot",
+      "fieldCount": 21,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "actualBalanceKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "active",
+      "hasVersion": true,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 5,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "legalEntity",
+          "target": "LegalEntity",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "legalEntityId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdById"
+        }
+      ]
+    },
+    {
+      "name": "BudgetApprovalRequest",
+      "fieldCount": 32,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "requestedAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "currentLimitAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "overByAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "budgetAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "currentSpentKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "projectedSpentKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "overrunKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "requestedBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "requestedByUserId"
+        },
+        {
+          "name": "decidedBy",
+          "target": "User",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "decidedByUserId"
+        }
+      ]
+    },
+    {
+      "name": "AuditLog",
+      "fieldCount": 9,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "Invoice",
+      "fieldCount": 51,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "draft",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 6,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "legalEntity",
+          "target": "LegalEntity",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "legalEntityId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        }
+      ]
+    },
+    {
+      "name": "InvoicePayment",
+      "fieldCount": 20,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "confirmed",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": true,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": [
+        {
+          "name": "invoice",
+          "target": "Invoice",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "invoiceId"
+        }
+      ]
+    },
+    {
+      "name": "PendingInvoiceUpload",
+      "fieldCount": 12,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "Expense",
+      "fieldCount": 55,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "budgetOverrunKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "confirmed",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 9,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "legalEntity",
+          "target": "LegalEntity",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "legalEntityId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        },
+        {
+          "name": "paidBy",
+          "target": "User",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "paidByUserId"
+        }
+      ]
+    },
+    {
+      "name": "ExpenseDocument",
+      "fieldCount": 17,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": [
+        {
+          "name": "expense",
+          "target": "Expense",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "expenseId"
+        }
+      ]
+    },
+    {
+      "name": "ExpenseCategory",
+      "fieldCount": 9,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "ExpenseCategoryNameHistory",
+      "fieldCount": 6,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": false,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 1,
+      "relations": [
+        {
+          "name": "category",
+          "target": "ExpenseCategory",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "categoryId"
+        }
+      ]
+    },
+    {
+      "name": "RateLimitBucket",
+      "fieldCount": 8,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "CashWallet",
+      "fieldCount": 14,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([clubId, legalEntityId, type, holderUserId])"
+      ],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "legalEntity",
+          "target": "LegalEntity",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "legalEntityId"
+        },
+        {
+          "name": "movementsFrom",
+          "target": "CashMovement",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        },
+        {
+          "name": "movementsTo",
+          "target": "CashMovement",
+          "nullable": false,
+          "onDelete": "(default: Restrict for required / SetNull for optional)",
+          "fields": ""
+        }
+      ]
+    },
+    {
+      "name": "CashMovement",
+      "fieldCount": 22,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "confirmed",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([sourceType, sourceId])"
+      ],
+      "indexCount": 5,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "fromWallet",
+          "target": "CashWallet",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "fromWalletId"
+        },
+        {
+          "name": "toWallet",
+          "target": "CashWallet",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "toWalletId"
+        }
+      ]
+    },
+    {
+      "name": "CashNotification",
+      "fieldCount": 16,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "thresholdKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "balanceKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        }
+      ]
+    },
+    {
+      "name": "Sale",
+      "fieldCount": 23,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending_accountant",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 6,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "legalEntity",
+          "target": "LegalEntity",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "legalEntityId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        }
+      ]
+    },
+    {
+      "name": "UserClubAccess",
+      "fieldCount": 6,
+      "tenant": {
+        "companyId": false,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([userId, clubId])"
+      ],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "user",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "userId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        }
+      ]
+    },
+    {
+      "name": "PayrollStatement",
+      "fieldCount": 19,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "totalSignedAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "newSignedAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "confirmed",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        }
+      ]
+    },
+    {
+      "name": "PayrollStatementRow",
+      "fieldCount": 14,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([companyId, clubId, rowHash])"
+      ],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "statement",
+          "target": "PayrollStatement",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "payrollStatementId"
+        }
+      ]
+    },
+    {
+      "name": "EmployeeClubAssignment",
+      "fieldCount": 11,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([employeeId, clubId, position])"
+      ],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "EmployeePayScheme",
+      "fieldCount": 24,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "active",
+      "hasVersion": true,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 5,
+      "relations": []
+    },
+    {
+      "name": "PayrollPeriod",
+      "fieldCount": 15,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "draft",
+      "hasVersion": true,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([clubId, year, month])"
+      ],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "PayrollCalculation",
+      "fieldCount": 43,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "baseSalaryKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "salesBaseKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "revenueBaseKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "profitBaseKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "planKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        },
+        {
+          "field": "actualKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        },
+        {
+          "field": "automaticAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "bonusesKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "deductionsKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "advancesKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "grossAccruedKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "netPayableKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "paidKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "remainingKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "employeeDebtKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "companyDebtKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "manualOverrideKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        },
+        {
+          "field": "automaticSalesKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "manualSalesOverrideKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        },
+        {
+          "field": "effectiveSalesKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "draft",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([payrollPeriodId, employeeId])"
+      ],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "PayrollAdjustment",
+      "fieldCount": 16,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "PayrollAdvance",
+      "fieldCount": 26,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "earnedToDateKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "requestedAmountKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        },
+        {
+          "field": "approvedAmountKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "requested",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([employeeId, clubId, periodYear, periodMonth])"
+      ],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "PayrollAdvancePayment",
+      "fieldCount": 21,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "paid",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": true,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "PayrollChangeRequest",
+      "fieldCount": 37,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "calculatedImpactKopeks",
+          "type": "Int",
+          "nullable": true,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "draft",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 6,
+      "relations": []
+    },
+    {
+      "name": "PayrollPayment",
+      "fieldCount": 21,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "EmployeeFinancialObligation",
+      "fieldCount": 16,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "originalAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "outstandingAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "open",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "SalesPlan",
+      "fieldCount": 12,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "targetAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([companyId, clubId, month, planType])"
+      ],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": true,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        }
+      ]
+    },
+    {
+      "name": "SalesReport",
+      "fieldCount": 24,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "pending_accountant",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 5,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        },
+        {
+          "name": "createdBy",
+          "target": "User",
+          "nullable": false,
+          "onDelete": "Restrict",
+          "fields": "createdByUserId"
+        },
+        {
+          "name": "managerEmployee",
+          "target": "ClubEmployee",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "managerEmployeeId"
+        }
+      ]
+    },
+    {
+      "name": "ClubEmployee",
+      "fieldCount": 17,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "active",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        },
+        {
+          "name": "club",
+          "target": "Club",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "clubId"
+        }
+      ]
+    },
+    {
+      "name": "ImportBatch",
+      "fieldCount": 17,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "completed",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        }
+      ]
+    },
+    {
+      "name": "MonthClose",
+      "fieldCount": 11,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "closed",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([companyId, clubId, month])"
+      ],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        }
+      ]
+    },
+    {
+      "name": "MonthReopenRequest",
+      "fieldCount": 16,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "pending",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": [
+        {
+          "name": "company",
+          "target": "Company",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "companyId"
+        }
+      ]
+    },
+    {
+      "name": "SalesReportLine",
+      "fieldCount": 11,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 1,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": [
+        {
+          "name": "report",
+          "target": "SalesReport",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "salesReportId"
+        },
+        {
+          "name": "legalEntity",
+          "target": "LegalEntity",
+          "nullable": true,
+          "onDelete": "SetNull",
+          "fields": "legalEntityId"
+        }
+      ]
+    },
+    {
+      "name": "SalesReportDocument",
+      "fieldCount": 10,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 1,
+      "relations": [
+        {
+          "name": "report",
+          "target": "SalesReport",
+          "nullable": false,
+          "onDelete": "Cascade",
+          "fields": "salesReportId"
+        }
+      ]
+    },
+    {
+      "name": "TelegramConnection",
+      "fieldCount": 13,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "TelegramLinkCode",
+      "fieldCount": 9,
+      "tenant": {
+        "companyId": false,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 0,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "NotificationOutbox",
+      "fieldCount": 16,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "pending",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "OfdConnection",
+      "fieldCount": 19,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "OfdCashRegisterMapping",
+      "fieldCount": 23,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "active",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 5,
+      "relations": []
+    },
+    {
+      "name": "OfdCashRegisterAssignment",
+      "fieldCount": 12,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "OfdFiscalDrive",
+      "fieldCount": 13,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "active",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "OfdReceiptImport",
+      "fieldCount": 23,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "totalKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "cashKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "electronicKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 5,
+      "relations": []
+    },
+    {
+      "name": "OfdCashierIdentity",
+      "fieldCount": 18,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "salesAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "active",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "OfdCashierMapping",
+      "fieldCount": 20,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [],
+      "hasStatus": true,
+      "statusDefault": "auto_matched",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 5,
+      "relations": []
+    },
+    {
+      "name": "PayrollSalesAttribution",
+      "fieldCount": 19,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "attributed",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 6,
+      "relations": []
+    },
+    {
+      "name": "OfdDailySalesSummary",
+      "fieldCount": 18,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "incomeTotalKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "incomeCashKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "incomeElectronicKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "returnTotalKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "returnCashKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "returnElectronicKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "netTotalKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "OfdSyncRun",
+      "fieldCount": 24,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "totalIncomeKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "totalReturnKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "OfdSyncError",
+      "fieldCount": 10,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "OfdReceiptItem",
+      "fieldCount": 23,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "priceKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "totalKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "OfdRevenueCategoryRule",
+      "fieldCount": 12,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "OfdRevenueCategoryDailySummary",
+      "fieldCount": 16,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "incomeTotalKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "returnTotalKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "netTotalKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    },
+    {
+      "name": "CashCollection",
+      "fieldCount": 14,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending_accountant_review",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "CashWithdrawal",
+      "fieldCount": 15,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending_review",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "CashOtherIncome",
+      "fieldCount": 15,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending_review",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "CashRegionalTransfer",
+      "fieldCount": 19,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "pending_confirmation",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": true,
+      "idempotencyKey": true,
+      "uniques": [],
+      "indexCount": 5,
+      "relations": []
+    },
+    {
+      "name": "CashOperationDocument",
+      "fieldCount": 16,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "DailyCashReconciliation",
+      "fieldCount": 24,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "ofdCashRevenueKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "expectedCashBalanceKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "actualCashBalanceKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "differenceKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "awaiting_input",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([clubId, legalEntityId, businessDate])"
+      ],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "SettingsPinSession",
+      "fieldCount": 7,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "PayrollTrainerPackage",
+      "fieldCount": 22,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 2,
+      "money": [
+        {
+          "field": "contractAmountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "sessionPriceKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "refundKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": false,
+      "statusDefault": null,
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 4,
+      "relations": []
+    },
+    {
+      "name": "RegionalCityPayroll",
+      "fieldCount": 17,
+      "tenant": {
+        "companyId": true,
+        "clubId": false,
+        "legalEntityId": false
+      },
+      "denormalizedTenant": 1,
+      "money": [
+        {
+          "field": "baseKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        },
+        {
+          "field": "accruedKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "draft",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [
+        "@@unique([companyId, city, year, month])"
+      ],
+      "indexCount": 2,
+      "relations": []
+    },
+    {
+      "name": "RegionalCityPayment",
+      "fieldCount": 15,
+      "tenant": {
+        "companyId": true,
+        "clubId": true,
+        "legalEntityId": true
+      },
+      "denormalizedTenant": 3,
+      "money": [
+        {
+          "field": "amountKopeks",
+          "type": "Int",
+          "nullable": false,
+          "unit": "kopeks"
+        }
+      ],
+      "hasStatus": true,
+      "statusDefault": "confirmed",
+      "hasVersion": false,
+      "hasAudit": true,
+      "softDelete": false,
+      "idempotencyKey": false,
+      "uniques": [],
+      "indexCount": 3,
+      "relations": []
+    }
+  ]
+}

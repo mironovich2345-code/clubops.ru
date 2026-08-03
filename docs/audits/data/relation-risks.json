@@ -1,0 +1,1265 @@
+{
+  "totalRelations": 90,
+  "cascade": [
+    {
+      "model": "LegalEntity",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "AccountDeletion",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "Session",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "EmailOtpChallenge",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "Club",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "ClubLegalEntity",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ClubLegalEntity",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "CompanyUserAccess",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "CompanyUserAccess",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "ClubUserAccess",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "ClubUserAccess",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "Invite",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Invite",
+      "relation": "club",
+      "target": "Club",
+      "nullable": true,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Invite",
+      "relation": "invitedBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Refund",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Refund",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "RefundDocument",
+      "relation": "refund",
+      "target": "Refund",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Budget",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Budget",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BalanceSnapshot",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BalanceSnapshot",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Invoice",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Invoice",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "InvoicePayment",
+      "relation": "invoice",
+      "target": "Invoice",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "Expense",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Expense",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "ExpenseDocument",
+      "relation": "expense",
+      "target": "Expense",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ExpenseCategoryNameHistory",
+      "relation": "category",
+      "target": "ExpenseCategory",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "CashWallet",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashWallet",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashWallet",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashMovement",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashMovement",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashNotification",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Sale",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Sale",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "UserClubAccess",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "UserClubAccess",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "PayrollStatement",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "PayrollStatement",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "PayrollStatementRow",
+      "relation": "statement",
+      "target": "PayrollStatement",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesPlan",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesPlan",
+      "relation": "club",
+      "target": "Club",
+      "nullable": true,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReport",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReport",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ClubEmployee",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ClubEmployee",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ImportBatch",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "MonthClose",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "MonthReopenRequest",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReportLine",
+      "relation": "report",
+      "target": "SalesReport",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "SalesReportDocument",
+      "relation": "report",
+      "target": "SalesReport",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    }
+  ],
+  "setNull": [
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "responsible",
+      "target": "User",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "relation": "decidedBy",
+      "target": "User",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Invoice",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Expense",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Expense",
+      "relation": "paidBy",
+      "target": "User",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashMovement",
+      "relation": "fromWallet",
+      "target": "CashWallet",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashMovement",
+      "relation": "toWallet",
+      "target": "CashWallet",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Sale",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "SalesReport",
+      "relation": "managerEmployee",
+      "target": "ClubEmployee",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReportLine",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 1
+    }
+  ],
+  "all": [
+    {
+      "model": "LegalEntity",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "User",
+      "relation": "expenses",
+      "target": "Expense",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "User",
+      "relation": "expensesPaidBy",
+      "target": "Expense",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "User",
+      "relation": "budgetsCreated",
+      "target": "Budget",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "User",
+      "relation": "budgetRequestsRequested",
+      "target": "BudgetApprovalRequest",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "User",
+      "relation": "budgetRequestsDecided",
+      "target": "BudgetApprovalRequest",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "User",
+      "relation": "salesReportsCreated",
+      "target": "SalesReport",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "User",
+      "relation": "mandatoryPaymentsCreated",
+      "target": "MandatoryPaymentPlan",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "User",
+      "relation": "mandatoryPaymentsResponsible",
+      "target": "MandatoryPaymentPlan",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "User",
+      "relation": "balanceSnapshotsCreated",
+      "target": "BalanceSnapshot",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "AccountDeletion",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "Session",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "EmailOtpChallenge",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "Club",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "ClubLegalEntity",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ClubLegalEntity",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "CompanyUserAccess",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "CompanyUserAccess",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "ClubUserAccess",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "ClubUserAccess",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "Invite",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Invite",
+      "relation": "club",
+      "target": "Club",
+      "nullable": true,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Invite",
+      "relation": "invitedBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Refund",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Refund",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Refund",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "RefundDocument",
+      "relation": "refund",
+      "target": "Refund",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Budget",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Budget",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Budget",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "relation": "responsible",
+      "target": "User",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BalanceSnapshot",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BalanceSnapshot",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BalanceSnapshot",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BalanceSnapshot",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "relation": "requestedBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "relation": "decidedBy",
+      "target": "User",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Invoice",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Invoice",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Invoice",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Invoice",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "InvoicePayment",
+      "relation": "invoice",
+      "target": "Invoice",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "Expense",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Expense",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Expense",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Expense",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Expense",
+      "relation": "paidBy",
+      "target": "User",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "ExpenseDocument",
+      "relation": "expense",
+      "target": "Expense",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ExpenseCategoryNameHistory",
+      "relation": "category",
+      "target": "ExpenseCategory",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    },
+    {
+      "model": "CashWallet",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashWallet",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashWallet",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashWallet",
+      "relation": "movementsFrom",
+      "target": "CashMovement",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashWallet",
+      "relation": "movementsTo",
+      "target": "CashMovement",
+      "nullable": false,
+      "onDelete": "(default: Restrict for required / SetNull for optional)",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashMovement",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashMovement",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashMovement",
+      "relation": "fromWallet",
+      "target": "CashWallet",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashMovement",
+      "relation": "toWallet",
+      "target": "CashWallet",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "CashNotification",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "Sale",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Sale",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Sale",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "Sale",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 3
+    },
+    {
+      "model": "UserClubAccess",
+      "relation": "user",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "UserClubAccess",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "PayrollStatement",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "PayrollStatement",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "PayrollStatement",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "PayrollStatementRow",
+      "relation": "statement",
+      "target": "PayrollStatement",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesPlan",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesPlan",
+      "relation": "club",
+      "target": "Club",
+      "nullable": true,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesPlan",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReport",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReport",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReport",
+      "relation": "createdBy",
+      "target": "User",
+      "nullable": false,
+      "onDelete": "Restrict",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReport",
+      "relation": "managerEmployee",
+      "target": "ClubEmployee",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ClubEmployee",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ClubEmployee",
+      "relation": "club",
+      "target": "Club",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "ImportBatch",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "MonthClose",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "MonthReopenRequest",
+      "relation": "company",
+      "target": "Company",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 2
+    },
+    {
+      "model": "SalesReportLine",
+      "relation": "report",
+      "target": "SalesReport",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "SalesReportLine",
+      "relation": "legalEntity",
+      "target": "LegalEntity",
+      "nullable": true,
+      "onDelete": "SetNull",
+      "denormalizedTenantFields": 1
+    },
+    {
+      "model": "SalesReportDocument",
+      "relation": "report",
+      "target": "SalesReport",
+      "nullable": false,
+      "onDelete": "Cascade",
+      "denormalizedTenantFields": 0
+    }
+  ]
+}

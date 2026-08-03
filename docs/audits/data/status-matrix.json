@@ -1,0 +1,165 @@
+{
+  "modelsWithStatus": 40,
+  "models": [
+    {
+      "model": "Refund",
+      "default": "draft"
+    },
+    {
+      "model": "BudgetChangeProposal",
+      "default": "pending"
+    },
+    {
+      "model": "PayrollPaymentObligation",
+      "default": "planned"
+    },
+    {
+      "model": "MandatoryPaymentPlan",
+      "default": "planned"
+    },
+    {
+      "model": "BalanceSnapshot",
+      "default": "active"
+    },
+    {
+      "model": "BudgetApprovalRequest",
+      "default": "pending"
+    },
+    {
+      "model": "Invoice",
+      "default": "draft"
+    },
+    {
+      "model": "InvoicePayment",
+      "default": "confirmed"
+    },
+    {
+      "model": "Expense",
+      "default": "confirmed"
+    },
+    {
+      "model": "CashMovement",
+      "default": "confirmed"
+    },
+    {
+      "model": "Sale",
+      "default": "pending_accountant"
+    },
+    {
+      "model": "PayrollStatement",
+      "default": "confirmed"
+    },
+    {
+      "model": "EmployeePayScheme",
+      "default": "active"
+    },
+    {
+      "model": "PayrollPeriod",
+      "default": "draft"
+    },
+    {
+      "model": "PayrollCalculation",
+      "default": "draft"
+    },
+    {
+      "model": "PayrollAdjustment",
+      "default": "pending"
+    },
+    {
+      "model": "PayrollAdvance",
+      "default": "requested"
+    },
+    {
+      "model": "PayrollAdvancePayment",
+      "default": "paid"
+    },
+    {
+      "model": "PayrollChangeRequest",
+      "default": "draft"
+    },
+    {
+      "model": "PayrollPayment",
+      "default": "pending"
+    },
+    {
+      "model": "EmployeeFinancialObligation",
+      "default": "open"
+    },
+    {
+      "model": "SalesReport",
+      "default": "pending_accountant"
+    },
+    {
+      "model": "ClubEmployee",
+      "default": "active"
+    },
+    {
+      "model": "ImportBatch",
+      "default": "completed"
+    },
+    {
+      "model": "MonthClose",
+      "default": "closed"
+    },
+    {
+      "model": "MonthReopenRequest",
+      "default": "pending"
+    },
+    {
+      "model": "NotificationOutbox",
+      "default": "pending"
+    },
+    {
+      "model": "OfdCashRegisterMapping",
+      "default": "active"
+    },
+    {
+      "model": "OfdFiscalDrive",
+      "default": "active"
+    },
+    {
+      "model": "OfdCashierIdentity",
+      "default": "active"
+    },
+    {
+      "model": "OfdCashierMapping",
+      "default": "auto_matched"
+    },
+    {
+      "model": "PayrollSalesAttribution",
+      "default": "attributed"
+    },
+    {
+      "model": "OfdSyncRun",
+      "default": "pending"
+    },
+    {
+      "model": "CashCollection",
+      "default": "pending_accountant_review"
+    },
+    {
+      "model": "CashWithdrawal",
+      "default": "pending_review"
+    },
+    {
+      "model": "CashOtherIncome",
+      "default": "pending_review"
+    },
+    {
+      "model": "CashRegionalTransfer",
+      "default": "pending_confirmation"
+    },
+    {
+      "model": "DailyCashReconciliation",
+      "default": "awaiting_input"
+    },
+    {
+      "model": "RegionalCityPayroll",
+      "default": "draft"
+    },
+    {
+      "model": "RegionalCityPayment",
+      "default": "confirmed"
+    }
+  ]
+}
