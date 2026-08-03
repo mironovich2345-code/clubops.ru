@@ -5,6 +5,7 @@
 // record the obligation but leave dueDate null (never faked) and keep it off the dated calendar.
 
 import { prisma } from "@/lib/prisma";
+import type { DbClient } from "@/lib/db-client";
 import type { Role } from "@/lib/auth";
 import type { PaymentObligation, PaymentObligationStatus } from "@/lib/payment-obligations";
 import { forecastCategoryOfPosition, type ForecastCategory } from "@/lib/payroll/forecast";
@@ -67,9 +68,9 @@ export type GenerateResult = { created: number; updated: number; skipped: number
  * upserts by idempotencyKey, so re-running after payments recomputes paid/remaining/status.
  * Does NOT run for non-approved periods. Money mutation-free beyond the obligation table.
  */
-export async function generateObligationsForPeriod(periodId: string, now: Date = new Date()): Promise<GenerateResult> {
+export async function generateObligationsForPeriod(periodId: string, now: Date = new Date(), db: DbClient = prisma): Promise<GenerateResult> {
   const res: GenerateResult = { created: 0, updated: 0, skipped: 0, warnings: [] };
-  const period = await prisma.payrollPeriod.findUnique({ where: { id: periodId } });
+  const period = await db.payrollPeriod.findUnique({ where: { id: periodId } });
   if (!period) {
     res.warnings.push("Период не найден.");
     return res;
@@ -79,7 +80,7 @@ export async function generateObligationsForPeriod(periodId: string, now: Date =
     return res;
   }
 
-  const calcs = await prisma.payrollCalculation.findMany({
+  const calcs = await db.payrollCalculation.findMany({
     where: { payrollPeriodId: periodId },
     select: { id: true, legalEntityId: true, roleSnapshot: true, netPayableKopeks: true, paidKopeks: true, clubId: true },
   });
@@ -89,11 +90,11 @@ export async function generateObligationsForPeriod(periodId: string, now: Date =
   }
 
   // Club primary legal entity (fallback when a calc has no legalEntityId).
-  const clubLink = await prisma.clubLegalEntity.findFirst({ where: { clubId: period.clubId, isActive: true }, orderBy: { isPrimary: "desc" }, select: { legalEntityId: true } });
+  const clubLink = await db.clubLegalEntity.findFirst({ where: { clubId: period.clubId, isActive: true }, orderBy: { isPrimary: "desc" }, select: { legalEntityId: true } });
   const clubPrimaryLE = clubLink?.legalEntityId ?? null;
 
   // Pay date for the final salary payout of this period's month.
-  const company = await prisma.company.findUnique({ where: { id: period.companyId }, select: { payrollFinalDay: true, payrollWeekendRule: true } });
+  const company = await db.company.findUnique({ where: { id: period.companyId }, select: { payrollFinalDay: true, payrollWeekendRule: true } });
   const dueDate = resolveObligationDueDate({ year: period.year, month: period.month, day: company?.payrollFinalDay ?? null, weekendRule: company?.payrollWeekendRule });
   if (!dueDate) res.warnings.push("График выплат не задан (Company.payrollFinalDay) — обязательство создано без даты и не попадёт в календарь до настройки графика.");
 
@@ -120,20 +121,20 @@ export async function generateObligationsForPeriod(periodId: string, now: Date =
     const status = obligationStatusOf(s.amount, s.paid, dueDate, now);
     const idempotencyKey = `${period.companyId}:${period.clubId}:${s.legalEntityId}:${s.category}:${period.id}:final_salary`;
 
-    const existing = await prisma.payrollPaymentObligation.findUnique({ where: { idempotencyKey } });
+    const existing = await db.payrollPaymentObligation.findUnique({ where: { idempotencyKey } });
     if (existing) {
       // Never resurrect a cancelled obligation via regeneration.
       if (existing.status === "cancelled") {
         res.skipped += 1;
         continue;
       }
-      await prisma.payrollPaymentObligation.update({
+      await db.payrollPaymentObligation.update({
         where: { idempotencyKey },
         data: { amountKopeks: s.amount, paidKopeks: s.paid, remainingKopeks: remaining, status, dueDate },
       });
       res.updated += 1;
     } else {
-      await prisma.payrollPaymentObligation.create({
+      await db.payrollPaymentObligation.create({
         data: {
           companyId: period.companyId,
           clubId: period.clubId,

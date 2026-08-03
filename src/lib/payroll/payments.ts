@@ -6,6 +6,7 @@
 // which restores the balance once. Bank payments do NOT touch a cash wallet.
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import type { DbClient } from "@/lib/db-client";
 import { MSTATUS } from "@/lib/cash-wallets";
 
 export const PAYROLL_PAYMENT_SOURCE = "payroll_payment";
@@ -120,9 +121,9 @@ type ReversalParams = {
 
 /** Restore the balance for a cancelled cash payout with a COMPENSATING INFLOW back
  * into the same wallet. Idempotent on the reversal (sourceType, sourceId). */
-export async function reverseCashOutflow(p: ReversalParams): Promise<void> {
+export async function reverseCashOutflow(p: ReversalParams, db: DbClient = prisma): Promise<void> {
   try {
-    await prisma.cashMovement.create({
+    await db.cashMovement.create({
       data: {
         companyId: p.companyId,
         clubId: p.clubId,

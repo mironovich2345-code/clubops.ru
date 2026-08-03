@@ -6,6 +6,7 @@
 // Cancellation cancels the Expense (drops it from P&L / fact balance) and reverses the
 // cash movement with a compensating inflow.
 import { prisma } from "@/lib/prisma";
+import type { DbClient } from "@/lib/db-client";
 import { recordExpenseMovement } from "@/lib/cash-wallets";
 import { reverseCashOutflow } from "@/lib/payroll/payments";
 
@@ -31,10 +32,10 @@ export async function createSalaryExpense(params: {
   employeeName: string;
   payrollPeriodId: string | null;
   kind: SalaryExpenseKind;
-}): Promise<{ expenseId: string }> {
+}, db: DbClient = prisma): Promise<{ expenseId: string }> {
   const now = new Date();
   const label = params.kind === "advance" ? "аванс" : "выплата";
-  const expense = await prisma.expense.create({
+  const expense = await db.expense.create({
     data: {
       companyId: params.companyId,
       clubId: params.clubId,
@@ -70,22 +71,22 @@ export async function createSalaryExpense(params: {
       amountKopeks: params.amountKopeks,
       expenseDate: now,
       cashWalletId: params.cashWalletId,
-    });
+    }, db);
   }
   return { expenseId: expense.id };
 }
 
 /** Cancel the salary Expense (drops from P&L / fact balance) and reverse its cash movement. */
-export async function cancelSalaryExpense(expenseId: string | null | undefined, userId: string, reason: string): Promise<void> {
+export async function cancelSalaryExpense(expenseId: string | null | undefined, userId: string, reason: string, db: DbClient = prisma): Promise<void> {
   if (!expenseId) return;
-  const exp = await prisma.expense.findUnique({
+  const exp = await db.expense.findUnique({
     where: { id: expenseId },
     select: { id: true, companyId: true, clubId: true, legalEntityId: true, amountKopeks: true, paymentMethod: true, status: true },
   });
   if (!exp || exp.status === "cancelled") return;
 
   if (exp.paymentMethod === "cash" && exp.legalEntityId) {
-    const mv = await prisma.cashMovement.findFirst({
+    const mv = await db.cashMovement.findFirst({
       where: { sourceType: "expense", sourceId: expenseId },
       select: { fromWalletId: true },
     });
@@ -100,10 +101,10 @@ export async function cancelSalaryExpense(expenseId: string | null | undefined, 
         reversalSourceType: SALARY_EXPENSE_REVERSAL,
         sourceId: expenseId,
         userId,
-      });
+      }, db);
     }
   }
-  await prisma.expense.update({
+  await db.expense.update({
     where: { id: expenseId },
     data: { status: "cancelled", cancelledAt: new Date(), cancelledByUserId: userId, cancellationReason: reason },
   });

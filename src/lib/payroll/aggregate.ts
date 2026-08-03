@@ -4,24 +4,27 @@
 // other payments; remaining = net − paid; overpay → employee debt, underpay → company
 // debt. Called after any change to inputs, adjustments, advances or payments.
 import { prisma } from "@/lib/prisma";
+import type { DbClient } from "@/lib/db-client";
 import { aggregateCalculation } from "@/lib/payroll/calc";
 import { advancePaidKopeks } from "@/lib/payroll/advance-tranche-calc";
 
-export async function recomputeCalculationTotals(calculationId: string): Promise<void> {
-  const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });
+// `db` defaults to the global prisma (every existing caller is unchanged); REM-01 passes the
+// transaction client so the recompute commits atomically with the payout. Formulas are untouched.
+export async function recomputeCalculationTotals(calculationId: string, db: DbClient = prisma): Promise<void> {
+  const calc = await db.payrollCalculation.findUnique({ where: { id: calculationId } });
   if (!calc) return;
-  const period = await prisma.payrollPeriod.findUnique({
+  const period = await db.payrollPeriod.findUnique({
     where: { id: calc.payrollPeriodId },
     select: { year: true, month: true },
   });
 
   const [adjustments, payments, advances] = await Promise.all([
-    prisma.payrollAdjustment.findMany({
+    db.payrollAdjustment.findMany({
       where: { payrollCalculationId: calculationId, status: "approved" },
       select: { direction: true, amountKopeks: true },
     }),
     // Confirmed salary payments for THIS calculation.
-    prisma.payrollPayment.findMany({
+    db.payrollPayment.findMany({
       where: { payrollCalculationId: calculationId, status: "confirmed" },
       select: { amountKopeks: true },
     }),
@@ -30,7 +33,7 @@ export async function recomputeCalculationTotals(calculationId: string): Promise
     // approved-but-unpaid does NOT reduce salary remaining (spec §13). NEVER counted as a
     // PayrollPayment as well.
     period
-      ? prisma.payrollAdvance.findMany({
+      ? db.payrollAdvance.findMany({
           where: { employeeId: calc.employeeId, clubId: calc.clubId, periodYear: period.year, periodMonth: period.month, status: { notIn: ["canceled", "rejected"] } },
           select: { id: true, amountKopeks: true, status: true },
         })
@@ -40,7 +43,7 @@ export async function recomputeCalculationTotals(calculationId: string): Promise
   // Active tranches for the month's advances (folded per advance).
   const advanceIds = advances.map((a) => a.id);
   const tranches = advanceIds.length
-    ? await prisma.payrollAdvancePayment.findMany({ where: { employeeAdvanceId: { in: advanceIds } }, select: { employeeAdvanceId: true, amountKopeks: true, status: true } })
+    ? await db.payrollAdvancePayment.findMany({ where: { employeeAdvanceId: { in: advanceIds } }, select: { employeeAdvanceId: true, amountKopeks: true, status: true } })
     : [];
   const trBy = new Map<string, { amountKopeks: number; status: string }[]>();
   for (const t of tranches) { const l = trBy.get(t.employeeAdvanceId) ?? []; l.push({ amountKopeks: t.amountKopeks, status: t.status }); trBy.set(t.employeeAdvanceId, l); }
@@ -57,7 +60,7 @@ export async function recomputeCalculationTotals(calculationId: string): Promise
     otherPaymentsKopeks: otherPayments,
   });
 
-  await prisma.payrollCalculation.update({
+  await db.payrollCalculation.update({
     where: { id: calc.id },
     data: {
       bonusesKopeks: bonuses,
