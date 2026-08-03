@@ -1,0 +1,318 @@
+{
+  "total": 43,
+  "undocumentedNonPublic": [
+    "CRON_SECRET",
+    "INVOICE_AI_FALLBACK_MODEL",
+    "INVOICE_AI_PRIMARY_MODEL",
+    "INVOICE_AI_TIMEOUT_MS",
+    "NEXT_PHASE",
+    "OFD_SABY_ENABLED",
+    "OTP_TEST_TRANSPORT"
+  ],
+  "clientExposed": [
+    "NODE_ENV"
+  ],
+  "contract": [
+    {
+      "name": "ACCOUNT_RECOVERY_SECRET",
+      "usedInFiles": 2,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "AI_PROVIDER",
+      "usedInFiles": 6,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "APP_URL",
+      "usedInFiles": 2,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "CRON_SECRET",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": false
+    },
+    {
+      "name": "DATABASE_URL",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "INVOICE_AI_FALLBACK_MODEL",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": false
+    },
+    {
+      "name": "INVOICE_AI_PRIMARY_MODEL",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": false
+    },
+    {
+      "name": "INVOICE_AI_TIMEOUT_MS",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": false
+    },
+    {
+      "name": "NEXT_PHASE",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": false
+    },
+    {
+      "name": "NODE_ENV",
+      "usedInFiles": 34,
+      "public": false,
+      "clientExposed": true,
+      "documentedInExample": true
+    },
+    {
+      "name": "NOTIFICATION_DRAIN_SECRET",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "OFD_INTEGRATIONS_ENABLED",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "OFD_SABY_ENABLED",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": false
+    },
+    {
+      "name": "OFD_SECRET",
+      "usedInFiles": 2,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "usedInFiles": 2,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "OPENAI_MODEL",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "OTP_TEST_TRANSPORT",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": false
+    },
+    {
+      "name": "RU_AI_API_KEY",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "RU_AI_ENDPOINT",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "S3_ACCESS_KEY_ID",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "S3_BUCKET",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "S3_ENDPOINT",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "S3_REGION",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "S3_SECRET_ACCESS_KEY",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "SMTP_FROM",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "SMTP_HOST",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "SMTP_PASSWORD",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "SMTP_PORT",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "SMTP_SECURE",
+      "usedInFiles": 2,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "SMTP_USER",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "STORAGE_PROVIDER",
+      "usedInFiles": 2,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "TELEGRAM_BOT_TOKEN",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "TELEGRAM_BOT_USERNAME",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "TELEGRAM_NOTIFICATIONS_ENABLED",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "TELEGRAM_WEBHOOK_SECRET",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "YANDEX_AI_API_KEY",
+      "usedInFiles": 5,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "YANDEX_AI_TIMEOUT_MS",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "YANDEX_DATA_LOGGING_ENABLED",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "YANDEX_FOLDER_ID",
+      "usedInFiles": 6,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "YANDEX_GPT_MODEL",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "YANDEX_OCR_ASYNC_TIMEOUT_MS",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "YANDEX_OCR_LANGUAGE_CODES",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    },
+    {
+      "name": "YANDEX_OCR_MODEL",
+      "usedInFiles": 1,
+      "public": false,
+      "clientExposed": false,
+      "documentedInExample": true
+    }
+  ]
+}

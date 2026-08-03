@@ -1,0 +1,8 @@
+{
+  "provider": "local|s3 (env STORAGE_PROVIDER)",
+  "defaultLocal": true,
+  "prodGuardAgainstLocal": false,
+  "localLostOnRedeploy": true,
+  "s3ProviderPresent": true,
+  "localProviderPresent": true
+}

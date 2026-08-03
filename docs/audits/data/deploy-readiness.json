@@ -1,0 +1,20 @@
+{
+  "healthChecksDb": false,
+  "healthLivenessOnly": true,
+  "readinessEndpointExists": false,
+  "buildProdRegeneratesProdClient": true,
+  "postbuildRestoresDevClient": false,
+  "backupBeforeMigrate": true,
+  "backupLocationLocalToVm": true,
+  "backupOnlyOnDeploy": true,
+  "offsiteBackup": false,
+  "restoreTested": false,
+  "appRollback": true,
+  "dbRollback": false,
+  "migrateBeforeApp": true,
+  "railwayAutoMigrate": true,
+  "storageDefaultLocal": true,
+  "storageProdGuard": false,
+  "structuredLogger": false,
+  "errorTracker": false
+}
