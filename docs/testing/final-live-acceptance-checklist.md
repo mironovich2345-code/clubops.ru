@@ -1,0 +1,36 @@
+# CLUB-OPS — Final Live Acceptance Checklist (master)
+
+Every manual GATE from Audits 1–6 in one place. **All are OPEN at `9c43548`.** Machine list:
+`docs/audits/data/live-gates.json`. Each GATE must be executed on a real instance/device/replica (not
+in this sandbox) with evidence recorded before launch. Format: environment · role · setup · steps ·
+expected · evidence · status · blocker · owner.
+
+## Money / finance flows (from Audits 1–3, prior epics)
+- [ ] **G1 — Regional cash transfer.** Real instance · manager/regional · a club with an active ИП. Create transfer → confirm as the club manager → **ИП reduces only on confirmed**; a pending transfer does not move money. Evidence: cash figures before/after. **Blocker if:** pending reduces ИП, or regional can self-confirm.
+- [ ] **G2 — Backdated control snapshot.** Real instance · finance-write role. Set a snapshot dated earlier than an existing one → the later checkpoint still governs; balances recompute correctly. **Blocker if:** a backdated point silently overrides the latest.
+- [ ] **G3 — Snapshot correction / cancellation.** Real instance. Correct then cancel a snapshot → append-only history; **dashboard, analytics, collections all agree** after a cancel (REM-02). **Blocker if:** dashboard shows a cancelled snapshot's balance.
+- [ ] **G6 — Invoice partial payment + reversal + already-paid.** Real instance · accountant + chief. Record a partial payment → `partially_paid`; reverse (chief-only) → prior status restored; add an already-paid historical invoice. **Blocker if:** a non-chief can reverse, or a `paid` invoice has `paidTotal=0`.
+- [ ] **G7 — Invoice AI review + payment guard.** Real instance · accountant. Upload → AI extracts → the payment-block reason shows until reviewed; editing a financial field voids approval. **Blocker if:** pay proceeds on unreviewed/low-confidence data.
+- [ ] **G8 — Regional dashboard review tasks.** Real instance · regional. The 3 cards count only the right statuses, own clubs only, correct sums/nearest-due. **Blocker if:** cross-club leakage or wrong counts.
+- [ ] **G9 — Payroll forecast → proposal → obligation → advance/payment/reversal.** Real instance · manager/regional/accountant/chief. Run a full period; **double-submit a payment → exactly one effect** (REM-01); reverse an obligation (UX-003); "Выплачен" reconciles to remaining (UX-004). **Blocker if:** double-charge, or no reversal path.
+
+## Product / UX (Audit 6)
+- [ ] **G4 — PDF viewer on a real iPhone.** iPhone Safari + PWA standalone. Open an invoice/refund PDF; scroll/pinch; same-origin framing works, cross-origin blocked. **Blocker if:** the document can't be opened.
+- [ ] **G5 — Invitation flow.** Real instance + SMTP. Invite each role; accept via the email link; email-bound, single-use, correct scope. **Blocker if:** invite un-mintable (no APP_URL) or accepted by the wrong email.
+- [ ] **UX-001 — Refund correction loop.** Real instance · manager. Return a refund → re-upload a corrected document → resubmit. **Blocker if:** the document step is unreachable.
+
+## Recovery / storage / ops (Audit 4)
+- [ ] **G10 — Backup + restore rehearsal (Postgres).** Disposable Postgres. Restore a `pg_dump`; verify counts + reconciliation; record RPO/RTO. **Status: NOT EXECUTED. Blocker if:** restore fails or RPO/RTO unknown.
+- [ ] **G11 — Staging migration rehearsal.** Disposable Postgres. Apply pending migrations; row counts + money checksums unchanged; no long write-lock. **Status: NOT EXECUTED.**
+- [ ] **G12 — File durability under redeploy.** Staging with S3. Upload a document; redeploy; the document survives. **Blocker if:** files lost (local storage).
+- [ ] **G13 — DB readiness under DB-down.** Staging. Take the DB down; `/api/health/ready` fails and traffic is gated (REM-06). **Blocker if:** the app serves 200 with no DB.
+- [ ] **G14 — OFD scheduler + fresh sync.** Staging with `CRON_SECRET`. The daily import runs on schedule; revenue is fresh; double-run is idempotent. **Blocker if:** the job never runs.
+
+## Security (Audit 5)
+- [ ] **G15 — Proxy & header checks.** Staging/prod. Confirm **Caddy strips inbound `X-Forwarded-For`** (SEC-002); review production OFD `serverBaseUrl` values (SEC-004, no internal/metadata host). **Blocker if:** XFF spoofable or an internal OFD base URL.
+- [ ] **G16 — Preflight on a production read replica.** Prod replica. `audit:data-integrity` + `audit:financial-reconciliation` → reconcile any S0/S1 anomaly. **Blocker if:** unresolved anomalies.
+
+## Sign-off
+Launch (Conditional-Go) requires the **pilot-scope GATEs passed with recorded evidence**: for a Phase-1
+single-club core-finance pilot that is **G1–G8, G4, G5, UX-001, G10–G13, G15–G16**. Payroll/budget GATEs
+(G9, G14) gate **Phase 2**. A GATE marked **NOT EXECUTED** is never counted as passed.
