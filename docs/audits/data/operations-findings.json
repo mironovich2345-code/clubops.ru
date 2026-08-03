@@ -1,0 +1,26 @@
+{
+  "audit": "full-audit-04-deploy-ops",
+  "commit": "dc14d10",
+  "severity": { "S0": 0, "S1": 6, "S2": 10, "S3": 2 },
+  "priority": { "P0": 2, "P1": 9, "P2": 7 },
+  "findings": [
+    { "id": "OPS-001", "title": "No durable proven backup (local-only, deploy-only, restore never tested)", "severity": "S1", "priority": "P0", "blocker": "yes", "evidence": "deploy.sh:200 pg_dump local to /opt/club-ops/backups; no off-site; restore never executed", "deps": [] },
+    { "id": "OPS-002", "title": "Uploaded files lost on redeploy; not in any backup", "severity": "S1", "priority": "P0", "blocker": "conditional", "evidence": "STORAGE_PROVIDER default local, no prod guard", "deps": ["ARCH-017"] },
+    { "id": "OPS-003", "title": "Health liveness-only; no DB readiness", "severity": "S1", "priority": "P1", "blocker": "conditional", "evidence": "src/app/api/health/route.ts no DB call", "deps": ["ARCH-015"] },
+    { "id": "OPS-004", "title": "build:prod leaves postgres client, order-dependent, no restore", "severity": "S2", "priority": "P1", "blocker": "no", "evidence": "single un-pathed generator slot; no postbuild", "deps": ["ARCH-013"] },
+    { "id": "OPS-005", "title": "No structured logging / request-id / error tracker", "severity": "S2", "priority": "P1", "blocker": "no", "evidence": "ad-hoc console.*; no Sentry", "deps": [] },
+    { "id": "OPS-006", "title": "Failed authorization never audited or logged", "severity": "S1", "priority": "P1", "blocker": "no", "evidence": "access.ts:351 requirePageAccess silent redirect", "deps": [] },
+    { "id": "OPS-007", "title": "No monitoring / alerting", "severity": "S2", "priority": "P1", "blocker": "no", "evidence": "no metrics/uptime/error-tracker", "deps": [] },
+    { "id": "OPS-008", "title": "No in-repo scheduler for OFD import + notification drain", "severity": "S2", "priority": "P1", "blocker": "conditional", "evidence": "only deploy timer ships; jobs need manual external timer", "deps": [] },
+    { "id": "OPS-009", "title": "OFD import concurrency guard is check-then-insert race (bounded by dedupeKey)", "severity": "S3", "priority": "P2", "blocker": "no", "evidence": "importer.ts:71-75", "deps": [] },
+    { "id": "OPS-010", "title": "OFD day uses server-local timezone, not MSK-pinned", "severity": "S2", "priority": "P2", "blocker": "no", "evidence": "daily.ts:19-35", "deps": [] },
+    { "id": "OPS-011", "title": "CRON_SECRET missing from deploy env example", "severity": "S2", "priority": "P2", "blocker": "no", "evidence": "deploy/.env.production.example", "deps": ["ARCH-020"] },
+    { "id": "OPS-012", "title": "S3 credentials accept empty; no boot validation", "severity": "S2", "priority": "P2", "blocker": "no", "evidence": "s3-provider.ts:23-24", "deps": [] },
+    { "id": "OPS-013", "title": "DATABASE_URL unvalidated -> malformed URL silently sqlite (row locks no-op)", "severity": "S1", "priority": "P1", "blocker": "conditional", "evidence": "db-locking.ts:22", "deps": [] },
+    { "id": "OPS-014", "title": "Not zero-downtime; app can run against newer schema", "severity": "S2", "priority": "P2", "blocker": "no", "evidence": "deploy.sh migrate-before-app", "deps": ["ARCH-016"] },
+    { "id": "OPS-015", "title": "Plain non-CONCURRENT index builds write-lock at scale", "severity": "S2", "priority": "P2", "blocker": "no", "evidence": "CONCURRENTLY used nowhere; 5 recent migrations", "deps": [] },
+    { "id": "OPS-016", "title": "No tenant-scoped restore/export; Company deletion unrecoverable except full restore", "severity": "S1", "priority": "P1", "blocker": "no", "evidence": "shared DB; Company no soft-delete", "deps": ["DATA-008"] },
+    { "id": "OPS-017", "title": "No production access matrix / rotation / offboarding documented", "severity": "S3", "priority": "P2", "blocker": "no", "evidence": "none in-repo", "deps": [] },
+    { "id": "OPS-018", "title": "No in-app write-freeze / maintenance mode for money incidents", "severity": "S2", "priority": "P1", "blocker": "no", "evidence": "containment = stop container (also stops reads)", "deps": ["FIN-004", "FIN-005"] }
+  ]
+}
