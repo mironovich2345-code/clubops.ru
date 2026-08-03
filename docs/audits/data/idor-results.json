@@ -1,0 +1,38 @@
+{
+  "note": "Executed against a DISPOSABLE COPY of the dev sqlite DB (deleted after). Proves the tenant-scoping PRIMITIVE: the scoped {id,companyId} filter isolates tenants, while an unscoped findUnique/update by raw id crosses tenants — so every loader/writer MUST add the companyId/allowedClubIds filter (ARCH-005). The static scanners (security-read/write-scope.json) inventory whether each real site does.",
+  "tenantsSynthetic": 2,
+  "checks": 5,
+  "leaks": 1,
+  "results": [
+    {
+      "id": "IDOR-READ-SCOPED",
+      "desc": "A reads B's club via {id, companyId:A} scoped filter",
+      "verdict": "ISOLATED",
+      "detail": "returned null"
+    },
+    {
+      "id": "IDOR-READ-UNSCOPED",
+      "desc": "raw findUnique({id}) WITHOUT companyId returns B's row (demonstrates the scope filter is load-bearing — ARCH-005)",
+      "verdict": "ISOLATED",
+      "detail": "raw id read returned B's row → any unscoped loader leaks"
+    },
+    {
+      "id": "IDOR-CLUBSCOPE",
+      "desc": "A's club list (companyId=A, id in allowedClubIds=[clubA]) never contains clubB",
+      "verdict": "ISOLATED",
+      "detail": "1 clubs, contains B: false"
+    },
+    {
+      "id": "IDOR-WRITE-SCOPED",
+      "desc": "A writes B's club via updateMany({id, companyId:A}) affects 0 rows",
+      "verdict": "ISOLATED",
+      "detail": "updateMany affected 0 rows"
+    },
+    {
+      "id": "IDOR-WRITE-UNSCOPED",
+      "desc": "raw updateMany({id}) WITHOUT companyId matches B's row (a mass-assignment/unguarded write would cross tenants)",
+      "verdict": "LEAK",
+      "detail": "raw id write matched 1 row → unguarded id-keyed writes are cross-tenant capable"
+    }
+  ]
+}

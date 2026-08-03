@@ -1,0 +1,1472 @@
+{
+  "idKeyedReads": 192,
+  "idReadsUnscopedNearby": 75,
+  "clientTenantTrust": [
+    {
+      "path": "src/app/(app)/budgets/actions.ts",
+      "line": 45,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/budgets/proposal-actions.ts",
+      "line": 26,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 68,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim() || null;"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 168,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim() || null;"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 197,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim() || null;"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 328,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim() || null;"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 387,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim() || null;"
+    },
+    {
+      "path": "src/app/(app)/collections/reconciliation-actions.ts",
+      "line": 46,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/dashboard/actions.ts",
+      "line": 55,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/dashboard/strategic-actions.ts",
+      "line": 46,
+      "intersectedNearby": true,
+      "code": "const companyId = String(formData.get(\"companyId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/dashboard/strategic-actions.ts",
+      "line": 86,
+      "intersectedNearby": true,
+      "code": "const companyId = String(formData.get(\"companyId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/dashboard/strategic-actions.ts",
+      "line": 87,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/dashboard/strategic-actions.ts",
+      "line": 120,
+      "intersectedNearby": false,
+      "code": "const companyId = String(formData.get(\"companyId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/dashboard/strategic-actions.ts",
+      "line": 121,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/employees/actions.ts",
+      "line": 39,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "line": 125,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "line": 284,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/expenses/cash-actions.ts",
+      "line": 73,
+      "intersectedNearby": false,
+      "code": "let legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/expenses/payroll-actions.ts",
+      "line": 72,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/expenses/payroll-actions.ts",
+      "line": 232,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 156,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 325,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 506,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/mandatory-payments/actions.ts",
+      "line": 36,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/mandatory-payments/actions.ts",
+      "line": 44,
+      "intersectedNearby": true,
+      "code": "const legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim() || null;"
+    },
+    {
+      "path": "src/app/(app)/payroll/actions.ts",
+      "line": 96,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/payroll/actions.ts",
+      "line": 179,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 87,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 222,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 72,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 103,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/refunds/actions.ts",
+      "line": 106,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/refunds/actions.ts",
+      "line": 176,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/refunds/refund-document-actions.ts",
+      "line": 61,
+      "intersectedNearby": true,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/refunds/refund-document-actions.ts",
+      "line": 688,
+      "intersectedNearby": false,
+      "code": "const legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/sales/actions.ts",
+      "line": 43,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 100,
+      "intersectedNearby": false,
+      "code": "const companyId = String(formData.get(\"companyId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 125,
+      "intersectedNearby": false,
+      "code": "const companyId = String(formData.get(\"companyId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 219,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 249,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 298,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 59,
+      "intersectedNearby": false,
+      "code": "const companyId = String(formData.get(\"companyId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 105,
+      "intersectedNearby": false,
+      "code": "const legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 133,
+      "intersectedNearby": false,
+      "code": "const legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 167,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 168,
+      "intersectedNearby": false,
+      "code": "const legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 234,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 235,
+      "intersectedNearby": false,
+      "code": "const legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 276,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/steps-actions.ts",
+      "line": 61,
+      "intersectedNearby": false,
+      "code": "const legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/steps-actions.ts",
+      "line": 118,
+      "intersectedNearby": false,
+      "code": "const clubId = String(formData.get(\"clubId\") ?? \"\").trim();"
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/steps-actions.ts",
+      "line": 119,
+      "intersectedNearby": false,
+      "code": "const legalEntityId = String(formData.get(\"legalEntityId\") ?? \"\").trim();"
+    }
+  ],
+  "reads": [
+    {
+      "path": "src/app/(app)/budgets/actions.ts",
+      "line": 26,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/budgets/proposal-actions.ts",
+      "line": 37,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/budgets/proposal-actions.ts",
+      "line": 63,
+      "scopedNearby": true,
+      "code": "const p = await prisma.budgetChangeProposal.findUnique({ where: { id: proposalId }, select: { clubId: true, companyId: t"
+    },
+    {
+      "path": "src/app/(app)/budgets/_components/SalaryBudgetPanel.tsx",
+      "line": 45,
+      "scopedNearby": true,
+      "code": "prisma.company.findUnique({ where: { id: companyId }, select: { salaryBudgetSyncMode: true, salaryBudgetIncludesTaxes: t"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 122,
+      "scopedNearby": true,
+      "code": "const old = await prisma.balanceSnapshot.findFirst({ where: { id: snapshotId, clubId: { in: g.clubIds }, status: \"active"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 154,
+      "scopedNearby": true,
+      "code": "const old = await prisma.balanceSnapshot.findFirst({ where: { id: snapshotId, clubId: { in: g.clubIds }, status: \"active"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 230,
+      "scopedNearby": true,
+      "code": "const row = await prisma.cashCollection.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, se"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 253,
+      "scopedNearby": true,
+      "code": "const row = await prisma.cashWithdrawal.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, se"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 283,
+      "scopedNearby": true,
+      "code": "const row = await prisma.cashCollection.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, se"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 304,
+      "scopedNearby": true,
+      "code": "const row = await prisma.cashWithdrawal.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, se"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 360,
+      "scopedNearby": true,
+      "code": "const row = await prisma.cashOtherIncome.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, s"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 434,
+      "scopedNearby": true,
+      "code": "const row = await prisma.cashRegionalTransfer.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds }"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 456,
+      "scopedNearby": true,
+      "code": "const row = await prisma.cashRegionalTransfer.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds }"
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "line": 476,
+      "scopedNearby": true,
+      "code": "const row = await prisma.cashOtherIncome.findFirst({ where: { id, companyId: g.companyId, clubId: { in: g.clubIds } }, s"
+    },
+    {
+      "path": "src/app/(app)/dashboard/actions.ts",
+      "line": 25,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/dashboard/actions.ts",
+      "line": 58,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/dashboard/strategic-actions.ts",
+      "line": 52,
+      "scopedNearby": true,
+      "code": "? await prisma.expense.findUnique({ where: { id: objectId }, select: { companyId: true, clubId: true } })"
+    },
+    {
+      "path": "src/app/(app)/dashboard/strategic-actions.ts",
+      "line": 53,
+      "scopedNearby": true,
+      "code": ": await prisma.invoice.findUnique({ where: { id: objectId }, select: { companyId: true, clubId: true } });"
+    },
+    {
+      "path": "src/app/(app)/dashboard/strategic-actions.ts",
+      "line": 93,
+      "scopedNearby": true,
+      "code": "const rec = await prisma.refund.findUnique({ where: { id: objectId }, select: { companyId: true, clubId: true } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "line": 115,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/cash-actions.ts",
+      "line": 46,
+      "scopedNearby": false,
+      "code": "const le = await prisma.legalEntity.findUnique({ where: { id: legalEntityId }, select: { type: true, isActive: true } })"
+    },
+    {
+      "path": "src/app/(app)/expenses/cash-actions.ts",
+      "line": 126,
+      "scopedNearby": false,
+      "code": "const m = await prisma.cashMovement.findUnique({ where: { id }, select: { clubId: true } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/category-actions.ts",
+      "line": 73,
+      "scopedNearby": true,
+      "code": "const cat = await prisma.expenseCategory.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/category-actions.ts",
+      "line": 94,
+      "scopedNearby": true,
+      "code": "const cat = await prisma.expenseCategory.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/document-actions.ts",
+      "line": 145,
+      "scopedNearby": false,
+      "code": "const doc = await prisma.expenseDocument.findUnique({ where: { id: documentId }, select: { expenseId: true, removedAt: t"
+    },
+    {
+      "path": "src/app/(app)/expenses/payroll-actions.ts",
+      "line": 63,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/simple/page.tsx",
+      "line": 26,
+      "scopedNearby": true,
+      "code": "prisma.user.findUnique({ where: { id: ctx.user.id }, select: { name: true, firstName: true, lastName: true, deletedAt: t"
+    },
+    {
+      "path": "src/app/(app)/expenses/simplified-actions.ts",
+      "line": 294,
+      "scopedNearby": true,
+      "code": "const exp = await prisma.expense.findUnique({ where: { id: expenseId }, select: { id: true, companyId: true, clubId: tru"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 147,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 704,
+      "scopedNearby": true,
+      "code": "const payment = await prisma.invoicePayment.findUnique({ where: { id: paymentId }, select: { id: true, invoiceId: true, "
+    },
+    {
+      "path": "src/app/(app)/invoices/page.tsx",
+      "line": 66,
+      "scopedNearby": false,
+      "code": "prisma.company.findUnique({ where: { id: ctx.selectedCompanyId }, select: { name: true } }),"
+    },
+    {
+      "path": "src/app/(app)/invoices/[id]/page.tsx",
+      "line": 160,
+      "scopedNearby": false,
+      "code": "? await prisma.user.findUnique({ where: { id: invoice.aiDataReviewedById }, select: { name: true } })"
+    },
+    {
+      "path": "src/app/(app)/mandatory-payments/actions.ts",
+      "line": 50,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/mandatory-payments/actions.ts",
+      "line": 78,
+      "scopedNearby": true,
+      "code": "const ent = await prisma.legalEntity.findUnique({ where: { id: legalEntityId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/mandatory-payments/actions.ts",
+      "line": 83,
+      "scopedNearby": true,
+      "code": "const existing = await prisma.mandatoryPaymentPlan.findUnique({ where: { id }, select: { companyId: true, clubId: true }"
+    },
+    {
+      "path": "src/app/(app)/mandatory-payments/actions.ts",
+      "line": 126,
+      "scopedNearby": true,
+      "code": "const existing = await prisma.mandatoryPaymentPlan.findUnique({ where: { id }, select: { companyId: true, clubId: true }"
+    },
+    {
+      "path": "src/app/(app)/month-reopen-actions.ts",
+      "line": 85,
+      "scopedNearby": true,
+      "code": "const req = await prisma.monthReopenRequest.findUnique({ where: { id: requestId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/actions.ts",
+      "line": 148,
+      "scopedNearby": true,
+      "code": "const a = await prisma.employeeClubAssignment.findUnique({ where: { id: assignmentId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 54,
+      "scopedNearby": true,
+      "code": "const employeeName = (await prisma.clubEmployee.findUnique({ where: { id: params.employeeId }, select: { fullName: true "
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 160,
+      "scopedNearby": true,
+      "code": "const advance = await prisma.payrollAdvance.findUnique({ where: { id: advanceId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 184,
+      "scopedNearby": true,
+      "code": "const advance = await prisma.payrollAdvance.findUnique({ where: { id: advanceId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 254,
+      "scopedNearby": true,
+      "code": "const adv = await prisma.payrollAdvance.findUnique({ where: { id: advanceId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 278,
+      "scopedNearby": true,
+      "code": "const adv = await prisma.payrollAdvance.findUnique({ where: { id: advanceId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 302,
+      "scopedNearby": true,
+      "code": "const employeeName = (await prisma.clubEmployee.findUnique({ where: { id: adv.employeeId }, select: { fullName: true } }"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 339,
+      "scopedNearby": true,
+      "code": "const tr = await prisma.payrollAdvancePayment.findUnique({ where: { id: trancheId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 341,
+      "scopedNearby": true,
+      "code": "const adv = await prisma.payrollAdvance.findUnique({ where: { id: tr.employeeAdvanceId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 352,
+      "scopedNearby": true,
+      "code": "const period = await prisma.payrollPeriod.findUnique({ where: { id: calc.payrollPeriodId }, select: { status: true } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advances/[id]/page.tsx",
+      "line": 26,
+      "scopedNearby": true,
+      "code": "const adv = await prisma.payrollAdvance.findFirst({ where: { id, companyId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advances/[id]/page.tsx",
+      "line": 29,
+      "scopedNearby": true,
+      "code": "prisma.clubEmployee.findUnique({ where: { id: adv.employeeId }, select: { fullName: true, position: true } }),"
+    },
+    {
+      "path": "src/app/(app)/payroll/advances/[id]/page.tsx",
+      "line": 30,
+      "scopedNearby": true,
+      "code": "prisma.club.findUnique({ where: { id: adv.clubId }, select: { name: true } }),"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 47,
+      "scopedNearby": true,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 58,
+      "scopedNearby": true,
+      "code": "const req = await prisma.payrollChangeRequest.findUnique({ where: { id: requestId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 375,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: req.payrollCalculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 485,
+      "scopedNearby": false,
+      "code": "const period = await prisma.payrollPeriod.findUnique({ where: { id: req.payrollPeriodId }, select: { status: true } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 530,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: req.payrollCalculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 589,
+      "scopedNearby": true,
+      "code": "const req = await prisma.payrollChangeRequest.findUnique({ where: { id: requestId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 609,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/[id]/page.tsx",
+      "line": 44,
+      "scopedNearby": true,
+      "code": "const req = await prisma.payrollChangeRequest.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/[id]/page.tsx",
+      "line": 48,
+      "scopedNearby": true,
+      "code": "req.employeeId ? prisma.clubEmployee.findUnique({ where: { id: req.employeeId }, select: { fullName: true } }) : Promise"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/[id]/page.tsx",
+      "line": 49,
+      "scopedNearby": true,
+      "code": "req.payrollCalculationId ? prisma.payrollCalculation.findUnique({ where: { id: req.payrollCalculationId }, select: { id:"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/[id]/page.tsx",
+      "line": 50,
+      "scopedNearby": false,
+      "code": "prisma.user.findUnique({ where: { id: req.requestedById }, select: { name: true, email: true } }),"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/[id]/page.tsx",
+      "line": 51,
+      "scopedNearby": false,
+      "code": "req.reviewedById ? prisma.user.findUnique({ where: { id: req.reviewedById }, select: { name: true, email: true } }) : Pr"
+    },
+    {
+      "path": "src/app/(app)/payroll/obligations/actions.ts",
+      "line": 21,
+      "scopedNearby": true,
+      "code": "const obligation = await prisma.employeeFinancialObligation.findUnique({ where: { id: obligationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/ofd-cashiers/actions.ts",
+      "line": 23,
+      "scopedNearby": true,
+      "code": "const identity = await prisma.ofdCashierIdentity.findUnique({ where: { id: identityId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/ofd-cashiers/actions.ts",
+      "line": 53,
+      "scopedNearby": true,
+      "code": "const employee = await prisma.clubEmployee.findUnique({ where: { id: employeeId }, select: { companyId: true, clubId: tr"
+    },
+    {
+      "path": "src/app/(app)/payroll/ofd-cashiers/[id]/page.tsx",
+      "line": 32,
+      "scopedNearby": true,
+      "code": "const identity = await prisma.ofdCashierIdentity.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 149,
+      "scopedNearby": true,
+      "code": "const employee = await prisma.clubEmployee.findUnique({ where: { id: employeeId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 311,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 545,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 604,
+      "scopedNearby": false,
+      "code": "const adj = await prisma.payrollAdjustment.findUnique({ where: { id: adjustmentId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 606,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: adj.payrollCalculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 703,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 733,
+      "scopedNearby": true,
+      "code": "const employeeName = (await prisma.clubEmployee.findUnique({ where: { id: calc.employeeId }, select: { fullName: true } "
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 794,
+      "scopedNearby": false,
+      "code": "const payment = await prisma.payrollPayment.findUnique({ where: { id: paymentId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 796,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: payment.payrollCalculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 834,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 875,
+      "scopedNearby": true,
+      "code": "const employeeName = (await prisma.clubEmployee.findUnique({ where: { id: calc.employeeId }, select: { fullName: true } "
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 934,
+      "scopedNearby": true,
+      "code": "const advance = await prisma.payrollAdvance.findUnique({ where: { id: advanceId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 34,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 51,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 133,
+      "scopedNearby": false,
+      "code": "const pkg = await prisma.payrollTrainerPackage.findUnique({ where: { id: packageId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 150,
+      "scopedNearby": false,
+      "code": "const pkg = await prisma.payrollTrainerPackage.findUnique({ where: { id: packageId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 181,
+      "scopedNearby": false,
+      "code": "const employee = await prisma.clubEmployee.findUnique({ where: { id: scope.calc.employeeId }, select: { status: true } }"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/[id]/employees/[calculationId]/page.tsx",
+      "line": 44,
+      "scopedNearby": false,
+      "code": "const employee = await prisma.clubEmployee.findUnique({ where: { id: c.employeeId }, select: { fullName: true, status: t"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 73,
+      "scopedNearby": true,
+      "code": "const row = await prisma.regionalCityPayroll.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 93,
+      "scopedNearby": true,
+      "code": "const row = await prisma.regionalCityPayroll.findUnique({ where: { id: payrollId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 104,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true, city: true } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 172,
+      "scopedNearby": true,
+      "code": "const payment = await prisma.regionalCityPayment.findUnique({ where: { id: paymentId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/sales-actions.ts",
+      "line": 71,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 22,
+      "scopedNearby": true,
+      "code": "const scheme = await prisma.employeePayScheme.findUnique({ where: { id: schemeId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/[id]/page.tsx",
+      "line": 47,
+      "scopedNearby": true,
+      "code": "const anchor = await prisma.employeePayScheme.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/[id]/page.tsx",
+      "line": 54,
+      "scopedNearby": true,
+      "code": "const employee = anchor.employeeId ? await prisma.clubEmployee.findUnique({ where: { id: anchor.employeeId }, select: { "
+    },
+    {
+      "path": "src/app/(app)/refunds/actions.ts",
+      "line": 90,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/refunds/new/[id]/details/page.tsx",
+      "line": 42,
+      "scopedNearby": false,
+      "code": "? await prisma.user.findUnique({ where: { id: refund.regionalReviewedByUserId }, select: { name: true, firstName: true, "
+    },
+    {
+      "path": "src/app/(app)/refunds/refund-document-actions.ts",
+      "line": 34,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/refunds/refund-document-actions.ts",
+      "line": 215,
+      "scopedNearby": false,
+      "code": "const doc = await prisma.refundDocument.findUnique({ where: { id: documentId }, select: { refundId: true, removedAt: tru"
+    },
+    {
+      "path": "src/app/(app)/refunds/[id]/page.tsx",
+      "line": 252,
+      "scopedNearby": false,
+      "code": "const u = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, firstName: true, lastName: true, d"
+    },
+    {
+      "path": "src/app/(app)/refunds/[id]/page.tsx",
+      "line": 257,
+      "scopedNearby": false,
+      "code": "const le = await prisma.legalEntity.findUnique({ where: { id: legalEntityId }, select: { name: true, shortName: true } }"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 224,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 88,
+      "scopedNearby": true,
+      "code": "? await prisma.ofdConnection.findFirst({ where: { id: editId, companyId: g.companyId, provider: \"taxcom\" } })"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 158,
+      "scopedNearby": true,
+      "code": "const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 267,
+      "scopedNearby": true,
+      "code": "const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 328,
+      "scopedNearby": true,
+      "code": "const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId }, select: { id: true"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 351,
+      "scopedNearby": true,
+      "code": "const connection = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 353,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findFirst({ where: { id: clubId, companyId: g.companyId }, select: { id: true } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 361,
+      "scopedNearby": true,
+      "code": "const le = await prisma.legalEntity.findFirst({ where: { id: legalEntityId, companyId: g.companyId }, select: { id: true"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 401,
+      "scopedNearby": true,
+      "code": "const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { id: mappingId, companyId: g.companyId, provider"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 406,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findFirst({ where: { id: clubId, companyId: g.companyId }, select: { id: true } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 409,
+      "scopedNearby": true,
+      "code": "const le = await prisma.legalEntity.findFirst({ where: { id: legalEntityId, companyId: g.companyId }, select: { id: true"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 430,
+      "scopedNearby": true,
+      "code": "const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { id: str(formData, \"mappingId\") ?? \"\", companyId"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 446,
+      "scopedNearby": true,
+      "code": "const connection = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId }, select: {"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 449,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findFirst({ where: { id: clubId, companyId: g.companyId }, select: { id: true } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 452,
+      "scopedNearby": true,
+      "code": "const le = await prisma.legalEntity.findFirst({ where: { id: legalEntityId, companyId: g.companyId }, select: { id: true"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 490,
+      "scopedNearby": true,
+      "code": "const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { id: str(formData, \"mappingId\") ?? \"\", companyId"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 528,
+      "scopedNearby": true,
+      "code": "const mapping = await prisma.ofdCashRegisterMapping.findFirst({ where: { id: str(formData, \"mappingId\") ?? \"\", companyId"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 564,
+      "scopedNearby": true,
+      "code": "const c = await prisma.ofdConnection.findFirst({ where: { id, companyId: g.companyId }, select: { id: true, isActive: tr"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 576,
+      "scopedNearby": true,
+      "code": "const m = await prisma.ofdCashRegisterMapping.findFirst({ where: { id, companyId: g.companyId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 595,
+      "scopedNearby": true,
+      "code": "const connection = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId }, select: {"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 621,
+      "scopedNearby": false,
+      "code": "const currentClubName = currentClubId ? clubName.get(currentClubId) ?? (await prisma.club.findFirst({ where: { id: curre"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 688,
+      "scopedNearby": true,
+      "code": "const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 734,
+      "scopedNearby": true,
+      "code": "const c = await prisma.ofdConnection.findFirst({ where: { id: connectionId, companyId: g.companyId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 106,
+      "scopedNearby": true,
+      "code": "const existing = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 135,
+      "scopedNearby": true,
+      "code": "const existing = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 169,
+      "scopedNearby": true,
+      "code": "const entity = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 170,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true, isActive: true } });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 236,
+      "scopedNearby": true,
+      "code": "const entity = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 282,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true, isActive: true } });"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 35,
+      "scopedNearby": false,
+      "code": "const user = await prisma.user.findUnique({ where: { id: current.id }, select: { isActive: true, deletedAt: true, update"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 64,
+      "scopedNearby": false,
+      "code": "return prisma.user.findUnique({ where: { id }, select: { passwordHash: true, email: true, isActive: true, deletedAt: tru"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 92,
+      "scopedNearby": false,
+      "code": "const user = await prisma.user.findUnique({ where: { id: current.id }, select: { email: true } });"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 201,
+      "scopedNearby": false,
+      "code": "const user = await prisma.user.findUnique({ where: { id: current.id }, select: { email: true } });"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 252,
+      "scopedNearby": false,
+      "code": "const user = await tx.user.findUnique({ where: { id: current.id }, select: { email: true, isActive: true, deletedAt: tru"
+    },
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "line": 28,
+      "scopedNearby": false,
+      "code": "prisma.user.findUnique({ where: { id: user.id }, select: { firstName: true, lastName: true, email: true, updatedAt: true"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 509,
+      "scopedNearby": true,
+      "code": "const row = await prisma.companyUserAccess.findUnique({ where: { id: accessId } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 547,
+      "scopedNearby": false,
+      "code": "const row = await prisma.clubUserAccess.findUnique({ where: { id: accessId } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 682,
+      "scopedNearby": false,
+      "code": "const me = await prisma.user.findUnique({ where: { id: actor.id }, select: { passwordHash: true, email: true, isActive: "
+    },
+    {
+      "path": "src/app/(app)/users/role-actions.ts",
+      "line": 37,
+      "scopedNearby": true,
+      "code": "const user = await prisma.user.findUnique({ where: { id: targetUserId }, select: { isActive: true, deletedAt: true, syst"
+    },
+    {
+      "path": "src/app/(app)/users/role-actions.ts",
+      "line": 130,
+      "scopedNearby": true,
+      "code": "const stillActive = await tx.club.findFirst({ where: { id: clubId, companyId: gd.companyId, isActive: true }, select: { "
+    },
+    {
+      "path": "src/app/accept-invite/actions.ts",
+      "line": 26,
+      "scopedNearby": false,
+      "code": "? await prisma.invite.findUnique({ where: { id: inviteId } })"
+    },
+    {
+      "path": "src/app/api/expenses/[id]/documents/[docId]/route.ts",
+      "line": 22,
+      "scopedNearby": true,
+      "code": "const doc = await prisma.expenseDocument.findUnique({ where: { id: docId } });"
+    },
+    {
+      "path": "src/app/system-admin/accounts/actions.ts",
+      "line": 22,
+      "scopedNearby": false,
+      "code": "const del = await prisma.accountDeletion.findUnique({ where: { id: deletionId } });"
+    },
+    {
+      "path": "src/app/system-admin/accounts/actions.ts",
+      "line": 46,
+      "scopedNearby": false,
+      "code": "const del = await prisma.accountDeletion.findUnique({ where: { id: deletionId }, select: { userId: true, restoredAt: tru"
+    },
+    {
+      "path": "src/lib/access.ts",
+      "line": 416,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });"
+    },
+    {
+      "path": "src/lib/access.ts",
+      "line": 634,
+      "scopedNearby": true,
+      "code": "const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { role: true } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 80,
+      "scopedNearby": false,
+      "code": "const stored = await prisma.storedAccountSession.findUnique({ where: { id: c.activeStoredSessionId } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 82,
+      "scopedNearby": false,
+      "code": "const session = await prisma.session.findUnique({ where: { id: stored.sessionId }, include: { user: true } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 90,
+      "scopedNearby": false,
+      "code": "const stored = await prisma.storedAccountSession.findUnique({ where: { id: storedId } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 93,
+      "scopedNearby": false,
+      "code": "const session = await prisma.session.findUnique({ where: { id: stored.sessionId }, include: { user: true } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 103,
+      "scopedNearby": false,
+      "code": "const stored = await prisma.storedAccountSession.findUnique({ where: { id: storedId } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 108,
+      "scopedNearby": false,
+      "code": "const container = await prisma.accountSessionContainer.findUnique({ where: { id: containerId } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 145,
+      "scopedNearby": false,
+      "code": "const container = await prisma.accountSessionContainer.findUnique({ where: { id: containerId } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 149,
+      "scopedNearby": false,
+      "code": "const session = await prisma.session.findUnique({ where: { id: s.sessionId }, include: { user: true } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 150,
+      "scopedNearby": false,
+      "code": "const user = session?.user ?? (await prisma.user.findUnique({ where: { id: s.userId } }));"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 267,
+      "scopedNearby": false,
+      "code": "const container = await prisma.accountSessionContainer.findUnique({ where: { id: containerId } });"
+    },
+    {
+      "path": "src/lib/account-deletion.ts",
+      "line": 51,
+      "scopedNearby": false,
+      "code": "const user = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true, deletedAt: true } });"
+    },
+    {
+      "path": "src/lib/account-deletion.ts",
+      "line": 61,
+      "scopedNearby": false,
+      "code": "const target = await prisma.user.findUnique({ where: { id: targetId }, select: { isActive: true, deletedAt: true, system"
+    },
+    {
+      "path": "src/lib/account-deletion.ts",
+      "line": 110,
+      "scopedNearby": false,
+      "code": "const user = await tx.user.findUnique({ where: { id: userId }, select: { email: true, deletedAt: true, isActive: true } "
+    },
+    {
+      "path": "src/lib/account-restore.ts",
+      "line": 31,
+      "scopedNearby": false,
+      "code": "const user = await prisma.user.findUnique({ where: { id: deletion.userId }, select: { deletedAt: true } });"
+    },
+    {
+      "path": "src/lib/account-restore.ts",
+      "line": 112,
+      "scopedNearby": false,
+      "code": "const deletion = await tx.accountDeletion.findUnique({ where: { id: deletionId }, select: { userId: true, restoredAt: tr"
+    },
+    {
+      "path": "src/lib/budgets.ts",
+      "line": 461,
+      "scopedNearby": true,
+      "code": "const req = await prisma.budgetApprovalRequest.findUnique({ where: { id: requestId } });"
+    },
+    {
+      "path": "src/lib/cash-reconciliation.ts",
+      "line": 180,
+      "scopedNearby": true,
+      "code": "const r = await prisma.dailyCashReconciliation.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/lib/cash-wallets.ts",
+      "line": 239,
+      "scopedNearby": false,
+      "code": "prisma.cashWallet.findUnique({ where: { id: opts.fromWalletId }, select: { clubId: true, legalEntityId: true, isActive: "
+    },
+    {
+      "path": "src/lib/cash-wallets.ts",
+      "line": 240,
+      "scopedNearby": false,
+      "code": "prisma.cashWallet.findUnique({ where: { id: opts.toWalletId }, select: { clubId: true, legalEntityId: true, isActive: tr"
+    },
+    {
+      "path": "src/lib/cash-wallets.ts",
+      "line": 293,
+      "scopedNearby": false,
+      "code": "const cur = await tx.cashMovement.findUnique({ where: { id: movementId }, select: { status: true } });"
+    },
+    {
+      "path": "src/lib/cash-wallets.ts",
+      "line": 387,
+      "scopedNearby": false,
+      "code": "const m = await prisma.cashMovement.findUnique({ where: { id: movementId } });"
+    },
+    {
+      "path": "src/lib/club-employees.ts",
+      "line": 83,
+      "scopedNearby": true,
+      "code": "const e = await prisma.clubEmployee.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 264,
+      "scopedNearby": false,
+      "code": "const u = await prisma.user.findUnique({ where: { id: b.createdByUserId }, select: { name: true } });"
+    },
+    {
+      "path": "src/lib/legal-entities.ts",
+      "line": 181,
+      "scopedNearby": true,
+      "code": "const e = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });"
+    },
+    {
+      "path": "src/lib/legal-entities.ts",
+      "line": 196,
+      "scopedNearby": true,
+      "code": "const e = await prisma.legalEntity.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/lib/mandatory-payments.ts",
+      "line": 88,
+      "scopedNearby": true,
+      "code": "const row = await prisma.mandatoryPaymentPlan.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/lib/month-close.ts",
+      "line": 70,
+      "scopedNearby": false,
+      "code": "? await prisma.user.findUnique({ where: { id: closed.closedByUserId }, select: { name: true } })"
+    },
+    {
+      "path": "src/lib/month-reopen.ts",
+      "line": 90,
+      "scopedNearby": false,
+      "code": "req.clubId ? prisma.club.findUnique({ where: { id: req.clubId }, select: { name: true } }) : Promise.resolve(null),"
+    },
+    {
+      "path": "src/lib/notifications/events.ts",
+      "line": 61,
+      "scopedNearby": false,
+      "code": "const club = await prisma.club.findUnique({ where: { id: clubId }, select: { name: true } });"
+    },
+    {
+      "path": "src/lib/ofd/astral/importer.ts",
+      "line": 97,
+      "scopedNearby": false,
+      "code": "const connection = await prisma.ofdConnection.findUnique({ where: { id: connectionId } });"
+    },
+    {
+      "path": "src/lib/ofd/astral/settings.ts",
+      "line": 70,
+      "scopedNearby": true,
+      "code": "const le = await prisma.legalEntity.findFirst({ where: { id: legalEntityId, companyId }, select: { id: true } });"
+    },
+    {
+      "path": "src/lib/ofd/astral/settings.ts",
+      "line": 77,
+      "scopedNearby": true,
+      "code": "const club = await prisma.club.findFirst({ where: { id: clubId, companyId }, select: { id: true } });"
+    },
+    {
+      "path": "src/lib/ofd/daily.ts",
+      "line": 102,
+      "scopedNearby": false,
+      "code": "const conn = await prisma.ofdConnection.findUnique({ where: { id: connectionId }, select: { provider: true } });"
+    },
+    {
+      "path": "src/lib/ofd/importer.ts",
+      "line": 67,
+      "scopedNearby": false,
+      "code": "const connection = await prisma.ofdConnection.findUnique({ where: { id: connectionId } });"
+    },
+    {
+      "path": "src/lib/payroll/aggregate.ts",
+      "line": 11,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/lib/payroll/budget-linkage.ts",
+      "line": 197,
+      "scopedNearby": true,
+      "code": "const p = await prisma.budgetChangeProposal.findUnique({ where: { id: args.proposalId } });"
+    },
+    {
+      "path": "src/lib/payroll/payment-obligation.ts",
+      "line": 72,
+      "scopedNearby": false,
+      "code": "const period = await prisma.payrollPeriod.findUnique({ where: { id: periodId } });"
+    },
+    {
+      "path": "src/lib/payroll/payment-obligation.ts",
+      "line": 96,
+      "scopedNearby": true,
+      "code": "const company = await prisma.company.findUnique({ where: { id: period.companyId }, select: { payrollFinalDay: true, payr"
+    },
+    {
+      "path": "src/lib/payroll/payment-obligation.ts",
+      "line": 171,
+      "scopedNearby": true,
+      "code": "const o = await prisma.payrollPaymentObligation.findUnique({ where: { id: args.obligationId } });"
+    },
+    {
+      "path": "src/lib/payroll/periods.ts",
+      "line": 91,
+      "scopedNearby": true,
+      "code": "const p = await prisma.payrollPeriod.findUnique({ where: { id } });"
+    },
+    {
+      "path": "src/lib/payroll/recompute.ts",
+      "line": 42,
+      "scopedNearby": false,
+      "code": "const calc = await prisma.payrollCalculation.findUnique({ where: { id: calculationId } });"
+    },
+    {
+      "path": "src/lib/payroll/scheme-service.ts",
+      "line": 105,
+      "scopedNearby": false,
+      "code": "const req = await prisma.payrollChangeRequest.findUnique({ where: { id: requestId } });"
+    },
+    {
+      "path": "src/lib/payroll/scheme-service.ts",
+      "line": 122,
+      "scopedNearby": false,
+      "code": "const calc = req.payrollCalculationId ? await prisma.payrollCalculation.findUnique({ where: { id: req.payrollCalculation"
+    },
+    {
+      "path": "src/lib/session.ts",
+      "line": 273,
+      "scopedNearby": false,
+      "code": "const row = await prisma.session.findUnique({ where: { id: sessionId }, select: { userId: true } });"
+    },
+    {
+      "path": "src/lib/settings-pin.ts",
+      "line": 31,
+      "scopedNearby": true,
+      "code": "const c = await prisma.company.findUnique({ where: { id: companyId }, select: { primaryOwnerUserId: true } });"
+    },
+    {
+      "path": "src/lib/settings-pin.ts",
+      "line": 70,
+      "scopedNearby": true,
+      "code": "const c = await prisma.company.findUnique({ where: { id: companyId }, select: { settingsPinHash: true } });"
+    },
+    {
+      "path": "src/lib/settings-pin.ts",
+      "line": 154,
+      "scopedNearby": true,
+      "code": "const c = await prisma.company.findUnique({ where: { id: companyId }, select: { settingsPinHash: true } });"
+    },
+    {
+      "path": "src/lib/telegram/linking.ts",
+      "line": 69,
+      "scopedNearby": false,
+      "code": "const user = await prisma.user.findUnique({ where: { id: code.userId }, select: { isActive: true, deletedAt: true } });"
+    }
+  ]
+}

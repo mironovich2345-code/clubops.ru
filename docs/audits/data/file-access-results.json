@@ -1,0 +1,77 @@
+{
+  "routes": 5,
+  "routesMissingAuthContext": 0,
+  "headers": {
+    "csp": true,
+    "cspNonce": true,
+    "cspUnsafeInline": true,
+    "cspUnsafeEval": true,
+    "xFrameOptions": true,
+    "frameAncestors": true,
+    "hsts": false,
+    "xContentTypeOptions": true,
+    "referrerPolicy": true,
+    "permissionsPolicy": true
+  },
+  "xssSinks": [
+    {
+      "path": "src/app/layout.tsx",
+      "line": 58,
+      "code": "<script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT }} />"
+    }
+  ],
+  "rawSql": [
+    {
+      "path": "src/lib/db-locking.ts",
+      "line": 38,
+      "code": "await tx.$queryRaw`SELECT id FROM \"Club\" WHERE id = ${clubId} FOR UPDATE`;"
+    },
+    {
+      "path": "src/lib/db-locking.ts",
+      "line": 51,
+      "code": "await tx.$queryRaw`SELECT id FROM \"Company\" WHERE id = ${companyId} FOR UPDATE`;"
+    }
+  ],
+  "detail": [
+    {
+      "route": "src/app/api/expenses/[id]/documents/[docId]/route.ts",
+      "authContext": true,
+      "scopedLoader": true,
+      "docIdCrosschecked": true,
+      "contentDisposition": false,
+      "cacheControl": false
+    },
+    {
+      "route": "src/app/api/expenses/[id]/file/route.ts",
+      "authContext": true,
+      "scopedLoader": true,
+      "docIdCrosschecked": false,
+      "contentDisposition": true,
+      "cacheControl": false
+    },
+    {
+      "route": "src/app/api/invoices/[id]/file/route.ts",
+      "authContext": true,
+      "scopedLoader": true,
+      "docIdCrosschecked": true,
+      "contentDisposition": true,
+      "cacheControl": true
+    },
+    {
+      "route": "src/app/api/refunds/[id]/file/route.ts",
+      "authContext": true,
+      "scopedLoader": true,
+      "docIdCrosschecked": true,
+      "contentDisposition": true,
+      "cacheControl": false
+    },
+    {
+      "route": "src/app/api/sales-reports/[id]/file/route.ts",
+      "authContext": true,
+      "scopedLoader": true,
+      "docIdCrosschecked": false,
+      "contentDisposition": false,
+      "cacheControl": false
+    }
+  ]
+}

@@ -1,0 +1,710 @@
+{
+  "idKeyedWrites": 112,
+  "idWritesNoGuardNearby": 67,
+  "massAssignment": [
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "line": 429,
+      "code": "await prisma.expense.update({ where: { id: expenseId }, data: parsed.data });"
+    },
+    {
+      "path": "src/app/(app)/refunds/actions.ts",
+      "line": 254,
+      "code": "await prisma.refund.update({ where: { id: refundId }, data: parsed.data });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 540,
+      "code": "await recordAudit({ action: \"ofd.cash_register_purge_started\", entityType: \"OfdCashRegisterMapping\", entityId: mapping.i"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 213,
+      "code": "const b = await prisma.importBatch.create({ data: { ...data, status: \"completed\" } });"
+    },
+    {
+      "path": "src/lib/ofd/taxcom/client.ts",
+      "line": 193,
+      "code": "return { ok: true, data: parsed };"
+    },
+    {
+      "path": "src/lib/payroll/sales-attribution.ts",
+      "line": 122,
+      "code": "await prisma.payrollSalesAttribution.create({ data: { ...a, source: \"ofd_confirmed\", status: \"attributed\" } });"
+    }
+  ],
+  "writes": [
+    {
+      "path": "src/app/(app)/collections/reconciliation-actions.ts",
+      "line": 185,
+      "scopeGuardNearby": false,
+      "code": "await prisma.dailyCashReconciliation.update({ where: { id: r.id }, data });"
+    },
+    {
+      "path": "src/app/(app)/dashboard/actions.ts",
+      "line": 76,
+      "scopeGuardNearby": true,
+      "code": "await prisma.salesPlan.update({ where: { id: existing.id }, data: { targetAmountKopeks } });"
+    },
+    {
+      "path": "src/app/(app)/dashboard/plan-import-actions.ts",
+      "line": 106,
+      "scopeGuardNearby": true,
+      "code": "await tx.salesPlan.update({ where: { id: existing.id }, data: { targetAmountKopeks: amt } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "line": 429,
+      "scopeGuardNearby": false,
+      "code": "await prisma.expense.update({ where: { id: expenseId }, data: parsed.data });"
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "line": 488,
+      "scopeGuardNearby": true,
+      "code": "await prisma.expense.update({ where: { id: existing.id }, data: { status: EXPENSE_STATUS_CANCELED } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/category-actions.ts",
+      "line": 81,
+      "scopeGuardNearby": true,
+      "code": "await tx.expenseCategory.update({ where: { id }, data: { name } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/category-actions.ts",
+      "line": 100,
+      "scopeGuardNearby": true,
+      "code": "await prisma.expenseCategory.update({ where: { id }, data: { isActive: active } });"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 670,
+      "scopeGuardNearby": true,
+      "code": "await tx.invoice.update({ where: { id: invoice.id }, data: { prePaymentStatus: invoice.status } });"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 679,
+      "scopeGuardNearby": false,
+      "code": "await tx.invoice.update({ where: { id: invoice.id }, data: { status: nextStatus, paidAt: newPaid >= invoice.amountKopeks"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 717,
+      "scopeGuardNearby": true,
+      "code": "await tx.invoice.update({ where: { id: invoice.id }, data: { status: nextStatus, paidAt: newPaid >= invoice.amountKopeks"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 783,
+      "scopeGuardNearby": false,
+      "code": "await prisma.invoice.update({ where: { id: invoiceId }, data });"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 1150,
+      "scopeGuardNearby": true,
+      "code": "await prisma.invoice.update({ where: { id: existing.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/mandatory-payments/actions.ts",
+      "line": 130,
+      "scopeGuardNearby": true,
+      "code": "await prisma.mandatoryPaymentPlan.update({ where: { id }, data: { status, isActive } });"
+    },
+    {
+      "path": "src/app/(app)/month-reopen-actions.ts",
+      "line": 206,
+      "scopeGuardNearby": false,
+      "code": "await tx.monthClose.update({ where: { id: closeRow.id }, data: { status: \"open\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/actions.ts",
+      "line": 151,
+      "scopeGuardNearby": true,
+      "code": "await prisma.employeeClubAssignment.update({ where: { id: assignmentId }, data: { isActive: false } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 69,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollAdvance.update({ where: { id: advanceId }, data: { status: \"paid\", paidByUserId: params.userId, paid"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 170,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollAdvance.update({ where: { id: advance.id }, data: { approvedByUserId: ctx.user.id } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 193,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollAdvance.update({ where: { id: advance.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 263,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollAdvance.update({ where: { id: adv.id }, data: { approvedAmountKopeks: newApproved, status: adv.statu"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 317,
+      "scopeGuardNearby": true,
+      "code": "await tx.payrollAdvance.update({ where: { id: adv.id }, data: { status: \"paid\", paidByUserId: ctx.user.id, paidAt: new D"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 327,
+      "scopeGuardNearby": true,
+      "code": "if (calc) { await prisma.payrollAdvance.update({ where: { id: adv.id }, data: { linkedPayrollCalculationId: calc.id } })"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 359,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollAdvancePayment.update({ where: { id: tr.id }, data: { status: \"reversed\", reversedAt: new Date(), re"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 536,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollCalculation.update({ where: { id: calc.id }, data: { approvedOverridesJson: JSON.stringify({ overrid"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 553,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollChangeRequest.update({ where: { id: req.id }, data: { appliedToken: null } }).catch(() => {});"
+    },
+    {
+      "path": "src/app/(app)/payroll/ofd-cashiers/actions.ts",
+      "line": 62,
+      "scopeGuardNearby": false,
+      "code": "await tx.ofdCashierIdentity.update({ where: { id: identity.id }, data: { status: \"active\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 168,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollCalculation.update({ where: { id: existing.id }, data: { schemeSnapshotJson: JSON.stringify(snapshot"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 327,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollCalculation.update({ where: { id: calc.id }, data: { completionBp: planCompletionBp } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 437,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollPeriod.update({ where: { id: periodId }, data });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 479,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollCalculation.update({ where: { id: c.id }, data: { status: \"closed\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 614,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollAdjustment.update({ where: { id: adjustmentId }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 768,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollPayment.update({ where: { id: payment.id }, data: { expenseId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 805,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollPayment.update({ where: { id: payment.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 910,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollAdvance.update({ where: { id: advance.id }, data: { expenseId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 949,
+      "scopeGuardNearby": false,
+      "code": "await prisma.payrollAdvance.update({ where: { id: advance.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 138,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollTrainerPackage.delete({ where: { id: packageId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 155,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollTrainerPackage.update({ where: { id: packageId }, data: { seniorTrainerConfirmed: true, seniorTraine"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 78,
+      "scopeGuardNearby": true,
+      "code": "await prisma.regionalCityPayroll.update({ where: { id }, data: { status: \"approved\", ownerApprovedById: ctx.user.id, own"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 154,
+      "scopeGuardNearby": true,
+      "code": "await prisma.regionalCityPayment.update({ where: { id: payment.id }, data: { expenseId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 180,
+      "scopeGuardNearby": true,
+      "code": "await prisma.regionalCityPayment.update({ where: { id: paymentId }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/sales-actions.ts",
+      "line": 55,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollCalculation.update({ where: { id: c.id }, data: { automaticSalesKopeks: automatic, effectiveSalesKop"
+    },
+    {
+      "path": "src/app/(app)/payroll/sales-actions.ts",
+      "line": 84,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollCalculation.update({ where: { id: calc.id }, data: { manualSalesOverrideKopeks: manual, manualSalesC"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 55,
+      "scopeGuardNearby": true,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data });"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 68,
+      "scopeGuardNearby": true,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data: { status: \"pending_approval\", submittedById: sco"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 86,
+      "scopeGuardNearby": false,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data: { status: \"draft\", comment: String(formData.get("
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 99,
+      "scopeGuardNearby": false,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data: { status: \"rejected\", comment: String(formData.g"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 137,
+      "scopeGuardNearby": false,
+      "code": "if (openPrev) await tx.employeePayScheme.update({ where: { id: openPrev.id }, data: { effectiveTo: scheme.effectiveFrom,"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 159,
+      "scopeGuardNearby": false,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data: { status: \"archived\", archivedAt: new Date() } }"
+    },
+    {
+      "path": "src/app/(app)/refunds/actions.ts",
+      "line": 254,
+      "scopeGuardNearby": false,
+      "code": "await prisma.refund.update({ where: { id: refundId }, data: parsed.data });"
+    },
+    {
+      "path": "src/app/(app)/refunds/refund-document-actions.ts",
+      "line": 95,
+      "scopeGuardNearby": true,
+      "code": "await tx.refund.update({ where: { id: refundId }, data: { returnType: newType } });"
+    },
+    {
+      "path": "src/app/(app)/refunds/refund-document-actions.ts",
+      "line": 244,
+      "scopeGuardNearby": true,
+      "code": "await prisma.refund.update({ where: { id: refundId }, data: v.data });"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 107,
+      "scopeGuardNearby": true,
+      "code": "await prisma.company.update({ where: { id: companyId }, data: { name } });"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 230,
+      "scopeGuardNearby": true,
+      "code": "await prisma.club.update({ where: { id: clubId }, data: { name, city: city || \"—\" } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 412,
+      "scopeGuardNearby": true,
+      "code": "await prisma.ofdCashRegisterMapping.update({ where: { id: mapping.id }, data: { clubId, legalEntityId } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 468,
+      "scopeGuardNearby": false,
+      "code": "await tx.ofdCashRegisterMapping.update({ where: { id: mapping.id }, data: { fnNumber, kktRegNumber, kktName, connectionI"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 498,
+      "scopeGuardNearby": true,
+      "code": "await tx.ofdCashRegisterMapping.update({ where: { id: mapping.id }, data: { status: \"archived\", archivedAt: now, isActiv"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 508,
+      "scopeGuardNearby": true,
+      "code": "await tx.ofdCashRegisterMapping.delete({ where: { id: mapping.id } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 551,
+      "scopeGuardNearby": true,
+      "code": "await tx.ofdCashRegisterMapping.delete({ where: { id: mapping.id } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 566,
+      "scopeGuardNearby": true,
+      "code": "await prisma.ofdConnection.update({ where: { id }, data: { isActive: !c.isActive } });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 119,
+      "scopeGuardNearby": false,
+      "code": "await prisma.legalEntity.update({ where: { id: legalEntityId }, data: next });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 155,
+      "scopeGuardNearby": false,
+      "code": "await prisma.legalEntity.update({ where: { id: legalEntityId }, data: { isActive: active } });"
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/actions.ts",
+      "line": 101,
+      "scopeGuardNearby": true,
+      "code": "await prisma.ofdConnection.update({ where: { id: conn.id }, data: { isActive: !conn.isActive } });"
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/steps-actions.ts",
+      "line": 67,
+      "scopeGuardNearby": true,
+      "code": "await prisma.ofdConnection.update({ where: { id: conn.id }, data: { externalOrganizationId: organizationId, legalEntityI"
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/steps-actions.ts",
+      "line": 137,
+      "scopeGuardNearby": false,
+      "code": "await prisma.ofdCashRegisterMapping.update({ where: { id: existing.id }, data });"
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/steps-actions.ts",
+      "line": 311,
+      "scopeGuardNearby": true,
+      "code": "await prisma.ofdCashRegisterMapping.update({ where: { id: existing.id }, data: { isActive: false, activeMappingKey: null"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 123,
+      "scopeGuardNearby": false,
+      "code": "await tx.user.update({ where: { id: current.id }, data: { passwordHash: newHash } });"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 260,
+      "scopeGuardNearby": false,
+      "code": "await tx.user.update({ where: { id: current.id }, data: { email: bind.next, emailVerifiedAt: new Date() } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 527,
+      "scopeGuardNearby": false,
+      "code": "await tx.companyUserAccess.delete({ where: { id: accessId } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 554,
+      "scopeGuardNearby": false,
+      "code": "await tx.clubUserAccess.delete({ where: { id: accessId } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 643,
+      "scopeGuardNearby": true,
+      "code": "await prisma.user.update({ where: { id: targetUserId }, data: { isActive: true } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 651,
+      "scopeGuardNearby": false,
+      "code": "await tx.user.update({ where: { id: targetUserId }, data: { isActive: false } });"
+    },
+    {
+      "path": "src/app/system-admin/accounts/actions.ts",
+      "line": 31,
+      "scopeGuardNearby": false,
+      "code": "await prisma.accountDeletion.update({ where: { id: del.id }, data: { restoreTokenHash: tokenHash } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 71,
+      "scopeGuardNearby": false,
+      "code": "await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { activeStoredSessionId: stored.id, last"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 95,
+      "scopeGuardNearby": false,
+      "code": "await prisma.storedAccountSession.update({ where: { id: storedId }, data: { lastUsedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 96,
+      "scopeGuardNearby": false,
+      "code": "await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { activeStoredSessionId: storedId, lastA"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 105,
+      "scopeGuardNearby": false,
+      "code": "await prisma.storedAccountSession.update({ where: { id: storedId }, data: { revokedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 113,
+      "scopeGuardNearby": false,
+      "code": "await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { activeStoredSessionId: nextActiveId } "
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 117,
+      "scopeGuardNearby": false,
+      "code": "if (empty) await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { revokedAt: new Date(), acti"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 129,
+      "scopeGuardNearby": false,
+      "code": "await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { revokedAt: new Date(), activeStoredSes"
+    },
+    {
+      "path": "src/lib/account-restore.ts",
+      "line": 78,
+      "scopeGuardNearby": false,
+      "code": "await tx.accountDeletion.update({ where: { id: lookup.deletionId }, data: { restoredAt: now, restoreTokenHash: null } })"
+    },
+    {
+      "path": "src/lib/account-restore.ts",
+      "line": 121,
+      "scopeGuardNearby": false,
+      "code": "await tx.accountDeletion.update({ where: { id: deletionId }, data: { restoredAt: now, restoreTokenHash: null } });"
+    },
+    {
+      "path": "src/lib/action-challenge.ts",
+      "line": 91,
+      "scopeGuardNearby": false,
+      "code": "await prisma.emailOtpChallenge.update({ where: { id: challenge.id }, data: { deliveryFailedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/action-challenge.ts",
+      "line": 135,
+      "scopeGuardNearby": false,
+      "code": "const updated = await prisma.emailOtpChallenge.update({ where: { id: challenge.id }, data: { attemptCount: { increment: "
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 303,
+      "scopeGuardNearby": false,
+      "code": "if (req) await prisma.budgetApprovalRequest.delete({ where: { id: req.id } });"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 304,
+      "scopeGuardNearby": false,
+      "code": "await prisma.expense.update({ where: { id: e.id }, data: { status: EXPENSE_STATUS_IMPORT_REVERTED } });"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 313,
+      "scopeGuardNearby": false,
+      "code": "await prisma.invoice.update({ where: { id: i.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 325,
+      "scopeGuardNearby": false,
+      "code": "await prisma.salesReport.update({ where: { id: r.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/lib/login-challenge.ts",
+      "line": 120,
+      "scopeGuardNearby": false,
+      "code": "await prisma.emailOtpChallenge.update({ where: { id: challenge.id }, data: { deliveryFailedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/login-challenge.ts",
+      "line": 193,
+      "scopeGuardNearby": false,
+      "code": "await prisma.emailOtpChallenge.update({ where: { id: challenge.id }, data: { deliveryFailedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/login-challenge.ts",
+      "line": 271,
+      "scopeGuardNearby": false,
+      "code": "await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 74,
+      "scopeGuardNearby": false,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"skipped\", lastErrorCode: \"no_connection"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 83,
+      "scopeGuardNearby": false,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"failed\", lastErrorCode: \"bad_payload\" }"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 92,
+      "scopeGuardNearby": false,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"sent\", sentAt: new Date(), lastErrorCod"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 100,
+      "scopeGuardNearby": false,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"skipped\", lastErrorCode: \"blocked\" } })"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 107,
+      "scopeGuardNearby": false,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"failed\", lastErrorCode: \"http_400\", att"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 117,
+      "scopeGuardNearby": false,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"failed\", attempts, lastErrorCode: resul"
+    },
+    {
+      "path": "src/lib/ofd/astral/importer.ts",
+      "line": 147,
+      "scopeGuardNearby": true,
+      "code": "await prisma.ofdSyncRun.update({ where: { id: run.id }, data: { status: \"failed\", finishedAt: new Date(), safeErrorCode:"
+    },
+    {
+      "path": "src/lib/ofd/astral/importer.ts",
+      "line": 255,
+      "scopeGuardNearby": false,
+      "code": "await prisma.ofdConnection.update({ where: { id: connection.id }, data: { lastSyncAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/ofd/cash-register-service.ts",
+      "line": 61,
+      "scopeGuardNearby": true,
+      "code": "await db.ofdCashRegisterAssignment.update({ where: { id: open.id }, data: { effectiveTo: args.effectiveFrom < open.effec"
+    },
+    {
+      "path": "src/lib/ofd/cash-register-service.ts",
+      "line": 76,
+      "scopeGuardNearby": true,
+      "code": "await db.ofdFiscalDrive.update({ where: { id: current.id }, data: { status: \"replaced\", validTo: args.effectiveFrom } })"
+    },
+    {
+      "path": "src/lib/ofd/cashier-mapping-service.ts",
+      "line": 52,
+      "scopeGuardNearby": true,
+      "code": "? await prisma.ofdCashierIdentity.update({ where: { id: existing.id }, data: { firstSeenAt: g.first, lastSeenAt: g.last,"
+    },
+    {
+      "path": "src/lib/ofd/cashier-mapping-service.ts",
+      "line": 98,
+      "scopeGuardNearby": false,
+      "code": "await db.ofdCashierMapping.update({ where: { id: m.id }, data: { effectiveTo: args.effectiveFrom <= m.effectiveFrom ? m."
+    },
+    {
+      "path": "src/lib/ofd/cashier-mapping-service.ts",
+      "line": 103,
+      "scopeGuardNearby": false,
+      "code": "return db.ofdCashierMapping.update({ where: { id: same.id }, data: { status: args.status, matchMethod: args.matchMethod,"
+    },
+    {
+      "path": "src/lib/ofd/cashier-mapping-service.ts",
+      "line": 119,
+      "scopeGuardNearby": false,
+      "code": "await db.ofdCashierIdentity.update({ where: { id: identityId }, data: { status: \"excluded\" } });"
+    },
+    {
+      "path": "src/lib/ofd/importer.ts",
+      "line": 327,
+      "scopeGuardNearby": false,
+      "code": "await prisma.ofdConnection.update({ where: { id: connection.id }, data: { lastSyncAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/payroll/sales-attribution.ts",
+      "line": 119,
+      "scopeGuardNearby": true,
+      "code": "await prisma.payrollSalesAttribution.update({ where: { id: existing.id }, data: { employeeId: a.employeeId, amountKopeks"
+    },
+    {
+      "path": "src/lib/payroll/scheme-service.ts",
+      "line": 117,
+      "scopeGuardNearby": false,
+      "code": "if (req.status !== \"applied\") await prisma.payrollChangeRequest.update({ where: { id: requestId }, data: { status: \"appl"
+    },
+    {
+      "path": "src/lib/payroll/scheme-service.ts",
+      "line": 171,
+      "scopeGuardNearby": false,
+      "code": "await tx.payrollChangeRequest.update({ where: { id: requestId }, data: { status: \"applied\", appliedAt: at, appliedById: "
+    },
+    {
+      "path": "src/lib/session.ts",
+      "line": 136,
+      "scopeGuardNearby": false,
+      "code": "try { await prisma.session.update({ where: { id: v.session.id }, data: { lastSeenAt: new Date() } }); } catch { /* best-"
+    },
+    {
+      "path": "src/lib/session.ts",
+      "line": 155,
+      "scopeGuardNearby": false,
+      "code": "await prisma.session.update({ where: { id: valid.id }, data: { lastSeenAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/settings-pin.ts",
+      "line": 112,
+      "scopeGuardNearby": true,
+      "code": "await prisma.company.update({ where: { id: companyId }, data: { settingsPinFailedAttempts: 0, settingsPinLockedUntil: nu"
+    },
+    {
+      "path": "src/lib/telegram/linking.ts",
+      "line": 71,
+      "scopeGuardNearby": false,
+      "code": "await prisma.telegramLinkCode.update({ where: { id: code.id }, data: { attempts: { increment: 1 }, lastAttemptAt: now } "
+    },
+    {
+      "path": "src/lib/telegram/linking.ts",
+      "line": 82,
+      "scopeGuardNearby": false,
+      "code": "await prisma.telegramLinkCode.update({ where: { id: code.id }, data: { attempts: { increment: 1 }, lastAttemptAt: now } "
+    }
+  ]
+}
