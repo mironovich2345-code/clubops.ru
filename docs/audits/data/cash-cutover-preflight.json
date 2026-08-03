@@ -1,0 +1,77 @@
+{
+  "generatedAt": "db-read-only",
+  "checks": 10,
+  "totalOffendingRows": 0,
+  "results": [
+    {
+      "id": "CC-01",
+      "title": "duplicate ACTIVE BalanceSnapshot per (club, legalEntity, date)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-02",
+      "title": "broken correction chain (supersedesSnapshotId → missing row)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-03",
+      "title": "an ACTIVE snapshot that supersedes a still-ACTIVE snapshot (correction chain not flipped)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-04",
+      "title": "ООО cash expense exists (violates rule B: cash is ИП-only)",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-05",
+      "title": "BalanceSnapshot.companyId ≠ its club.companyId",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-06",
+      "title": "future-dated ACTIVE snapshot (excluded by the resolver; verify intent)",
+      "severity": "S3",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-07",
+      "title": "legacy CashMovement rows present (kept for history; not the official balance)",
+      "severity": "S3",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-08",
+      "title": "companies with cashCanonicalCutoverAt set",
+      "severity": "S3",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-09",
+      "title": "legacy CashMovement created after the company cutover (double-write defect)",
+      "severity": "S1",
+      "offendingRows": 0,
+      "sample": []
+    },
+    {
+      "id": "CC-10",
+      "title": "BalanceSnapshot.legalEntityId → missing LegalEntity",
+      "severity": "S2",
+      "offendingRows": 0,
+      "sample": []
+    }
+  ]
+}

@@ -129,11 +129,22 @@ async function createIdempotent(db: Db, data: Prisma.CashMovementUncheckedCreate
  * the expense's wallet, creating the club_cash wallet if the expense predates
  * wallet assignment (defensive). Cancelled-before-verify creates no movement.
  */
+/** REM-02: after a company's cash canonical cutover, business flows STOP the legacy CashWallet/
+ * CashMovement double-write — the canonical Expense/source row already drives the official balance
+ * (`calculateCashBalances`), so a second legacy ledger row would be a DATA-002 double-write. Legacy
+ * rows before cutover remain readable for history/reconciliation. Null cutover → legacy write continues. */
+export async function legacyCashWriteDisabled(companyId: string, db: Db = prisma): Promise<boolean> {
+  const c = await db.company.findUnique({ where: { id: companyId }, select: { cashCanonicalCutoverAt: true } });
+  return !!c?.cashCanonicalCutoverAt && new Date() >= c.cashCanonicalCutoverAt;
+}
+
 export async function recordExpenseMovement(expense: {
   id: string; companyId: string; clubId: string; legalEntityId: string | null;
   amountKopeks: number; expenseDate: Date; cashWalletId: string | null;
 }, db: Db = prisma): Promise<void> {
   if (!expense.legalEntityId || expense.amountKopeks <= 0) return;
+  // After cutover the canonical Expense row is the single cash effect — no legacy CashMovement.
+  if (await legacyCashWriteDisabled(expense.companyId, db)) return;
   const walletId = expense.cashWalletId ?? (await ensureClubCashWallet(expense.companyId, expense.clubId, expense.legalEntityId, db));
   const created = await createIdempotent(db, {
     companyId: expense.companyId, clubId: expense.clubId, legalEntityId: expense.legalEntityId,

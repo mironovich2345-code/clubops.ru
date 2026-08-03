@@ -1,0 +1,21 @@
+{
+  "generatedAt": "db-read-only",
+  "formulaVersion": "rem-02.v1",
+  "clubs": 8,
+  "entities": 1,
+  "diverged": 0,
+  "rows": [
+    {
+      "club": "Фитнес-клуб Демо",
+      "clubId": "demo-club",
+      "entityType": "ooo",
+      "legalEntityId": "demo-legal-entity",
+      "canonicalKopeks": 0,
+      "legacyWalletKopeks": null,
+      "differenceKopeks": null,
+      "snapshotSet": false,
+      "probableCause": "no legacy wallet (expected for ООО / pre-wallet)"
+    }
+  ],
+  "note": "The canonical (formula) balance is the OFFICIAL figure. Legacy wallet differences are historical and never overwrite the official balance; remediate via the safe reconciliation plan, never a destructive edit."
+}

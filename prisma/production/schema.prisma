@@ -49,6 +49,11 @@ model Company {
   payrollFinalDay           Int?      // day-of-month for the final payout (1..28)
   payrollWeekendRule        String?   // shift_earlier | shift_later | none
   payrollTimezone           String?   // IANA tz for pay-date resolution
+  // REM-02 — cash canonical cutover. When set, business flows STOP writing the legacy
+  // CashWallet/CashMovement double-write (the canonical Expense/source row already drives the official
+  // balance); legacy rows remain readable for history/reconciliation. Null = not yet cut over (legacy
+  // double-write continues). Never set automatically in production.
+  cashCanonicalCutoverAt    DateTime?
 
   clubs         Club[]
   legalEntities LegalEntity[]
