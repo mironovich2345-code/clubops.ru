@@ -1,0 +1,118 @@
+{
+  "total": 16,
+  "open": 16,
+  "gates": [
+    {
+      "id": "G1",
+      "title": "Cash transfer to regional (confirmed-only reduces ИП)",
+      "source": "cash-transfer epic",
+      "env": "real instance",
+      "status": "OPEN"
+    },
+    {
+      "id": "G2",
+      "title": "Backdated control snapshot",
+      "source": "cash-transfer epic",
+      "env": "real instance",
+      "status": "OPEN"
+    },
+    {
+      "id": "G3",
+      "title": "Snapshot correction / cancellation",
+      "source": "collections epic",
+      "env": "real instance",
+      "status": "OPEN"
+    },
+    {
+      "id": "G4",
+      "title": "PDF viewer on a real iPhone (same-origin framing)",
+      "source": "mobile epic",
+      "env": "real iPhone",
+      "status": "OPEN"
+    },
+    {
+      "id": "G5",
+      "title": "Invitation flow acceptance",
+      "source": "owner-cabinet epic",
+      "env": "real instance",
+      "status": "OPEN"
+    },
+    {
+      "id": "G6",
+      "title": "Invoice partial payment + reversal (chief-only) + already-paid invoice",
+      "source": "invoice epic",
+      "env": "real instance",
+      "status": "OPEN"
+    },
+    {
+      "id": "G7",
+      "title": "Invoice AI review + payment guard",
+      "source": "invoice epic",
+      "env": "real instance",
+      "status": "OPEN"
+    },
+    {
+      "id": "G8",
+      "title": "Regional dashboard review tasks",
+      "source": "regional epic",
+      "env": "real instance",
+      "status": "OPEN"
+    },
+    {
+      "id": "G9",
+      "title": "Payroll forecast + salary budget proposal + obligation + advance/payment/reversal",
+      "source": "payroll-budget epic",
+      "env": "real instance",
+      "status": "OPEN"
+    },
+    {
+      "id": "G10",
+      "title": "Backup + restore rehearsal (Postgres)",
+      "source": "Audit 4 OPS-001",
+      "env": "disposable Postgres",
+      "status": "OPEN (NOT EXECUTED)"
+    },
+    {
+      "id": "G11",
+      "title": "Staging migration rehearsal",
+      "source": "Audit 4",
+      "env": "disposable Postgres",
+      "status": "OPEN (NOT EXECUTED)"
+    },
+    {
+      "id": "G12",
+      "title": "File durability under redeploy (S3)",
+      "source": "Audit 4 OPS-002",
+      "env": "staging",
+      "status": "OPEN"
+    },
+    {
+      "id": "G13",
+      "title": "DB readiness under DB-down",
+      "source": "Audit 4 OPS-003",
+      "env": "staging",
+      "status": "OPEN"
+    },
+    {
+      "id": "G14",
+      "title": "OFD daily scheduler configured + fresh sync",
+      "source": "Audit 4 OPS-008",
+      "env": "staging",
+      "status": "OPEN"
+    },
+    {
+      "id": "G15",
+      "title": "Caddy strips inbound X-Forwarded-For; prod OFD serverBaseUrl review",
+      "source": "Audit 5 SEC-002/004",
+      "env": "staging/prod",
+      "status": "OPEN"
+    },
+    {
+      "id": "G16",
+      "title": "audit:data-integrity + audit:financial-reconciliation on a production read replica",
+      "source": "Audit 2/3",
+      "env": "prod replica",
+      "status": "OPEN"
+    }
+  ]
+}

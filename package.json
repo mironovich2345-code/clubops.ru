@@ -138,6 +138,8 @@
     "audit:file-access": "node scripts/audit-security-scope.mjs",
     "audit:security-headers": "node scripts/audit-security-scope.mjs",
     "audit:mass-assignment": "node scripts/audit-security-scope.mjs",
+    "pilot:full-audit-06-product-ux": "node scripts/pilot-full-audit-06-product-ux.mjs",
+    "audit:final-consolidation": "node scripts/audit-final-consolidation.mjs",
     "backfill:invoice-payments": "node scripts/backfill-invoice-payments.mjs",
     "audit:expense-summary-consistency": "node scripts/audit-expense-summary-consistency.mjs",
     "preflight:balance-snapshots": "node scripts/preflight-balance-snapshots.mjs",
