@@ -1,9 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { recordPayment, cancelPayment, type PayrollPaymentState } from "../periods/actions";
 import { formatKopeks } from "@/lib/money";
+
+// A stable idempotency key per payment ATTEMPT. Reused on a network timeout (unknown result → the
+// server dedupes a retry); regenerated after any DEFINITIVE server result (ok or a returned error →
+// that attempt is resolved, so the next attempt is a new logical payment). Double-click is separately
+// blocked by the disabled submit button; this is the server-side backstop (REM-01 §16).
+function newIdemKey() { return globalThis.crypto?.randomUUID?.() ?? `c${Date.now()}${Math.random().toString(36).slice(2)}`; }
 
 const initial: PayrollPaymentState = { ok: false };
 
@@ -56,6 +63,10 @@ export function PaymentsSection({
   legalEntities: LegalEntityOption[];
 }) {
   const [payState, payAction] = useFormState(recordPayment, initial);
+  const [idemKey, setIdemKey] = useState(newIdemKey);
+  // A returned result (ok OR error) means the attempt is definitively resolved and nothing is left
+  // half-committed (the service is atomic) → mint a fresh key for the next payment.
+  useEffect(() => { setIdemKey(newIdemKey()); }, [payState]);
   const canPay = payable && (canPayCash || canPayBank);
 
   return (
@@ -103,6 +114,7 @@ export function PaymentsSection({
           {/* Payment form */}
           <form action={payAction} className="flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-2 dark:bg-slate-800/40">
             <input type="hidden" name="calculationId" value={calculationId} />
+            <input type="hidden" name="idempotencyKey" value={idemKey} />
             <MethodSelect canCash={canPayCash} canBank={canPayBank} />
             {legalEntities.length > 1 ? (
               <label className="block">
