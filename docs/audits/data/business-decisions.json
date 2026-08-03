@@ -1,0 +1,89 @@
+{
+  "generatedBy": "audit-formula-map",
+  "decisions": [
+    {
+      "id": "BD-01",
+      "q": "Expense recognition for invoices: by accrual (expensePeriod) or by payment date?",
+      "current": "by expensePeriod (accrual)",
+      "impact": "which month an invoice hits P&L/budget/profit"
+    },
+    {
+      "id": "BD-02",
+      "q": "Is a client refund a revenue reduction or a separate expense?",
+      "current": "separate expense (category 'refunds'), NOT a revenue reduction",
+      "impact": "profit & budget attribution; VAT/tax base"
+    },
+    {
+      "id": "BD-03",
+      "q": "What exactly is 'profit'? (Sale+SalesReport basis vs OFD basis; payroll included?)",
+      "current": "two definitions; payroll NOT included in any profit reader",
+      "impact": "owner P&L trust"
+    },
+    {
+      "id": "BD-04",
+      "q": "What is 'budget fact'? approval-committed or paid-realized; include v2 verified expenses?",
+      "current": "3 definitions; fact-report is paid-only+confirmed-only, drops v2 verified",
+      "impact": "overrun alerts & plan-fact"
+    },
+    {
+      "id": "BD-05",
+      "q": "Does ФОТ (salary budget) include taxes/contributions?",
+      "current": "salaryBudgetIncludesTaxes flag, default OFF; no tax model",
+      "impact": "salary budget sizing"
+    },
+    {
+      "id": "BD-06",
+      "q": "Who is the payer for shared payroll / a shared employee across clubs?",
+      "current": "no allocation rule; company-level fallback",
+      "impact": "club P&L attribution"
+    },
+    {
+      "id": "BD-07",
+      "q": "How is a regional director's cost allocated across clubs?",
+      "current": "regional payment expense filed to source club; employeeId may hold a payroll-row id (DATA-010)",
+      "impact": "club cost accuracy"
+    },
+    {
+      "id": "BD-08",
+      "q": "How is regional-held cash accounted (передача регионалу / возврат)?",
+      "current": "CashRegionalTransfer reduces ИП only when confirmed; return is out-of-band «Иное»",
+      "impact": "ИП cash truth"
+    },
+    {
+      "id": "BD-09",
+      "q": "Which cash contour is the OFFICIAL one? (A wallet vs B fact)",
+      "current": "B is canonical in readers; A still written, never reconciled",
+      "impact": "single cash source of truth"
+    },
+    {
+      "id": "BD-10",
+      "q": "How are internal transfers (ООО→ИП, opening balance) reflected — never income, correct?",
+      "current": "correct: not in profit; but written to both contours",
+      "impact": "no double income (confirmed OK)"
+    },
+    {
+      "id": "BD-11",
+      "q": "May a refund be paid from an ИП different from the original sale's legal entity?",
+      "current": "legalEntity chosen at payment, validated to the club, not to the original sale",
+      "impact": "cross-entity refund legality"
+    },
+    {
+      "id": "BD-12",
+      "q": "What is the 'fact date' of an expense — accrual, approval, or payment?",
+      "current": "mixed: expense by expenseDate, invoice by expensePeriod, refund by paidAt",
+      "impact": "period reporting consistency"
+    },
+    {
+      "id": "BD-13",
+      "q": "Is VAT/НДС tracked separately, and is there a УСН/tax-liability model?",
+      "current": "NO tax model — VAT folded into invoice total; 'taxes' is just an expense category",
+      "impact": "tax reporting; BUSINESS DECISION REQUIRED"
+    },
+    {
+      "id": "BD-14",
+      "q": "Should manual Sale/SalesReport revenue and OFD revenue ever coexist (double-count risk)?",
+      "current": "manual sales disabled; Sale+SalesReport still feed analytics revenue — verify no overlap with OFD",
+      "impact": "revenue double-count"
+    }
+  ]
+}

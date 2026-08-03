@@ -1,0 +1,63 @@
+{
+  "generatedAt": "db-read-only-recon",
+  "filters": {
+    "company": null,
+    "club": null
+  },
+  "checks": 7,
+  "totalViolations": 1,
+  "checksWithErrors": 0,
+  "results": [
+    {
+      "id": "REC-INV-1",
+      "equation": "invoice.amount == Σ confirmed InvoicePayment + remaining (no ledgerless paid, no overpay)",
+      "severity": "S1",
+      "violations": 0,
+      "sample": []
+    },
+    {
+      "id": "REC-PR-1",
+      "equation": "PayrollCalculation.netPayable == paidKopeks + remainingKopeks",
+      "severity": "S1",
+      "violations": 1,
+      "sample": [
+        "cms21nse2000bxk622xvlylgv"
+      ]
+    },
+    {
+      "id": "REC-PR-2",
+      "equation": "PayrollCalculation.paidKopeks ⊇ Σ confirmed PayrollPayment (+ active advance tranches)",
+      "severity": "S2",
+      "violations": 0,
+      "sample": []
+    },
+    {
+      "id": "REC-OBL-1",
+      "equation": "PayrollPaymentObligation.remaining == amount − paid",
+      "severity": "S2",
+      "violations": 0,
+      "sample": []
+    },
+    {
+      "id": "REC-ORPH-1",
+      "equation": "every confirmed PayrollPayment links to an existing salary Expense",
+      "severity": "S1",
+      "violations": 0,
+      "sample": []
+    },
+    {
+      "id": "REC-CASH-1",
+      "equation": "dual-contour presence (CashWallet ∧ BalanceSnapshot per club/LE → divergence candidate)",
+      "severity": "S2",
+      "violations": 0,
+      "sample": []
+    },
+    {
+      "id": "REC-PERIOD-1",
+      "equation": "paid invoice expensePeriod month == paidAt month (accrual/cash split is intentional — informational)",
+      "severity": "S3",
+      "violations": 0,
+      "sample": []
+    }
+  ]
+}

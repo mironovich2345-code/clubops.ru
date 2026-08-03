@@ -1,0 +1,101 @@
+{
+  "generatedBy": "audit-formula-map",
+  "numbers": [
+    {
+      "number": "OFD revenue",
+      "canonical": "OfdDailySalesSummary.net (income−return)",
+      "competing": [],
+      "sources": 1
+    },
+    {
+      "number": "cash ООО",
+      "canonical": "calculateCashBalances.cashOooFactBalance (cash-balances.ts:158)",
+      "competing": [
+        "BalanceSnapshot.actualBalanceKopeks (getLatestBalancesByClub.oooKopeks)",
+        "analytics.ExecutiveSummary.cashOooRemainingKopeks (analytics.ts:536, SalesReport cash_ooo−encashment)"
+      ],
+      "sources": 3
+    },
+    {
+      "number": "cash ИП",
+      "canonical": "calculateCashBalances.cashIpFactBalance (cash-balances.ts:143)",
+      "competing": [
+        "walletBalanceKopeks(club_cash) legacy contour A (cash-wallets.ts:59)"
+      ],
+      "sources": 2
+    },
+    {
+      "number": "«Приход Иное»",
+      "canonical": "CashOtherIncome (contour B)",
+      "competing": [
+        "CashMovement.other_cash_income (contour A)"
+      ],
+      "sources": 2,
+      "note": "not in profit"
+    },
+    {
+      "number": "invoice paid",
+      "canonical": "Σ confirmed InvoicePayment (invoice-payments.ts:15)",
+      "competing": [
+        "Invoice.status/paidAt cache; legacy pay action = ledgerless (DATA-005)"
+      ],
+      "sources": 1
+    },
+    {
+      "number": "profit",
+      "canonical": "analytics.ts:557 (Sale+SalesReport revenue − spend)",
+      "competing": [
+        "analytics/page.tsx:433 OFD path (ofd net − expenses)",
+        "dashboard.ts:23 (DEAD CODE, no importer)"
+      ],
+      "sources": 2
+    },
+    {
+      "number": "budget fact",
+      "canonical": "computeBudgetFactReport (paid-only, confirmed-only) budgets.ts:280",
+      "competing": [
+        "computeUsedKopeks (approved+paid, confirmed+verified) budgets.ts:76",
+        "computeBudgetOverruns (confirmed-only) budgets.ts:162"
+      ],
+      "sources": 3
+    },
+    {
+      "number": "payroll accrual",
+      "canonical": "PayrollCalculation.grossAccruedKopeks (net==gross, no withholding)",
+      "competing": [],
+      "sources": 1
+    },
+    {
+      "number": "payroll paid",
+      "canonical": "PayrollCalculation.paidKopeks (Σ confirmed payments + active tranches)",
+      "competing": [
+        "recompute-gated cache; ledger is truth"
+      ],
+      "sources": 1
+    },
+    {
+      "number": "payroll remaining",
+      "canonical": "PayrollCalculation.remainingKopeks",
+      "competing": [
+        "PayrollPaymentObligation.remainingKopeks (2nd cache, lags — DATA-016)"
+      ],
+      "sources": 2
+    },
+    {
+      "number": "debt",
+      "canonical": "EmployeeFinancialObligation.outstandingAmountKopeks",
+      "competing": [
+        "PayrollCalculation.employeeDebtKopeks/companyDebtKopeks",
+        "analytics network debt (approved-unpaid invoices+refunds)"
+      ],
+      "sources": 3
+    },
+    {
+      "number": "refund amount",
+      "canonical": "Refund.amountKopeks (= refundResultAmountKopeks for v2)",
+      "competing": [],
+      "sources": 1,
+      "note": "single-effect: expense category 'refunds', not a revenue reduction"
+    }
+  ]
+}

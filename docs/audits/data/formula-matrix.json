@@ -1,0 +1,140 @@
+{
+  "generatedBy": "audit-formula-map",
+  "recognition": [
+    {
+      "tx": "cash Expense (v2)",
+      "event": "verify (status→verified)",
+      "date": "expenseDate",
+      "cash": "ИП wallet + fact (double-write)",
+      "budget": "confirmed+verified (used) / confirmed-only (fact-report)",
+      "profit": "included (confirmed+verified)",
+      "accrual": "expenseDate"
+    },
+    {
+      "tx": "Invoice (unpaid)",
+      "event": "NOT a P&L expense until status=paid",
+      "date": "expensePeriod",
+      "cash": "none",
+      "budget": "approved-unpaid=committed (used) / not in fact-report",
+      "profit": "excluded until paid",
+      "accrual": "expensePeriod"
+    },
+    {
+      "tx": "Invoice paid",
+      "event": "status=paid",
+      "date": "expensePeriod (accrual)",
+      "cash": "InvoicePayment ledger",
+      "budget": "fact (paid) by expensePeriod",
+      "profit": "included by expensePeriod",
+      "accrual": "expensePeriod"
+    },
+    {
+      "tx": "Invoice partially_paid",
+      "event": "derivedInvoiceStatus",
+      "date": "expensePeriod",
+      "cash": "InvoicePayment",
+      "budget": "in NEITHER used nor fact-report",
+      "profit": "EXCLUDED (analytics counts status=paid only)",
+      "accrual": "expensePeriod",
+      "mismatch": "partially_paid vanishes from profit+budget, present in calendar (FIN)"
+    },
+    {
+      "tx": "PayrollCalculation (accrual)",
+      "event": "approve period",
+      "date": "period year/month",
+      "cash": "none (liability)",
+      "budget": "payroll budget module only",
+      "profit": "NOT counted (payroll absent from profit)",
+      "accrual": "period"
+    },
+    {
+      "tx": "PayrollPayment",
+      "event": "record (creates salary Expense)",
+      "date": "paymentDate (now)",
+      "cash": "Expense + CashMovement (double-write)",
+      "budget": "as an Expense",
+      "profit": "as the salary Expense",
+      "accrual": "expenseDate of the salary Expense"
+    },
+    {
+      "tx": "Refund (v2)",
+      "event": "status=paid",
+      "date": "paidAt",
+      "cash": "chosen legalEntity",
+      "budget": "category 'refunds' (single-effect)",
+      "profit": "added to SPEND, not a revenue reduction; no Expense row",
+      "accrual": "paidAt"
+    },
+    {
+      "tx": "tax",
+      "event": "as an Expense category 'taxes'",
+      "date": "expenseDate",
+      "cash": "as expense",
+      "budget": "category 'taxes'",
+      "profit": "as expense",
+      "accrual": "no dedicated tax model (BUSINESS DECISION)"
+    }
+  ],
+  "profitReaders": [
+    {
+      "reader": "analytics.ts:557",
+      "revenue": "Sale(confirmed)+SalesReport total_revenue(confirmed)",
+      "spend": "Expense(confirmed+verified)+paid Invoice(by expensePeriod)+paid Refund",
+      "payroll": "only via salary Expense",
+      "partiallyPaid": "excluded"
+    },
+    {
+      "reader": "analytics/page.tsx:433 (OFD path, useOfd)",
+      "revenue": "OFD net (income−returns)",
+      "spend": "same confirmed expenses",
+      "payroll": "same",
+      "note": "different revenue basis than analytics.ts:557 on the same card"
+    },
+    {
+      "reader": "dashboard.ts:23",
+      "revenue": "SaleSummary",
+      "spend": "ExpenseSummary",
+      "status": "DEAD CODE (no importer)"
+    }
+  ],
+  "budgetFactReaders": [
+    {
+      "fn": "computeUsedKopeks (budgets.ts:76)",
+      "expense": "confirmed+verified",
+      "invoice": "approved-unpaid + paid",
+      "refund": "approved-unpaid+paid",
+      "refundDate": "refundDate??createdAt"
+    },
+    {
+      "fn": "computeBudgetOverruns (budgets.ts:162)",
+      "expense": "confirmed ONLY",
+      "invoice": "approved-unpaid+paid",
+      "refund": "approved-unpaid+paid",
+      "refundDate": "refundDate??createdAt"
+    },
+    {
+      "fn": "computeBudgetFactReport (budgets.ts:280)",
+      "expense": "confirmed ONLY (drops v2 verified — DATA-019)",
+      "invoice": "paid ONLY",
+      "refund": "paid ONLY",
+      "refundDate": "paidAt??refundDate??createdAt"
+    }
+  ],
+  "roundingEngines": [
+    {
+      "engine": "payroll engine 1 (calc.ts:17 applyBp)",
+      "rule": "ceilToRubleKopeks(Math.round(k*bp/BP)) — double round + ceil-to-ruble"
+    },
+    {
+      "engine": "payroll engine 2 (formulas.ts:34 pct)",
+      "rule": "Math.round(k*bp/BP) — kopeck round, no ruble ceil; component-wise summed"
+    },
+    {
+      "note": "same % of money differs by up to ~1₽/component between engines; both live (calc.ts non-role, formulas.ts role_*)"
+    },
+    {
+      "engine": "refunds (refund-membership/personal-training)",
+      "rule": "BigInt ceilToRubleKopeks on the total; per-unit never pre-rounded; numerator===0n and negative guards"
+    }
+  ]
+}
