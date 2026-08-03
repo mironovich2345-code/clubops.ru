@@ -27,3 +27,4 @@ artifacts/
 tests/visual/.auth/
 test-results/
 playwright-report/
+.rem01-tmp/

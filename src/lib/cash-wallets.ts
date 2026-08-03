@@ -142,7 +142,7 @@ export async function recordExpenseMovement(expense: {
     sourceType: "expense", sourceId: expense.id,
   });
   if (created) {
-    await recordAudit({ action: "cash.expense_movement", entityType: "Expense", entityId: expense.id, companyId: expense.companyId, clubId: expense.clubId, metadata: { amountKopeks: expense.amountKopeks, walletId } });
+    await recordAudit({ action: "cash.expense_movement", entityType: "Expense", entityId: expense.id, companyId: expense.companyId, clubId: expense.clubId, metadata: { amountKopeks: expense.amountKopeks, walletId } }, db);
   }
 }
 

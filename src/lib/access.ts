@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import type { DbClient } from "@/lib/db-client";
 import {
   getCurrentUser,
   canAnyRoleAccessPage,
@@ -677,8 +678,10 @@ export async function recordAudit(entry: {
   userId?: string | null;
   entityId?: string | null;
   metadata?: unknown;
-}): Promise<void> {
-  await prisma.auditLog.create({
+}, db: DbClient = prisma): Promise<void> {
+  // `db` defaults to the global prisma (every existing caller unchanged); REM-01 passes the tx so
+  // the audit row commits atomically with the money write instead of on a separate connection.
+  await db.auditLog.create({
     data: {
       action: entry.action,
       entityType: entry.entityType,
