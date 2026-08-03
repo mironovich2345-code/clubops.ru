@@ -9,7 +9,8 @@ const check = (n, c, x = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${x &
 const root = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const read = (p) => { try { return readFileSync(root + p, "utf8"); } catch { return ""; } };
 const has = (p) => existsSync(root + p);
-const BASELINE = "71f1cff"; // audited commit (baseline)
+const BASELINE = "71f1cff";
+const AUDIT_END = "66bc9e3"; // REM-01: pin diff endpoint to this audit's completion // audited commit (baseline)
 
 function main() {
   // 1. Baseline recorded
@@ -63,7 +64,7 @@ function main() {
 
   // 23-25. Read-only guarantees (git diff since baseline touched NO src/prisma; audit scripts don't mutate data)
   let changed = "";
-  try { changed = execSync(`git diff --name-only ${BASELINE} HEAD`, { cwd: root, encoding: "utf8" }); } catch { changed = "GIT_UNAVAILABLE"; }
+  try { changed = execSync(`git diff --name-only ${BASELINE} ${AUDIT_END}`, { cwd: root, encoding: "utf8" }); } catch { changed = "GIT_UNAVAILABLE"; }
   const files = changed.split("\n").map((s) => s.trim()).filter(Boolean);
   const touchedSrc = files.filter((f) => f.startsWith("src/"));
   const touchedSchema = files.filter((f) => f.startsWith("prisma/") && !f.includes("/data/"));

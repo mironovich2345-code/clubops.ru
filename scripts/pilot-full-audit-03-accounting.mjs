@@ -11,6 +11,7 @@ const read = (p) => { try { return readFileSync(root + p, "utf8"); } catch { ret
 const has = (p) => existsSync(root + p);
 const json = (p) => { try { return JSON.parse(read(p)); } catch { return null; } };
 const BASELINE = "d161c15";
+const AUDIT_END = "dc14d10"; // REM-01: pin diff endpoint to this audit's completion
 
 function main() {
   const contours = read("docs/accounting/financial-contours-map.md");
@@ -48,7 +49,7 @@ function main() {
 
   // 22/23/24 read-only guarantees.
   let changed = "";
-  try { changed = execSync(`git diff --name-only ${BASELINE} HEAD`, { cwd: root, encoding: "utf8" }); } catch { changed = "GIT_UNAVAILABLE"; }
+  try { changed = execSync(`git diff --name-only ${BASELINE} ${AUDIT_END}`, { cwd: root, encoding: "utf8" }); } catch { changed = "GIT_UNAVAILABLE"; }
   const files = changed.split("\n").map((s) => s.trim()).filter(Boolean);
   const touchedSrc = files.filter((f) => f.startsWith("src/"));
   const touchedSchema = files.filter((f) => f.startsWith("prisma/"));

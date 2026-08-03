@@ -119,13 +119,20 @@ function main() {
   check("O9 obligation generated only for APPROVED+ periods", po.includes('OBLIGATION_ELIGIBLE_PERIOD_STATUSES = ["approved", "partially_paid", "paid", "closed"]') && po.includes("isObligationEligiblePeriod(period.status)"));
   check("O10 amount = Σ netPayableKopeks (advances folded → no double count)", po.includes("c.netPayableKopeks") && !po.includes("grossAccruedKopeks"));
   check("O11 remaining clamped ≥ 0 (overpayment never negative obligation)", po.includes("Math.max(0, s.amount - s.paid)"));
-  check("O12 idempotent by idempotencyKey (no duplicates on re-run)", po.includes("idempotencyKey") && po.includes("prisma.payrollPaymentObligation.findUnique({ where: { idempotencyKey }"));
+  check("O12 idempotent by idempotencyKey (no duplicates on re-run)", po.includes("idempotencyKey") && po.includes(".payrollPaymentObligation.findUnique({ where: { idempotencyKey }"));
   check("O13 cancelled obligation never resurrected by regeneration", po.includes('existing.status === "cancelled"') && po.includes("res.skipped += 1"));
   check("O14 calendar row shows OUTSTANDING remaining, not gross (no double count)", po.includes("amountKopeks: r.remainingKopeks"));
   check("O15 calendar excludes cancelled + dateless + settled rows", po.includes('status: { not: "cancelled" }') && po.includes("dueDate: { not: null") && po.includes("remainingKopeks: { gt: 0 }"));
   check("O16 buildPayrollObligations WIRED (no longer returns [])", (() => { const pm = src("../src/lib/payment-obligations.ts"); const fn = pm.slice(pm.indexOf("export async function buildPayrollObligations")); return fn.includes("loadPayrollCalendarObligations") && !/buildPayrollObligations[\s\S]{0,120}return \[\];/.test(fn); })());
   check("O17 obligation generated on period approval", src("../src/app/(app)/payroll/periods/actions.ts").includes("generateObligationsForPeriod(periodId)") && src("../src/app/(app)/payroll/periods/actions.ts").includes('decision.to === "approved"'));
-  check("O18 obligation refreshed on payment record + cancel", (() => { const a = src("../src/app/(app)/payroll/periods/actions.ts"); return (a.match(/refreshPeriodObligations\(/g) || []).length >= 3; })());
+  check("O18 obligation refreshed on payment record + cancel (REM-01: atomically inside the payout service, not swallowed)", (() => {
+    const svc = src("../src/lib/payroll/payment-service.ts");
+    const a = src("../src/app/(app)/payroll/periods/actions.ts");
+    // The salary payment + reversal refresh obligations INSIDE their transaction via the service
+    // (refreshObligationsForPeriodId → generateObligationsForPeriod(tx)); the advance path still
+    // refreshes directly. Behavior verified by the real DB-backed integration test.
+    return svc.includes("refreshObligationsForPeriodId") && svc.includes("generateObligationsForPeriod(") && (a.match(/refreshPeriodObligations\(|refreshObligationsForPeriodId/g) || []).length >= 2;
+  })());
   check("O19 PayrollPaymentObligation carries legalEntityId + unique idempotencyKey", src("../prisma/schema.prisma").includes("model PayrollPaymentObligation") && src("../prisma/schema.prisma").includes("idempotencyKey      String    @unique"));
   check("O20 dueDate nullable in schema (record without faking a date)", /model PayrollPaymentObligation[\s\S]*?dueDate\s+DateTime\?/.test(src("../prisma/schema.prisma")));
 

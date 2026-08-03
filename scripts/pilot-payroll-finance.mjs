@@ -37,6 +37,8 @@ function main() {
   // ---- static guards ----
   const actions = src("../src/app/(app)/payroll/periods/actions.ts");
   const salary = src("../src/lib/payroll/salary-expense.ts");
+  // REM-01: salary payment + reversal now run through the shared transactional service.
+  const service = src("../src/lib/payroll/payment-service.ts");
   const aggregate = src("../src/lib/payroll/aggregate.ts");
   const payrollActions = src("../src/app/(app)/expenses/payroll-actions.ts");
 
@@ -47,10 +49,10 @@ function main() {
     salary.includes("recordExpenseMovement") && salary.includes('if (params.method === "cash")'));
   check("FIN7 NO separate payroll CashMovement anymore (postCashOutflow removed from payout actions)",
     !actions.includes("postCashOutflow") && actions.includes("createSalaryExpense"));
-  check("FIN8 payment + advance both link the salary expenseId",
-    actions.includes("data: { expenseId } }") && /payrollPayment\.update[\s\S]*expenseId/.test(actions) && /payrollAdvance\.update[\s\S]*expenseId/.test(actions));
+  check("FIN8 payment + advance both link the salary expenseId (payment via the atomic service)",
+    /payrollPayment\.update[\s\S]*expenseId/.test(service) && /payrollAdvance\.update[\s\S]*expenseId/.test(actions));
   check("FIN9 cancellation cancels the Expense (drops from P&L/fact) + reverses the movement",
-    actions.includes("cancelSalaryExpense(payment.expenseId") && actions.includes("cancelSalaryExpense(advance.expenseId") &&
+    service.includes("cancelSalaryExpense(payment?.expenseId") && actions.includes("cancelSalaryExpense(advance.expenseId") &&
     salary.includes('status: "cancelled"') && salary.includes("reverseCashOutflow"));
   check("FIN10 salary expense visible with employee + period + legal entity + club",
     salary.includes("recipientName: params.employeeName") && salary.includes("payrollPeriodId: params.payrollPeriodId") && salary.includes("legalEntityId: params.legalEntityId"));

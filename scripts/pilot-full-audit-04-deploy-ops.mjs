@@ -12,6 +12,9 @@ const read = (p) => { try { return readFileSync(root + p, "utf8"); } catch { ret
 const has = (p) => existsSync(root + p);
 const json = (p) => { try { return JSON.parse(read(p)); } catch { return null; } };
 const BASELINE = "dc14d10";
+// REM-01: pin the diff endpoint to THIS audit's final commit — 'the audit changed no src' is a
+// permanent fact of its own commit range, not a claim about later remediation work.
+const AUDIT_END = "eb8a8f6";
 
 function main() {
   const findings = read("docs/audits/full-audit-04-deploy-ops.md");
@@ -47,7 +50,7 @@ function main() {
 
   // 27/28/29/30 read-only + no-deploy guarantees.
   let changed = "";
-  try { changed = execSync(`git diff --name-only ${BASELINE} HEAD`, { cwd: root, encoding: "utf8" }); } catch { changed = "GIT_UNAVAILABLE"; }
+  try { changed = execSync(`git diff --name-only ${BASELINE} ${AUDIT_END}`, { cwd: root, encoding: "utf8" }); } catch { changed = "GIT_UNAVAILABLE"; }
   const files = changed.split("\n").map((s) => s.trim()).filter(Boolean);
   const touchedSrc = files.filter((f) => f.startsWith("src/"));
   const touchedSchema = files.filter((f) => f.startsWith("prisma/"));
