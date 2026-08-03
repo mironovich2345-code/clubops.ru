@@ -53,21 +53,24 @@ async function resolveLegalEntity(companyId: string, clubId: string, userId: str
 async function payoutAdvance(advanceId: string, params: { companyId: string; clubId: string; employeeId: string; amountKopeks: number; method: string; legalEntityId: string; walletId: string | null; userId: string; year: number; month: number }): Promise<void> {
   const employeeName = (await prisma.clubEmployee.findUnique({ where: { id: params.employeeId }, select: { fullName: true } }))?.fullName ?? params.employeeId;
   const calc = await findMonthCalc(params.companyId, params.clubId, params.employeeId, params.year, params.month);
-  const { expenseId } = await createSalaryExpense({
-    companyId: params.companyId,
-    clubId: params.clubId,
-    legalEntityId: params.legalEntityId,
-    method: params.method as "cash" | "bank",
-    amountKopeks: params.amountKopeks,
-    paidByUserId: params.userId,
-    cashWalletId: params.walletId,
-    employeeId: params.employeeId,
-    employeeName,
-    payrollPeriodId: calc?.payrollPeriodId ?? null,
-    kind: "advance",
-  });
-  await prisma.payrollAdvance.update({ where: { id: advanceId }, data: { status: "paid", paidByUserId: params.userId, paidAt: new Date(), expenseId } });
-  if (calc) await recomputeCalculationTotals(calc.id); // fold into remaining; no repeat expense
+  // REM-01: atomic payout — salary Expense (+cash) + advance status + calc recompute all-or-nothing.
+  await prisma.$transaction(async (tx) => {
+    const { expenseId } = await createSalaryExpense({
+      companyId: params.companyId,
+      clubId: params.clubId,
+      legalEntityId: params.legalEntityId,
+      method: params.method as "cash" | "bank",
+      amountKopeks: params.amountKopeks,
+      paidByUserId: params.userId,
+      cashWalletId: params.walletId,
+      employeeId: params.employeeId,
+      employeeName,
+      payrollPeriodId: calc?.payrollPeriodId ?? null,
+      kind: "advance",
+    }, tx);
+    await tx.payrollAdvance.update({ where: { id: advanceId }, data: { status: "paid", paidByUserId: params.userId, paidAt: new Date(), expenseId } });
+    if (calc) await recomputeCalculationTotals(calc.id, tx); // fold into remaining; no repeat expense
+  }, { timeout: 15_000, maxWait: 10_000 });
 }
 
 /**
@@ -305,11 +308,13 @@ export async function addAdvanceTranche(_prev: AdvanceState | undefined, formDat
     await prisma.$transaction(async (tx) => {
       const paidNow = await activePaidKopeks(adv.id, tx as unknown as typeof prisma);
       if (trancheExceedsApproved(approved, paidNow, amountKopeks)) throw new Error("EXCEEDS");
+      // REM-01: pass tx so the Expense + CashMovement commit INSIDE this transaction (previously they
+      // ran on the global client and could orphan if the tranche rows rolled back).
       const { expenseId } = await createSalaryExpense({
         companyId: adv.companyId, clubId: adv.clubId, legalEntityId: le.legalEntityId, method: method as "cash" | "bank",
         amountKopeks, paidByUserId: ctx.user.id, cashWalletId: le.walletId, employeeId: adv.employeeId, employeeName,
         payrollPeriodId: null, kind: "advance",
-      });
+      }, tx);
       const cashMovement = method === "cash" ? await tx.cashMovement.findFirst({ where: { sourceType: "expense", sourceId: expenseId }, select: { id: true } }) : null;
       await tx.payrollAdvancePayment.create({
         data: { companyId: adv.companyId, clubId: adv.clubId, employeeAdvanceId: adv.id, amountKopeks, paymentMethod: method, legalEntityId: le.legalEntityId, cashSource: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : null, expenseId, cashMovementId: cashMovement?.id ?? null, status: "paid", createdByUserId: ctx.user.id, idempotencyKey },

@@ -10,6 +10,9 @@ import { ensureClubCashWallet, ensureRegionalCashWallet } from "@/lib/cash-walle
 import { canManagePaySchemes, canViewRegionalPayroll } from "@/lib/payroll/access";
 import { regionalAccrual, regionalTotals, REGIONAL_BASE_TYPES } from "@/lib/payroll/regional";
 import { createSalaryExpense, cancelSalaryExpense } from "@/lib/payroll/salary-expense";
+import { paymentFingerprint } from "@/lib/payroll/payment-service";
+import { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 
 export type RegionalState = { ok: boolean; error?: string; notice?: string; id?: string };
 const fail = (e: string): RegionalState => ({ ok: false, error: e });
@@ -140,26 +143,55 @@ export async function recordRegionalCityPayment(_prev: RegionalState | undefined
     legalEntityId = chosen || (ooo?.id ?? ip!.id);
   }
 
-  const payment = await prisma.regionalCityPayment.create({
-    data: {
-      companyId: row.companyId, regionalCityPayrollId: payrollId, clubId, legalEntityId, amountKopeks, paymentMethod: method,
-      sourceType: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : "bank_account",
-      status: "confirmed", paidByUserId: ctx.user.id,
-    },
-  });
-  const { expenseId } = await createSalaryExpense({
-    companyId: row.companyId, clubId, legalEntityId, method: method as "cash" | "bank", amountKopeks, paidByUserId: ctx.user.id,
-    cashWalletId: walletId, employeeId: row.regionalEmployeeId ?? payrollId, employeeName: `Регионал ${row.regionalName} (${row.city})`, payrollPeriodId: null, kind: "payment",
-  });
-  await prisma.regionalCityPayment.update({ where: { id: payment.id }, data: { expenseId } });
-
-  if (excess > 0 && allowOverpayment) {
-    await prisma.employeeFinancialObligation.create({
-      data: { companyId: row.companyId, employeeId: row.regionalEmployeeId ?? payrollId, clubId, direction: "employee_owes_company", reason: "overpayment", originalAmountKopeks: excess, outstandingAmountKopeks: excess, status: "open", createdByUserId: ctx.user.id },
-    });
+  // REM-01: atomic + idempotent regional payout. The overpay check is RE-EVALUATED inside the tx
+  // (closes the TOCTOU); RegionalCityPayment + salary Expense + cash movement + the optional
+  // overpayment obligation commit all-or-nothing. Idempotency = DB-unique (companyId, idempotencyKey);
+  // a same-key replay returns the existing payment. (RBAC + the regionalEmployeeId fallback semantics
+  // are unchanged — DATA-010 remains a separate follow-up.)
+  const idempotencyKey = String(formData.get("idempotencyKey") ?? "").trim() || `srv:${randomUUID()}`;
+  const fingerprint = paymentFingerprint({ companyId: row.companyId, paymentType: "regional", sourceType: method, payrollCalculationId: payrollId, employeeId: row.regionalEmployeeId ?? payrollId, legalEntityId, amountKopeks, method });
+  let replayed = false;
+  let paymentId = "";
+  try {
+    await prisma.$transaction(async (tx) => {
+      const dup = await tx.regionalCityPayment.findUnique({ where: { companyId_idempotencyKey: { companyId: row.companyId, idempotencyKey } }, select: { id: true, requestFingerprint: true } });
+      if (dup) {
+        if (dup.requestFingerprint && dup.requestFingerprint !== fingerprint) throw new Error("IDEMPOTENCY_CONFLICT");
+        paymentId = dup.id; replayed = true; return;
+      }
+      // Re-check overpay against CONFIRMED payments inside the tx (authoritative).
+      const confirmedNow = await tx.regionalCityPayment.findMany({ where: { regionalCityPayrollId: payrollId, status: "confirmed" }, select: { amountKopeks: true } });
+      const paidNow = regionalTotals(row.accruedKopeks, confirmedNow).paidKopeks;
+      const excessNow = paidNow + amountKopeks - row.accruedKopeks;
+      if (excessNow > 0 && !allowOverpayment) throw new Error("EXCEEDS");
+      const payment = await tx.regionalCityPayment.create({
+        data: {
+          companyId: row.companyId, regionalCityPayrollId: payrollId, clubId, legalEntityId, amountKopeks, paymentMethod: method,
+          sourceType: method === "cash" ? (roles.includes("regional_director") ? "regional_cash" : "club_cash") : "bank_account",
+          status: "confirmed", paidByUserId: ctx.user.id, idempotencyKey, requestFingerprint: fingerprint,
+        },
+      });
+      const { expenseId } = await createSalaryExpense({
+        companyId: row.companyId, clubId, legalEntityId, method: method as "cash" | "bank", amountKopeks, paidByUserId: ctx.user.id,
+        cashWalletId: walletId, employeeId: row.regionalEmployeeId ?? payrollId, employeeName: `Регионал ${row.regionalName} (${row.city})`, payrollPeriodId: null, kind: "payment",
+      }, tx);
+      await tx.regionalCityPayment.update({ where: { id: payment.id }, data: { expenseId } });
+      if (excessNow > 0 && allowOverpayment) {
+        await tx.employeeFinancialObligation.create({
+          data: { companyId: row.companyId, employeeId: row.regionalEmployeeId ?? payrollId, clubId, direction: "employee_owes_company", reason: "overpayment", originalAmountKopeks: excessNow, outstandingAmountKopeks: excessNow, status: "open", createdByUserId: ctx.user.id },
+        });
+      }
+      paymentId = payment.id;
+    }, { timeout: 15_000, maxWait: 10_000 });
+  } catch (e) {
+    if (e instanceof Error && e.message === "EXCEEDS") return fail("Суммарная выплата превышает начисление. Отметьте «оформить переплату долгом», чтобы продолжить.");
+    if (e instanceof Error && e.message === "IDEMPOTENCY_CONFLICT") return fail("Эта операция уже выполнена с другими параметрами. Обновите страницу.");
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") { revalidatePath("/payroll/regional"); return { ok: true, notice: "Выплата уже проведена." }; }
+    console.error("recordRegionalCityPayment failed", e instanceof Error ? e.message : e);
+    return fail("Не удалось провести выплату. Повторите попытку.");
   }
   try {
-    await recordAudit({ action: "payroll.regional_payment", entityType: "RegionalCityPayroll", entityId: payrollId, companyId: row.companyId, clubId, userId: ctx.user.id, metadata: { paymentId: payment.id, method, amountKopeks, overpayKopeks: excess > 0 ? excess : 0 } });
+    await recordAudit({ action: replayed ? "payroll.regional_payment_replayed" : "payroll.regional_payment", entityType: "RegionalCityPayroll", entityId: payrollId, companyId: row.companyId, clubId, userId: ctx.user.id, metadata: { paymentId, method, amountKopeks, overpayKopeks: excess > 0 ? excess : 0, replayed } });
   } catch { /* ignore */ }
   revalidatePath("/payroll/regional");
   return { ok: true, notice: excess > 0 ? "Выплата проведена; переплата оформлена долгом сотрудника." : "Выплата проведена." };
