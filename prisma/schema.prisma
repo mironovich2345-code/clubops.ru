@@ -1683,9 +1683,17 @@ model PayrollPayment {
   expenseId            String?   // linked salary Expense (P&L + ИП/ООО fact balance) — the ONE money record
   comment              String?
   paidByUserId         String
+  // REM-01 — payout safety (additive, nullable → legacy rows unaffected). idempotencyKey makes a
+  // logical payout create exactly one effect (DB-unique per company); requestFingerprint detects a
+  // same-key-different-params replay (conflict); paymentType names the flow. Old rows stay null and
+  // are never auto-backfilled. @@unique allows multiple NULLs on both sqlite and postgres.
+  idempotencyKey       String?
+  requestFingerprint   String?
+  paymentType          String?   // advance | regular | final | regional
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([clubId])
   @@index([employeeId])
@@ -2706,9 +2714,13 @@ model RegionalCityPayment {
   comment               String?
   paymentDate           DateTime  @default(now())
   paidByUserId          String
+  // REM-01 — same payout-safety guarantee as PayrollPayment (additive, nullable).
+  idempotencyKey        String?
+  requestFingerprint    String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([regionalCityPayrollId])
   @@index([clubId])
