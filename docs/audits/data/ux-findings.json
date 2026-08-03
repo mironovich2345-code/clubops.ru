@@ -1,0 +1,24 @@
+{
+  "audit": "full-audit-06-product-ux",
+  "commit": "9c43548",
+  "verdict": "genuinely built; every role completes essential daily work in-product without a spreadsheet",
+  "severity": { "S0": 0, "S1": 2, "S2": 5, "S3": 8 },
+  "priority": { "P0": 1, "P1": 6, "P2": 7, "DEFERRED": 1 },
+  "findings": [
+    { "id": "UX-004", "title": "Payroll 'Выплачен' is an unreconciled attestation (period paid while remaining>0)", "severity": "S1", "priority": "P1", "category": "workflow/finance", "ties": ["REM-01","FIN"] },
+    { "id": "UX-005", "title": "UI shows competing profit/cash definitions as single numbers (profit slot 2 defs + omits payroll; ООО snapshot vs fact side-by-side; card-vs-list divergence)", "severity": "S1", "priority": "P0", "category": "usability/finance", "ties": ["REM-02","REM-05","FIN-001","FIN-004"] },
+    { "id": "UX-001", "title": "Refund correction loop UI dead-end (returned refund doc step unreachable)", "severity": "S2", "priority": "P1", "category": "workflow", "unverified": true },
+    { "id": "UX-002", "title": "Expense owner-budget approval branch dead (pending_owner_budget_approval never reached)", "severity": "S2", "priority": "P1", "category": "workflow" },
+    { "id": "UX-003", "title": "Payroll obligation reversal + mandatory per-occurrence settle have no UI (perpetual overdue)", "severity": "S2", "priority": "P1", "category": "workflow" },
+    { "id": "UX-006", "title": "New-company onboarding demo-company trap (first registrant -> hardcoded demo)", "severity": "S2", "priority": "P1", "category": "onboarding" },
+    { "id": "UX-007", "title": "Missing/undifferentiated states (no loading; permission=silent redirect; empty=filter-empty; no-access=404=deleted)", "severity": "S2", "priority": "P1", "category": "error/states" },
+    { "id": "UX-008", "title": "Raw error text leaks to user in 2 payroll actions", "severity": "S3", "priority": "P2", "category": "error" },
+    { "id": "UX-009", "title": "Terminology overload («Отменить» x5; pay action='Оплачено'; 15+ un-unified label maps; EXPENSE_STATUS_LABELS duplicated)", "severity": "S3", "priority": "P2", "category": "terminology" },
+    { "id": "UX-010", "title": "Dashboard cards lack period/legal-entity labels; breakEven mislabeled; analytics KPIs no drill-through", "severity": "S3", "priority": "P2", "category": "dashboard" },
+    { "id": "UX-011", "title": "No consistent focus-managed modal (window.confirm + <details>)", "severity": "S3", "priority": "P2", "category": "accessibility" },
+    { "id": "UX-012", "title": "Form/file polish (no required markers; type=number inconsistency; no upload progress bar; generic refund errors)", "severity": "S3", "priority": "P2", "category": "forms/files" },
+    { "id": "UX-013", "title": "Expense/refund approval detail lack a full who-approved-when timeline", "severity": "S3", "priority": "P2", "category": "audit-trail" },
+    { "id": "UX-014", "title": "Confirmed regional transfer cannot be undone in UI (manual «Приход Иное» no linkage)", "severity": "S3", "priority": "P2", "category": "workflow" },
+    { "id": "UX-015", "title": "DEFERRED: OFD fitness-vocabulary hardcodes; Documents stub; Balances redirect; Saby flag (white-label)", "severity": "S3", "priority": "DEFERRED", "category": "onboarding/white-label" }
+  ]
+}
