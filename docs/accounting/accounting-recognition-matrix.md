@@ -39,3 +39,24 @@ and by which date. Commit `d161c15`. `machine-readable: docs/audits/data/formula
 **A mathematically-balancing equation is NOT proof of an accounting-correct rule** — the recognition
 method (accrual vs cash), the refund treatment, and the profit/budget-fact definitions are
 **business decisions** (`business-decisions-required.md`), not settled by the code balancing.
+
+## Synthetic scenarios — expected vs current effect (§20, read-only; numbers illustrative)
+| # | Scenario | Expected accounting effect | Current effect | Finding |
+|---|---|---|---|---|
+| 1 | Invoice paid fully | expense once by expensePeriod; cash out | ✅ as expected | — |
+| 2 | Invoice paid across two months | one expense (accrual month); two cash dates | ✅ expense by expensePeriod, cash by paymentDate | — |
+| 3 | Invoice partially paid then reversed | expense visible; on full reversal restore prior status | partial: **invisible to profit/budget**; reversal restores prePaymentStatus | FIN-002 |
+| 4 | Post-factum (historical) invoice | one expense by expensePeriod + backfilled ledger | ✅ (backfill adds ledger, no 2nd expense) | — |
+| 5 | Payroll accrual + advance + final payment | accrual=liability; advance+payment=cash; net=adv+pay+rem | ✅ net==adv+pay+rem; accrual not in P&L | — |
+| 6 | Payroll payment submitted twice | one payment/expense/movement | **duplicate payment+expense+movement** (no idempotency) | FIN-005 |
+| 7 | Cash expense after snapshot | −ИП fact once | −fact(B) **and** −wallet(A) | FIN-004 |
+| 8 | Cancelled snapshot | opening drops to next active | with date=null recounts all history → jump | FIN-004 |
+| 9 | Other income from regional | +ИП cash, not income | ✅ not in profit; but split across A/B tables | FIN-011 |
+| 10 | Transfer to regional + return | −ИП on confirm; +ИП on return | ✅ confirmed-only; return via «Иное» | BD-08 |
+| 11 | Refund reducing revenue | (if that were the rule) revenue−refund | **NOT** applied — refund is a separate expense | FIN-009/BD-02 |
+| 12 | Refund as expense | expense once (category refunds) | ✅ single-effect, no Expense row | — |
+| 13 | Shared employee | cost allocated per rule | no rule → company-level fallback | FIN-014/BD-06 |
+| 14 | Legal-entity mismatch | blocked / same-entity | DB-possible (no composite FK); refund LE not tied to sale | FIN-014 |
+| 15 | Budget fact with v2 verified expense | counted in fact | in "Использовано"+analytics, **not** in Plan/Fact/overruns | FIN-003 |
+| 16 | Legacy paid invoice without payment row | expense + recorded payment | expense recognized, `paidTotal=0` (ledgerless) | FIN-006 |
+
