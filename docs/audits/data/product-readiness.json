@@ -1,0 +1,23 @@
+{
+  "audit": "full-audit-06-product-ux", "commit": "9c43548",
+  "statuses": { "READY": 11, "READY_WITH_LIVE_GATE": 4, "PARTIALLY_READY": 5, "DEFERRED": 4 },
+  "modules": [
+    {"module":"Dashboard","readiness":"READY-WITH-LIVE-GATE"},{"module":"Workspace","readiness":"READY"},
+    {"module":"Analytics","readiness":"READY"},{"module":"OFD sales","readiness":"READY-WITH-LIVE-GATE"},
+    {"module":"Expenses","readiness":"PARTIALLY-READY","reason":"dead owner-budget branch (UX-002), stuck-draft (E3)"},
+    {"module":"Invoices","readiness":"READY-WITH-LIVE-GATE","reason":"partially_paid unlabeled; legacy ledgerless pay (REM-08)"},
+    {"module":"Refunds","readiness":"PARTIALLY-READY","reason":"correction loop dead-end (UX-001)"},
+    {"module":"Collections","readiness":"PARTIALLY-READY","reason":"cash dual-contour (REM-02); transfer undo (UX-014)"},
+    {"module":"Payments calendar","readiness":"READY"},
+    {"module":"Mandatory payments","readiness":"PARTIALLY-READY","reason":"no per-occurrence paid (UX-003)"},
+    {"module":"Balances","readiness":"DEFERRED","reason":"redirect to collections"},
+    {"module":"Budgets","readiness":"READY"},
+    {"module":"Payroll","readiness":"PARTIALLY-READY","reason":"payout idempotency (REM-01); obligation reversal no UI (UX-003); paid attestation (UX-004)"},
+    {"module":"Employees","readiness":"READY"},{"module":"Users","readiness":"READY-WITH-LIVE-GATE"},
+    {"module":"Companies","readiness":"admin/seed-only","reason":"demo-company trap (UX-006)"},
+    {"module":"Clubs","readiness":"READY"},{"module":"Legal entities","readiness":"READY"},
+    {"module":"OFD integration","readiness":"READY-WITH-LIVE-GATE"},{"module":"Activity/Audit","readiness":"READY"},
+    {"module":"Documents/Files","readiness":"DEFERRED","reason":"stub; local files lost on redeploy (REM-04)"},
+    {"module":"Sales","readiness":"READY (deprecated)"},{"module":"Backup/Restore","readiness":"DEFERRED","reason":"not in-product; restore unproven (REM-03)"}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "audit": "full-audit-06-product-ux", "commit": "9c43548",
+  "allRolesSpreadsheetFree": true,
+  "roles": [
+    {"role":"manager","landing":"/dashboard","verdict":"MOSTLY-READY","deadends":["UX-001 refund correction","E3 stuck draft"]},
+    {"role":"regional_director","landing":"/dashboard","verdict":"READY","notes":["3 task cards + own clubs"],"deadends":["R2 refund direct-URL"]},
+    {"role":"accountant","landing":"/workspace","verdict":"READY","notes":["task queues, not strategic dashboard"]},
+    {"role":"chief_accountant","landing":"/workspace","verdict":"READY","notes":["+reversal +month-close"],"deadends":["UX-003 obligation reversal no UI"]},
+    {"role":"owner","landing":"/dashboard","verdict":"READY","notes":["strategic; no auto-reversal"],"caveats":["UX-005 profit competing defs"]},
+    {"role":"general_director","landing":"/dashboard","verdict":"READY","notes":["+plans/budgets; advertising overrun exclusive"]},
+    {"role":"marketer","landing":"/dashboard","verdict":"READY","notes":["view-only, zero capabilities"]}
+  ]
+}
