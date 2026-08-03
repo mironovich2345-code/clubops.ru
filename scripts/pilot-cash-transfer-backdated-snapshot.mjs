@@ -83,8 +83,8 @@ check("17 Later snapshot remains unchanged when an earlier one is added (append-
   resolveOpening(snapExample, "2026-07-10").amountKopeks === 1550992);
 check("18 Backdated point affects ONLY the interval before the next point",
   resolveOpening(snapExample, "2026-07-01").amountKopeks === 98 && resolveOpening([snapExample[0]], "2026-07-01").amountKopeks === 98);
-check("19 Current balance uses latest applicable snapshot (status active + snapshotDate <= now)",
-  cashCollections.includes('status: "active", snapshotDate: { lte: now }'));
+check("19 Current balance uses latest applicable snapshot (canonical rule via shared activeSnapshotWhere)",
+  cashCollections.includes("activeSnapshotWhere(now)") && (() => { const r = src("src/lib/cash-snapshot-resolver.ts"); return r.includes('status: "active"') && r.includes("lte: asOf"); })());
 check("20 Same-date ordinary duplicate denied (guard → «используйте корректировку»)",
   /const clash = await getActiveSnapshotOnDate[\s\S]*?Используйте корректировку/.test(actions));
 check("21 Correction requires a reason",

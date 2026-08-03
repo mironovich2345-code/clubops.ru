@@ -60,7 +60,7 @@ check("16 Cross-company accountant / 17 cross-club manager denied (scope чер�
 // ===================== Cancellation (§10–§13) =====================
 check("18 Отмена требует причину", /cancelBalanceSnapshot[\s\S]*?if \(!reason\) return \{ ok: false/.test(actions));
 check("19 Отменённая точка остаётся в истории (флип active→cancelled, без delete)", /cancelBalanceSnapshot[\s\S]*?data: \{ status: "cancelled"/.test(actions) && !actions.includes("balanceSnapshot.delete"));
-check("20 Отменённая точка исключена из resolver (status='active' в loadClubCashBalances)", cashCollections.includes('status: "active", snapshotDate: { lte: now }') && (() => { const snaps = [{ status: "active", date: "2026-07-01", amountKopeks: 98 }, { status: "cancelled", date: "2026-07-02", amountKopeks: 1550992 }]; return resolveOpening(snaps, "2026-07-10").date === "2026-07-01"; })());
+check("20 Отменённая точка исключена из resolver (status='active' в loadClubCashBalances)", cashCollections.includes("activeSnapshotWhere(now)") && (() => { const snaps = [{ status: "active", date: "2026-07-01", amountKopeks: 98 }, { status: "cancelled", date: "2026-07-02", amountKopeks: 1550992 }]; return resolveOpening(snaps, "2026-07-10").date === "2026-07-01"; })());
 check("21 После отмены применяется предыдущая действующая точка", (() => { const before = [{ status: "active", date: "2026-07-01", amountKopeks: 98 }, { status: "active", date: "2026-07-02", amountKopeks: 1550992 }]; const after = before.map((s) => s.date === "2026-07-02" ? { ...s, status: "cancelled" } : s); return resolveOpening(before, "2026-07-10").date === "2026-07-02" && resolveOpening(after, "2026-07-10").date === "2026-07-01"; })());
 check("22 Более поздняя точка не изменяется при отмене другой (отмена флипает только целевую строку)", /cancelBalanceSnapshot[\s\S]*?updateMany\(\{ where: \{ id: old\.id, status: "active" \}/.test(actions));
 check("23 Текущий остаток пересчитывается детерминированно (resolver desc by date, cancelled excluded)", cashCollections.includes('orderBy: [{ snapshotDate: "desc" }, { createdAt: "desc" }]'));
@@ -68,7 +68,7 @@ check("24 Нет разрушающего delete + кнопки «Удалить
 
 // ===================== Preserved rules (§12) =====================
 check("25 Correction chain append-only (supersede + version+1)", /correctBalanceSnapshot[\s\S]*?version: old\.version \+ 1, supersedesSnapshotId: old\.id/.test(actions));
-check("26 Backdated поведение сохранено (latest active ≤ now)", cashCollections.includes('status: "active", snapshotDate: { lte: now }'));
+check("26 Backdated поведение сохранено (latest active ≤ now)", cashCollections.includes("activeSnapshotWhere(now)"));
 check("27 Confirmed передача уменьшает остаток (unchanged)", cashBalances.includes('REGIONAL_TRANSFER_FACT_STATUSES: readonly string[] = ["confirmed"]') && factIpTransfer(100000, [{ status: "confirmed", amountKopeks: 40000 }]) === 60000);
 check("28 Pending передача не влияет", factIpTransfer(100000, [{ status: "pending_confirmation", amountKopeks: 40000 }]) === 100000);
 check("29 Cancelled передача не влияет", factIpTransfer(100000, [{ status: "cancelled", amountKopeks: 40000 }]) === 100000);

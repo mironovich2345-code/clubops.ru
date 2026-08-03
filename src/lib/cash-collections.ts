@@ -4,6 +4,7 @@
 // pure calculateCashBalances. Single source of truth for /collections, /expenses
 // and the dashboard. No raw fiscal data, no secrets, no PII.
 import { prisma } from "@/lib/prisma";
+import { activeSnapshotWhere } from "@/lib/cash-snapshot-resolver";
 import { getActiveClubLegalEntities, type LegalEntityType } from "@/lib/legal-entities";
 import { calculateCashBalances, type CashBalances } from "@/lib/cash-balances";
 
@@ -34,7 +35,7 @@ export async function loadClubCashBalances(companyId: string, clubId: string, no
     // Only ACTIVE versions on/ before `now` — a backdated earlier point never overrides a
     // later one (later snapshotDate wins), and superseded correction versions are ignored.
     entityIds.length
-      ? prisma.balanceSnapshot.findMany({ where: { clubId, legalEntityId: { in: entityIds }, status: "active", snapshotDate: { lte: now } }, orderBy: [{ snapshotDate: "desc" }, { createdAt: "desc" }], select: { legalEntityId: true, actualBalanceKopeks: true, snapshotDate: true } })
+      ? prisma.balanceSnapshot.findMany({ where: { clubId, legalEntityId: { in: entityIds }, ...activeSnapshotWhere(now) }, orderBy: [{ snapshotDate: "desc" }, { createdAt: "desc" }], select: { legalEntityId: true, actualBalanceKopeks: true, snapshotDate: true } })
       : Promise.resolve([]),
     prisma.ofdDailySalesSummary.findMany({ where: { companyId, clubId, provider: "taxcom" }, select: { legalEntityId: true, date: true, incomeCashKopeks: true, returnCashKopeks: true } }),
     prisma.cashCollection.findMany({ where: { clubId }, select: { status: true, amountKopeks: true, operationDate: true } }),

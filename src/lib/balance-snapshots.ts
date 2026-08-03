@@ -5,6 +5,7 @@
 // All queries are scope-safe: callers pass companyId + allowedClubIds and we
 // never widen beyond them.
 import { prisma } from "@/lib/prisma";
+import { activeSnapshotWhere } from "@/lib/cash-snapshot-resolver";
 import { normalizeEntityType, type LegalEntityType } from "@/lib/legal-entities";
 
 export type EntityBalance = { kopeks: number | null; latestDate: Date | null };
@@ -20,8 +21,10 @@ const EMPTY: EntityBalance = { kopeks: null, latestDate: null };
 /** Sum of the latest snapshot per (club, entity), aggregated by ООО / ИП for the scope. */
 export async function getLatestBalancesForScope(companyId: string, clubIds: string[]): Promise<ScopeBalances> {
   if (clubIds.length === 0) return { ooo: EMPTY, ip: EMPTY, totalKopeks: null };
+  // REM-02 / ARCH-001: the canonical rule — only ACTIVE snapshots on/before now (cancelled &
+  // superseded are excluded, future-dated are ignored). Matches the cash contour's resolver.
   const snaps = await prisma.balanceSnapshot.findMany({
-    where: { companyId, clubId: { in: clubIds } },
+    where: { companyId, clubId: { in: clubIds }, ...activeSnapshotWhere(new Date()) },
     orderBy: [{ snapshotDate: "desc" }, { createdAt: "desc" }],
     select: { clubId: true, legalEntityId: true, actualBalanceKopeks: true, snapshotDate: true, legalEntity: { select: { type: true } } },
   });
@@ -70,11 +73,13 @@ export async function getLatestBalancesByClub(
 ): Promise<Map<string, ClubBalances>> {
   const out = new Map<string, ClubBalances>();
   if (clubIds.length === 0) return out;
+  // REM-02 / ARCH-001: canonical rule — ACTIVE only, up to `asOfExclusive` (start of the following
+  // month for a month-end balance) or now. Cancelled/superseded/future rows are excluded.
   const snaps = await prisma.balanceSnapshot.findMany({
     where: {
       companyId,
       clubId: { in: clubIds },
-      ...(asOfExclusive ? { snapshotDate: { lt: asOfExclusive } } : {}),
+      ...activeSnapshotWhere(asOfExclusive ?? new Date(), { exclusive: !!asOfExclusive }),
     },
     orderBy: [{ snapshotDate: "desc" }, { createdAt: "desc" }],
     select: { clubId: true, legalEntityId: true, actualBalanceKopeks: true, snapshotDate: true, legalEntity: { select: { type: true } } },
