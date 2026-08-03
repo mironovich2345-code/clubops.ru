@@ -8,7 +8,7 @@ ratified** (`docs/accounting/business-decisions-required.md`). Effort XS/S/M/L.
 ## P0 — release blockers (money distortion / data loss)
 | ID | Task | Merges | BD | Migration | Test / Live gate | Effort |
 |---|---|---|---|---|---|---|
-| **REM-01** | Payroll payout: wrap `recordPayment`/`recordAdvance`/`recordRegionalCityPayment` in `$transaction` + add idempotency key (mirror the invoice ledger) | ARCH-002/003/004, DATA-003, FIN-005, SEC-001 | — | additive (idempotencyKey) | DB double-submit test + staging (G9) | M |
+| **REM-01 ✅ DONE** | Payroll payout: atomic + idempotent via shared `executePayrollPayment`/`executePayrollReversal` (all payout paths). **CLOSED:** ARCH-002/003/004, DATA-003, FIN-005, SEC-001; DATA-016 (payout paths). 27/27 real DB-backed tests; pilot:full 3888/0. **Remaining:** PostgreSQL concurrency gate on staging (`docs/testing/rem-01-payroll-payment-checklist.md`). DATA-010 + dual-contour deferred to REM-02. See `docs/remediation/rem-01-payroll-payment-report.md`. | ARCH-002/003/004, DATA-003, FIN-005, SEC-001 | — | additive (idempotencyKey) — applied | ✅ 27 DB tests; staging pg gate pending | M |
 | **REM-02** | Cash contour unification: one resolver, collapse to contour B, stop expense/payroll double-writing contour A | ARCH-001/006, DATA-001/002, FIN-004 | **BD-09** | data reconcile A vs B | compare all cash screens (G1–G3) | L |
 | **REM-03** | Backup: scheduled off-site encrypted `pg_dump` + a **rehearsed** restore with recorded RPO/RTO | OPS-001 | — | none | restore rehearsal (G10) | M |
 | **REM-04** | File durability: enforce `STORAGE_PROVIDER=s3` in prod at startup + include uploads in backup | OPS-002, ARCH-017 | — | none | redeploy file-survival (G12) | S |
