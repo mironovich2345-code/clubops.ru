@@ -1,0 +1,665 @@
+{
+  "filesTouchingPrisma": 161,
+  "byLayer": {
+    "page-rsc": 35,
+    "server-action": 46,
+    "component": 3,
+    "api-route": 4,
+    "lib": 73
+  },
+  "prismaInPageOrComponent": [
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/page.tsx",
+      "kind": "page-rsc",
+      "calls": 13
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/[id]/employees/[calculationId]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 7
+    },
+    {
+      "path": "src/app/(app)/analytics/ofd-sales/page.tsx",
+      "kind": "page-rsc",
+      "calls": 5
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/[id]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 5
+    },
+    {
+      "path": "src/app/(app)/payroll/advances/[id]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 4
+    },
+    {
+      "path": "src/app/(app)/payroll/ofd-cashiers/[id]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 4
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/[id]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 4
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/page.tsx",
+      "kind": "page-rsc",
+      "calls": 4
+    },
+    {
+      "path": "src/app/(app)/collections/page.tsx",
+      "kind": "page-rsc",
+      "calls": 3
+    },
+    {
+      "path": "src/app/(app)/invoices/[id]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 3
+    },
+    {
+      "path": "src/app/(app)/payroll/advances/page.tsx",
+      "kind": "page-rsc",
+      "calls": 3
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/page.tsx",
+      "kind": "page-rsc",
+      "calls": 3
+    },
+    {
+      "path": "src/app/(app)/payroll/ofd-cashiers/page.tsx",
+      "kind": "page-rsc",
+      "calls": 3
+    },
+    {
+      "path": "src/app/(app)/payroll/payments/page.tsx",
+      "kind": "page-rsc",
+      "calls": 3
+    },
+    {
+      "path": "src/app/(app)/budgets/_components/SalaryBudgetPanel.tsx",
+      "kind": "component",
+      "calls": 2
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/(app)/payroll/summary/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/(app)/refunds/[id]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/(app)/settings/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/(app)/users/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/accept-invite/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/system-admin/accounts/page.tsx",
+      "kind": "page-rsc",
+      "calls": 2
+    },
+    {
+      "path": "src/app/(app)/analytics/expenses/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/dashboard/_components/CashScopeSummary.tsx",
+      "kind": "component",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/expenses/simple/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/invoices/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/payroll/employees/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/payroll/employees/[id]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/payroll/obligations/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/payroll/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/payroll/_components/PayrollWorkspace.tsx",
+      "kind": "component",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/refunds/new/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/refunds/new/[id]/details/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/sales/reports/[id]/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    },
+    {
+      "path": "src/app/onboarding/page.tsx",
+      "kind": "page-rsc",
+      "calls": 1
+    }
+  ],
+  "idKeyedWritesWithoutCompanyIdInWhere": [
+    {
+      "path": "src/app/(app)/collections/reconciliation-actions.ts",
+      "line": 185,
+      "code": "await prisma.dailyCashReconciliation.update({ where: { id: r.id }, data });"
+    },
+    {
+      "path": "src/app/(app)/dashboard/actions.ts",
+      "line": 76,
+      "code": "await prisma.salesPlan.update({ where: { id: existing.id }, data: { targetAmountKopeks } });"
+    },
+    {
+      "path": "src/app/(app)/dashboard/plan-import-actions.ts",
+      "line": 106,
+      "code": "await tx.salesPlan.update({ where: { id: existing.id }, data: { targetAmountKopeks: amt } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "line": 429,
+      "code": "await prisma.expense.update({ where: { id: expenseId }, data: parsed.data });"
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "line": 488,
+      "code": "await prisma.expense.update({ where: { id: existing.id }, data: { status: EXPENSE_STATUS_CANCELED } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/category-actions.ts",
+      "line": 81,
+      "code": "await tx.expenseCategory.update({ where: { id }, data: { name } });"
+    },
+    {
+      "path": "src/app/(app)/expenses/category-actions.ts",
+      "line": 100,
+      "code": "await prisma.expenseCategory.update({ where: { id }, data: { isActive: active } });"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 670,
+      "code": "await tx.invoice.update({ where: { id: invoice.id }, data: { prePaymentStatus: invoice.status } });"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 679,
+      "code": "await tx.invoice.update({ where: { id: invoice.id }, data: { status: nextStatus, paidAt: newPaid >= invoice.amountKopeks"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 717,
+      "code": "await tx.invoice.update({ where: { id: invoice.id }, data: { status: nextStatus, paidAt: newPaid >= invoice.amountKopeks"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 783,
+      "code": "await prisma.invoice.update({ where: { id: invoiceId }, data });"
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "line": 1150,
+      "code": "await prisma.invoice.update({ where: { id: existing.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/month-reopen-actions.ts",
+      "line": 206,
+      "code": "await tx.monthClose.update({ where: { id: closeRow.id }, data: { status: \"open\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/actions.ts",
+      "line": 151,
+      "code": "await prisma.employeeClubAssignment.update({ where: { id: assignmentId }, data: { isActive: false } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 69,
+      "code": "await prisma.payrollAdvance.update({ where: { id: advanceId }, data: { status: \"paid\", paidByUserId: params.userId, paid"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 317,
+      "code": "await tx.payrollAdvance.update({ where: { id: adv.id }, data: { status: \"paid\", paidByUserId: ctx.user.id, paidAt: new D"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 536,
+      "code": "await prisma.payrollCalculation.update({ where: { id: calc.id }, data: { approvedOverridesJson: JSON.stringify({ overrid"
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "line": 553,
+      "code": "await prisma.payrollChangeRequest.update({ where: { id: req.id }, data: { appliedToken: null } }).catch(() => {});"
+    },
+    {
+      "path": "src/app/(app)/payroll/ofd-cashiers/actions.ts",
+      "line": 62,
+      "code": "await tx.ofdCashierIdentity.update({ where: { id: identity.id }, data: { status: \"active\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 168,
+      "code": "await prisma.payrollCalculation.update({ where: { id: existing.id }, data: { schemeSnapshotJson: JSON.stringify(snapshot"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 327,
+      "code": "await prisma.payrollCalculation.update({ where: { id: calc.id }, data: { completionBp: planCompletionBp } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 437,
+      "code": "await prisma.payrollPeriod.update({ where: { id: periodId }, data });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 479,
+      "code": "await prisma.payrollCalculation.update({ where: { id: c.id }, data: { status: \"closed\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 614,
+      "code": "await prisma.payrollAdjustment.update({ where: { id: adjustmentId }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 768,
+      "code": "await prisma.payrollPayment.update({ where: { id: payment.id }, data: { expenseId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 805,
+      "code": "await prisma.payrollPayment.update({ where: { id: payment.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 910,
+      "code": "await prisma.payrollAdvance.update({ where: { id: advance.id }, data: { expenseId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 949,
+      "code": "await prisma.payrollAdvance.update({ where: { id: advance.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 138,
+      "code": "await prisma.payrollTrainerPackage.delete({ where: { id: packageId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/trainer-actions.ts",
+      "line": 155,
+      "code": "await prisma.payrollTrainerPackage.update({ where: { id: packageId }, data: { seniorTrainerConfirmed: true, seniorTraine"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 154,
+      "code": "await prisma.regionalCityPayment.update({ where: { id: payment.id }, data: { expenseId } });"
+    },
+    {
+      "path": "src/app/(app)/payroll/sales-actions.ts",
+      "line": 55,
+      "code": "await prisma.payrollCalculation.update({ where: { id: c.id }, data: { automaticSalesKopeks: automatic, effectiveSalesKop"
+    },
+    {
+      "path": "src/app/(app)/payroll/sales-actions.ts",
+      "line": 84,
+      "code": "await prisma.payrollCalculation.update({ where: { id: calc.id }, data: { manualSalesOverrideKopeks: manual, manualSalesC"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 55,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data });"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 68,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data: { status: \"pending_approval\", submittedById: sco"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 86,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data: { status: \"draft\", comment: String(formData.get("
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 99,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data: { status: \"rejected\", comment: String(formData.g"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 137,
+      "code": "if (openPrev) await tx.employeePayScheme.update({ where: { id: openPrev.id }, data: { effectiveTo: scheme.effectiveFrom,"
+    },
+    {
+      "path": "src/app/(app)/payroll/schemes/actions.ts",
+      "line": 159,
+      "code": "await prisma.employeePayScheme.update({ where: { id: scheme.id }, data: { status: \"archived\", archivedAt: new Date() } }"
+    },
+    {
+      "path": "src/app/(app)/refunds/actions.ts",
+      "line": 254,
+      "code": "await prisma.refund.update({ where: { id: refundId }, data: parsed.data });"
+    },
+    {
+      "path": "src/app/(app)/refunds/refund-document-actions.ts",
+      "line": 244,
+      "code": "await prisma.refund.update({ where: { id: refundId }, data: v.data });"
+    },
+    {
+      "path": "src/app/(app)/settings/actions.ts",
+      "line": 230,
+      "code": "await prisma.club.update({ where: { id: clubId }, data: { name, city: city || \"—\" } });"
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "line": 468,
+      "code": "await tx.ofdCashRegisterMapping.update({ where: { id: mapping.id }, data: { fnNumber, kktRegNumber, kktName, connectionI"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 119,
+      "code": "await prisma.legalEntity.update({ where: { id: legalEntityId }, data: next });"
+    },
+    {
+      "path": "src/app/(app)/settings/legal-entity-actions.ts",
+      "line": 155,
+      "code": "await prisma.legalEntity.update({ where: { id: legalEntityId }, data: { isActive: active } });"
+    },
+    {
+      "path": "src/app/(app)/settings/ofd/astral/steps-actions.ts",
+      "line": 137,
+      "code": "await prisma.ofdCashRegisterMapping.update({ where: { id: existing.id }, data });"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 123,
+      "code": "await tx.user.update({ where: { id: current.id }, data: { passwordHash: newHash } });"
+    },
+    {
+      "path": "src/app/(app)/settings/security/account-actions.ts",
+      "line": 260,
+      "code": "await tx.user.update({ where: { id: current.id }, data: { email: bind.next, emailVerifiedAt: new Date() } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 527,
+      "code": "await tx.companyUserAccess.delete({ where: { id: accessId } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 554,
+      "code": "await tx.clubUserAccess.delete({ where: { id: accessId } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 643,
+      "code": "await prisma.user.update({ where: { id: targetUserId }, data: { isActive: true } });"
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "line": 651,
+      "code": "await tx.user.update({ where: { id: targetUserId }, data: { isActive: false } });"
+    },
+    {
+      "path": "src/app/system-admin/accounts/actions.ts",
+      "line": 31,
+      "code": "await prisma.accountDeletion.update({ where: { id: del.id }, data: { restoreTokenHash: tokenHash } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 71,
+      "code": "await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { activeStoredSessionId: stored.id, last"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 95,
+      "code": "await prisma.storedAccountSession.update({ where: { id: storedId }, data: { lastUsedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 96,
+      "code": "await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { activeStoredSessionId: storedId, lastA"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 105,
+      "code": "await prisma.storedAccountSession.update({ where: { id: storedId }, data: { revokedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 113,
+      "code": "await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { activeStoredSessionId: nextActiveId } "
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 117,
+      "code": "if (empty) await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { revokedAt: new Date(), acti"
+    },
+    {
+      "path": "src/lib/account-container.ts",
+      "line": 129,
+      "code": "await prisma.accountSessionContainer.update({ where: { id: containerId }, data: { revokedAt: new Date(), activeStoredSes"
+    },
+    {
+      "path": "src/lib/account-restore.ts",
+      "line": 78,
+      "code": "await tx.accountDeletion.update({ where: { id: lookup.deletionId }, data: { restoredAt: now, restoreTokenHash: null } })"
+    },
+    {
+      "path": "src/lib/account-restore.ts",
+      "line": 121,
+      "code": "await tx.accountDeletion.update({ where: { id: deletionId }, data: { restoredAt: now, restoreTokenHash: null } });"
+    },
+    {
+      "path": "src/lib/action-challenge.ts",
+      "line": 91,
+      "code": "await prisma.emailOtpChallenge.update({ where: { id: challenge.id }, data: { deliveryFailedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/action-challenge.ts",
+      "line": 135,
+      "code": "const updated = await prisma.emailOtpChallenge.update({ where: { id: challenge.id }, data: { attemptCount: { increment: "
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 303,
+      "code": "if (req) await prisma.budgetApprovalRequest.delete({ where: { id: req.id } });"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 304,
+      "code": "await prisma.expense.update({ where: { id: e.id }, data: { status: EXPENSE_STATUS_IMPORT_REVERTED } });"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 313,
+      "code": "await prisma.invoice.update({ where: { id: i.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 325,
+      "code": "await prisma.salesReport.update({ where: { id: r.id }, data: { status: \"canceled\" } });"
+    },
+    {
+      "path": "src/lib/login-challenge.ts",
+      "line": 120,
+      "code": "await prisma.emailOtpChallenge.update({ where: { id: challenge.id }, data: { deliveryFailedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/login-challenge.ts",
+      "line": 193,
+      "code": "await prisma.emailOtpChallenge.update({ where: { id: challenge.id }, data: { deliveryFailedAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/login-challenge.ts",
+      "line": 271,
+      "code": "await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 74,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"skipped\", lastErrorCode: \"no_connection"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 83,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"failed\", lastErrorCode: \"bad_payload\" }"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 92,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"sent\", sentAt: new Date(), lastErrorCod"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 100,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"skipped\", lastErrorCode: \"blocked\" } })"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 107,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"failed\", lastErrorCode: \"http_400\", att"
+    },
+    {
+      "path": "src/lib/notifications/outbox.ts",
+      "line": 117,
+      "code": "await prisma.notificationOutbox.update({ where: { id: row.id }, data: { status: \"failed\", attempts, lastErrorCode: resul"
+    },
+    {
+      "path": "src/lib/ofd/astral/importer.ts",
+      "line": 147,
+      "code": "await prisma.ofdSyncRun.update({ where: { id: run.id }, data: { status: \"failed\", finishedAt: new Date(), safeErrorCode:"
+    },
+    {
+      "path": "src/lib/ofd/astral/importer.ts",
+      "line": 255,
+      "code": "await prisma.ofdConnection.update({ where: { id: connection.id }, data: { lastSyncAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/ofd/cash-register-service.ts",
+      "line": 61,
+      "code": "await db.ofdCashRegisterAssignment.update({ where: { id: open.id }, data: { effectiveTo: args.effectiveFrom < open.effec"
+    },
+    {
+      "path": "src/lib/ofd/cash-register-service.ts",
+      "line": 76,
+      "code": "await db.ofdFiscalDrive.update({ where: { id: current.id }, data: { status: \"replaced\", validTo: args.effectiveFrom } })"
+    },
+    {
+      "path": "src/lib/ofd/cashier-mapping-service.ts",
+      "line": 98,
+      "code": "await db.ofdCashierMapping.update({ where: { id: m.id }, data: { effectiveTo: args.effectiveFrom <= m.effectiveFrom ? m."
+    },
+    {
+      "path": "src/lib/ofd/cashier-mapping-service.ts",
+      "line": 103,
+      "code": "return db.ofdCashierMapping.update({ where: { id: same.id }, data: { status: args.status, matchMethod: args.matchMethod,"
+    },
+    {
+      "path": "src/lib/ofd/cashier-mapping-service.ts",
+      "line": 119,
+      "code": "await db.ofdCashierIdentity.update({ where: { id: identityId }, data: { status: \"excluded\" } });"
+    },
+    {
+      "path": "src/lib/ofd/importer.ts",
+      "line": 327,
+      "code": "await prisma.ofdConnection.update({ where: { id: connection.id }, data: { lastSyncAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/payroll/sales-attribution.ts",
+      "line": 119,
+      "code": "await prisma.payrollSalesAttribution.update({ where: { id: existing.id }, data: { employeeId: a.employeeId, amountKopeks"
+    },
+    {
+      "path": "src/lib/payroll/scheme-service.ts",
+      "line": 117,
+      "code": "if (req.status !== \"applied\") await prisma.payrollChangeRequest.update({ where: { id: requestId }, data: { status: \"appl"
+    },
+    {
+      "path": "src/lib/payroll/scheme-service.ts",
+      "line": 171,
+      "code": "await tx.payrollChangeRequest.update({ where: { id: requestId }, data: { status: \"applied\", appliedAt: at, appliedById: "
+    },
+    {
+      "path": "src/lib/session.ts",
+      "line": 136,
+      "code": "try { await prisma.session.update({ where: { id: v.session.id }, data: { lastSeenAt: new Date() } }); } catch { /* best-"
+    },
+    {
+      "path": "src/lib/session.ts",
+      "line": 155,
+      "code": "await prisma.session.update({ where: { id: valid.id }, data: { lastSeenAt: new Date() } });"
+    },
+    {
+      "path": "src/lib/telegram/linking.ts",
+      "line": 71,
+      "code": "await prisma.telegramLinkCode.update({ where: { id: code.id }, data: { attempts: { increment: 1 }, lastAttemptAt: now } "
+    },
+    {
+      "path": "src/lib/telegram/linking.ts",
+      "line": 82,
+      "code": "await prisma.telegramLinkCode.update({ where: { id: code.id }, data: { attempts: { increment: 1 }, lastAttemptAt: now } "
+    }
+  ],
+  "note": "id-keyed writes are flagged ONLY as places to verify a preceding scope check exists; most are guarded by a findUnique+companyId check on the line above (safe). This is architectural evidence, not a security verdict (see audit #5)."
+}

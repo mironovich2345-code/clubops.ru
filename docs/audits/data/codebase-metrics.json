@@ -1,0 +1,291 @@
+{
+  "generatedAt": "static-scan",
+  "files": {
+    "tsTsx": 481,
+    "filesOver500Loc": 17
+  },
+  "loc": {
+    "total": 71860,
+    "tsx": 28346
+  },
+  "boundaries": {
+    "useClientFiles": 112,
+    "useServerFiles": 59,
+    "filesTouchingPrisma": 160,
+    "prismaInPageTsx": 35
+  },
+  "quality": {
+    "todoFixmeHack": 10,
+    "anyUsage": 7,
+    "tsIgnore": 0,
+    "eslintDisable": 7,
+    "consoleUsage": 59,
+    "rawSql": 2,
+    "transactionUsages": 46,
+    "revalidateCalls": 373,
+    "hardcodedRoleStatusLiterals": 1118
+  },
+  "schema": {
+    "models": 82,
+    "enums": 0,
+    "devMigrations": 75,
+    "prodMigrations": 72,
+    "migrationDrift": 3
+  },
+  "tests": {
+    "pilotSuites": 80
+  },
+  "functionsOver100Loc": 55,
+  "topBigFiles": [
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "loc": 1490
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "loc": 969
+    },
+    {
+      "path": "src/app/(app)/analytics/page.tsx",
+      "loc": 795
+    },
+    {
+      "path": "src/lib/analytics.ts",
+      "loc": 788
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/actions.ts",
+      "loc": 767
+    },
+    {
+      "path": "src/app/(app)/refunds/refund-document-actions.ts",
+      "loc": 738
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "loc": 730
+    },
+    {
+      "path": "src/lib/access.ts",
+      "loc": 693
+    },
+    {
+      "path": "src/app/(app)/payments/page.tsx",
+      "loc": 684
+    },
+    {
+      "path": "src/app/(app)/payroll/change-requests/actions.ts",
+      "loc": 635
+    },
+    {
+      "path": "src/lib/invoices.ts",
+      "loc": 605
+    },
+    {
+      "path": "src/app/(app)/settings/integrations/ofd/_components/OfdForms.tsx",
+      "loc": 535
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "loc": 532
+    },
+    {
+      "path": "src/lib/activity.ts",
+      "loc": 523
+    },
+    {
+      "path": "src/app/(app)/expenses/page.tsx",
+      "loc": 512
+    },
+    {
+      "path": "src/app/(app)/collections/actions.ts",
+      "loc": 511
+    },
+    {
+      "path": "src/lib/payment-obligations.ts",
+      "loc": 509
+    }
+  ],
+  "topLongFunctions": [
+    {
+      "path": "src/lib/ofd/importer.ts",
+      "name": "dayOf",
+      "line": 54,
+      "length": 277
+    },
+    {
+      "path": "src/lib/ofd/importer.ts",
+      "name": "importTaxcomSalesForPeriod",
+      "line": 61,
+      "length": 270
+    },
+    {
+      "path": "src/app/(app)/invoices/_components/InvoiceUpload.tsx",
+      "name": "InvoiceUpload",
+      "line": 70,
+      "length": 261
+    },
+    {
+      "path": "src/app/(app)/expenses/_components/ExpenseUpload.tsx",
+      "name": "DocumentExpenseForm",
+      "line": 112,
+      "length": 250
+    },
+    {
+      "path": "src/app/(app)/expenses/simple/SimpleExpenseForm.tsx",
+      "name": "SimpleExpenseForm",
+      "line": 50,
+      "length": 249
+    },
+    {
+      "path": "src/app/(app)/expenses/_components/PayrollUpload.tsx",
+      "name": "PayrollUpload",
+      "line": 80,
+      "length": 228
+    },
+    {
+      "path": "src/lib/invoice-view.ts",
+      "name": "getInvoicesView",
+      "line": 98,
+      "length": 226
+    },
+    {
+      "path": "src/app/(app)/refunds/[id]/page.tsx",
+      "name": "fmtD",
+      "line": 39,
+      "length": 210
+    },
+    {
+      "path": "src/app/(app)/expenses/payroll-actions.ts",
+      "name": "savePayrollStatement",
+      "line": 220,
+      "length": 199
+    },
+    {
+      "path": "src/app/(app)/users/actions.ts",
+      "name": "createInvite",
+      "line": 61,
+      "length": 187
+    },
+    {
+      "path": "src/app/(app)/invoices/[id]/_components/InvoiceDataReview.tsx",
+      "name": "InvoiceDataReview",
+      "line": 49,
+      "length": 185
+    },
+    {
+      "path": "src/lib/ofd/taxcom/client.ts",
+      "name": "createTaxcomClient",
+      "line": 131,
+      "length": 176
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "name": "createAndSubmitInvoice",
+      "line": 313,
+      "length": 172
+    },
+    {
+      "path": "src/lib/ofd/astral/importer.ts",
+      "name": "importAstralSalesForPeriod",
+      "line": 90,
+      "length": 171
+    },
+    {
+      "path": "src/app/(app)/invoices/[id]/_components/InvoiceEditForm.tsx",
+      "name": "InvoiceEditForm",
+      "line": 114,
+      "length": 155
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "name": "uploadAndAnalyzeInvoice",
+      "line": 151,
+      "length": 154
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/[id]/employees/[calculationId]/page.tsx",
+      "name": "rubStr",
+      "line": 27,
+      "length": 151
+    },
+    {
+      "path": "src/app/(app)/refunds/new/[id]/details/page.tsx",
+      "name": "rub",
+      "line": 19,
+      "length": 151
+    },
+    {
+      "path": "src/app/(app)/refunds/_components/PtCalcForm.tsx",
+      "name": "PtCalcForm",
+      "line": 26,
+      "length": 149
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "name": "transitionInvoice",
+      "line": 1192,
+      "length": 147
+    },
+    {
+      "path": "src/app/(app)/refunds/_components/RefundUpload.tsx",
+      "name": "RefundUpload",
+      "line": 38,
+      "length": 143
+    },
+    {
+      "path": "src/app/(app)/refunds/[id]/_components/RefundEditForm.tsx",
+      "name": "RefundEditForm",
+      "line": 50,
+      "length": 142
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "name": "saveAndResubmitInvoice",
+      "line": 1349,
+      "length": 141
+    },
+    {
+      "path": "src/app/(app)/payroll/_components/ProposeChangeSection.tsx",
+      "name": "ProposeChangeSection",
+      "line": 53,
+      "length": 141
+    },
+    {
+      "path": "src/app/(app)/dashboard/_components/OfdSalesOverview.tsx",
+      "name": "OfdSalesOverview",
+      "line": 10,
+      "length": 137
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "name": "uploadAndAnalyzeExpense",
+      "line": 119,
+      "length": 133
+    },
+    {
+      "path": "src/app/(app)/expenses/actions.ts",
+      "name": "saveExpenseImpl",
+      "line": 272,
+      "length": 133
+    },
+    {
+      "path": "src/lib/payroll/role-compute.ts",
+      "name": "num",
+      "line": 15,
+      "length": 127
+    },
+    {
+      "path": "src/app/(app)/invoices/actions.ts",
+      "name": "saveHistoricalInvoice",
+      "line": 491,
+      "length": 125
+    },
+    {
+      "path": "src/lib/payroll/role-compute.ts",
+      "name": "computeRoleCategoryScheme",
+      "line": 18,
+      "length": 124
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "patternCounts": {
+    "idUpdate": 161,
+    "idDelete": 6,
+    "findUniqueById": 178,
+    "upsert": 19,
+    "transaction": 46,
+    "createMany": 8,
+    "updateManyStatusCas": 35,
+    "moneyExpenseCreate": 0
+  },
+  "transactionFileCount": 27,
+  "transactionFiles": [
+    "src/app/(app)/budgets/budget-import-actions.ts",
+    "src/app/(app)/collections/actions.ts",
+    "src/app/(app)/dashboard/plan-import-actions.ts",
+    "src/app/(app)/expenses/category-actions.ts",
+    "src/app/(app)/expenses/document-actions.ts",
+    "src/app/(app)/expenses/payroll-actions.ts",
+    "src/app/(app)/invoices/actions.ts",
+    "src/app/(app)/month-reopen-actions.ts",
+    "src/app/(app)/payroll/actions.ts",
+    "src/app/(app)/payroll/advance-actions.ts",
+    "src/app/(app)/payroll/ofd-cashiers/actions.ts",
+    "src/app/(app)/payroll/schemes/actions.ts",
+    "src/app/(app)/refunds/refund-document-actions.ts",
+    "src/app/(app)/settings/actions.ts",
+    "src/app/(app)/settings/integrations/ofd/actions.ts",
+    "src/app/(app)/settings/legal-entity-actions.ts",
+    "src/app/(app)/settings/security/account-actions.ts",
+    "src/app/(app)/users/actions.ts",
+    "src/app/(app)/users/role-actions.ts",
+    "src/app/onboarding/actions.ts",
+    "src/lib/account-deletion.ts",
+    "src/lib/account-restore.ts",
+    "src/lib/cash-wallets.ts",
+    "src/lib/expense-categories.ts",
+    "src/lib/invite-service.ts",
+    "src/lib/payroll/scheme-service.ts",
+    "src/lib/telegram/linking.ts"
+  ],
+  "moneyWriteCallSites": [
+    {
+      "path": "src/app/(app)/expenses/simplified-actions.ts",
+      "line": 295,
+      "passesTxClient": false,
+      "code": "if (exp) await recordExpenseMovement(exp);"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 56,
+      "passesTxClient": false,
+      "code": "const { expenseId } = await createSalaryExpense({"
+    },
+    {
+      "path": "src/app/(app)/payroll/advance-actions.ts",
+      "line": 308,
+      "passesTxClient": true,
+      "code": "const { expenseId } = await createSalaryExpense({"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 755,
+      "passesTxClient": false,
+      "code": "const { expenseId } = await createSalaryExpense({"
+    },
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 897,
+      "passesTxClient": false,
+      "code": "const { expenseId } = await createSalaryExpense({"
+    },
+    {
+      "path": "src/app/(app)/payroll/regional/actions.ts",
+      "line": 150,
+      "passesTxClient": false,
+      "code": "const { expenseId } = await createSalaryExpense({"
+    },
+    {
+      "path": "src/lib/payroll/salary-expense.ts",
+      "line": 65,
+      "passesTxClient": false,
+      "code": "await recordExpenseMovement({"
+    }
+  ],
+  "moneyWritesNotObviouslyInTx": 6,
+  "note": "id-keyed update/delete + findUnique-by-id are the shapes to verify a scope guard precedes. moneyWriteCallSites flags createSalaryExpense/recordExpenseMovement calls; passesTxClient=false means the money write likely commits on the GLOBAL prisma client and would NOT roll back with a surrounding $transaction (consistency risk — see backlog ARCH transaction findings)."
+}

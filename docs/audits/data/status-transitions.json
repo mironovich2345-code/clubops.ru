@@ -1,0 +1,359 @@
+{
+  "statusConstArrays": 48,
+  "statusConstArraysList": [
+    {
+      "path": "src/app/(app)/payroll/periods/actions.ts",
+      "line": 637,
+      "name": "PAYABLE_STATUSES"
+    },
+    {
+      "path": "src/app/(app)/sales/report-actions.ts",
+      "line": 43,
+      "name": "ACTIVE_REPORT_STATUSES"
+    },
+    {
+      "path": "src/app/(app)/workspace/page.tsx",
+      "line": 24,
+      "name": "FINAL_STATUSES"
+    },
+    {
+      "path": "src/app/(app)/workspace/page.tsx",
+      "line": 25,
+      "name": "EXPENSE_REVIEW_STATUS"
+    },
+    {
+      "path": "src/lib/approval.ts",
+      "line": 67,
+      "name": "APPROVED_UNPAID_STATUSES"
+    },
+    {
+      "path": "src/lib/budgets.ts",
+      "line": 35,
+      "name": "SOURCE_STATUS_WAITING"
+    },
+    {
+      "path": "src/lib/budgets.ts",
+      "line": 36,
+      "name": "SOURCE_STATUS_REJECTED"
+    },
+    {
+      "path": "src/lib/budgets.ts",
+      "line": 42,
+      "name": "EXPENSE_REALIZED_STATUSES"
+    },
+    {
+      "path": "src/lib/budgets.ts",
+      "line": 69,
+      "name": "APPROVED_INVOICE_STATUSES"
+    },
+    {
+      "path": "src/lib/budgets.ts",
+      "line": 70,
+      "name": "APPROVED_REFUND_STATUSES"
+    },
+    {
+      "path": "src/lib/cash-balances.ts",
+      "line": 20,
+      "name": "COLLECTION_STATUS"
+    },
+    {
+      "path": "src/lib/cash-balances.ts",
+      "line": 28,
+      "name": "WITHDRAWAL_STATUS"
+    },
+    {
+      "path": "src/lib/cash-balances.ts",
+      "line": 45,
+      "name": "OTHER_INCOME_STATUS"
+    },
+    {
+      "path": "src/lib/cash-reconciliation.ts",
+      "line": 11,
+      "name": "RECON_STATUSES"
+    },
+    {
+      "path": "src/lib/cash-wallets.ts",
+      "line": 24,
+      "name": "MSTATUS"
+    },
+    {
+      "path": "src/lib/club-employees.ts",
+      "line": 25,
+      "name": "EMPLOYEE_STATUS_FILTERS"
+    },
+    {
+      "path": "src/lib/expense-attachments.ts",
+      "line": 16,
+      "name": "EXPENSE_DOC_EDITABLE_STATUSES"
+    },
+    {
+      "path": "src/lib/expense-simplified.ts",
+      "line": 35,
+      "name": "V2_EDITABLE_STATUSES"
+    },
+    {
+      "path": "src/lib/expense-simplified.ts",
+      "line": 36,
+      "name": "V2_CANCELABLE_STATUSES"
+    },
+    {
+      "path": "src/lib/expense-status.ts",
+      "line": 18,
+      "name": "EXPENSE_REVIEW_STATUSES"
+    },
+    {
+      "path": "src/lib/expense-status.ts",
+      "line": 26,
+      "name": "EXPENSE_NEEDS_CORRECTION_STATUS"
+    },
+    {
+      "path": "src/lib/expense-status.ts",
+      "line": 29,
+      "name": "EXPENSE_VERIFIED_STATUSES"
+    },
+    {
+      "path": "src/lib/expense-status.ts",
+      "line": 31,
+      "name": "EXPENSE_CANCELLED_STATUSES"
+    },
+    {
+      "path": "src/lib/expense-status.ts",
+      "line": 35,
+      "name": "EXPENSE_CASH_PENDING_STATUSES"
+    },
+    {
+      "path": "src/lib/expenses.ts",
+      "line": 85,
+      "name": "EXPENSE_STATUS_CANCELED"
+    },
+    {
+      "path": "src/lib/expenses.ts",
+      "line": 86,
+      "name": "EXPENSE_STATUS_IMPORT_REVERTED"
+    },
+    {
+      "path": "src/lib/expenses.ts",
+      "line": 89,
+      "name": "EXPENSE_ACTIVE_STATUSES"
+    },
+    {
+      "path": "src/lib/expenses.ts",
+      "line": 91,
+      "name": "EXPENSE_CANCELABLE_STATUSES"
+    },
+    {
+      "path": "src/lib/expenses.ts",
+      "line": 93,
+      "name": "EXPENSE_INACTIVE_STATUSES"
+    },
+    {
+      "path": "src/lib/import-batches.ts",
+      "line": 18,
+      "name": "EXPENSE_STATUS_IMPORT_REVERTED"
+    },
+    {
+      "path": "src/lib/invoices.ts",
+      "line": 260,
+      "name": "INVOICE_EDITABLE_STATUSES"
+    },
+    {
+      "path": "src/lib/invoices.ts",
+      "line": 287,
+      "name": "INVOICE_REVIEW_DATA_STATUSES"
+    },
+    {
+      "path": "src/lib/invoices.ts",
+      "line": 295,
+      "name": "INVOICE_APPROVED_UNPAID_STATUSES"
+    },
+    {
+      "path": "src/lib/invoices.ts",
+      "line": 464,
+      "name": "INVOICE_AWAITING_PAYMENT_STATUSES"
+    },
+    {
+      "path": "src/lib/invoices.ts",
+      "line": 499,
+      "name": "INVOICE_CONFIRMED_UNPAID_STATUSES"
+    },
+    {
+      "path": "src/lib/invoices.ts",
+      "line": 522,
+      "name": "INVOICE_MANAGER_VISIBLE_STATUSES"
+    },
+    {
+      "path": "src/lib/mandatory-payments.ts",
+      "line": 21,
+      "name": "MANDATORY_STATUSES"
+    },
+    {
+      "path": "src/lib/ofd/cashier-identity.ts",
+      "line": 7,
+      "name": "MAPPING_STATUSES"
+    },
+    {
+      "path": "src/lib/payments.ts",
+      "line": 9,
+      "name": "OBLIGATION_STATUSES"
+    },
+    {
+      "path": "src/lib/payroll/change-request.ts",
+      "line": 23,
+      "name": "CHANGE_REQUEST_STATUSES"
+    },
+    {
+      "path": "src/lib/payroll/enums.ts",
+      "line": 93,
+      "name": "PAYROLL_PERIOD_STATUSES"
+    },
+    {
+      "path": "src/lib/payroll/enums.ts",
+      "line": 121,
+      "name": "PAYROLL_CALCULATION_STATUSES"
+    },
+    {
+      "path": "src/lib/payroll/enums.ts",
+      "line": 139,
+      "name": "PAYROLL_ADVANCE_STATUSES"
+    },
+    {
+      "path": "src/lib/payroll/enums.ts",
+      "line": 147,
+      "name": "PAYROLL_PAYMENT_STATUSES"
+    },
+    {
+      "path": "src/lib/payroll/enums.ts",
+      "line": 164,
+      "name": "OBLIGATION_STATUSES"
+    },
+    {
+      "path": "src/lib/payroll/payment-obligation.ts",
+      "line": 20,
+      "name": "OBLIGATION_ELIGIBLE_PERIOD_STATUSES"
+    },
+    {
+      "path": "src/lib/payroll/scheme-version.ts",
+      "line": 12,
+      "name": "SCHEME_STATUSES"
+    },
+    {
+      "path": "src/lib/refund-workflow.ts",
+      "line": 6,
+      "name": "REFUND_V2_STATUS"
+    }
+  ],
+  "manualStatusWrites": 225,
+  "distinctStatusValuesProduced": [
+    "active",
+    "ambiguous",
+    "applied",
+    "approved",
+    "archived",
+    "asc",
+    "attributed",
+    "auto_matched",
+    "blocked_by_credentials",
+    "calculated",
+    "canceled",
+    "cancelled",
+    "closed",
+    "completed",
+    "confirmed",
+    "create",
+    "dismissed",
+    "draft",
+    "error",
+    "excluded",
+    "executed",
+    "failed",
+    "inactive",
+    "live",
+    "needs_correction",
+    "needs_review",
+    "ok",
+    "open",
+    "paid",
+    "partially_settled",
+    "pending",
+    "pending_accountant",
+    "pending_accountant_review",
+    "pending_approval",
+    "pending_confirmation",
+    "pending_review",
+    "planned",
+    "ready_for_credentials",
+    "rejected",
+    "replaced",
+    "requested",
+    "returned_for_revision",
+    "reversed",
+    "reverted",
+    "running",
+    "sending",
+    "sent",
+    "skipped",
+    "submitted",
+    "superseded",
+    "unmatched",
+    "written_off"
+  ],
+  "producedStatusCounts": {
+    "approved": 13,
+    "rejected": 5,
+    "create": 4,
+    "pending": 12,
+    "active": 24,
+    "pending_accountant_review": 3,
+    "pending_review": 5,
+    "cancelled": 9,
+    "pending_confirmation": 3,
+    "dismissed": 1,
+    "confirmed": 20,
+    "needs_review": 4,
+    "paid": 18,
+    "canceled": 9,
+    "needs_correction": 1,
+    "planned": 3,
+    "closed": 7,
+    "executed": 1,
+    "open": 6,
+    "draft": 9,
+    "reversed": 1,
+    "requested": 1,
+    "submitted": 2,
+    "returned_for_revision": 1,
+    "written_off": 1,
+    "calculated": 4,
+    "attributed": 4,
+    "pending_approval": 1,
+    "superseded": 2,
+    "archived": 2,
+    "pending_accountant": 6,
+    "ok": 1,
+    "asc": 3,
+    "reverted": 1,
+    "completed": 2,
+    "error": 2,
+    "sending": 1,
+    "skipped": 2,
+    "failed": 8,
+    "sent": 1,
+    "running": 2,
+    "replaced": 1,
+    "auto_matched": 3,
+    "ambiguous": 3,
+    "unmatched": 3,
+    "inactive": 2,
+    "excluded": 2,
+    "ready_for_credentials": 1,
+    "blocked_by_credentials": 1,
+    "live": 1,
+    "partially_settled": 1,
+    "applied": 2
+  },
+  "cancelSpellingDrift": {
+    "cancelled": 42,
+    "canceled": 60
+  },
+  "note": "A status that appears in a *_STATUSES array but NOT in distinctStatusValuesProduced is a candidate 'unreachable status' (verify against the state-machine doc). Both cancelled and canceled spellings appearing is a normalization hazard."
+}

@@ -1,0 +1,29 @@
+{
+  "models": {
+    "total": 82,
+    "noDataAccessReference": []
+  },
+  "unusedComponentOrLibCandidates": [
+    "src/components/BarChart.tsx",
+    "src/components/UserBadge.tsx",
+    "src/lib/ai/document-verification.ts",
+    "src/lib/ai/expense-rules.test.ts",
+    "src/lib/ai/invoice-party.test.ts",
+    "src/lib/club-cash-cards.ts",
+    "src/lib/payroll.test.ts",
+    "src/lib/sales.test.ts"
+  ],
+  "disabledFeatureTombstones": [
+    "src/app/(app)/balances/actions.ts",
+    "src/app/(app)/dashboard/plan-import-actions.ts",
+    "src/app/(app)/expenses/actions.ts",
+    "src/app/(app)/expenses/expense-import-actions.ts",
+    "src/app/(app)/import-revert-actions.ts",
+    "src/app/(app)/invoices/actions.ts",
+    "src/app/(app)/invoices/invoice-import-actions.ts",
+    "src/app/(app)/sales/report-actions.ts",
+    "src/app/(app)/sales/report-import-actions.ts",
+    "src/lib/disabled-features.ts"
+  ],
+  "note": "noDataAccessReference models may still be used via tx.<model>/db.<model> aliases inside a $transaction — VERIFY before treating as dead. unusedComponentOrLibCandidates are files whose basename is never imported anywhere (strong dead-code signal). Tombstones are intentional (kill-switch / 404) — keep unless consolidating. Nothing here is deleted by this script."
+}
