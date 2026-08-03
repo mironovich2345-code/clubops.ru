@@ -117,6 +117,7 @@ const pilots = [
   ["Invoice partial payment + post-factum", "pilot-invoice-partial-payment-postfactum.mjs"],
   ["Regional dashboard review tasks", "pilot-regional-dashboard-review-tasks.mjs"],
   ["Payroll budget payment planning", "pilot-payroll-budget-payment-planning.mjs"],
+  ["Full audit 01 — code architecture", "pilot-full-audit-01-code-architecture.mjs"],
 ];
 
 let totalPass = 0, totalFail = 0, suitesFailed = 0;
