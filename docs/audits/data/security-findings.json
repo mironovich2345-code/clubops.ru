@@ -1,0 +1,33 @@
+{
+  "audit": "full-audit-05-security",
+  "commit": "eb8a8f6",
+  "verdicts": {
+    "crossTenantRead": "NOT_FOUND",
+    "crossTenantWrite": "NOT_FOUND",
+    "verticalEscalationIntoPayReverse": "NOT_FOUND",
+    "unauthenticatedSensitiveRoute": "NONE (only /api/health, names-only)",
+    "massAssignmentPrivilegedColumn": "NOT_FOUND",
+    "sqlOrCommandInjection": "NOT_FOUND",
+    "idorExecutedTest": "scope filter isolates; unscoped raw-id is the control-leak (ARCH-005)"
+  },
+  "severity": { "S0": 0, "S1": 2, "S2": 7, "S3": 7 },
+  "priority": { "P0": 0, "P1": 5, "P2": 7, "P3": 4 },
+  "findings": [
+    { "id": "SEC-001", "title": "Payroll payout family: no idempotency/tx -> replay = double money", "severity": "S1", "priority": "P1", "cwe": "CWE-799", "route": "payroll/periods/actions.ts:735, regional/actions.ts:143", "ties": ["ARCH-002","ARCH-003","ARCH-004","FIN-005","DATA-003"], "blocker": "conditional" },
+    { "id": "SEC-009", "title": "Failed authorization never audited or logged", "severity": "S1", "priority": "P1", "cwe": "CWE-778", "route": "access.ts:351", "ties": ["OPS-006"], "blocker": "no" },
+    { "id": "SEC-002", "title": "X-Forwarded-For trust -> per-IP rate limits bypassable", "severity": "S2", "priority": "P1", "cwe": "CWE-290", "route": "request-ip.ts:11", "ties": [], "blocker": "no" },
+    { "id": "SEC-003", "title": "Refund/payroll AI upload not cost-capped", "severity": "S2", "priority": "P1", "cwe": "CWE-770", "route": "refunds/actions.ts:142", "ties": [], "blocker": "no" },
+    { "id": "SEC-004", "title": "SSRF via Taxcom OFD serverBaseUrl (no host allowlist)", "severity": "S2", "priority": "P1", "cwe": "CWE-918", "route": "ofd/taxcom/client.ts:152", "ties": [], "blocker": "no" },
+    { "id": "SEC-005", "title": "Obligation settle/write-off no idempotency/CAS -> replay", "severity": "S2", "priority": "P2", "cwe": "CWE-799", "route": "payroll/obligations/actions.ts:84", "ties": [], "blocker": "no" },
+    { "id": "SEC-006", "title": "Client-trusted file storageKey (weak upload binding)", "severity": "S2", "priority": "P2", "cwe": "CWE-639", "route": "expenses/actions.ts:343, payroll-actions.ts:263", "ties": [], "blocker": "no" },
+    { "id": "SEC-007", "title": "Client-supplied confidence bypasses review nudge", "severity": "S2", "priority": "P2", "cwe": "CWE-807", "route": "invoices/actions.ts:376", "ties": [], "blocker": "no" },
+    { "id": "SEC-008", "title": "Rate limiter fails open on DB error", "severity": "S2", "priority": "P2", "cwe": "CWE-703", "route": "rate-limit.ts:92", "ties": [], "blocker": "no" },
+    { "id": "SEC-010", "title": "CSV formula injection in exports (latent, routes 404)", "severity": "S3", "priority": "P2", "cwe": "CWE-1236", "route": "csv.ts:6", "ties": [], "blocker": "no" },
+    { "id": "SEC-011", "title": "Collections OFD sync skips ofd.sync.trigger capability", "severity": "S3", "priority": "P2", "cwe": "CWE-862", "route": "collections/actions.ts:494", "ties": [], "blocker": "no" },
+    { "id": "SEC-012", "title": "removeClubAssignment omits clubId-in-allowedClubIds", "severity": "S3", "priority": "P3", "cwe": "CWE-639", "route": "payroll/actions.ts:148", "ties": [], "blocker": "no" },
+    { "id": "SEC-013", "title": "Registration enumeration + login timing side-channel", "severity": "S3", "priority": "P2", "cwe": "CWE-204", "route": "auth-actions.ts:87, auth.ts:382", "ties": [], "blocker": "no" },
+    { "id": "SEC-014", "title": "Archived club assignable via manager invite", "severity": "S3", "priority": "P3", "cwe": "CWE-noise", "route": "users/actions.ts:91", "ties": [], "blocker": "no" },
+    { "id": "SEC-015", "title": "Client-supplied idempotencyKey on regional transfer", "severity": "S3", "priority": "P3", "cwe": "CWE-639", "route": "collections/actions.ts:399", "ties": [], "blocker": "no" },
+    { "id": "SEC-016", "title": "Grouped low hardening (bcrypt cost, HSTS preload, style unsafe-inline, telegram dedupe, OFD amount cap, lib self-scope assertions)", "severity": "S3", "priority": "P3", "cwe": "various", "route": "multiple", "ties": [], "blocker": "no" }
+  ]
+}
