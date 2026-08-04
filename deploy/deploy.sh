@@ -205,8 +205,23 @@ fi
 chmod 600 "$BACKUP_FILE"
 [ -s "$BACKUP_FILE" ] || { rm -f "$BACKUP_FILE"; die "backup file is empty — aborting deploy"; }
 log "backup written: $(basename "$BACKUP_FILE") ($(du -h "$BACKUP_FILE" | cut -f1))"
-# Keep only the most recent N backups.
+# Keep only the most recent N backups (this LOCAL copy is a fast secondary, never the only copy).
 ls -1t "${BACKUP_DIR}"/clubops_*.dump 2>/dev/null | tail -n +"$((KEEP_BACKUPS+1))" | xargs -r rm -f
+
+# --- REM-03: OFF-SITE pre-deploy backup (verified) — abort deploy on failure -----------------
+# The local dump above shares the VM's failure domain (OPS-001). If off-site is configured
+# (BACKUP_S3_BUCKET set in .env), also create + verify an off-site copy BEFORE migrating; a failed
+# off-site backup aborts the deploy (DB unchanged). If not configured, warn loudly and continue on the
+# local-only copy (a beta escape hatch — production MUST configure BACKUP_S3_*).
+if [ -n "$(env_get BACKUP_S3_BUCKET)" ]; then
+  log "creating verified OFF-SITE pre-deploy backup ..."
+  if ! docker compose -f "$COMPOSE_FILE" run --rm -e "BACKUP_ALLOW_LOCALHOST=false" app node scripts/backup-database.mjs --type=pre-deploy --json >/dev/null 2>&1; then
+    die "off-site pre-deploy backup FAILED — aborting deploy (DB unchanged; local backup at ${BACKUP_FILE})"
+  fi
+  log "off-site pre-deploy backup verified"
+else
+  log "WARNING: BACKUP_S3_BUCKET not set — NO off-site backup (local-only). Configure BACKUP_S3_* before production (OPS-001)."
+fi
 
 # --- pull the exact digest (refresh the token right before pull) -------------
 registry_login   # re-auth so a long backup cannot expire the login before pull

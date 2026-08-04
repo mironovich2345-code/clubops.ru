@@ -1,0 +1,15 @@
+[Unit]
+Description=CLUB-OPS scheduled off-site PostgreSQL backup (REM-03)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/club-ops/app
+# Loads DATABASE_URL + BACKUP_S3_* from the deploy .env (root-owned, chmod 600).
+EnvironmentFile=/opt/club-ops/.env
+# Node runs the provider-neutral backup tool. --type=scheduled is independent of any deploy.
+ExecStart=/usr/bin/node scripts/backup-database.mjs --type=scheduled --json
+# Fail-closed: a non-zero exit is a failed backup (alerting picks it up via journald).
+TimeoutStartSec=1800
+Nice=10

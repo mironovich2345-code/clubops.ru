@@ -1,0 +1,13 @@
+[Unit]
+Description=CLUB-OPS daily off-site database backup (REM-03)
+
+[Timer]
+# Daily at 02:30 UTC + a short catch-up after boot; systemd never overlaps a still-running run
+# (plus the backup tool's own single-flight lock). RandomizedDelaySec spreads load.
+OnCalendar=*-*-* 02:30:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+Unit=club-ops-backup.service
+
+[Install]
+WantedBy=timers.target
