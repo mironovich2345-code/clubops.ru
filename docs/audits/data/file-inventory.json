@@ -1,0 +1,132 @@
+{
+  "generatedAtNote": "read-only inventory; no timestamp stamped inside the tool",
+  "environment": "non-production",
+  "provider": "local",
+  "totals": {
+    "metadataRows": 0,
+    "withStorageKey": 0,
+    "blobsOnStorage": 0
+  },
+  "checks": [
+    {
+      "id": "FI-01",
+      "title": "metadata row without a blob (missing object)",
+      "severity": "S1",
+      "repairClass": "object-recovery",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-02",
+      "title": "blob on storage with no metadata row (orphan)",
+      "severity": "S2",
+      "repairClass": "cleanup-after-review",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-03",
+      "title": "blob size does not match metadata sizeBytes",
+      "severity": "S1",
+      "repairClass": "object-recovery",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-04",
+      "title": "blob sha256 does not match metadata sha256",
+      "severity": "S0",
+      "repairClass": "object-recovery",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-05",
+      "title": "tenant-scoped key prefix companyId != row companyId (cross-tenant)",
+      "severity": "S0",
+      "repairClass": "investigate-security",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-06",
+      "title": "same storageKey referenced by more than one row",
+      "severity": "S1",
+      "repairClass": "investigate",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-07",
+      "title": "same blob hash across different entities (dedupe candidate)",
+      "severity": "S3",
+      "repairClass": "informational",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-15",
+      "title": "same blob hash linked to DIFFERENT tenants",
+      "severity": "S1",
+      "repairClass": "investigate-security",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-08",
+      "title": "storage key extension outside the allowed set",
+      "severity": "S2",
+      "repairClass": "investigate",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-09",
+      "title": "storageProvider=local recorded in a production environment",
+      "severity": "S1",
+      "repairClass": "migrate-to-s3",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-10",
+      "title": "upload never verified (verificationStatus != verified)",
+      "severity": "S3",
+      "repairClass": "re-verify",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-11",
+      "title": "upload/migration stuck pending > 24h",
+      "severity": "S2",
+      "repairClass": "resume-or-clean",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-12",
+      "title": "stale temp/ blob with no reference",
+      "severity": "S3",
+      "repairClass": "lifecycle-cleanup",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-13",
+      "title": "recorded storage key is unsafe/malformed",
+      "severity": "S0",
+      "repairClass": "investigate-security",
+      "offending": 0,
+      "sample": []
+    },
+    {
+      "id": "FI-14",
+      "title": "migration marked this file as a hash conflict",
+      "severity": "S1",
+      "repairClass": "manual-migration",
+      "offending": 0,
+      "sample": []
+    }
+  ]
+}

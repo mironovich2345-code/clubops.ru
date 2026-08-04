@@ -89,8 +89,9 @@ design; no automated single-tenant restore).
 
 **22. Pilot results.** `pilot:rem-04-durable-file-storage` **36/36**.
 
-**23. Full pilot / build.** tsc 0 · dev+prod schemas valid · `pilot:full` <RESULT> · build:prod
-<RESULT> (filled at the gauntlet step).
+**23. Full pilot / build.** tsc 0 · dev+prod schemas valid · `pilot:full` **3977/0 across 90 suites**
+· build:prod **compiles (BUILD_EXIT=0)** · `test:rem-04-file-storage` **31/31** · dev Prisma client
+restored after the prod build.
 
 **24. Commit hashes.** baseline+flow-map · storage contract/keys/enforcement · upload-verify+schema
 · core+inventory+preflight · manifest+migration · tests+pilot+docs · report+updates (on `main`).
