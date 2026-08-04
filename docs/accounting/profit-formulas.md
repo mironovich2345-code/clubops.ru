@@ -44,3 +44,12 @@ Every place profit is computed at `d161c15`, with inputs and the divergences. Mo
 **Can profit be trusted?** Only with caveats: it depends on which reader (OFD vs Sale/SalesReport),
 it **omits payroll accrual**, and it **drops partially-paid invoices**. The profit definition is a
 **business decision** (BD-03) that must be fixed before the number is authoritative.
+
+## Update (REM-05)
+BD-03 is ratified and encoded: the ONE official profit = **OFD net revenue − recognized expenses**
+via `src/lib/finance/calculateProfit` + `loadRecognizedExpenses` (`recognition.ts`). Recognized
+expenses now include the approved payroll accrual (`netPayableKopeks`) and partially_paid invoices in
+FULL, and exclude payments/cash/transfers/collections/«Приход Иное»/forecast/obligations. Proven by
+`test:rem-05-integration` (31/31) incl. the golden scenario (profit 330,000 ₽). The dashboard/analytics
+**profit cards** still read their legacy basis — adopting `calculateProfit` is live gate G-FIN-1/7
+(FIN-001/UX-005 PARTIALLY CLOSED). See `docs/remediation/rem-05-final-report.md`.

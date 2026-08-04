@@ -29,3 +29,13 @@ overrun decisions may be made on a figure that excludes a chunk of real (verifie
 
 **Can budget fact be trusted?** Not as a single number — it has three definitions that disagree on
 v2 verified expenses and on committed-vs-paid invoices. Reconcile (FIN-003, P1) before launch.
+
+## Update (REM-05)
+BD-04 is ratified and encoded: budget fact = **recognized expenses of the period** (accrual) via
+`src/lib/finance/calculateBudgetFact` → the SAME `loadRecognizedExpenses` used by profit;
+`available = approvedBudget − recognizedFact`. The three legacy functions (`computeUsedKopeks`,
+`computeBudgetOverruns`, `computeBudgetFactReport` + `getBudgetFactReportForScope`) are migrated to
+recognition: v2 `verified` expenses and `partially_paid` invoices (in FULL) now count, so Plan/Fact,
+overruns and "Использовано" agree (closes FIN-002/003, DATA-018/019). Committed obligations are a
+SEPARATE liquidity figure, never folded into fact. Proven by `test:rem-05-integration` (31/31). See
+`docs/remediation/rem-05-final-report.md`.

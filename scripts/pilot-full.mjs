@@ -124,6 +124,7 @@ const pilots = [
   ["REM-02 single cash source", "pilot-rem-02-single-cash-source.mjs"],
   ["REM-03 backup/restore", "pilot-rem-03-backup-restore.mjs"],
   ["REM-04 durable file storage", "pilot-rem-04-durable-file-storage.mjs"],
+  ["REM-05 profit/budget fact", "pilot-rem-05-profit-budget-fact.mjs"],
   ["Full audit 05 — security", "pilot-full-audit-05-security.mjs"],
   ["Full audit 06 — product/ux", "pilot-full-audit-06-product-ux.mjs"],
   ["Full audit 02 — data model", "pilot-full-audit-02-data-model.mjs"],
