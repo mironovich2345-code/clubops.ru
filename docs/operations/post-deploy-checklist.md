@@ -3,10 +3,11 @@
 Run immediately after every production deploy. Most items are read-only smoke checks.
 
 ## Version & readiness
-- [ ] `GET /api/health` → 200; `commit`/`deploymentId` = the just-deployed version.
-- [ ] (once added) `GET /api/health/ready` → 200 (DB reachable).
-- [ ] DB schema version = expected: latest row in `_prisma_migrations` matches the release's newest migration.
-- [ ] `/api/health` `storage` = `s3` (not `local`) in production.
+- [ ] `GET /api/health/live` → 200; `commit`/`deploymentId` = the just-deployed version.
+- [ ] `GET /api/health/ready` → 200 `ready` (REM-06 — DB + schema + provider + storage all OK). A 503 = do not accept traffic.
+- [ ] `GET /api/health/dependencies` → review `checks[]` (SMTP/AI/OFD/backup degraded are acceptable; no secrets exposed).
+- [ ] DB schema version = expected: latest row in `_prisma_migrations` matches the release's newest migration (`schema_migrations` check = ok, not `newer_schema`/`pending`).
+- [ ] `/api/health/dependencies` `storage` = `s3` (not `local`) in production.
 
 ## Functional smoke (as a real user)
 - [ ] Login (OTP delivered → SMTP working).

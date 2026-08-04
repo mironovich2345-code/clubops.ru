@@ -20,6 +20,7 @@ blockers are **not yet satisfiable** (backup restore unproven, readiness endpoin
 - [ ] **[BLOCKER]** A **verified-restorable** backup exists (`pg_dump -Fc`), taken immediately before deploy, **and** an off-site copy. *(Today: local-only, restore unproven — OPS-001.)*
 - [ ] Restore evidence on file (last successful restore rehearsal date). *(Today: none.)*
 - [ ] **[BLOCKER]** File blobs durable: `STORAGE_PROVIDER=s3` + `STORAGE_S3_*` set (prod **fails fast** on `local` — REM-04/ARCH-017), off-site file manifest scheduled (`backup:files-manifest`), inventory clean (`audit:file-inventory`). *(Real S3 upload/download/restore rehearsal = G-FILE-1..8; OPS-002 PARTIALLY CLOSED until proven.)*
+- [ ] **[BLOCKER]** `/api/health/ready` = 200 on the new image BEFORE traffic is switched (REM-06 — DB + schema/migration + provider + storage). `deploy.sh` enforces the two-stage live→ready gate. `npm run audit:readiness --production` on the target env = no fatals. *(Real DB-down proof = G-READY-3..8/12 staging gate.)*
 - [ ] Rollback image digest recorded (previous `:main`).
 
 ## Config & infra

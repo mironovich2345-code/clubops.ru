@@ -34,3 +34,17 @@ app is healthy. The deploy gate can also mark a broken deploy "healthy."
 | Storage unwritable | no (degrade) | yes | yes |
 | AI/OFD/SMTP down | no | yes | yes (OFD stale = P1) |
 | Background jobs not running | no | yes | yes |
+
+## Update (REM-06) — IMPLEMENTED
+The split is shipped: `/api/health/live` (liveness), `/api/health/ready` (traffic gate — env +
+`SELECT 1` + `_prisma_migrations` compatibility + Prisma provider match + storage), `/api/health/
+dependencies` (sanitized diagnostics). `/api/health` is kept verbatim as the **liveness alias**.
+Deploy/Railway/Compose healthchecks + `deploy.sh` (two-stage live→ready) now gate on `/ready`. Startup
+fail-fast (`src/instrumentation.ts`) refuses a production start on a fatal config (sqlite/malformed
+DATABASE_URL, missing SESSION_SECRET, invalid storage). `DATABASE_URL` is validated (OPS-013 CLOSED for
+startup). **Refinement vs the original recommendation:** storage is **required-for-readiness in
+PRODUCTION** (no silent local fallback — REM-04), `degraded` in dev; SMTP/AI/OFD/backup stay degrade-only.
+Logic proven by `test:rem-06-readiness` (28/28); the real PostgreSQL/S3 proof is
+`docs/testing/rem-06-postgres-readiness-rehearsal.md` (NOT EXECUTED in sandbox). See
+`docs/remediation/rem-06-final-report.md`. ARCH-015 CLOSED; OPS-003 + ARCH-013/OPS-004 PARTIALLY CLOSED
+(staging gate).
