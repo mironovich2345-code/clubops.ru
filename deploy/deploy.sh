@@ -240,10 +240,15 @@ fi
 log "starting postgres + app + caddy on the new image ..."
 compose up -d postgres app caddy
 
-# --- health check (inside the docker network; Node probe, no wget in image) --
-HEALTH_JS="require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
-healthy=0
+# --- health check (inside the docker network; Node probe, no wget in image) -----
+# REM-06 two-stage gate: first LIVENESS (process up), then READINESS (DB + schema +
+# storage OK) before we ACCEPT traffic. A live-but-not-ready app (DB down / pending
+# migration) must NOT be switched in — that is the OPS-003 fix.
+LIVE_JS="require('http').get('http://127.0.0.1:3000/api/health/live',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+HEALTH_JS="require('http').get('http://127.0.0.1:3000/api/health/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+live=0; healthy=0
 for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+  if [ "$live" = "0" ] && compose exec -T app node -e "$LIVE_JS" >/dev/null 2>&1; then live=1; log "app is LIVE (process up); waiting for readiness"; fi
   if compose exec -T app node -e "$HEALTH_JS" >/dev/null 2>&1; then healthy=1; break; fi
   sleep 1
 done
@@ -252,10 +257,10 @@ if [ "$healthy" = "1" ]; then
   # Optional external check when a domain is configured (best-effort, non-fatal).
   SITE_DOMAIN="$(env_get SITE_DOMAIN)"
   if [ -n "$SITE_DOMAIN" ]; then
-    if curl -fsS --max-time 10 "https://${SITE_DOMAIN}/api/health" >/dev/null 2>&1; then
-      log "external HTTPS health OK (https://${SITE_DOMAIN}/api/health)"
+    if curl -fsS --max-time 10 "https://${SITE_DOMAIN}/api/health/ready" >/dev/null 2>&1; then
+      log "external HTTPS readiness OK (https://${SITE_DOMAIN}/api/health/ready)"
     else
-      log "note: external HTTPS health not reachable yet (DNS/cert may still be provisioning)"
+      log "note: external HTTPS readiness not reachable yet (DNS/cert may still be provisioning)"
     fi
   fi
   echo "$NEW_IMAGE" > "$STATE_FILE"; chmod 600 "$STATE_FILE"

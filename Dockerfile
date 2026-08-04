@@ -92,7 +92,7 @@ USER nodejs
 EXPOSE 3000
 # Healthcheck uses the Node runtime (no wget/curl dependency, no shell injection).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD ["node", "-e", "const p=process.env.PORT||3000;require('http').get('http://127.0.0.1:'+p+'/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+  CMD ["node", "-e", "const p=process.env.PORT||3000;require('http').get('http://127.0.0.1:'+p+'/api/health/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
 
 # Default CMD = migrate then start (single-container / Railway). On the VM the
 # compose file overrides this: a dedicated `migrate` service runs the migration
