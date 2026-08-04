@@ -158,7 +158,13 @@
     "restore:database": "node scripts/restore-database.mjs",
     "backup:list": "node scripts/backup-list.mjs",
     "test:rem-03-backup-restore": "node scripts/rem-03-backup-restore-tests.mjs",
-    "pilot:rem-03-backup-restore": "node scripts/pilot-rem-03-backup-restore.mjs"
+    "pilot:rem-03-backup-restore": "node scripts/pilot-rem-03-backup-restore.mjs",
+    "audit:file-inventory": "node scripts/audit-file-inventory.mjs",
+    "preflight:file-storage": "node scripts/preflight-file-storage.mjs",
+    "backup:files-manifest": "node scripts/backup-files-manifest.mjs",
+    "migrate:files-to-s3": "node scripts/migrate-files-to-s3.mjs",
+    "test:rem-04-file-storage": "node scripts/rem-04-file-storage-tests.mjs",
+    "pilot:rem-04-durable-file-storage": "node scripts/pilot-rem-04-durable-file-storage.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.700.0",
