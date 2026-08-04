@@ -39,3 +39,12 @@ durable, proven backup strategy**.
 - **Uploaded files:** use S3 in production (durable) and include the bucket in the backup story; if local is ever used, back it up.
 - **Monthly restore rehearsal** into a disposable environment with row-count + financial reconciliation verification (see `backup-restore-rehearsal.md`), recording RPO/RTO.
 - **Backup-failure alert** (OPS-007).
+
+## Update (REM-03)
+Off-site backup + guarded restore tooling now exists: `npm run backup:database` (scheduled/pre-deploy/
+manual), `restore:database` (disposable-only), `backup:list`. systemd `club-ops-backup.timer` (daily,
+independent of deploy) + a deploy off-site pre-deploy gate that aborts on failure. See
+`docs/remediation/rem-03-final-report.md`. **OPS-001 stays PARTIALLY CLOSED** until the real PostgreSQL
+restore rehearsal (`docs/testing/rem-03-postgres-restore-rehearsal.md`) passes on a test bucket with RPO/RTO
+recorded. Production MUST configure `BACKUP_S3_*` (private bucket, SSE, versioning/lifecycle, least-privilege
+separate creds) and enable the timer.

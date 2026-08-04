@@ -38,3 +38,11 @@ deploy-time, local-only, **unproven** `pg_dump`. RPO/RTO are unknown until a res
 Scheduled off-site encrypted backups (fixed RPO) → a **rehearsed** restore with recorded RPO/RTO →
 company-scoped export/restore tooling → `Company` soft-delete (DATA-008) so an accidental deletion is
 reversible without a full restore.
+
+## Update (REM-03)
+DB recovery tooling now exists (`backup:database`/`restore:database`, off-site, checksummed, manifested,
+guarded — `database-{backup,restore}-runbook.md`). **Total DB loss** recovery is now tooled but the real
+PostgreSQL restore is **not yet proven** (OPS-001 PARTIALLY CLOSED; `rem-03-postgres-restore-rehearsal.md`).
+**Accidental Company deletion** → `company-deletion-recovery-runbook.md` (DATA-008 still NOT fixed).
+**File-storage loss** remains OPS-002/REM-04 — the DB dump excludes uploaded blobs, so full-system recovery
+is incomplete until REM-04.
