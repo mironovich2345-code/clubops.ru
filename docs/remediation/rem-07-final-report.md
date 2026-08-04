@@ -66,8 +66,9 @@ coverage for high-risk denials; catalog + logger + tests). **ARCH-005 NOT CLOSED
 isolation remains; observability improves detection, DB backstop = separate remediation). **SEC-002/008
 NOT CLOSED** (request/IP events only prepare evidence).
 
-**22. Pilot / full / build.** `pilot:rem-07-security-events` **<N>/<N>** · pilot:full **<RESULT>** · tsc
-0 · build:prod **<RESULT>** (filled at the gauntlet step).
+**22. Pilot / full / build.** `pilot:rem-07-security-events` **30/30** · pilot:full **4076/0 across 93
+suites** · tsc 0 · build:prod **compiles (BUILD_EXIT=0)** · `test:rem-07-security-events` **19/19** · dev
+Prisma client restored after the prod build.
 
 **23. Commit hashes.** model+requestId+logger+integration · CLIs+tests · pilot+docs+report (on `main`).
 
