@@ -190,3 +190,57 @@ export function keyExtension(key) {
 
 export const INLINE_SAFE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "pdf"]);
 export const ALLOWED_EXTS = new Set(["jpg", "jpeg", "png", "webp", "pdf", "xls", "xlsx", "csv", "heic"]);
+
+// --- local -> S3 migration planning (REM-04 §15/§16) ---
+//
+// The target key is DETERMINISTIC per source row (fileId = row.id), so a replayed
+// migration maps a given blob to the SAME object key every time — a retry never
+// creates a duplicate object, and a partially-applied migration resumes safely.
+
+export function buildMigrationTargetKey(row, environment) {
+  const contentHash = row.localHash || row.sha256;
+  return buildObjectKey({
+    environment,
+    companyId: row.companyId,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    fileId: row.id,
+    contentHash,
+    ext: keyExtension(row.storageKey),
+  });
+}
+
+/**
+ * PURE migration decision for one file (§16). No I/O — the caller supplies the
+ * observed local + remote state. Returns { action, reason, targetKey? } where
+ * action ∈ copy | finalize-only | noop | conflict | skip.
+ */
+export function planFileMigration(row, ctx) {
+  const environment = ctx.environment;
+  // 1. missing local source (and not already on s3) → cannot migrate.
+  if (!row.localPresent && row.storageProvider !== "s3") return { action: "skip", reason: "missing_local" };
+  // 2. local integrity broken: recorded hash != actual local bytes.
+  if (row.sha256 && row.localHash && row.sha256 !== row.localHash) return { action: "conflict", reason: "local_hash_mismatch_metadata" };
+  const contentHash = row.localHash || row.sha256;
+  if (!contentHash) return { action: "skip", reason: "no_hash" };
+
+  let targetKey;
+  try {
+    targetKey = buildMigrationTargetKey({ ...row, localHash: contentHash }, environment);
+  } catch {
+    return { action: "skip", reason: "unsafe_target_key" };
+  }
+
+  // 3. already migrated.
+  if (row.storageProvider === "s3") {
+    if (row.sha256 && ctx.remoteHash && ctx.remoteHash !== row.sha256) return { action: "conflict", reason: "already_migrated_diff_hash" };
+    return { action: "noop", reason: "already_migrated", targetKey: row.storageKey };
+  }
+  // 4. remote object already exists (a prior interrupted run).
+  if (ctx.remoteExists === true) {
+    if (ctx.remoteHash && ctx.remoteHash !== contentHash) return { action: "conflict", reason: "remote_exists_diff_hash" };
+    return { action: "finalize-only", reason: "remote_exists_resume", targetKey };
+  }
+  // 5. ready to copy.
+  return { action: "copy", reason: "ready", targetKey };
+}
