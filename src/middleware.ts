@@ -61,10 +61,18 @@ export function middleware(request: NextRequest): NextResponse {
   // Next reads the nonce from this request header and applies it to its scripts.
   requestHeaders.set("content-security-policy", csp);
 
+  // REM-07 — server-generated request correlation id. We ALWAYS mint our own
+  // (crypto UUID) and NEVER trust an inbound X-Request-Id from the client (no
+  // spoofing / log-injection via a forged correlation id). A trusted proxy trace
+  // id, if ever adopted, would be stored separately, not reused as this id.
+  const requestId = crypto.randomUUID();
+  requestHeaders.set("x-request-id", requestId);
+
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("content-security-policy", csp);
   response.headers.set("permissions-policy", PERMISSIONS_POLICY);
   response.headers.set("x-frame-options", frameable ? "SAMEORIGIN" : "DENY");
+  response.headers.set("x-request-id", requestId);
   return response;
 }
 

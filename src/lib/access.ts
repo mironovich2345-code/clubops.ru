@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/lib/db-client";
+import { recordSecurityEvent } from "@/lib/security/security-event";
+import { getRequestId } from "@/lib/security/request-context";
 import {
   getCurrentUser,
   canAnyRoleAccessPage,
@@ -351,15 +353,56 @@ export async function getCurrentAccessContext(): Promise<AccessContext | null> {
  */
 export async function requirePageAccess(page: AppPage): Promise<CurrentUser> {
   const ctx = await getCurrentAccessContext();
-  if (!ctx) redirect("/login");
+  if (!ctx) {
+    // Unauthenticated attempt on a protected page (REM-07). Log then redirect; the
+    // access DECISION is unchanged (still /login). Best-effort, never blocks.
+    await logSecurityDenial({ eventType: "auth.session_invalid", reasonCode: "no_session", route: `page:${page}`, source: "web", metadata: { page } });
+    redirect("/login");
+  }
   if (!ctx.selectedCompanyId || ctx.effectiveRoles.length === 0 || !ctx.effectiveRole) {
     // No access yet -> let a brand-new user create their first company/club.
     redirect("/onboarding");
   }
   if (!canAnyRoleAccessPage(ctx.effectiveRoles, page)) {
+    await logSecurityDenial({ eventType: "authz.denied_page_access", reasonCode: "page_not_permitted", actorId: ctx.user.id, companyId: ctx.selectedCompanyId, role: ctx.effectiveRole, route: `page:${page}`, source: "web", metadata: { page, role: ctx.effectiveRole } });
     redirect(`/${landingPageForRole(ctx.effectiveRole)}`);
   }
   return ctx.user;
+}
+
+/**
+ * REM-07 central denial-logging helper for the guards/actions. Resolves the request
+ * correlation id, then records a SecurityEvent (best-effort, redacted, fail-safe).
+ * Callers use this at the point they DENY — it never changes the access decision.
+ */
+export async function logSecurityDenial(input: {
+  eventType: string;
+  reasonCode?: string;
+  actorId?: string | null;
+  companyId?: string | null;
+  clubId?: string | null;
+  role?: string | null;
+  targetType?: string | null;
+  targetId?: string | null;
+  route?: string | null;
+  source?: "web" | "server_action" | "api" | "cron" | "internal";
+  metadata?: Record<string, unknown>;
+}): Promise<string | null> {
+  const requestId = await getRequestId();
+  await recordSecurityEvent({
+    eventType: input.eventType,
+    reasonCode: input.reasonCode,
+    actorId: input.actorId ?? null,
+    companyId: input.companyId ?? null,
+    clubId: input.clubId ?? null,
+    targetType: input.targetType ?? null,
+    targetId: input.targetId ?? null,
+    route: input.route ?? null,
+    source: input.source ?? "web",
+    requestId,
+    metadata: { ...(input.metadata ?? {}), ...(input.role ? { role: input.role } : {}) },
+  });
+  return requestId;
 }
 
 export async function canAccessCompany(userId: string, companyId: string): Promise<boolean> {

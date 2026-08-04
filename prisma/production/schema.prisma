@@ -809,6 +809,37 @@ model AuditLog {
   @@index([createdAt])
 }
 
+// REM-07 — DENIED security events (OPS-006 / SEC-009). Separate from AuditLog (which
+// records SUCCESSFUL domain changes): this table records DENIALS + correlation for
+// detection/investigation. Append-only in practice; NO secrets/PII/documents in
+// metadataJson (redaction guard enforces the allowlist). Scalar tenant ids (no
+// relations) so it never affects domain models and survives actor/tenant deletion.
+model SecurityEvent {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  requestId         String? // correlation id (X-Request-Id)
+  eventType         String // e.g. authz.denied_club_scope (allow-listed catalog)
+  severity          String   @default("warning") // info | warning | high | critical
+  outcome           String   @default("denied") // denied | blocked | replayed | error
+  reasonCode        String? // machine reason, safe
+  actorId           String? // userId, nullable (unauthenticated)
+  companyId         String? // actor/target company scope
+  clubId            String?
+  targetType        String? // entity type the actor tried to reach
+  targetId          String? // safe id; NEVER leaked back to the user
+  route             String? // allow-listed route/action label
+  source            String   @default("web") // web | server_action | api | cron | internal
+  metadataJson      String? // redacted, allow-listed keys only
+  deploymentVersion String?
+
+  @@index([createdAt])
+  @@index([eventType, createdAt])
+  @@index([companyId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([requestId])
+  @@index([severity, createdAt])
+}
+
 // ---------------------------------------------------------------------------
 // Business records
 // ---------------------------------------------------------------------------
