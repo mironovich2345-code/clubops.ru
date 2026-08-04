@@ -153,7 +153,12 @@
     "diag:regional-transfer": "node scripts/diag-regional-transfer.mjs",
     "diag:snapshot-chain": "node scripts/diag-snapshot-chain.mjs",
     "test:visual": "playwright test --config playwright.config.ts",
-    "test:visual:contact": "node tests/visual/contact-sheet.mjs"
+    "test:visual:contact": "node tests/visual/contact-sheet.mjs",
+    "backup:database": "node scripts/backup-database.mjs",
+    "restore:database": "node scripts/restore-database.mjs",
+    "backup:list": "node scripts/backup-list.mjs",
+    "test:rem-03-backup-restore": "node scripts/rem-03-backup-restore-tests.mjs",
+    "pilot:rem-03-backup-restore": "node scripts/pilot-rem-03-backup-restore.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.700.0",
