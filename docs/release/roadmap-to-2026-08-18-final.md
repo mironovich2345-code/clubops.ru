@@ -17,7 +17,7 @@ LE attribution). These unblock REM-02/05/15/16/19. **Blocking; nothing money-def
 
 ### 3 — P0 recovery / storage (Days 2–5, parallel-safe with group 2 — different surface)
 - **REM-03** scheduled off-site encrypted backup + **rehearsed restore** (G10) with RPO/RTO. ~M.
-- **REM-04** enforce S3 in prod + include uploads in backup (G12). ~S.
+- **REM-04 ✅ TOOLING DONE** durable object storage: prod fail-fast on local (ARCH-017 CLOSED), S3 service + SSE + immutable tenant-scoped keys (SEC-006 CLOSED), inventory/manifest/migration/recovery. OPS-002 PARTIALLY CLOSED — the real S3 upload/download/restore rehearsal (**G-FILE-1..14**) is the gate (NOT EXECUTED: no S3 in sandbox). ~S.
 
 ### 4 — P1 security / ops (Days 5–8)
 - **REM-06** `/api/health/ready` + `DATABASE_URL` validation. **REM-07** failed-authz logging.

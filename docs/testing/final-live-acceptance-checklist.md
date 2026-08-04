@@ -22,7 +22,7 @@ expected · evidence · status · blocker · owner.
 ## Recovery / storage / ops (Audit 4)
 - [ ] **G10 — Backup + restore rehearsal (Postgres).** Disposable Postgres. Restore a `pg_dump`; verify counts + reconciliation; record RPO/RTO. **Status: NOT EXECUTED. Blocker if:** restore fails or RPO/RTO unknown.
 - [ ] **G11 — Staging migration rehearsal.** Disposable Postgres. Apply pending migrations; row counts + money checksums unchanged; no long write-lock. **Status: NOT EXECUTED.**
-- [ ] **G12 — File durability under redeploy.** Staging with S3. Upload a document; redeploy; the document survives. **Blocker if:** files lost (local storage).
+- [ ] **G12 — File durability under redeploy (REM-04).** Staging with S3. Upload a document; redeploy; the document survives; a SECOND instance downloads it; downloaded bytes hash == metadata sha256. Production **fails fast** on `local` storage. **Status: NOT EXECUTED (no S3 in sandbox).** Full gate set **G-FILE-1..14** (`docs/testing/rem-04-file-storage-checklist.md`) + the DB+blobs full-system rehearsal (`rem-04-file-restore-rehearsal.md`). **Blocker if:** files lost, cross-instance download fails, or hash mismatch.
 - [ ] **G13 — DB readiness under DB-down.** Staging. Take the DB down; `/api/health/ready` fails and traffic is gated (REM-06). **Blocker if:** the app serves 200 with no DB.
 - [ ] **G14 — OFD scheduler + fresh sync.** Staging with `CRON_SECRET`. The daily import runs on schedule; revenue is fresh; double-run is idempotent. **Blocker if:** the job never runs.
 

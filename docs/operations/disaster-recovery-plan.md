@@ -46,3 +46,16 @@ PostgreSQL restore is **not yet proven** (OPS-001 PARTIALLY CLOSED; `rem-03-post
 **Accidental Company deletion** → `company-deletion-recovery-runbook.md` (DATA-008 still NOT fixed).
 **File-storage loss** remains OPS-002/REM-04 — the DB dump excludes uploaded blobs, so full-system recovery
 is incomplete until REM-04.
+
+## Update (REM-04)
+File durability tooling now exists: production **fails fast** on `local` storage (ARCH-017 CLOSED),
+uploads go through an S3 service with SSE + immutable tenant-scoped keys, and there is a read-only
+inventory (`audit:file-inventory`), an off-site signed **file manifest** (`backup:files-manifest`),
+a safe idempotent **local→S3 migration** (`migrate:files-to-s3`), and blob-recovery runbooks
+(`file-storage-runbook.md` / `file-recovery-runbook.md` / `file-storage-alerts.md`). **File-storage
+loss** recovery is now tooled (versioning + manifest + recovery runbook) but the real S3
+upload/download/restore is **not yet proven** (OPS-002 PARTIALLY CLOSED) and the combined **DB +
+blobs** full-system rehearsal + measured RTO is the remaining gate (OPS-001 PARTIALLY CLOSED) —
+`docs/testing/rem-04-file-restore-rehearsal.md`, live gates **G-FILE-1..14**. Production MUST set
+`STORAGE_PROVIDER=s3` + `STORAGE_S3_*` (private bucket, SSE, versioning + lifecycle, least-privilege
+creds separate from `BACKUP_S3_*`).

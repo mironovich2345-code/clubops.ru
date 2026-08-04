@@ -19,6 +19,7 @@ blockers are **not yet satisfiable** (backup restore unproven, readiness endpoin
 ## Backup & recovery
 - [ ] **[BLOCKER]** A **verified-restorable** backup exists (`pg_dump -Fc`), taken immediately before deploy, **and** an off-site copy. *(Today: local-only, restore unproven — OPS-001.)*
 - [ ] Restore evidence on file (last successful restore rehearsal date). *(Today: none.)*
+- [ ] **[BLOCKER]** File blobs durable: `STORAGE_PROVIDER=s3` + `STORAGE_S3_*` set (prod **fails fast** on `local` — REM-04/ARCH-017), off-site file manifest scheduled (`backup:files-manifest`), inventory clean (`audit:file-inventory`). *(Real S3 upload/download/restore rehearsal = G-FILE-1..8; OPS-002 PARTIALLY CLOSED until proven.)*
 - [ ] Rollback image digest recorded (previous `:main`).
 
 ## Config & infra
