@@ -25,7 +25,7 @@ LE attribution). These unblock REM-02/05/15/16/19. **Blocking; nothing money-def
 - **REM-13** dev-client restore in CI. **REM-17** OFD scheduler + minimal alerts. **REM-18** write-freeze.
 
 ### 5 — Financial-formula unification (Days 6–9, needs group 1)
-- **REM-05** one profit + one budget-fact definition (include v2 verified). **REM-10** obligation refresh in tx.
+- **REM-05 ✅ CORE DONE** canonical recognized-expense + profit + budget-fact services; Plan/Fact readers migrated (v2 verified + partially_paid in FULL); 31/31 DB tests + golden scenario; FIN-002/003 + DATA-018/019 + FIN-007 CLOSED; FIN-001/UX-005 PARTIAL (dashboard profit-card adoption = G-FIN-1/7). **REM-10** obligation refresh in tx.
 - **REM-16** obligation.employeeId fix + LE attribution. **REM-15** tax model per BD-13.
 
 ### 6 — True integration tests (Days 8–11, needs groups 2 & 5)

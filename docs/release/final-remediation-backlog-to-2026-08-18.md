@@ -16,7 +16,7 @@ ratified** (`docs/accounting/business-decisions-required.md`). Effort XS/S/M/L.
 ## P1 — before 18 Aug
 | ID | Task | Merges | BD | Effort |
 |---|---|---|---|---|
-| REM-05 | One profit + one budget-fact definition; include v2 `verified` in fact/overruns | FIN-001/003, DATA-018/019 | **BD-03, BD-04** | M |
+| REM-05 ✅ CORE DONE | Canonical `loadRecognizedExpenses` + `calculateProfit` (OFD net − recognized) + `calculateBudgetFact`; Plan/Fact + overruns + "Использовано" migrated to recognition (v2 verified + partially_paid in FULL). 31/31 real DB tests + golden scenario (profit 330,000 ₽); pilot 37/37. **CLOSED:** FIN-002, FIN-003, DATA-018/019, FIN-007 (BD-TAX). **PARTIAL:** FIN-001/UX-005 (dashboard/analytics profit-card adoption = G-FIN-1/7), FIN-006 (warn only). Remaining: production reconciliation + PostgreSQL golden gate. See `docs/remediation/rem-05-final-report.md`. | FIN-001/002/003/006/007, DATA-018/019 | **BD-03, BD-04** (ratified) | none (no schema change) | ✅ 31 DB tests; reader adoption + prod reconcile pending | M |
 | REM-06 | `/api/health/ready` (DB `SELECT 1`) for traffic gating + validate `DATABASE_URL` at startup | ARCH-015, OPS-003, OPS-013 | — | S |
 | REM-07 | Log denied authorization (page/company/club/capability) + request id | OPS-006, SEC-009 | — | M |
 | REM-08 | Retire/convert the legacy ledgerless invoice `pay`; declare `partially_paid` | ARCH-010, DATA-005, FIN-006 | — | S |

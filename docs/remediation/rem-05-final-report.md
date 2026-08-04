@@ -72,8 +72,9 @@ scenario, partially_paid-full, payment-not-double, draft-payroll-out, refund-sep
 tax tag, unassigned-in-total, category reconcile, club/company/LE scope, month boundary, exact kopeks,
 negative profit, tenant isolation).
 
-**24. Pilot / full / build.** `pilot:rem-05-profit-budget-fact` **46/46** · pilot:full **<RESULT>** ·
-tsc 0 · build:prod **<RESULT>** (filled at the gauntlet step).
+**24. Pilot / full / build.** `pilot:rem-05-profit-budget-fact` **37/37** · pilot:full **4014/0 across
+91 suites** · tsc 0 · build:prod **compiles (BUILD_EXIT=0)** · `test:rem-05-integration` **31/31** · dev
+Prisma client restored after the prod build.
 
 **25. Findings closure.** **FIN-002 CLOSED** (partially_paid in recognized + budget fact). **FIN-003 +
 DATA-018/019 CLOSED** (single recognized service; verified included; Plan/Fact = overruns =
