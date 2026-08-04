@@ -34,6 +34,7 @@ expected · evidence · status · blocker · owner.
 ## Security (Audit 5)
 - [ ] **G15 — Proxy & header checks.** Staging/prod. Confirm **Caddy strips inbound `X-Forwarded-For`** (SEC-002); review production OFD `serverBaseUrl` values (SEC-004, no internal/metadata host). **Blocker if:** XFF spoofable or an internal OFD base URL.
 - [ ] **G16 — Preflight on a production read replica.** Prod replica. `audit:data-integrity` + `audit:financial-reconciliation` → reconcile any S0/S1 anomaly. **Blocker if:** unresolved anomalies.
+- [ ] **G17 — Denied-authz logging (REM-07).** Real instance/two tenants (G-SECLOG-1..10). A wrong-role + a synthetic cross-company access each create ONE `SecurityEvent` (no mutation); the `requestId` in the user's «Код обращения» resolves via `trace:request`; events carry no secrets/PII; with the SecurityEvent write forced to fail the action is STILL denied; owner A cannot read company B's events. **Status: infrastructure + central page/cron integration + 19/19 tests shipped; per-branch adoption + live 2-tenant proof PENDING.** **Blocker if:** a denial leaks a foreign object, a secret is logged, or a logger outage allows the action.
 
 ## Sign-off
 Launch (Conditional-Go) requires the **pilot-scope GATEs passed with recorded evidence**: for a Phase-1

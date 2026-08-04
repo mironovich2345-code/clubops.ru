@@ -42,3 +42,7 @@ not delete) so the audit trail stays intact.
 - Payroll "Выплачен" may not reconcile to remaining until UX-004 — verify per-employee remaining.
 - Refund correction and payroll obligation reversal may need support to complete until UX-001/003 land.
 - Documents are lost on redeploy if storage is `local` — production must be S3 (REM-04).
+
+## Update (REM-07)
+Denied-action tickets: ask only for the **Код обращения** (requestId) + time + screen + action, then run
+`npm run trace:request -- <requestId>` (see `request-tracing-runbook.md`). No PII screenshot needed.

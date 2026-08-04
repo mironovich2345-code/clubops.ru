@@ -28,3 +28,16 @@ Each event: `timestamp, requestId, actor(userId), companyId, clubId, action, res
 entityType, entityId, ip, userAgent, reason`. Add a retention + tamper-evidence policy (append-only +
 periodic export). **Failed-authz logging (SEC-009/P1) is the priority** — without it, a cross-tenant
 probing or escalation attempt is invisible.
+
+## Update (REM-07) — IMPLEMENTED
+The `SecurityEvent` table (separate from `AuditLog`) + one allow-listed catalog now record DENIED
+auth/authz/finance/file/cron events with a server-minted `requestId` (middleware `crypto.randomUUID`,
+inbound header never trusted; `X-Request-Id` on the response). `recordSecurityEvent` is best-effort +
+redacted + **fail-safe (a logging failure never turns a denial into an allow)**. Central integration:
+`requirePageAccess` (auth.session_invalid / authz.denied_page_access) + `logSecurityDenial` helper +
+`api/cron/ofd/daily` (integration.cron_denied). Read-only CLIs: `audit:security-events`,
+`trace:request`. Redaction drops secrets/PII/URLs/filenames; `amountBand`/`emailMarker` give coarse
+non-reversible signals; object-existence privacy preserved (generic external response, internal-only
+targetId). Proven by `test:rem-07-security-events` (19/19). **OPS-006 + SEC-009 CLOSED**; **ARCH-005 NOT
+CLOSED** (observability only); **SEC-002/008 NOT CLOSED** (evidence only). Remaining per-branch adoption
+(financial/file/scope-loader denials) = live gates G-SECLOG-1/2. See `docs/remediation/rem-07-final-report.md`.

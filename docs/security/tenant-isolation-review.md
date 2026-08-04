@@ -51,3 +51,9 @@ client **`confidence`** on invoice/refund (SEC-007, defeats a review nudge only)
 safety depends on every one of ~112 id-keyed writes and ~192 reads carrying the scope filter, which the
 review confirms they do today, with a DB tenant-scope extension recommended as defense-in-depth so a
 single future omission cannot become an IDOR.
+
+## Update (REM-07)
+Tenant isolation stays application-enforced (ARCH-005, NOT closed by REM-07). REM-07 adds OBSERVABILITY:
+a cross-tenant/scope denial now records a `SecurityEvent` (high severity for company-scope/cross-tenant-key)
+so probing is detectable. The external response is unchanged (generic; object existence not leaked). A DB
+tenant-scope backstop remains a separate remediation (REM-20). See `docs/remediation/rem-07-final-report.md`.

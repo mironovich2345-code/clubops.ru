@@ -35,3 +35,7 @@ errors only in stdout. **Recommendation (not implemented): add an error tracker 
 - Backup: a wrapper that alerts if the newest `/opt/club-ops/backups/*.dump` is older than 24h or empty.
 - Reconciliation: schedule `audit:financial-reconciliation --json` on a read replica; alert if `totalViolations>0`.
 - Error tracker: any hosted service; tag release `APP_GIT_SHA`; scrub PII.
+
+## Update (REM-07)
+Security-event alerts (denied-authz / cross-tenant / logger-outage) are defined in
+`security-event-alerts.md` (REM-07): pattern-based, not a page per ordinary permission denial.

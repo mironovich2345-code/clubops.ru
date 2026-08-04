@@ -49,3 +49,8 @@ mass-assignment); inviter authority enforced (`getInvitableRoles`); owner of A c
 No P0/P1 authentication, session, or invitation vulnerability. All items are WEAK/low-GAP hardening
 (bcrypt cost, rate-limit fail-open/XFF, enumeration/timing, archived-club invite). The
 fresh-per-request authorization derivation is a notable strength.
+
+## Update (REM-07)
+REM-07: authentication denials (session invalid/expired, inactive user, 2FA/invitation failures, login
+rate-limit) have an allow-listed `SecurityEvent` catalog; enumeration protection is preserved (same safe
+external response; internal reasonCode differs; only an `emailMarker` is stored, never the address).
