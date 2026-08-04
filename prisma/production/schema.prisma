@@ -560,6 +560,15 @@ model RefundDocument {
   removedByUserId  String?
   removalReason    String?
 
+  // REM-04 durability metadata (additive, nullable, NO auto-backfill).
+  storageProvider    String?   // "local" | "s3" — where the blob lives
+  storageBucket      String?   // bucket name (audit only; never a secret)
+  verificationStatus String?   // "unverified" | "verified" | "missing"
+  verifiedAt         DateTime?
+  uploadOperationKey String?   @unique // idempotency handle for the upload op
+  supersedesFileId   String?   // replacement lineage (old row this supersedes)
+  migrationStatus    String?   // "pending" | "migrated" | "conflict" (local->S3)
+
   refund Refund @relation(fields: [refundId], references: [id], onDelete: Cascade)
 
   @@index([refundId])
@@ -1079,6 +1088,15 @@ model ExpenseDocument {
   removedAt        DateTime?
   removedByUserId  String?
   removalReason    String?
+
+  // REM-04 durability metadata (additive, nullable, NO auto-backfill).
+  storageProvider    String?
+  storageBucket      String?
+  verificationStatus String?
+  verifiedAt         DateTime?
+  uploadOperationKey String?   @unique
+  supersedesFileId   String?
+  migrationStatus    String?
 
   expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
 
@@ -1948,6 +1966,17 @@ model SalesReportDocument {
   uploadedByUserId String
   createdAt        DateTime @default(now())
 
+  // REM-04 durability metadata (additive, nullable, NO auto-backfill). sha256 was
+  // absent on this model; added nullable so integrity checks can populate it forward.
+  sha256             String?
+  storageProvider    String?
+  storageBucket      String?
+  verificationStatus String?
+  verifiedAt         DateTime?
+  uploadOperationKey String?  @unique
+  supersedesFileId   String?
+  migrationStatus    String?
+
   report SalesReport @relation(fields: [salesReportId], references: [id], onDelete: Cascade)
 
   @@index([salesReportId])
@@ -2588,6 +2617,15 @@ model CashOperationDocument {
   createdAt        DateTime  @default(now())
   removedAt        DateTime?
   removedByUserId  String?
+
+  // REM-04 durability metadata (additive, nullable, NO auto-backfill).
+  storageProvider    String?
+  storageBucket      String?
+  verificationStatus String?
+  verifiedAt         DateTime?
+  uploadOperationKey String?   @unique
+  supersedesFileId   String?
+  migrationStatus    String?
 
   @@index([collectionId])
   @@index([withdrawalId])
