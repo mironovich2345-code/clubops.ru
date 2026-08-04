@@ -1,0 +1,85 @@
+{
+  "note": "read-only profit/budget-fact preflight (SELECT only)",
+  "checks": [
+    {
+      "id": "PB-01",
+      "title": "partially_paid invoices (were invisible to Plan/Fact; now recognized in full)",
+      "severity": "S2",
+      "count": 0,
+      "amountKopeks": 0,
+      "sample": []
+    },
+    {
+      "id": "PB-02",
+      "title": "v2 verified expenses (were dropped by Plan/Fact + overruns)",
+      "severity": "S2",
+      "count": 0,
+      "amountKopeks": 0,
+      "sample": []
+    },
+    {
+      "id": "PB-03",
+      "title": "approved payroll calcs now recognized as expense (was absent)",
+      "severity": "S1",
+      "count": 0,
+      "amountKopeks": 0,
+      "sample": []
+    },
+    {
+      "id": "PB-04",
+      "title": "salary-category Expense rows (double-count candidate vs payroll accrual)",
+      "severity": "S1",
+      "count": 0,
+      "amountKopeks": 0,
+      "sample": []
+    },
+    {
+      "id": "PB-05",
+      "title": "recognized refunds (separate expense, single effect)",
+      "severity": "S3",
+      "count": 0,
+      "amountKopeks": 0,
+      "sample": []
+    },
+    {
+      "id": "PB-06",
+      "title": "ledgerless paid/partially_paid invoice (no InvoicePayment rows)",
+      "severity": "S2",
+      "count": 0,
+      "amountKopeks": 0,
+      "sample": []
+    },
+    {
+      "id": "PB-07",
+      "title": "recognized invoice with no expensePeriod (fallback used)",
+      "severity": "S2",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "PB-08",
+      "title": "recognized invoice with no expenseCategory (unassigned bucket)",
+      "severity": "S3",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "PB-16",
+      "title": "cross-tenant expense (club.company != expense.company)",
+      "severity": "S0",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "PB-19",
+      "title": "negative recognized expense amount",
+      "severity": "S1",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    }
+  ]
+}
