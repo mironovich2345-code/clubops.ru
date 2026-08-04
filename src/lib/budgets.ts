@@ -63,11 +63,13 @@ function monthRange(month: string): { start: number; end: number } | null {
   return { start: new Date(y, mo - 1, 1).getTime(), end: new Date(y, mo, 1).getTime() };
 }
 
-// Budget "used" counts committed obligations (approved-but-unpaid, incl. the
-// chief-accountant fallback) PLUS paid. Sourced from the canonical approved set
-// so it can never drift from the approval workflow / dashboard debt.
-const APPROVED_INVOICE_STATUSES = [...APPROVED_UNPAID_STATUSES, "paid"];
-const APPROVED_REFUND_STATUSES = [...APPROVED_UNPAID_STATUSES, "paid"];
+// RECOGNIZED-expense status sets (REM-05, BD-04/BD-INVOICE/BD-REFUND). Budget fact
+// is recognition (accrual), not cash movement: an invoice is recognized in FULL once
+// approved — approved-unpaid, partially_paid and paid all count (closes FIN-002); a
+// refund is recognized in its approved-or-paid final state (v1 + v2). These mirror
+// src/lib/finance/recognition.ts (kept inline to avoid a budgets↔recognition cycle).
+const APPROVED_INVOICE_STATUSES = [...APPROVED_UNPAID_STATUSES, "partially_paid", "paid"];
+const APPROVED_REFUND_STATUSES = [...APPROVED_UNPAID_STATUSES, "accounting_in_progress", "paid"];
 
 /**
  * Used budget for a club+category+month. Includes approved/paid invoices,
@@ -179,7 +181,8 @@ export function computeBudgetOverruns(
   const add = (k: string, v: number) => used.set(k, (used.get(k) ?? 0) + v);
 
   for (const e of data.expenses) {
-    if (e.status === "confirmed" && inR(e.expenseDate)) add(key(e.clubId, e.category), e.amountKopeks);
+    // REM-05: realize v1 confirmed AND v2 verified (was confirmed-only → dropped v2; DATA-018/019).
+    if (EXPENSE_REALIZED_STATUSES.includes(e.status as (typeof EXPENSE_REALIZED_STATUSES)[number]) && inR(e.expenseDate)) add(key(e.clubId, e.category), e.amountKopeks);
   }
   for (const i of data.invoices) {
     if (i.expenseCategory && APPROVED_INVOICE_STATUSES.includes(i.status) && invoiceExpensePeriod(i) === month) {
@@ -226,10 +229,14 @@ export async function getBudgetsForScope(
 // Plan vs Fact report.
 //
 // Plan  = sum of Budget.limitAmountKopeks for the scope's clubs in the month.
-// Fact  = realized (paid) financial impact only:
-//           confirmed expenses + paid invoices + paid refunds.
-//         Excludes waiting_budget_approval / budget_rejected / draft / pending /
-//         rejected / approved-but-unpaid — i.e. anything not actually settled.
+// Fact  = RECOGNIZED expenses of the month (accrual — REM-05/BD-04), the SAME
+//         recognition used by profit + "Использовано": v1 confirmed + v2 verified
+//         expenses, invoices in FULL by expensePeriod (approved-unpaid +
+//         partially_paid + paid), refunds in their approved-or-paid state.
+//         Excludes draft/pending/rejected/cancelled and payment/cash-movement dates.
+//         (Payroll accrual is in the canonical calculateBudgetFact service, which
+//         also drives the "salary" category; the pure per-category helper here is
+//         fed pre-loaded expense/invoice/refund rows only.)
 // ---------------------------------------------------------------------------
 
 export type BudgetFactStatus = "normal" | "warning" | "over_budget";
@@ -302,17 +309,20 @@ export function computeBudgetFactReport(
     if (allow && !allow.has(category)) return;
     fact.set(category, (fact.get(category) ?? 0) + v);
   };
+  // REM-05 (BD-04): FACT = recognized expenses (accrual), not paid-only. Realize v1
+  // confirmed + v2 verified; recognize invoices in full by expensePeriod (approved-
+  // unpaid + partially_paid + paid); recognize refunds in their approved-or-paid state.
   for (const e of data.expenses) {
-    if (e.status === "confirmed" && inR(e.expenseDate)) add(e.category, e.amountKopeks);
+    if (EXPENSE_REALIZED_STATUSES.includes(e.status as (typeof EXPENSE_REALIZED_STATUSES)[number]) && inR(e.expenseDate)) add(e.category, e.amountKopeks);
   }
   for (const i of data.invoices) {
     // Count in the accounting month (expensePeriod), not the payment date.
-    if (i.status === "paid" && i.expenseCategory && invoiceExpensePeriod(i) === month) {
+    if (APPROVED_INVOICE_STATUSES.includes(i.status) && i.expenseCategory && invoiceExpensePeriod(i) === month) {
       add(i.expenseCategory, i.amountKopeks);
     }
   }
   for (const r of data.refunds) {
-    if (r.status === "paid" && inR(r.paidAt ?? r.refundDate ?? r.createdAt)) add("refunds", r.amountKopeks);
+    if (APPROVED_REFUND_STATUSES.includes(r.status) && inR(r.refundDate ?? r.paidAt ?? r.createdAt)) add("refunds", r.amountKopeks);
   }
 
   const rows: BudgetFactRow[] = [];
@@ -356,11 +366,12 @@ export async function getBudgetFactReportForScope(
       select: { category: true, amountKopeks: true, expenseDate: true, status: true },
     }),
     prisma.invoice.findMany({
-      where: { clubId: { in: clubIds }, status: "paid" },
+      // REM-05: load recognized invoices (approved-unpaid + partially_paid + paid), not paid-only.
+      where: { clubId: { in: clubIds }, status: { in: APPROVED_INVOICE_STATUSES } },
       select: { expenseCategory: true, amountKopeks: true, expensePeriod: true, paidAt: true, invoiceDate: true, createdAt: true, status: true },
     }),
     prisma.refund.findMany({
-      where: { clubId: { in: clubIds }, status: "paid" },
+      where: { clubId: { in: clubIds }, status: { in: APPROVED_REFUND_STATUSES } },
       select: { amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true },
     }),
   ]);
