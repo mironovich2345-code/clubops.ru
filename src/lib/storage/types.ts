@@ -32,12 +32,33 @@ export interface StorageProvider {
 
   /** Removes the object. Missing objects are treated as already deleted. */
   delete(key: string): Promise<void>;
+
+  /**
+   * Object metadata without reading the bytes: existence + size (and ETag when the
+   * backend provides one). Returns null when the object is absent. Optional — a
+   * provider that predates REM-04 may omit it; callers must feature-detect. Used by
+   * upload verification (§7) and the file inventory (§11).
+   */
+  head?(key: string): Promise<{ size: number; etag: string | null } | null>;
+
+  /**
+   * Lists object keys under a prefix (paginated by the provider), for the read-only
+   * inventory/reconciliation only. Optional. `max` bounds a single page.
+   */
+  list?(prefix: string, opts?: { max?: number }): Promise<string[]>;
 }
 
-/** Rejects keys that could escape the storage root or are malformed. */
+/**
+ * Rejects keys that could escape the storage root or are malformed. Accepts BOTH
+ * the legacy single-subfolder keys ("invoices/<hex>.ext") AND the REM-04 canonical
+ * tenant-scoped keys ("<env>/<companyId>/<entityType>/<entityId>/<fileId>/<hash>-<ext>").
+ * Every path segment must be non-empty safe chars; no "..", no backslash, no leading
+ * slash, no double slash.
+ */
 export function isSafeStorageKey(key: string): boolean {
-  if (!key || key.length > 256) return false;
-  if (key.startsWith("/") || key.includes("..") || key.includes("\\")) return false;
-  // category/<hex-or-name>.<ext> — keep it to a single subfolder of safe chars.
-  return /^[a-z0-9._-]+\/[a-z0-9._-]+$/i.test(key);
+  if (!key || key.length > 512) return false;
+  if (key.startsWith("/") || key.endsWith("/") || key.includes("//")) return false;
+  if (key.includes("..") || key.includes("\\")) return false;
+  // one-or-more "safechars/" segments followed by a final safechars segment.
+  return /^([a-z0-9._-]+\/)+[a-z0-9._-]+$/i.test(key);
 }
