@@ -69,8 +69,10 @@ G-INVLEDGER-10.
 for historical ledgerless rows** until an accountant reviews the reconciliation on production
 (G-INVLEDGER-8/9). **FIN-002 remains CLOSED** (REM-05).
 
-**20. Pilot / full / build.** `pilot:rem-08-invoice-payment-ledger` **<N>/<N>** · pilot:full **<RESULT>** ·
-tsc 0 · build:prod **<RESULT>** (filled at the gauntlet step).
+**20. Pilot / full / build.** `pilot:rem-08-invoice-payment-ledger` **29/29** · pilot:full **4123/0 across
+95 suites** (one known transient Club/LegalEntity dev.db-lock flake under concurrency; passes 27/0
+isolated) · tsc 0 · build:prod **compiles (BUILD_EXIT=0)** · `test:rem-08-invoice-ledger` **15/15** · dev
+Prisma client restored after the prod build.
 
 **21. Commits.** service+retirement · preflight+reconcile · tests+pilot+docs (on `main`).
 
