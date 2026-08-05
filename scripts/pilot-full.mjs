@@ -128,6 +128,7 @@ const pilots = [
   ["REM-05A profit live readers", "pilot-rem-05a-profit-live-readers.mjs"],
   ["REM-06 readiness", "pilot-rem-06-readiness.mjs"],
   ["REM-07 security events", "pilot-rem-07-security-events.mjs"],
+  ["REM-08 invoice payment ledger", "pilot-rem-08-invoice-payment-ledger.mjs"],
   ["Full audit 05 — security", "pilot-full-audit-05-security.mjs"],
   ["Full audit 06 — product/ux", "pilot-full-audit-06-product-ux.mjs"],
   ["Full audit 02 — data model", "pilot-full-audit-02-data-model.mjs"],

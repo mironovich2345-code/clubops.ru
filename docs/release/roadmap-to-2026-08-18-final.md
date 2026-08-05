@@ -13,7 +13,7 @@ LE attribution). These unblock REM-02/05/15/16/19. **Blocking; nothing money-def
 ### 2 — P0 money fixes (Days 1–5)
 - **REM-01** payroll payout tx + idempotency (closes ARCH-002/003/004+DATA-003+FIN-005+SEC-001). ~M.
 - **REM-02** one cash resolver + collapse to contour B (needs BD-09; data reconcile A vs B). ~L.
-- **REM-08** retire ledgerless invoice `pay` + declare `partially_paid`. ~S.
+- **REM-08 ✅ CORE DONE** single payment-ledger service + legacy binary `pay` retired (status=paid only via a ledger row) + preflight/reconcile for ledgerless; 15/15 DB tests; ARCH-010 CLOSED, DATA-005/FIN-006 CLOSED-for-new (historical reconcile = G-INVLEDGER-8/9), PG concurrency = G-INVLEDGER-10. ~S.
 
 ### 3 — P0 recovery / storage (Days 2–5, parallel-safe with group 2 — different surface)
 - **REM-03** scheduled off-site encrypted backup + **rehearsed restore** (G10) with RPO/RTO. ~M.

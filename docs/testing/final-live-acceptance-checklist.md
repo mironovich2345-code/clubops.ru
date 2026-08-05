@@ -19,6 +19,9 @@ expected · evidence · status · blocker · owner.
 - [ ] **G-FIN-8/9 — Budget fact = Plan/Fact = "Использовано"** incl. v2 verified + partially_paid (in FULL) + payroll accrual. **Plan/Fact + overruns + used migrated ✅; budgets-page payroll row PENDING.**
 - [ ] **G-FIN-11/12 — Production reconciliation + golden on PostgreSQL.** `reconcile:profit-budget-fact` on a replica (0 unexplained diffs); reproduce the golden scenario exactly. **Status: NOT EXECUTED (dev sqlite only).**
 
+## Invoice payment ledger (REM-08)
+- [ ] **G-INVLEDGER (1..12)** Real instance. Full/partial/second payment derive paid/partially_paid/paid; overpayment blocked; same-key retry = one payment; reversal restores remaining (append-only); post-factum invoice has a ledger row; a legacy ledgerless paid invoice is visible (not "100% paid"); **no binary «Оплатить» action marks paid without a payment row**; a payment never changes profit/budget. **PostgreSQL concurrency** (same-key/different-key/reversal race) = G-INVLEDGER-10. **Status: single service + retirement + 15/15 DB tests shipped; PG concurrency + production ledgerless reconciliation PENDING.** **Blocker if:** a paid invoice has no ledger row, a double-click double-pays, or a payment changes profit.
+
 ## Product / UX (Audit 6)
 - [ ] **G4 — PDF viewer on a real iPhone.** iPhone Safari + PWA standalone. Open an invoice/refund PDF; scroll/pinch; same-origin framing works, cross-origin blocked. **Blocker if:** the document can't be opened.
 - [ ] **G5 — Invitation flow.** Real instance + SMTP. Invite each role; accept via the email link; email-bound, single-use, correct scope. **Blocker if:** invite un-mintable (no APP_URL) or accepted by the wrong email.
