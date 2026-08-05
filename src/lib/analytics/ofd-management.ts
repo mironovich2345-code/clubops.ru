@@ -109,7 +109,11 @@ export function buildOfdManagementOverview(input: OfdManagementInput): OfdManage
   return { perClub, totals, hasData };
 }
 
-/** Result = ОФД net revenue − confirmed costs. Pure; pending costs never included. */
+/**
+ * @deprecated REM-05A — NO live callers. The official profit is `calculateProfit`
+ * (OFD net revenue − RECOGNIZED expenses, BD-03), not ofdNet − confirmed-cost-summary.
+ * Kept only as a pure diagnostic helper; do not wire it to a profit card/stat.
+ */
 export function computeManagementResult(ofdNetKopeks: number, confirmedCostsKopeks: number): number {
   return ofdNetKopeks - confirmedCostsKopeks;
 }

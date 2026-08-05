@@ -17,7 +17,8 @@ import {
   getCurrentCompanyAndClub,
 } from "@/lib/access";
 import { isStrategicRole, canAnyRoleAccessPage, type Role } from "@/lib/auth";
-import { loadOfdManagementOverview, computeManagementResult, loadOfdWeekday, type OfdWeekdayRow } from "@/lib/analytics/ofd-management";
+import { loadOfdManagementOverview, loadOfdWeekday, type OfdWeekdayRow } from "@/lib/analytics/ofd-management";
+import { calculateProfit } from "@/lib/finance/profit";
 import { loadScopeCashFactTotals } from "@/lib/cash-collections";
 import { resolveStrategicGroups, type StrategicGroups } from "@/lib/strategic-pages";
 import { StrategicScopeFilter } from "../dashboard/_components/StrategicScopeFilter";
@@ -224,7 +225,13 @@ export default async function AnalyticsPage({
   const abValue = useOfd ? ofd!.totals.subscriptionsKopeks : s.subscriptionsKopeks;
   const ptValue = useOfd ? ofd!.totals.personalTrainingKopeks : s.personalTrainingKopeks;
   const ofdRevenueKopeks = ofd?.totals.incomeKopeks ?? 0;
-  const ofdResultKopeks = useOfd ? computeManagementResult(ofd!.totals.netKopeks, s.expensesKopeks) : 0;
+  // REM-05A — the ONE official profit for every live financial card/stat:
+  // calculateProfit = canonical OFD net revenue − recognized expenses (payroll accrual
+  // + partially_paid invoices in FULL + refunds + taxes). No legacy Sale/SalesReport
+  // profit, no ad-hoc ofdNet−expenseSummary. Computed once per scope (no per-club N+1).
+  const profitResult = canSeeOfdSales
+    ? await calculateProfit({ companyId: aCompanyId, allowedClubIds: aClubIds, months: period.months })
+    : null;
   // «Продажи по дням недели» from ОФД (replaces the retired SalesReport source).
   const ofdWeekday = useOfd ? await loadOfdWeekday(aCompanyId, aClubIds, period.start, period.end) : null;
 
@@ -367,12 +374,12 @@ export default async function AnalyticsPage({
               accent="text-rose-600 dark:text-rose-400"
               trend={{ cur: s.expensesKopeks, prev: s.prevExpensesKopeks, goodWhenUp: false }}
             />
-            {useOfd ? (
+            {profitResult ? (
               <KpiCard
-                label="Результат (ОФД − расходы)"
-                value={formatKopeks(ofdResultKopeks)}
-                sub="выручка ОФД за вычетом подтверждённых расходов"
-                accent={ofdResultKopeks >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}
+                label="Прибыль (ОФД − признанные расходы)"
+                value={formatKopeks(profitResult.profitKopeks)}
+                sub="официальная прибыль: выручка ОФД за вычетом признанных расходов"
+                accent={profitResult.profitKopeks >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}
               />
             ) : null}
             <KpiCard
@@ -428,13 +435,13 @@ export default async function AnalyticsPage({
             <SalesDynamicsChart buckets={report.salesSplitTrend.buckets} height={180} />
           </Panel>
         </div>
-        {financials ? (
+        {financials && profitResult ? (
           <FinancialSummaryCard
-            profit={useOfd ? ofdResultKopeks : s.profitKopeks}
-            prevProfit={useOfd ? 0 : s.prevProfitKopeks}
+            revenueKopeks={profitResult.revenueKopeks}
+            expenseKopeks={profitResult.expenseKopeks}
+            profit={profitResult.profitKopeks}
             oooKopeks={scopeCash.oooKopeks}
             ipKopeks={scopeCash.ipKopeks}
-            isOfd={useOfd}
             sub={rangeLabel}
           />
         ) : null}
@@ -542,22 +549,22 @@ function KpiCard({
   );
 }
 
-/** Part 6 — combined financial summary. Прибыль/результат = ОФД net − подтверждённые
- * расходы (управленческий результат) when ОФД has data; наличные ООО/ИП = фактический
- * остаток из cash-balances (loadClubCashBalances) — never the retired SalesReport cash. */
+/** Part 6 — combined financial summary. REM-05A: the ONE official profit =
+ * calculateProfit (canonical OFD net revenue − recognized expenses). Наличные ООО/ИП =
+ * фактический остаток из cash-balances — shown SEPARATELY, never mixed into profit. */
 function FinancialSummaryCard({
+  revenueKopeks,
+  expenseKopeks,
   profit,
-  prevProfit,
   oooKopeks,
   ipKopeks,
-  isOfd,
   sub,
 }: {
+  revenueKopeks: number;
+  expenseKopeks: number;
   profit: number;
-  prevProfit: number;
   oooKopeks: number;
   ipKopeks: number;
-  isOfd: boolean;
   sub: string;
 }) {
   const profitAccent = profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400";
@@ -566,12 +573,21 @@ function FinancialSummaryCard({
       <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Финансовый итог</div>
       <div className="mt-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-xs text-slate-400 dark:text-slate-500">{isOfd ? "Результат (ОФД − расходы)" : "Прибыль"}</div>
+          <div className="text-xs text-slate-400 dark:text-slate-500">Прибыль</div>
           <div className={`truncate text-2xl font-semibold tracking-tight ${profitAccent}`}>{formatKopeks(profit)}</div>
         </div>
-        {isOfd ? null : <TrendChip cur={profit} prev={prevProfit} goodWhenUp />}
       </div>
-      <dl className="mt-4 space-y-2.5 border-t border-slate-100 pt-3 dark:border-slate-800">
+      <dl className="mt-3 space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="flex items-baseline justify-between gap-2">
+          <dt className="text-xs text-slate-400 dark:text-slate-500">Выручка по ОФД</dt>
+          <dd className="text-sm font-semibold text-slate-900 dark:text-slate-100">{formatKopeks(revenueKopeks)}</dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-2">
+          <dt className="text-xs text-slate-400 dark:text-slate-500">Признанные расходы</dt>
+          <dd className="text-sm font-semibold text-rose-600 dark:text-rose-400">{formatKopeks(expenseKopeks)}</dd>
+        </div>
+      </dl>
+      <dl className="mt-3 space-y-2.5 border-t border-slate-100 pt-3 dark:border-slate-800">
         <div className="flex items-baseline justify-between gap-2">
           <dt className="text-xs text-slate-400 dark:text-slate-500">Наличные ООО</dt>
           <dd className={`text-sm font-semibold ${oooKopeks < 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100"}`}>

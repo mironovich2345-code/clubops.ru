@@ -1,7 +1,13 @@
 import type { SaleSummary } from "@/lib/sales";
 import type { ExpenseSummary } from "@/lib/expenses";
 
-// Profit = sales - expenses. All amounts in kopeks.
+// @deprecated REM-05A — DEAD CODE (no importers). The OFFICIAL profit is
+// `calculateProfit` (src/lib/finance/profit.ts) = canonical OFD net revenue −
+// recognized expenses (BD-03). This legacy Sale−Expense profit is NOT a live reader
+// and MUST NOT be wired to any UI/API. Kept only as historical/diagnostic reference;
+// a follow-up may delete it. Do not add callers.
+//
+// Profit = sales - expenses. All amounts in kopeks. (legacy/dead)
 export type ProfitSummary = {
   currentSalesKopeks: number;
   currentExpensesKopeks: number;

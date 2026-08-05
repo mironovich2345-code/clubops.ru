@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { formatKopeks } from "@/lib/money";
-import { computeManagementResult } from "@/lib/analytics/ofd-management";
 import type { ClubCard as ClubCardData } from "@/lib/dashboard-cards";
 
 // Club-cards overview for the dashboard: one clickable card per club with only the
@@ -54,7 +53,9 @@ function ClubCard({ card, showSales, showExpenses, showCash, daysLeft, showCompa
   const pt = card.ofd.ofdPersonalTrainingKopeks;
   const subsPct = card.subsPlan > 0 ? (subs / card.subsPlan) * 100 : null;
   const ptPct = card.ptPlan > 0 ? (pt / card.ptPlan) * 100 : null;
-  const resultKopeks = computeManagementResult(card.ofd.ofdNetKopeks, card.expensesKopeks);
+  // REM-05A — the ONE official profit for this club: OFD net revenue − recognized
+  // expenses (= calculateProfit for the club). No legacy ofdNet−expenseSummary.
+  const resultKopeks = card.ofd.ofdNetKopeks - card.recognizedExpensesKopeks;
   // /analytics scoped to this club + the selected month (existing period=custom
   // format). Scope is re-checked server-side; a foreign clubId is ignored there.
   const href = `/analytics?clubId=${encodeURIComponent(card.id)}&companyId=${encodeURIComponent(card.companyId)}&scopeMode=company&period=custom&from=${linkFrom}&to=${linkTo}`;

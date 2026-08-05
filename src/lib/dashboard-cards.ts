@@ -10,6 +10,7 @@ import { calculateBalanceForecast, balanceRiskLevel } from "@/lib/balance";
 import { dayStart, addDays } from "@/lib/payments";
 import { loadOfdManagementOverview, ofdCardFields, type OfdCardFields } from "@/lib/analytics/ofd-management";
 import { loadClubCashBalances } from "@/lib/cash-collections";
+import { loadRecognizedExpenses } from "@/lib/finance/recognized-expense";
 
 export type ClubCard = {
   id: string;
@@ -24,6 +25,11 @@ export type ClubCard = {
   ptPlan: number;
   ptPct: number | null;
   expensesKopeks: number;
+  // REM-05A — canonical recognized expenses (accrual: payroll + partially_paid full +
+  // refunds + taxes) per club, so the club-card "Результат" = OFD net − recognized =
+  // the ONE official profit (calculateProfit for that club). Distinct from the
+  // operational "Фактические расходы" (expensesKopeks) line.
+  recognizedExpensesKopeks: number;
   breakEvenKopeks: number;
   oooKopeks: number | null;
   ipKopeks: number | null;
@@ -67,6 +73,11 @@ export async function loadCompanyClubCards(
   }
 
   const expensesByClub = new Map(report.clubRanking.map((r) => [r.clubId, r.expensesKopeks]));
+  // REM-05A — ONE scoped recognized-expense query for all clubs (byClub breakdown);
+  // no per-club service call, no N+1. Powers the canonical club-card "Результат".
+  const recognized = showOfd || financials
+    ? await loadRecognizedExpenses({ companyId, allowedClubIds: clubIds, months: period.months, includeBreakdown: false })
+    : null;
   const splitByClub = new Map(report.planSplitByClub.map((r) => [r.clubId, r]));
   const budgetByClub = new Map<string, number>();
   for (const b of data.budgets) budgetByClub.set(b.clubId, (budgetByClub.get(b.clubId) ?? 0) + b.limitAmountKopeks);
@@ -108,6 +119,7 @@ export async function loadCompanyClubCards(
       ptPlan: split?.personal_training.planKopeks ?? 0,
       ptPct: split?.personal_training.percent ?? null,
       expensesKopeks: expensesByClub.get(c.id) ?? 0,
+      recognizedExpensesKopeks: recognized?.byClub[c.id] ?? 0,
       breakEvenKopeks: budgetByClub.get(c.id) ?? 0,
       oooKopeks,
       ipKopeks,
