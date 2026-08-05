@@ -1,0 +1,117 @@
+{
+  "note": "read-only invoice payment-ledger preflight (SELECT only)",
+  "totals": {
+    "invoices": 0,
+    "payments": 0
+  },
+  "checks": [
+    {
+      "id": "IPL-01",
+      "title": "paid/partially_paid invoice without confirmed payments (legacy ledger missing)",
+      "severity": "S2",
+      "recommendedAction": "manual reconciliation (create historical InvoicePayment or correct status)",
+      "count": 0,
+      "amountKopeks": 0,
+      "sample": []
+    },
+    {
+      "id": "IPL-03",
+      "title": "confirmed paid >= total but status != paid",
+      "severity": "S1",
+      "recommendedAction": "re-sync status from ledger",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-02",
+      "title": "0 < confirmed paid < total but status not partially_paid",
+      "severity": "S1",
+      "recommendedAction": "re-sync status from ledger",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-04",
+      "title": "overpaid invoice (confirmed paid > total)",
+      "severity": "S1",
+      "recommendedAction": "reverse the excess payment",
+      "count": 0,
+      "amountKopeks": 0,
+      "sample": []
+    },
+    {
+      "id": "IPL-06",
+      "title": "duplicate payment idempotency key",
+      "severity": "S0",
+      "recommendedAction": "investigate (constraint bypass)",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-07",
+      "title": "payment referencing a missing invoice",
+      "severity": "S1",
+      "recommendedAction": "investigate orphan",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-08",
+      "title": "cross-company payment (payment.company != invoice.company)",
+      "severity": "S0",
+      "recommendedAction": "investigate security",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-12",
+      "title": "paidAt set while confirmed paid < total",
+      "severity": "S2",
+      "recommendedAction": "clear paidAt (partial is not fully paid)",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-13",
+      "title": "confirmed paid >= total but paidAt missing",
+      "severity": "S3",
+      "recommendedAction": "set paidAt to the closing payment date",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-16",
+      "title": "payment amount <= 0",
+      "severity": "S1",
+      "recommendedAction": "reverse/correct the payment",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-17",
+      "title": "confirmed payment on a rejected/cancelled invoice",
+      "severity": "S1",
+      "recommendedAction": "reverse the payment or correct the invoice",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    },
+    {
+      "id": "IPL-18",
+      "title": "invoice status does not match the ledger-derived state",
+      "severity": "S1",
+      "recommendedAction": "re-sync status from ledger",
+      "count": 0,
+      "amountKopeks": null,
+      "sample": []
+    }
+  ]
+}
