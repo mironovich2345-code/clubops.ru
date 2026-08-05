@@ -167,6 +167,8 @@
     "test:rem-06-readiness": "node scripts/rem-06-readiness-tests.mjs",
     "pilot:rem-06-readiness": "node scripts/pilot-rem-06-readiness.mjs",
     "test:rem-05-integration": "node scripts/rem-05-profit-budget-integration.mjs",
+    "test:rem-05a-profit-readers": "node scripts/rem-05a-profit-reader-tests.mjs",
+    "pilot:rem-05a-profit-live-readers": "node scripts/pilot-rem-05a-profit-live-readers.mjs",
     "preflight:profit-budget-fact": "node scripts/preflight-profit-budget-fact.mjs",
     "reconcile:profit-budget-fact": "node scripts/reconcile-profit-budget-fact.mjs",
     "pilot:rem-05-profit-budget-fact": "node scripts/pilot-rem-05-profit-budget-fact.mjs",

@@ -15,7 +15,7 @@ expected · evidence · status · blocker · owner.
 - [ ] **G9 — Payroll forecast → proposal → obligation → advance/payment/reversal.** Real instance · manager/regional/accountant/chief. Run a full period; **double-submit a payment → exactly one effect** (REM-01); reverse an obligation (UX-003); "Выплачен" reconciles to remaining (UX-004). **Blocker if:** double-charge, or no reversal path.
 
 ## Profit / budget fact (REM-05, BD-03/04)
-- [ ] **G-FIN-1/7 — Canonical profit adopted.** Real month. Accountant ratifies `calculateProfit` (OFD net − recognized breakdown); dashboard = analytics = export. **Status: services built + 31/31 DB tests + golden scenario (330,000 ₽); dashboard/analytics profit-card adoption PENDING.** **Blocker if:** two profit numbers shown as equal.
+- [ ] **G-FIN-1/7 — Canonical profit adopted (REM-05 + REM-05A).** Real month. Accountant ratifies `calculateProfit` (OFD net − recognized breakdown); dashboard club-card "Результат" = analytics "Прибыль" = export. **Status: services + ALL live readers migrated (analytics card/KPI + dashboard club-card); reader-equivalence proven 12/12 + 31/31 + golden 330,000 ₽; on-instance ratification (real data) PENDING.** **Blocker if:** two profit numbers shown as equal, or a card diverges from `calculateProfit`.
 - [ ] **G-FIN-8/9 — Budget fact = Plan/Fact = "Использовано"** incl. v2 verified + partially_paid (in FULL) + payroll accrual. **Plan/Fact + overruns + used migrated ✅; budgets-page payroll row PENDING.**
 - [ ] **G-FIN-11/12 — Production reconciliation + golden on PostgreSQL.** `reconcile:profit-budget-fact` on a replica (0 unexplained diffs); reproduce the golden scenario exactly. **Status: NOT EXECUTED (dev sqlite only).**
 

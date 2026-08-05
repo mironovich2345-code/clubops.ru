@@ -45,6 +45,15 @@ Every place profit is computed at `d161c15`, with inputs and the divergences. Mo
 it **omits payroll accrual**, and it **drops partially-paid invoices**. The profit definition is a
 **business decision** (BD-03) that must be fixed before the number is authoritative.
 
+## Update (REM-05A) — live readers migrated
+Every LIVE profit reader now uses `calculateProfit` (analytics "Финансовый итог" card + "Прибыль" KPI)
+or its exact composition (dashboard club-card "Результат" = OFD net byClub − recognized byClub =
+`calculateProfit({clubId})`, via ONE scoped `loadRecognizedExpenses`). The legacy `computeManagementResult`
+and the dead `dashboard.ts` Sale−Expense trio are `@deprecated` with 0 live callers. Reader equivalence +
+network reconciliation proven by `test:rem-05a-profit-readers` (12/12). **FIN-001 + UX-005 CLOSED** (one
+official profit; cash/budget/obligations shown separately). On-instance ratification = G-FIN-1/7/11. See
+`docs/remediation/rem-05a-final-report.md`.
+
 ## Update (REM-05)
 BD-03 is ratified and encoded: the ONE official profit = **OFD net revenue − recognized expenses**
 via `src/lib/finance/calculateProfit` + `loadRecognizedExpenses` (`recognition.ts`). Recognized
