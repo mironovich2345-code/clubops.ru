@@ -8,6 +8,7 @@ import { canAnyRoleAccessPage, canCreateOperational, canMutateOperationalRecords
 import { rublesToKopeks } from "@/lib/money";
 import { canRecordInvoicePayment, canReverseInvoicePayment } from "@/lib/invoices";
 import { paidTotalKopeks, remainingKopeks, derivedInvoiceStatus, validatePaymentAmount, INVOICE_PAYMENT_SOURCES } from "@/lib/invoice-payments";
+import { applyInvoicePaymentInTx, applyInvoicePaymentReversalInTx } from "@/lib/invoices/payment-ledger";
 import { findInvoiceDuplicates } from "@/lib/invoice-dedupe";
 import {
   getCurrentAccessContext,
@@ -640,6 +641,26 @@ export async function recordInvoicePayment(_prev: PaymentState | undefined, form
   const PAYABLE = ["approved_by_regional", "approved_by_chief_accountant", "approved_by_owner", "partially_paid"];
   if (!PAYABLE.includes(invoice.status)) return { ok: false, error: "Оплату можно отметить только по согласованному или частично оплаченному счёту." };
 
+  // REM-08 — the AI-review/approval-fingerprint payment guard (moved here from the
+  // retired transition «pay»): a low-confidence unreviewed invoice, or one whose
+  // financial data changed after approval (fingerprint mismatch), cannot be paid.
+  {
+    const currentFingerprint = invoiceFinancialFingerprint(invoiceFinancialSnapshot(invoice));
+    const blockedReason = invoicePaymentBlockedReason({
+      confidence: invoice.confidence,
+      aiDataReviewedAt: invoice.aiDataReviewedAt,
+      amountKopeks: invoice.amountKopeks,
+      counterpartyName: invoice.counterpartyName,
+      counterpartyInn: invoice.counterpartyInn,
+      payerName: invoice.payerName,
+      counterpartyBankBik: invoice.counterpartyBankBik,
+      counterpartyAccount: invoice.counterpartyAccount,
+      approvedDataFingerprint: invoice.approvedDataFingerprint,
+      currentFingerprint,
+    });
+    if (blockedReason) return { ok: false, error: blockedReason };
+  }
+
   const paymentDate = parseDate(str(formData, "paymentDate"));
   if (!paymentDate) return { ok: false, error: "Укажите дату платежа." };
   const closed = await monthClosedError(invoice.companyId, invoice.clubId, paymentDate);
@@ -664,19 +685,13 @@ export async function recordInvoicePayment(_prev: PaymentState | undefined, form
   if (invalid === "over_remaining") return { ok: false, error: `Сумма платежа не может превышать остаток ${(remaining / 100).toFixed(2)} ₽.` };
 
   try {
+    // REM-08 — single ledger service: creates the confirmed InvoicePayment + syncs the
+    // derived status/paidAt atomically. Idempotency via the @unique idempotencyKey.
     await prisma.$transaction(async (tx) => {
-      // Capture the pre-payment approved state once (for exact restore on full reversal).
-      if (!invoice.prePaymentStatus && INVOICE_APPROVED_UNPAID_STATUSES.includes(invoice.status as never)) {
-        await tx.invoice.update({ where: { id: invoice.id }, data: { prePaymentStatus: invoice.status } });
-      }
-      await tx.invoicePayment.create({
-        data: { companyId: invoice.companyId, invoiceId: invoice.id, amountKopeks, paymentDate, source, method: str(formData, "method"), comment: str(formData, "comment"), createdById: ctx.user.id, status: "confirmed", idempotencyKey },
+      await applyInvoicePaymentInTx(tx, {
+        invoice: { id: invoice.id, companyId: invoice.companyId, amountKopeks: invoice.amountKopeks, status: invoice.status, prePaymentStatus: invoice.prePaymentStatus ?? null, paidAt: invoice.paidAt ?? null },
+        amountKopeks, paymentDate, source, method: str(formData, "method"), comment: str(formData, "comment"), createdById: ctx.user.id, idempotencyKey,
       });
-      const fresh = await tx.invoicePayment.findMany({ where: { invoiceId: invoice.id }, select: { status: true, amountKopeks: true } });
-      const newPaid = paidTotalKopeks(fresh);
-      const pre = invoice.prePaymentStatus ?? (INVOICE_APPROVED_UNPAID_STATUSES.includes(invoice.status as never) ? invoice.status : null);
-      const nextStatus = derivedInvoiceStatus(newPaid, invoice.amountKopeks, pre, invoice.status);
-      await tx.invoice.update({ where: { id: invoice.id }, data: { status: nextStatus, paidAt: newPaid >= invoice.amountKopeks ? paymentDate : null } });
     });
   } catch (e) {
     if (e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "P2002") return { ok: true }; // duplicate submit
@@ -709,12 +724,12 @@ export async function reverseInvoicePayment(_prev: PaymentState | undefined, for
   if (closed) return { ok: false, error: closed };
 
   await prisma.$transaction(async (tx) => {
-    const n = await tx.invoicePayment.updateMany({ where: { id: payment.id, status: "confirmed" }, data: { status: "reversed", reversedById: ctx.user.id, reversedAt: new Date(), reversalReason: reason.slice(0, 500) } });
-    if (n.count !== 1) throw new Error("already");
-    const fresh = await tx.invoicePayment.findMany({ where: { invoiceId: invoice.id }, select: { status: true, amountKopeks: true } });
-    const newPaid = paidTotalKopeks(fresh);
-    const nextStatus = derivedInvoiceStatus(newPaid, invoice.amountKopeks, invoice.prePaymentStatus, invoice.status);
-    await tx.invoice.update({ where: { id: invoice.id }, data: { status: nextStatus, paidAt: newPaid >= invoice.amountKopeks && invoice.amountKopeks > 0 ? invoice.paidAt : null } });
+    // REM-08 — single ledger service: append-only reversal + status re-sync.
+    const r = await applyInvoicePaymentReversalInTx(tx, {
+      invoice: { id: invoice.id, companyId: invoice.companyId, amountKopeks: invoice.amountKopeks, status: invoice.status, prePaymentStatus: invoice.prePaymentStatus ?? null, paidAt: invoice.paidAt ?? null },
+      paymentId: payment.id, reversedById: ctx.user.id, reason,
+    });
+    if (!r.ok) throw new Error("already");
   }).catch(() => null);
 
   await recordAudit({ action: "invoice.payment_reversed", entityType: "Invoice", entityId: invoice.id, companyId: invoice.companyId, clubId: invoice.clubId, userId: ctx.user.id, metadata: { paymentId: payment.id, reason: reason.slice(0, 200) } });
@@ -1201,6 +1216,14 @@ export async function transitionInvoice(
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   const action = String(formData.get("action") ?? "").trim() as InvoiceAction;
   if (!(action in INVOICE_ACTION_AUDIT)) return { ok: false, error: "Неверное действие" };
+  // REM-08 — the legacy binary «pay» transition is RETIRED. It used to flip
+  // Invoice.status="paid" + paidAt WITHOUT creating an InvoicePayment (ARCH-010/
+  // DATA-005/FIN-006). Payment is now recorded ONLY through the ledger service
+  // (recordInvoicePayment / InvoicePaymentPanel), so status can never reach "paid"
+  // without a confirmed payment row. This endpoint no longer marks anything paid.
+  if (action === "pay") {
+    return { ok: false, error: "Оплата отмечается через реестр платежей: откройте счёт и нажмите «Добавить оплату»." };
+  }
 
   const existing = await getInvoiceForContext(ctx, invoiceId);
   if (!existing) return { ok: false, error: "Счёт не найден или нет доступа" };
@@ -1246,27 +1269,8 @@ export async function transitionInvoice(
     return { ok: false, error: result.error };
   }
 
-  // Payment guard (server-side single source of truth, shared with the UI): links
-  // AI review + approval version + confidence to payment. Blocks pay when the data
-  // changed after approval (fingerprint mismatch), when a low- (or medium-with-
-  // critical-gap) confidence invoice wasn't reviewed, or when the amount is
-  // non-positive. Role/status/scope/CAS are enforced above and below.
-  if (action === "pay") {
-    const currentFingerprint = invoiceFinancialFingerprint(invoiceFinancialSnapshot(existing));
-    const blockedReason = invoicePaymentBlockedReason({
-      confidence: existing.confidence,
-      aiDataReviewedAt: existing.aiDataReviewedAt,
-      amountKopeks: existing.amountKopeks,
-      counterpartyName: existing.counterpartyName,
-      counterpartyInn: existing.counterpartyInn,
-      payerName: existing.payerName,
-      counterpartyBankBik: existing.counterpartyBankBik,
-      counterpartyAccount: existing.counterpartyAccount,
-      approvedDataFingerprint: existing.approvedDataFingerprint,
-      currentFingerprint,
-    });
-    if (blockedReason) return { ok: false, error: blockedReason };
-  }
+  // (REM-08: the AI-review/fingerprint PAYMENT guard moved to recordInvoicePayment —
+  // the only path that can now mark an invoice paid, via the ledger.)
 
   // Conditional (compare-and-set) update on the exact current status: only one
   // concurrent request can flip the status. A stale/duplicate submit updates 0

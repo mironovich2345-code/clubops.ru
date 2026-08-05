@@ -102,7 +102,9 @@ function main() {
   const actions = src("../src/app/(app)/invoices/actions.ts");
   check("INVOICE-AI-AUDIT1 review action stamps reviewer + writes audit 'invoice.ai_data_reviewed'", actions.includes("reviewInvoiceData") && actions.includes("aiDataReviewedAt: new Date()") && actions.includes("aiDataReviewedById: ctx.user.id") && actions.includes('action: "invoice.ai_data_reviewed"'));
   check("S1 reviewInvoiceData is gated by role (canReviewInvoiceData) + scope (getInvoiceForContext)", /reviewInvoiceData[\s\S]*canReviewInvoiceData\(ctx\.effectiveRoles\)[\s\S]*getInvoiceForContext\(ctx, invoiceId\)/.test(actions));
-  check("S2 pay guard delegates to the shared invoicePaymentBlockedReason (single source, UI-shared)", actions.includes('if (action === "pay")') && actions.includes("invoicePaymentBlockedReason({") && actions.includes("approvedDataFingerprint: existing.approvedDataFingerprint"));
+  // REM-08 — the legacy transition «pay» is retired; the AI-review/fingerprint payment
+  // guard now runs on the ONLY payment path (recordInvoicePayment → InvoicePayment ledger).
+  check("S2 payment guard (AI review/fingerprint) applied on the ledger payment path (REM-08)", actions.includes("invoicePaymentBlockedReason({") && actions.includes("approvedDataFingerprint: invoice.approvedDataFingerprint") && actions.includes("recordInvoicePayment"));
   check("S2b approve captures the approved-data fingerprint", actions.includes('if (action === "approve")') && actions.includes("data.approvedDataFingerprint = invoiceFinancialFingerprint(invoiceFinancialSnapshot(existing))"));
   check("S3 editing an approved invoice's financial data INVALIDATES the approval (→ needs_review, fingerprint cleared)", actions.includes("const invalidateApproval = changed") && actions.includes('data.status = "needs_review"') && actions.includes("data.approvedDataFingerprint = null") && actions.includes('action: "invoice.approval_invalidated"'));
   check("S3b review RESET server-side on any financial change (updateInvoice + saveAndResubmit + file replace)", (() => {

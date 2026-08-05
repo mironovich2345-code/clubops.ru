@@ -12,6 +12,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const src = (rel) => readFileSync(join(root, rel), "utf8");
 
 const actions = src("src/app/(app)/invoices/actions.ts");
+const ledger = src("src/lib/invoices/payment-ledger.ts"); // REM-08 shared payment service
 const invoices = src("src/lib/invoices.ts");
 const payLib = src("src/lib/invoice-payments.ts");
 const dedupe = src("src/lib/invoice-dedupe.ts");
@@ -62,7 +63,7 @@ check("6 Multiple payments accumulate", paidTotal([{ status: "confirmed", amount
 check("7 Final payment → paid", derived(1000, 1000, "approved_by_owner", "partially_paid") === "paid");
 check("8 paidTotal exact (reversed excluded)", paidTotal([{ status: "confirmed", amountKopeks: 400 }, { status: "reversed", amountKopeks: 600 }]) === 400);
 check("9 remainingTotal exact", remaining(1000, [{ status: "confirmed", amountKopeks: 250 }]) === 750);
-check("10 Payment history append-only (reverse flips status, никогда не delete)", /reverseInvoicePayment[\s\S]*?status: "reversed"/.test(actions) && !actions.includes("invoicePayment.delete"));
+check("10 Payment history append-only (reversal flips status via the ledger service, never delete)", ledger.includes('status: "reversed"') && ledger.includes("applyInvoicePaymentReversalInTx") && actions.includes("applyInvoicePaymentReversalInTx") && !actions.includes("invoicePayment.delete") && !ledger.includes("invoicePayment.delete"));
 
 // ===================== Reversal RBAC =====================
 check("11 Accountant CANNOT reverse (chief only guard)", /canReverseInvoicePayment\(roles.*\)\s*\{\s*return roles\.includes\("chief_accountant"\)/.test(invoices.replace(/\s+/g, " ")) || invoices.includes('roles.includes("chief_accountant")'));

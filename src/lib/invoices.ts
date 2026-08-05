@@ -246,10 +246,15 @@ export function applyInvoiceAction(
   }
 }
 
-/** Actions the actor can currently perform — drives which buttons are shown. */
+/**
+ * Actions the actor can currently perform — drives which buttons are shown.
+ * REM-08: the legacy binary «pay» transition is RETIRED — payment is recorded ONLY
+ * through the InvoicePayment ledger (InvoicePaymentPanel → recordInvoicePayment), so
+ * `pay` is never offered here and status can never reach "paid" without a payment row.
+ */
 export function availableInvoiceActions(status: string, roles: readonly Role[], opts: ApprovalContext): InvoiceAction[] {
   return (Object.keys(INVOICE_ACTION_LABELS) as InvoiceAction[]).filter(
-    (action) => applyInvoiceAction(action, status, roles, opts).ok,
+    (action) => action !== "pay" && applyInvoiceAction(action, status, roles, opts).ok,
   );
 }
 
