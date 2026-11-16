@@ -31,7 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const visibleItems = NAV_ITEMS.filter(
     (item) =>
       canAnyRoleAccessPage(ctx.effectiveRoles, item.page) &&
-      !(strategic && STRATEGIC_HIDDEN_PAGES.includes(item.page)),
+      !(strategic && !demo && STRATEGIC_HIDDEN_PAGES.includes(item.page)),
   );
   const roleLabel = ctx.effectiveRole ? ROLE_LABELS[ctx.effectiveRole] ?? ctx.effectiveRole : "";
 
@@ -80,7 +80,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Sidebar items={visibleItems} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        {demo && <DemoToolbar role={ctx.effectiveRole ?? "owner"} />}
+        {demo && <DemoToolbar role={ctx.effectiveRole ?? "owner"} items={visibleItems} />}
         {/* Desktop header */}
         <header className="hidden h-16 items-center justify-between border-b border-slate-200 bg-white px-6 lg:flex">
           {scopeSlot}
