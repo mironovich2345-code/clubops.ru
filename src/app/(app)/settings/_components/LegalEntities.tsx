@@ -260,7 +260,7 @@ function CreateForm({ companyId }: { companyId: string }) {
       <input type="hidden" name="companyId" value={companyId} />
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-slate-600">Название (для списков)</span>
-        <input name="name" required className="input w-full" placeholder="ООО «Метрофитнес»" />
+        <input name="name" required className="input w-full" placeholder="ООО «Сфера»" />
       </label>
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-slate-600">Тип</span>

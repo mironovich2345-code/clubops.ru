@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { isDemo } from "@/lib/demo/config";
 import { PageHeader } from "@/components/PageHeader";
 import { getCurrentAccessContext, hasActiveRegionalApproverForClub, userHasClubRole } from "@/lib/access";
 import { canAnyRoleAccessPage, canDownloadDocuments, canMutateOperationalRecords } from "@/lib/auth";
@@ -57,6 +58,7 @@ export default async function RefundDetailPage({
   // ---------- v2 review view (read-only + role workflow actions) ----------
   if (refund.entryVersion === 2) {
     const rt = (refund.returnType ?? "membership") as RefundReturnType;
+    if (isDemo() && rt === "personal_training") notFound();
     const active = await getActiveRefundDocuments(id);
     const byType = new Map(active.map((d) => [d.documentType, d]));
     const slots = refundSlots(rt).map((s) => ({ label: s.label, doc: byType.get(s.key) ?? null }));

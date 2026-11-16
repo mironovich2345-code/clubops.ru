@@ -294,7 +294,7 @@ export function validateSalesReportForConfirmation(input: {
   const revenueOoo = v(REVENUE_OOO_KEY);
   const oooByCategory = v(SUBSCRIPTIONS_OOO_KEY) + v(PERSONAL_TRAINING_OOO_KEY);
   if (revenueOoo !== oooByCategory) {
-    blockingErrors.push("Выручка ООО должна равняться сумме Абонементов ООО и ПТ ООО");
+    blockingErrors.push("Выручка ООО должна равняться сумме основных и дополнительных услуг");
   }
 
   const encashment = v(ENCASHMENT_KEY);

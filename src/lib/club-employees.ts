@@ -13,9 +13,12 @@ export const EMPLOYEE_POSITIONS: ReadonlyArray<{ key: EmployeePosition; label: s
   { key: "administrator", label: "Администратор" },
   { key: "night_manager", label: "Ночной менеджер" },
 ];
-export const EMPLOYEE_POSITION_LABELS: Record<string, string> = Object.fromEntries(
-  EMPLOYEE_POSITIONS.map((p) => [p.key, p.label]),
-);
+export const EMPLOYEE_POSITION_LABELS: Record<string, string> = {
+  ...Object.fromEntries(EMPLOYEE_POSITIONS.map((p) => [p.key, p.label])),
+  // Historical rows remain readable without exposing former sector-specific names.
+  gym_trainer: "Специалист (устаревшая категория)",
+  group_trainer: "Специалист (устаревшая категория)",
+};
 export const EMPLOYEE_POSITION_KEYS = new Set<string>(EMPLOYEE_POSITIONS.map((p) => p.key));
 export function employeePositionLabel(position: string): string {
   return EMPLOYEE_POSITION_LABELS[position] ?? position;

@@ -81,7 +81,7 @@ export const PAYROLL_SCHEME_LABELS: Record<string, string> = {
   mixed: "Смешанная",
   role_club_manager: "Управляющий (план-факт по направлениям услуг)",
   role_administrator: "Администратор (ставка × смены)",
-  role_sales_manager: "Менеджер продаж (оклад/15 + % по плану клуба)",
+  role_sales_manager: "Менеджер продаж (оклад/15 + % по плану филиала)",
   role_night_manager: "Ночной менеджер (ставка × смены + %)",
   role_gym_trainer: "Специализированная схема (не для универсального демо)",
   role_gym_head_trainer: "Специализированная схема (не для универсального демо)",

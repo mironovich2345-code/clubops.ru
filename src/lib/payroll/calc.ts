@@ -201,8 +201,8 @@ export function calcManagerPlanFact(
   input: { subscriptions: { planKopeks: number; factKopeks: number }; personalTraining: { planKopeks: number; factKopeks: number } },
 ): CalcResult {
   const opts = { maxAdjustmentBp: p.maxAdjustmentBp, manualReviewDeviationBp: p.manualReviewDeviationBp };
-  const subs = planFactPart("Абонементы", p.subscriptionsBaseKopeks, input.subscriptions.factKopeks, input.subscriptions.planKopeks, opts);
-  const pt = planFactPart("ПТ", p.ptBaseKopeks, input.personalTraining.factKopeks, input.personalTraining.planKopeks, opts);
+  const subs = planFactPart("Основные услуги", p.subscriptionsBaseKopeks, input.subscriptions.factKopeks, input.subscriptions.planKopeks, opts);
+  const pt = planFactPart("Дополнительные услуги", p.ptBaseKopeks, input.personalTraining.factKopeks, input.personalTraining.planKopeks, opts);
   const amount = subs.partKopeks + pt.partKopeks;
   const warnings = [subs.warning, pt.warning].filter((w): w is string => Boolean(w));
   return {
@@ -225,8 +225,8 @@ export function calcRevenuePercentage(
     amountKopeks: amount,
     breakdown: [
       { label: "Фиксированный оклад", valueKopeks: p.fixedKopeks },
-      { label: `Абонементы × ${pct(p.subsPercentBp)}`, valueKopeks: subsPart },
-      { label: `ПТ × ${pct(p.ptPercentBp)}`, valueKopeks: ptPart },
+      { label: `Основные услуги × ${pct(p.subsPercentBp)}`, valueKopeks: subsPart },
+      { label: `Дополнительные услуги × ${pct(p.ptPercentBp)}`, valueKopeks: ptPart },
       { label: "Итого начислено", valueKopeks: amount },
     ],
     flags: {},

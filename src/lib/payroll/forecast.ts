@@ -23,8 +23,8 @@ export type ForecastCategory = (typeof FORECAST_CATEGORIES)[number];
 export const FORECAST_CATEGORY_LABELS: Record<ForecastCategory, string> = {
   management: "Управляющий",
   administrative: "Административный состав",
-  gym_trainers: "Тренеры ТЗ",
-  group_trainers: "Тренеры ГП",
+  gym_trainers: "Специальные категории (не используются)",
+  group_trainers: "Отраслевые категории (не используются)",
   other: "Другое",
 };
 
