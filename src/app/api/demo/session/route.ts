@@ -11,7 +11,11 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const target = await openDemoVisit(String(form.get("role") ?? "owner"), Number(form.get("club") ?? "0"), form.get("reset") === "1");
     return NextResponse.redirect(new URL(target, config.origin), 303);
-  } catch {
-    return NextResponse.json({ error: "Демосеанс недоступен. Проверьте выбор роли или повторите позже: число сеансов ограничено." }, { status: 429 });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (code === "DEMO_SELECTION_INVALID") return NextResponse.json({ error: "Выберите доступную роль и филиал." }, { status: 400 });
+    if (code === "DEMO_ORIGIN_FORBIDDEN" || code === "DEMO_SESSION_MISMATCH") return NextResponse.json({ error: "Доступ запрещён." }, { status: 403 });
+    if (code === "DEMO_CAPACITY_LIMIT") return NextResponse.json({ error: "Сейчас слишком много демосеансов. Повторите позже." }, { status: 429 });
+    return NextResponse.json({ error: "Демосеанс временно недоступен." }, { status: 503 });
   }
 }

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { assertDemoRequest, demoRequested } from "@/lib/demo/config";
+import { assertDemoRequest, demoConfig, demoRequested } from "@/lib/demo/config";
 
 // Per-request Content-Security-Policy with a nonce, so 'unsafe-inline' can be
 // dropped from script-src. Inline scripts (Next's RSC/hydration bootstrap + our
@@ -47,8 +47,16 @@ const PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=()
 
 export function middleware(request: NextRequest): NextResponse {
   if (demoRequested()) {
-    try { assertDemoRequest(request.headers.get("host"), request.headers.get("origin")); }
-    catch { return new NextResponse("Demo configuration unavailable", { status: 503 }); }
+    // A foreign Origin is a rejected request (403), not a service outage (503).
+    // Invalid host or missing demo environment configuration still fail closed.
+    try {
+      const config = demoConfig();
+      const origin = request.headers.get("origin");
+      if (origin && origin !== config.origin) return new NextResponse("Доступ запрещён", { status: 403 });
+      assertDemoRequest(request.headers.get("host"), origin);
+    } catch {
+      return new NextResponse("Demo configuration unavailable", { status: 503 });
+    }
     const path = request.nextUrl.pathname;
     if (path === "/" || path === "/login" || path === "/register") return NextResponse.redirect(new URL("/demo", request.url));
     if (/^\/(accept-invite|restore-account|onboarding|settings\/security|settings\/integrations|settings\/ofd|api\/cron\/ofd|api\/internal|api\/telegram|api\/ai|system)(\/|$)/.test(path)) {

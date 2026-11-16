@@ -53,7 +53,7 @@ try {
   const ready = await (await fetch(`${origin}/api/health/ready`)).json();
   assert.equal(ready.status, "ready"); pass("PostgreSQL readiness");
   const csrf = await fetch(`${origin}/api/demo/session`, { method: "POST", headers: { Origin: "https://foreign.invalid" }, body: "role=owner" });
-  assert(csrf.status >= 400); pass("Cross-origin admission denied");
+  assert.equal(csrf.status, 403); pass("Cross-origin admission denied with 403");
   const qaIp = 20 + (process.pid % 100) * 2;
   const a = await visitor(`192.0.2.${qaIp}`);
   const b = await visitor(`192.0.2.${qaIp + 1}`);
