@@ -1,3 +1,6 @@
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+import { isDemo } from "@/lib/demo/config";
+import { demoReceiptPdf } from "@/lib/demo/document";
 import { mkdir, writeFile, readFile, unlink, stat, readdir } from "node:fs/promises";
 import { join, dirname, relative, sep } from "node:path";
 import { type StorageProvider, isSafeStorageKey } from "./types";
@@ -17,12 +20,14 @@ export function createLocalStorageProvider(): StorageProvider {
     name: "local",
 
     async put(key, buffer) {
+      assertNoDemoExternalAction(); // public visitors must not upload personal/real documents
       const path = resolve(key);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, buffer);
     },
 
     async get(key) {
+      if (isDemo() && /^(?:expense-docs|refund-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return demoReceiptPdf(key.startsWith("refund-docs/") ? key : "");
       let path: string;
       try {
         path = resolve(key);
@@ -37,6 +42,7 @@ export function createLocalStorageProvider(): StorageProvider {
     },
 
     async exists(key) {
+      if (isDemo() && /^(?:expense-docs|refund-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return true;
       let path: string;
       try {
         path = resolve(key);
@@ -51,6 +57,7 @@ export function createLocalStorageProvider(): StorageProvider {
     },
 
     async head(key) {
+      if (isDemo() && /^(?:expense-docs|refund-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return { size: demoReceiptPdf(key.startsWith("refund-docs/") ? key : "").length, etag: null };
       let path: string;
       try {
         path = resolve(key);
