@@ -2799,3 +2799,16 @@ model RegionalCityPayment {
   @@index([regionalCityPayrollId])
   @@index([clubId])
 }
+
+// Each visitor owns a synthetic tenant. Token is HMAC-only, TTL is absolute.
+model DemoVisit {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  companyId  String   @unique
+  usersJson  String
+  clubsJson  String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([expiresAt])
+}

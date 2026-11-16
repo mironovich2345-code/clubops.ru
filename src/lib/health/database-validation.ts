@@ -1,3 +1,4 @@
+import { isDemo } from "@/lib/demo/config";
 // REM-06 — DATABASE_URL + provider validation (closes OPS-013 for app startup).
 //
 // PURE: takes an env bag + isProduction and returns a value-free verdict. The full
@@ -87,7 +88,7 @@ export function validateDatabaseEnvironment(
 /** Reads process.env with the current NODE_ENV + optional localhost override. */
 export function resolveDatabaseValidation(): DatabaseValidation {
   return validateDatabaseEnvironment(process.env, {
-    isProduction: process.env.NODE_ENV === "production",
+    isProduction: process.env.NODE_ENV === "production" || isDemo(),
     allowLocalhost: process.env.ALLOW_DB_LOCALHOST === "true",
   });
 }

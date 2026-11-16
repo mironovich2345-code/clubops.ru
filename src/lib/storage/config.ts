@@ -1,3 +1,4 @@
+import { isDemo } from "@/lib/demo/config";
 // Storage configuration contract + validation (REM-04 §3/§4/§23).
 //
 // One source of truth for "is object storage correctly configured?". The core
@@ -82,7 +83,7 @@ export function validateStorageEnv(env: StorageEnv, opts: { isProduction: boolea
   const maxFileSizeBytes = Number.isFinite(maxSize) && maxSize > 0 ? maxSize : DEFAULT_MAX_FILE_SIZE;
 
   // --- production must not use local storage (ARCH-017 / OPS-002) ---
-  if (opts.isProduction && provider !== "s3") {
+  if (opts.isProduction && provider !== "s3" && !isDemo(env)) {
     errors.push("PRODUCTION_LOCAL_FORBIDDEN");
   }
 

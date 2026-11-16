@@ -1,3 +1,4 @@
+import { demoRequested } from "@/lib/demo/config";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
@@ -93,6 +94,7 @@ export async function isFirstUser(): Promise<boolean> {
  * or in production, and never logs anyone in automatically.
  */
 export async function ensureDevOwner(): Promise<void> {
+  if (demoRequested()) return;
   if (process.env.NODE_ENV === "production") return;
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 

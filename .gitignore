@@ -6,8 +6,19 @@ build/
 .env.local
 .env.production
 .env.*.local
+# Keep all runtime env variants private; only empty/example templates belong in Git.
+.env.*
+!.env*.example
 prisma/dev.db
 prisma/dev.db-journal
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.dump
+*.sql.gz
+backups/
 uploads/
 *.log
 .DS_Store
