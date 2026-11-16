@@ -65,9 +65,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "legal_entity.activated": "Юрлицо активировано",
   "legal_entity.deactivated": "Юрлицо деактивировано",
   "legal_entity.attached": "Юрлицо привязано к клубу",
-  "legal_entity.detached": "Юрлицо отвязано от клуба",
+  "legal_entity.detached": "Юрлицо отвязано от филиала",
   "club.legal_entity_assigned": "Юрлицо назначено клубу",
-  "club.legal_entity_replaced": "Юрлицо клуба заменено",
+  "club.legal_entity_replaced": "Юрлицо филиала заменено",
   "club.legal_entity_assignment_blocked": "Назначение юрлица отклонено",
   // Invoices
   "invoice.uploaded": "Загружен счёт",

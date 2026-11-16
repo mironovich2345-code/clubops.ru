@@ -253,11 +253,11 @@ export async function createInternalTransfer(opts: {
   // Both wallets must belong to the SAME Club + ИП (regional money never mixes).
   if (!from || !to || !from.isActive || !to.isActive) return { ok: false, error: "Кошелёк не найден." };
   if (from.clubId !== opts.clubId || to.clubId !== opts.clubId || from.legalEntityId !== opts.legalEntityId || to.legalEntityId !== opts.legalEntityId) {
-    return { ok: false, error: "Кошельки принадлежат разным клубам или ИП." };
+    return { ok: false, error: "Кошельки принадлежат разным филиалам или ИП." };
   }
   // Only club_cash must stay non-negative; regional_cash may go negative.
   if (from.type === WALLET_CLUB && (await walletBalanceKopeks(opts.fromWalletId)) < opts.amountKopeks) {
-    return { ok: false, error: "Недостаточно денег в кассе клуба." };
+    return { ok: false, error: "Недостаточно денег в кассе филиала." };
   }
 
   const m = await prisma.cashMovement.create({
@@ -312,7 +312,7 @@ export async function confirmInternalTransfer(movementId: string, actorUserId: s
   });
 
   if (outcome === "not_found") return { ok: false, error: "Перевод не найден." };
-  if (outcome === "insufficient") return { ok: false, error: "Недостаточно денег в кассе клуба." };
+  if (outcome === "insufficient") return { ok: false, error: "Недостаточно денег в кассе филиала." };
   if (outcome === "already") return { ok: true, already: true }; // concurrent confirm → single effect
   if (outcome === "not_pending") return { ok: false, error: "Перевод недоступен для подтверждения." };
 

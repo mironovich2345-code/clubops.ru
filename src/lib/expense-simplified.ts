@@ -88,11 +88,11 @@ export async function resolveActiveIpForClub(clubId: string): Promise<IpResoluti
     where: { clubId, isActive: true, legalEntity: { isActive: true, type: { in: ["ip", "ИП"] } } },
     select: { legalEntityId: true },
   });
-  if (active.length === 0) return { ok: false, error: "У клуба не назначено активное ИП. Обратитесь к администратору." };
-  if (active.length > 1) return { ok: false, error: "У клуба несколько активных ИП. Обратитесь к администратору." };
+  if (active.length === 0) return { ok: false, error: "У филиала не назначено активное ИП. Обратитесь к администратору." };
+  if (active.length > 1) return { ok: false, error: "У филиала несколько активных ИП. Обратитесь к администратору." };
   // Reuse the centralized resolver for the definitive single active ИП.
   const ip = await getActiveClubLegalEntity(clubId, "ip");
-  if (!ip) return { ok: false, error: "Активное ИП клуба не найдено." };
+  if (!ip) return { ok: false, error: "Активное ИП филиала не найдено." };
   return { ok: true, legalEntityId: ip.id };
 }
 

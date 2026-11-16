@@ -234,7 +234,7 @@ export function sendRecoveryLinkEmail(to: string, restoreUrl: string, requestId:
   const subject = "Восстановление аккаунта CLUB-OPS";
   const text =
     `CLUB-OPS\n\nВы можете восстановить аккаунт в течение 30 дней по ссылке:\n${restoreUrl}\n\n` +
-    `Ссылка одноразовая. Права доступа к компаниям и клубам после восстановления НЕ возвращаются автоматически. ` +
+    `Ссылка одноразовая. Права доступа к компаниям и филиалам после восстановления НЕ возвращаются автоматически. ` +
     `Никому не передавайте эту ссылку. Если вы не удаляли аккаунт, обратитесь к администратору системы.`;
   const html = wrap(`<p>Вы можете восстановить аккаунт в течение 30 дней:</p><p><a href="${restoreUrl}">Восстановить аккаунт</a></p><p>Ссылка одноразовая. Права доступа после восстановления НЕ возвращаются автоматически.</p><p style="color:#64748b;font-size:12px">Никому не передавайте эту ссылку. Если вы не удаляли аккаунт, обратитесь к администратору системы.</p>`);
   return sendMail(to, subject, text, html, requestId);
@@ -243,7 +243,7 @@ export function sendRecoveryLinkEmail(to: string, restoreUrl: string, requestId:
 /** Confirmation that the account was restored. */
 export function sendRestorationCompletedEmail(to: string, requestId: string): Promise<SendResult> {
   const subject = "Аккаунт CLUB-OPS восстановлен";
-  const body = "Ваш аккаунт восстановлен. Войдите с паролем и кодом подтверждения из email. Права доступа к компаниям и клубам необходимо запросить у администратора заново.";
+  const body = "Ваш аккаунт восстановлен. Войдите с паролем и кодом подтверждения из email. Права доступа к компаниям и филиалам необходимо запросить у администратора заново.";
   const text = `CLUB-OPS\n\n${body}`;
   return sendMail(to, subject, text, wrap(`<p>${body}</p>`), requestId);
 }

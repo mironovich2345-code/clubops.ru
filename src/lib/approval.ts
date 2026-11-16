@@ -35,7 +35,7 @@ export const APPROVAL_STATUS_LABELS: Record<string, string> = {
 
 // Approver-routing denial messages (duplicated as plain strings so this pure,
 // client-importable module never pulls in server-only access helpers).
-const APPROVAL_REGIONAL_ONLY_MSG = "Согласование доступно региональному директору этого клуба";
+const APPROVAL_REGIONAL_ONLY_MSG = "Согласование доступно региональному директору этого филиала";
 const APPROVAL_FALLBACK_CHIEF_MSG =
   "Согласование может выполнить главный бухгалтер, так как региональный директор не назначен";
 

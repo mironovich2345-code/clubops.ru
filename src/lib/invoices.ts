@@ -18,7 +18,7 @@ export type InvoiceStatus =
 
 // Denial messages shared by the invoice + refund decision tables (kept as plain
 // strings so the pure decision modules stay free of server-only imports).
-export const APPROVAL_REGIONAL_ONLY_MSG = "Согласование доступно региональному директору этого клуба";
+export const APPROVAL_REGIONAL_ONLY_MSG = "Согласование доступно региональному директору этого филиала";
 export const APPROVAL_FALLBACK_CHIEF_MSG =
   "Согласование может выполнить главный бухгалтер, так как региональный директор не назначен";
 

@@ -44,7 +44,7 @@ export async function setupDemoCompanyForOwner(userId: string): Promise<void> {
       club = await prisma.club.create({
         data: {
           id: DEMO_CLUB_ID,
-          name: "Фитнес-клуб Демо",
+          name: "Компания Демо",
           city: "Москва",
           companyId: DEMO_COMPANY_ID,
         },
