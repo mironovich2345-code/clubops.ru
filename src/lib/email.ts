@@ -1,3 +1,4 @@
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
 // Server-only email service (Node runtime — never Edge). Wraps Mail.ru SMTP via
 // nodemailer, with a fail-closed in-memory test transport for deterministic
 // tests. Credentials come only from env; nothing is hard-coded. Configuration is
@@ -130,6 +131,7 @@ export async function sendOtpEmail(
   expiresMinutes: number,
   requestId: string,
 ): Promise<SendResult> {
+  assertNoDemoExternalAction();
   const { subject, text, html } = buildOtpEmail(code, expiresMinutes);
 
   if (testTransportEnabled()) {
@@ -163,6 +165,7 @@ export async function sendOtpEmail(
 // no IDs, no tokens beyond the APP_URL recovery link, and fails safely with a
 // sanitized SendResult (never surfaces SMTP internals).
 async function sendMail(to: string, subject: string, text: string, html: string, requestId: string): Promise<SendResult> {
+  assertNoDemoExternalAction();
   if (testTransportEnabled()) {
     lastTestEmail = { to, subject, text, html };
     if (process.env.NODE_ENV !== "production") console.log(`[DEV MAIL] "${subject}" -> ${to}`);

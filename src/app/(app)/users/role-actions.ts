@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
@@ -45,6 +47,7 @@ async function loadTarget(targetUserId: string, companyId: string) {
 /** general_director promotes a company manager to regional_director for the
  * SELECTED active clubs (>=1). Manager access in this company is removed. */
 export async function promoteToRegional(_prev: RoleState | undefined, formData: FormData): Promise<RoleState> {
+  assertNoDemoExternalAction();
   const gd = await requireGeneralDirector();
   if (!gd) return { ok: false, error: NOT_GD };
 
@@ -101,6 +104,7 @@ export async function promoteToRegional(_prev: RoleState | undefined, formData: 
 /** general_director demotes a regional_director to manager of exactly ONE selected
  * active club. All regional access in this company is removed. */
 export async function demoteToManager(_prev: RoleState | undefined, formData: FormData): Promise<RoleState> {
+  assertNoDemoExternalAction();
   const gd = await requireGeneralDirector();
   if (!gd) return { ok: false, error: NOT_GD };
 

@@ -1,3 +1,4 @@
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
 // Server-only Astral.ОФД API client (v4.2, Z-report v4.1). Endpoints, methods and
 // field names are taken from the official «Документация Астрал ОФД API.pdf».
 //
@@ -177,7 +178,7 @@ export type AstralClient = {
 
 /** Build an Astral client bound to one connection's decrypted api_key. */
 export function createAstralClient(cfg: AstralClientConfig, opts: AstralClientOpts = {}): AstralClient {
-  const fetchImpl: FetchImpl = opts.fetchImpl ?? ((url, init) => fetch(url, init));
+  const fetchImpl: FetchImpl = opts.fetchImpl ?? ((url, init) => (assertNoDemoExternalAction(), fetch(url, init)));
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxAttempts = Math.max(1, opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
@@ -201,12 +202,12 @@ export function createAstralClient(cfg: AstralClientConfig, opts: AstralClientOp
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       let res: Response;
       try {
-        res = await fetchImpl(url, {
+        res = await (assertNoDemoExternalAction(), fetchImpl(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
-        });
+        }));
       } catch (error) {
         const timedOut = error instanceof Error && error.name === "TimeoutError";
         lastErr = { ok: false, code: timedOut ? "ASTRAL_TIMEOUT" : "ASTRAL_NETWORK", message: timedOut ? "Astral: превышено время ожидания." : "Astral: сетевая ошибка.", referenceId };

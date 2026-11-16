@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage } from "@/lib/auth";
@@ -56,6 +58,7 @@ async function requireOwner(companyId: string) {
 }
 
 export async function createLegalEntity(_prev: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const companyId = String(formData.get("companyId") ?? "").trim();
   const guard = await requireManager(companyId);
   if ("error" in guard) return { ok: false, error: guard.error };
@@ -102,6 +105,7 @@ function profileFields(formData: FormData, name: string) {
 }
 
 export async function updateLegalEntity(_prev: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const legalEntityId = String(formData.get("legalEntityId") ?? "").trim();
   const existing = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });
   if (!existing) return { ok: false, error: "Юрлицо не найдено" };
@@ -130,6 +134,7 @@ export async function updateLegalEntity(_prev: State | undefined, formData: Form
 }
 
 export async function setLegalEntityActive(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const legalEntityId = String(formData.get("legalEntityId") ?? "").trim();
   const active = String(formData.get("active") ?? "") === "true";
   const existing = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });
@@ -164,6 +169,7 @@ export async function setLegalEntityActive(formData: FormData): Promise<void> {
 }
 
 export async function attachLegalEntityToClub(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const clubId = String(formData.get("clubId") ?? "").trim();
   const legalEntityId = String(formData.get("legalEntityId") ?? "").trim();
   const entity = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });
@@ -231,6 +237,7 @@ export async function attachLegalEntityToClub(formData: FormData): Promise<void>
 }
 
 export async function detachLegalEntityFromClub(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const clubId = String(formData.get("clubId") ?? "").trim();
   const legalEntityId = String(formData.get("legalEntityId") ?? "").trim();
   const entity = await prisma.legalEntity.findUnique({ where: { id: legalEntityId } });
@@ -273,6 +280,7 @@ export async function detachLegalEntityFromClub(formData: FormData): Promise<voi
  * vice-versa. An empty newLegalEntityId clears the active assignment of `type`.
  */
 export async function replaceClubLegalEntity(_prev: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const clubId = String(formData.get("clubId") ?? "").trim();
   const rawType = String(formData.get("type") ?? "").trim();
   const newLegalEntityId = String(formData.get("legalEntityId") ?? "").trim();

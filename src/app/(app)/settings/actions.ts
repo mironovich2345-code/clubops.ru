@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canAnyRoleAccessPage } from "@/lib/auth";
@@ -59,6 +61,7 @@ export async function createCompany(
   _prev: State | undefined,
   formData: FormData,
 ): Promise<State> {
+  assertNoDemoExternalAction();
   // Creating a NEW Company from the working app is a SYSTEM-ADMIN-ONLY operation.
   // Tenant roles — including an owner of an existing company — must never create
   // additional companies here (a direct action call / role or companyId spoof is
@@ -97,6 +100,7 @@ export async function updateCompany(
   _prev: State | undefined,
   formData: FormData,
 ): Promise<State> {
+  assertNoDemoExternalAction();
   const companyId = String(formData.get("companyId") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { ok: false, error: "Укажите название организации" };
@@ -122,6 +126,7 @@ export async function createClub(
   _prev: State | undefined,
   formData: FormData,
 ): Promise<State> {
+  assertNoDemoExternalAction();
   const companyId = String(formData.get("companyId") ?? "").trim();
   const name = normalizeText(String(formData.get("name") ?? ""));
   const city = normalizeText(String(formData.get("city") ?? ""));
@@ -216,6 +221,7 @@ export async function updateClub(
   _prev: State | undefined,
   formData: FormData,
 ): Promise<State> {
+  assertNoDemoExternalAction();
   const clubId = String(formData.get("clubId") ?? "").trim();
   const name = normalizeText(String(formData.get("name") ?? ""));
   const city = normalizeText(String(formData.get("city") ?? ""));
@@ -246,6 +252,7 @@ export async function archiveClub(
   _prev: State | undefined,
   formData: FormData,
 ): Promise<State> {
+  assertNoDemoExternalAction();
   const clubId = String(formData.get("clubId") ?? "").trim();
   const confirmed = String(formData.get("confirm") ?? "") === "true";
 
@@ -295,6 +302,7 @@ export async function restoreClub(
   _prev: State | undefined,
   formData: FormData,
 ): Promise<State> {
+  assertNoDemoExternalAction();
   const clubId = String(formData.get("clubId") ?? "").trim();
 
   const club = await prisma.club.findUnique({

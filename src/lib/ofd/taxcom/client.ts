@@ -1,3 +1,4 @@
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
 // Server-only, isolated Taxcom OFD API client (v2.17). All base URLs come from
 // the connection config; the Session-Token, login, password and integration
 // token are NEVER logged. Every HTTP error is classified into a safe code. All
@@ -129,7 +130,7 @@ export type TaxcomClient = {
  * (never persisted, never logged).
  */
 export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?: FetchImpl; timeoutMs?: number }): TaxcomClient {
-  const fetchImpl: FetchImpl = opts?.fetchImpl ?? ((url, init) => fetch(url, init));
+  const fetchImpl: FetchImpl = opts?.fetchImpl ?? ((url, init) => (assertNoDemoExternalAction(), fetch(url, init)));
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let sessionToken: string | null = null;
 
@@ -160,13 +161,13 @@ export function createTaxcomClient(cfg: OfdConnectionConfig, opts?: { fetchImpl?
     }
     let res: Response;
     try {
-      res = await fetchImpl(url, {
+      res = await (assertNoDemoExternalAction(), fetchImpl(url, {
         method,
         headers,
         // Never send a body on GET; Taxcom rejects it and it is unnecessary.
         ...(method === "POST" ? { body: JSON.stringify(opts.body ?? {}) } : {}),
         signal: AbortSignal.timeout(timeoutMs),
-      });
+      }));
     } catch (error) {
       const timedOut = error instanceof Error && error.name === "TimeoutError";
       return { ok: false, safeCode: timedOut ? "timeout" : "network" };

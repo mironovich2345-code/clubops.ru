@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
@@ -12,6 +14,7 @@ export async function completeOnboarding(
   _prev: OnboardingState | undefined,
   formData: FormData,
 ): Promise<OnboardingState> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
 
   // Prevent duplicate onboarding: if the user already has any access, leave.

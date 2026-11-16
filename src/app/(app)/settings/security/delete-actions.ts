@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser, verifyPassword } from "@/lib/auth";
@@ -25,6 +27,7 @@ type State = { ok: boolean; error?: string };
  * client is ever accepted).
  */
 export async function deleteCurrentAccount(_prev: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   const password = String(formData.get("password") ?? "");
   const confirmation = String(formData.get("confirmation") ?? "");

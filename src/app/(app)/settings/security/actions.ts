@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
@@ -18,6 +20,7 @@ import {
 
 /** End a specific own session (by opaque id). If it's the current one, log out. */
 export async function endOwnSession(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const sessionId = String(formData.get("sessionId") ?? "").trim();
   if (!sessionId) redirect("/settings/security");
@@ -41,6 +44,7 @@ export async function endOwnSession(formData: FormData): Promise<void> {
 
 /** End all OTHER sessions; the current session stays active. */
 export async function endOtherOwnSessions(): Promise<void> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const currentId = await getCurrentSessionId();
   if (!currentId) redirect("/login");
@@ -55,6 +59,7 @@ export async function endOtherOwnSessions(): Promise<void> {
 
 /** End ALL sessions including the current one, then log out. */
 export async function endAllOwnSessions(): Promise<void> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const revoked = await revokeAllSessionsForUser(user.id, "self_all", user.id);
   await recordAudit({

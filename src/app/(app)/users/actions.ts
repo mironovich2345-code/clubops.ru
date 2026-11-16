@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -62,6 +64,7 @@ export async function createInvite(
   _prev: InviteState | undefined,
   formData: FormData,
 ): Promise<InviteState> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
 
   try {
@@ -353,6 +356,7 @@ type InviteActionState = { ok: boolean; error?: string; notice?: string; linkUrl
  * cannot be resent; an expired one can (it is re-issued for another 7 days).
  */
 export async function resendInvite(_prev: InviteActionState | undefined, formData: FormData): Promise<InviteActionState> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const inviteId = String(formData.get("inviteId") ?? "").trim();
   try {
@@ -425,6 +429,7 @@ export async function regenerateInviteLink(
   _prev: InviteActionState | undefined,
   formData: FormData,
 ): Promise<InviteActionState> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const inviteId = String(formData.get("inviteId") ?? "").trim();
   try {
@@ -466,6 +471,7 @@ export async function regenerateInviteLink(
  * working and resend is blocked.
  */
 export async function revokeInvite(_prev: InviteActionState | undefined, formData: FormData): Promise<InviteActionState> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const inviteId = String(formData.get("inviteId") ?? "").trim();
   try {
@@ -501,6 +507,7 @@ export async function revokeInvite(_prev: InviteActionState | undefined, formDat
 }
 
 export async function removeAccess(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const scope = String(formData.get("scope") ?? "");
   const accessId = String(formData.get("accessId") ?? "");
@@ -585,6 +592,7 @@ type AdminState = { ok: boolean; error?: string };
  * immediately, so the next request/server action is denied and requires login.
  */
 export async function adminRevokeUserSessions(_prev: AdminState | undefined, formData: FormData): Promise<AdminState> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const targetUserId = String(formData.get("targetUserId") ?? "").trim();
   try {
@@ -623,6 +631,7 @@ export async function adminRevokeUserSessions(_prev: AdminState | undefined, for
  * sessions — the user must log in again. User, access rows and history are kept.
  */
 export async function adminSetUserActive(_prev: AdminState | undefined, formData: FormData): Promise<AdminState> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const targetUserId = String(formData.get("targetUserId") ?? "").trim();
   const active = String(formData.get("active") ?? "") === "true";
@@ -674,6 +683,7 @@ type OwnerDeleteState = { ok: boolean; stage?: "start" | "otp"; error?: string; 
  * reuses a login OTP. The target does NOT confirm.
  */
 export async function startOwnerDeletion(_prev: OwnerDeleteState | undefined, formData: FormData): Promise<OwnerDeleteState> {
+  assertNoDemoExternalAction();
   const actor = await requireUser();
   const targetUserId = String(formData.get("targetUserId") ?? "").trim();
   const password = String(formData.get("password") ?? "");
@@ -696,6 +706,7 @@ export async function startOwnerDeletion(_prev: OwnerDeleteState | undefined, fo
 
 /** Step 2: verify the owner's OTP, re-check eligibility, then delete the target. */
 export async function confirmOwnerDeletion(_prev: OwnerDeleteState | undefined, formData: FormData): Promise<OwnerDeleteState> {
+  assertNoDemoExternalAction();
   const actor = await requireUser();
   const targetUserId = String(formData.get("targetUserId") ?? "").trim();
   const code = String(formData.get("code") ?? "").trim();

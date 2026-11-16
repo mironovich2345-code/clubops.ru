@@ -1,3 +1,4 @@
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
 // Server-only YandexGPT client (Foundation Models text completion). Turns OCR
 // text into a structured JSON object. Prompt-agnostic: the caller supplies the
 // system prompt (kept identical to the existing invoice schema so mapInvoiceJson
@@ -31,7 +32,7 @@ export async function extractInvoiceFields(params: {
   const start = Date.now();
   let res: Response;
   try {
-    res = await fetch(YANDEX_GPT_URL, {
+    res = await (assertNoDemoExternalAction(), fetch(YANDEX_GPT_URL, {
       method: "POST",
       headers: {
         Authorization: `Api-Key ${key}`,
@@ -48,7 +49,7 @@ export async function extractInvoiceFields(params: {
         ],
       }),
       signal: AbortSignal.timeout(params.timeoutMs),
-    });
+    }));
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     return {

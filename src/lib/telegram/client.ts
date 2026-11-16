@@ -1,3 +1,4 @@
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
 // Server-only Telegram Bot API client. Sends PLAIN-TEXT messages (no Markdown, so
 // no escaping bugs) with an optional single inline "Открыть в CLUB-OPS" button.
 // The bot token is read from env and NEVER logged. Returns a discriminated result
@@ -44,12 +45,12 @@ export async function sendTelegramMessage(
 
   let res: Response;
   try {
-    res = await fetch(apiUrl(token, "sendMessage"), {
+    res = await (assertNoDemoExternalAction(), fetch(apiUrl(token, "sendMessage"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(TELEGRAM_SEND_TIMEOUT_MS),
-    });
+    }));
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     return { ok: false, code: timedOut ? "timeout" : "network" };

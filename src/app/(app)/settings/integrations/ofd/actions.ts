@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -53,6 +55,7 @@ function cabinetFingerprint(serverBaseUrl: string, authType: string, credential:
 /** Create/update the (single, MVP) Taxcom connection. Secrets are encrypted;
  * empty secret fields on update keep the existing ciphertext. */
 export async function saveOfdConnection(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   // Critical settings (ОФД-подключения хранят секреты) требуют подтверждения ПИН —
@@ -151,6 +154,7 @@ export async function saveOfdConnection(_p: State | undefined, formData: FormDat
  * the raw AccountList — only a safe status and, in the notice, the safe fields of
  * matched ЛК (agreementNumber / название / ИНН). */
 export async function checkOfdConnection(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const connectionId = str(formData, "connectionId");
@@ -260,6 +264,7 @@ export async function checkOfdConnection(_p: State | undefined, formData: FormDa
  * the connection's current contractNumber. Never returns the token, secrets, the raw
  * AccountList, or accessRights. On failure returns a safe error message. */
 export async function loadTaxcomContractsAction(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const connectionId = str(formData, "connectionId");
@@ -320,6 +325,7 @@ export async function loadTaxcomContractsAction(_p: State | undefined, formData:
  * make the connection working — that is confirmed only by "Проверить подключение"
  * (currentSession == contractNumber, or the safe single-record fallback). */
 export async function selectTaxcomContractAction(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const connectionId = str(formData, "connectionId");
@@ -340,6 +346,7 @@ export async function selectTaxcomContractAction(_p: State | undefined, formData
 
 /** Add a KKT (ФН) → club mapping. Blocks a duplicate ACTIVE fn. */
 export async function addOfdMapping(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
 
@@ -391,6 +398,7 @@ export async function addOfdMapping(_p: State | undefined, formData: FormData): 
  * Tenant-checked. Used to bind the legal entity for a касса that was created without one
  * (e.g. «Куб» → «требует привязки»). Owner / general_director only, PIN-gated. */
 export async function updateOfdMapping(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const pin = await requireSettingsPin(g.companyId, g.userId);
@@ -422,6 +430,7 @@ export async function updateOfdMapping(_p: State | undefined, formData: FormData
  * receipts are NEVER rewritten (they snapshot their own club/legalEntity/fn at import).
  */
 export async function editCashRegister(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const pin = await requireSettingsPin(g.companyId, g.userId);
@@ -483,6 +492,7 @@ export async function editCashRegister(_p: State | undefined, formData: FormData
  * the user which path applies.
  */
 export async function deleteCashRegister(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const pin = await requireSettingsPin(g.companyId, g.userId);
@@ -519,6 +529,7 @@ export async function deleteCashRegister(_p: State | undefined, formData: FormDa
  * before and after.
  */
 export async function purgeCashRegisterHistory(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const isOwner = await userHasCompanyRole(g.userId, g.companyId, ["owner"]);
@@ -558,6 +569,7 @@ export async function purgeCashRegisterHistory(_p: State | undefined, formData: 
 /** Enable / disable a whole Taxcom connection. A disabled connection is skipped by
  * every import (sync_now / auto_daily / batch). Owner / general_director only. */
 export async function toggleOfdConnection(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return;
   const id = String(formData.get("connectionId") ?? "").trim();
@@ -570,6 +582,7 @@ export async function toggleOfdConnection(formData: FormData): Promise<void> {
 
 /** Enable / disable a mapping. Disabling frees its active fn key. */
 export async function toggleOfdMapping(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return;
   const id = String(formData.get("mappingId") ?? "").trim();
@@ -586,6 +599,7 @@ export async function toggleOfdMapping(formData: FormData): Promise<void> {
 
 /** Trigger a manual import for a period (day / period / July backfill). */
 export async function runOfdImport(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const connectionId = str(formData, "connectionId");
@@ -636,6 +650,7 @@ export async function runOfdImport(_p: State | undefined, formData: FormData): P
  * same day creates no duplicates. Returns SAFE aggregates only (never secrets /
  * Session-Token / raw response / fiscal JSON / ФПД / PII / stacks). */
 export async function syncOfdNowAction(_p: State | undefined, _formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
 
@@ -666,6 +681,7 @@ export async function syncOfdNowAction(_p: State | undefined, _formData: FormDat
  * Owner / general_director only. LOCAL-ONLY — never calls Taxcom, never touches
  * money. Returns SAFE counts only (no names / raw JSON / PII). */
 export async function reclassifyOfdCategoriesAction(_p: State | undefined, _formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
 
@@ -681,6 +697,7 @@ export async function reclassifyOfdCategoriesAction(_p: State | undefined, _form
  * counts, whether nomenclature is present). Never stores/returns/logs the raw
  * response, ФПД, secrets or buyer PII. */
 export async function inspectOfdNewDocumentsAction(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const connectionId = str(formData, "connectionId");
@@ -723,6 +740,7 @@ export async function inspectOfdNewDocumentsAction(_p: State | undefined, formDa
  * SAFE structural shape (key names + counts, whether nomenclature is present).
  * Never stores/returns/logs the raw response, ФПД, secrets or buyer PII. */
 export async function inspectOfdDocumentInfoAction(_p: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const g = await requireOfdAdmin();
   if (!g.ok) return { ok: false, error: g.error };
   const connectionId = str(formData, "connectionId");

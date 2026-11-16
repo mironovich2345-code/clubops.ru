@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { redirect } from "next/navigation";
 import { recordAudit } from "@/lib/access";
 import { startActionChallenge, verifyActionChallenge, clearActionCookie } from "@/lib/action-challenge";
@@ -11,6 +13,7 @@ const GENERIC = "Ссылка восстановления недействит�
 
 /** Step 1: validate the recovery token and email a restore OTP to the ORIGINAL address. */
 export async function startRestore(_prev: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const token = String(formData.get("token") ?? "").trim();
   const lookup = await lookupByRecoveryToken(token);
   if (!lookup.ok) {
@@ -25,6 +28,7 @@ export async function startRestore(_prev: State | undefined, formData: FormData)
 
 /** Step 2: verify the restore OTP + set a new password. Never creates a Session. */
 export async function confirmRestore(_prev: State | undefined, formData: FormData): Promise<State> {
+  assertNoDemoExternalAction();
   const token = String(formData.get("token") ?? "").trim();
   const code = String(formData.get("code") ?? "").trim();
   const newPassword = String(formData.get("password") ?? "");

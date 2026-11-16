@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { revalidatePath } from "next/cache";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -18,6 +20,7 @@ async function ownerContext(): Promise<{ ok: true; companyId: string; userId: st
 
 /** Set / change the settings PIN (primary owner only — enforced in the lib). */
 export async function setSettingsPinAction(_prev: PinActionState | undefined, formData: FormData): Promise<PinActionState> {
+  assertNoDemoExternalAction();
   const g = await ownerContext();
   if (!g.ok) return { ok: false, error: g.error };
   const newPin = String(formData.get("newPin") ?? "").trim();
@@ -36,6 +39,7 @@ export async function setSettingsPinAction(_prev: PinActionState | undefined, fo
 
 /** Verify the PIN → mint a short-lived verification session. Any owner may verify. */
 export async function verifySettingsPinAction(_prev: PinActionState | undefined, formData: FormData): Promise<PinActionState> {
+  assertNoDemoExternalAction();
   const g = await ownerContext();
   if (!g.ok) return { ok: false, error: g.error };
   // Throttle attempts (per user + per company) in addition to the lib's failure lock.
@@ -58,6 +62,7 @@ export async function verifySettingsPinAction(_prev: PinActionState | undefined,
 
 /** Lock critical settings again (revoke the verification session). */
 export async function clearSettingsPinAction(): Promise<void> {
+  assertNoDemoExternalAction();
   const g = await ownerContext();
   if (!g.ok) return;
   await clearSettingsPinSession(g.companyId, g.userId);

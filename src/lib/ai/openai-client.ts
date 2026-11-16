@@ -1,3 +1,4 @@
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
 // Server-only OpenAI Vision helper. The API key is read from the environment and
 // never logged or exposed to the client. Used by the invoice/expense analyzers.
 
@@ -64,6 +65,7 @@ function warnOpenAiBlockedOnce(): void {
  *  - "mock"   otherwise (safe default).
  */
 export function selectedAiProvider(): AiProvider {
+  if (process.env.DEMO_MODE === "true") return "mock";
   if (process.env.AI_PROVIDER === "yandex" && process.env.YANDEX_AI_API_KEY && process.env.YANDEX_FOLDER_ID) {
     return "yandex";
   }
@@ -111,12 +113,12 @@ async function chatCompletion(messages: unknown[], model: string, timeoutMs: num
 
   let res: Response;
   try {
-    res = await fetch(OPENAI_URL, {
+    res = await (assertNoDemoExternalAction(), fetch(OPENAI_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({ model, temperature: 0, response_format: { type: "json_object" }, messages }),
       signal: AbortSignal.timeout(timeoutMs),
-    });
+    }));
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     return { ok: false, reason: timedOut ? "timeout" : "network", raw: "", message: error instanceof Error ? error.message : "network error" };

@@ -1,3 +1,4 @@
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
 // Server-only Yandex Vision OCR client (recognizeText, model "page"). Sends the
 // raw document bytes (base64) and returns the recognized text — NEVER logs the
 // base64, the recognized text, the storage key or the API key. The caller (the
@@ -96,12 +97,12 @@ export async function recognizeText(params: {
   const start = Date.now();
   let res: Response;
   try {
-    res = await fetch(YANDEX_OCR_URL, {
+    res = await (assertNoDemoExternalAction(), fetch(YANDEX_OCR_URL, {
       method: "POST",
       headers: ocrHeaders(key, folder),
       body: ocrBody(params.content, params.mimeType),
       signal: AbortSignal.timeout(params.timeoutMs),
-    });
+    }));
   } catch (error) {
     const reason = classifyThrow(error);
     return { ok: false, reason, safeCode: reason, durationMs: Date.now() - start };
@@ -160,12 +161,12 @@ export async function recognizeTextAsync(params: {
   // 1) Submit the document for async recognition.
   let submitRes: Response;
   try {
-    submitRes = await fetch(YANDEX_OCR_ASYNC_URL, {
+    submitRes = await (assertNoDemoExternalAction(), fetch(YANDEX_OCR_ASYNC_URL, {
       method: "POST",
       headers,
       body: ocrBody(params.content, "PDF"),
       signal: AbortSignal.timeout(perRequestTimeout),
-    });
+    }));
   } catch (error) {
     const reason = classifyThrow(error);
     return { ok: false, reason, safeCode: reason, durationMs: elapsed() };
@@ -189,11 +190,11 @@ export async function recognizeTextAsync(params: {
     await sleep(pollInterval);
     let pollRes: Response;
     try {
-      pollRes = await fetch(`${YANDEX_OPERATION_URL}/${encodeURIComponent(operationId)}`, {
+      pollRes = await (assertNoDemoExternalAction(), fetch(`${YANDEX_OPERATION_URL}/${encodeURIComponent(operationId)}`, {
         method: "GET",
         headers: { Authorization: `Api-Key ${key}` },
         signal: AbortSignal.timeout(perRequestTimeout),
-      });
+      }));
     } catch (error) {
       const reason = classifyThrow(error);
       return { ok: false, reason, safeCode: reason, durationMs: elapsed() };
@@ -233,11 +234,11 @@ async function fetchAsyncResults(
   const elapsed = () => Date.now() - start;
   let res: Response;
   try {
-    res = await fetch(`${YANDEX_OCR_GET_RECOGNITION_URL}?operationId=${encodeURIComponent(operationId)}`, {
+    res = await (assertNoDemoExternalAction(), fetch(`${YANDEX_OCR_GET_RECOGNITION_URL}?operationId=${encodeURIComponent(operationId)}`, {
       method: "GET",
       headers,
       signal: AbortSignal.timeout(perRequestTimeout),
-    });
+    }));
   } catch (error) {
     const reason = classifyThrow(error);
     return { ok: false, reason, safeCode: reason, durationMs: elapsed() };

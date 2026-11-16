@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { assertDemoRequest, demoRequested } from "@/lib/demo/config";
 
 // Per-request Content-Security-Policy with a nonce, so 'unsafe-inline' can be
 // dropped from script-src. Inline scripts (Next's RSC/hydration bootstrap + our
@@ -45,6 +46,15 @@ function buildCsp(nonce: string, frameable: boolean): string {
 const PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()";
 
 export function middleware(request: NextRequest): NextResponse {
+  if (demoRequested()) {
+    try { assertDemoRequest(request.headers.get("host"), request.headers.get("origin")); }
+    catch { return new NextResponse("Demo configuration unavailable", { status: 503 }); }
+    const path = request.nextUrl.pathname;
+    if (path === "/" || path === "/login" || path === "/register") return NextResponse.redirect(new URL("/demo", request.url));
+    if (/^\/(accept-invite|restore-account|onboarding|settings\/security|settings\/integrations|settings\/ofd|api\/cron\/ofd|api\/internal|api\/telegram|api\/ai|system)(\/|$)/.test(path)) {
+      return new NextResponse("Демо: внешние интеграции и управление учётными данными отключены", { status: 403 });
+    }
+  }
   // 128-bit nonce (base64). Web Crypto is available on the Edge runtime.
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
@@ -73,6 +83,7 @@ export function middleware(request: NextRequest): NextResponse {
   response.headers.set("permissions-policy", PERMISSIONS_POLICY);
   response.headers.set("x-frame-options", frameable ? "SAMEORIGIN" : "DENY");
   response.headers.set("x-request-id", requestId);
+  if (demoRequested()) response.headers.set("x-robots-tag", "noindex, nofollow, noarchive");
   return response;
 }
 

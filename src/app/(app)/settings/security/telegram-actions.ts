@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { createLinkCodeForUser, unlinkTelegramForUser } from "@/lib/telegram/linking";
@@ -10,6 +12,7 @@ type LinkState = { ok: boolean; error?: string; code?: string; startUrl?: string
 
 /** Create a one-time Telegram link code for the CURRENT user only. */
 export async function createTelegramLinkCode(_prev: LinkState | undefined): Promise<LinkState> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   if (!telegramEnabled()) return { ok: false, error: "Telegram-уведомления сейчас недоступны." };
   // Cap link-code creation per user (5/hour). The single-active-code + TTL invariant
@@ -29,6 +32,7 @@ export async function createTelegramLinkCode(_prev: LinkState | undefined): Prom
 
 /** Unlink the CURRENT user's own Telegram connection. */
 export async function unlinkTelegram(): Promise<void> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   await unlinkTelegramForUser(user.id);
   revalidatePath("/settings/security");

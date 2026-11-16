@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
@@ -11,6 +13,7 @@ import { applyInvite } from "@/lib/invite-service";
 // token link or the by-id list still works and uses the same transactional,
 // strictly single-use helper.
 export async function acceptInvite(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const user = await requireUser();
   const token = String(formData.get("token") ?? "");
   const inviteId = String(formData.get("inviteId") ?? "");

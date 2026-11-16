@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 // Astral.ОФД stepped-setup server actions (Steps 2-4): load organizations, bind an
 // organization to a LegalEntity, load outlets, load KKTs, bind/unbind a KKT to a
 // Club + LegalEntity. Reads are owner/GD (no PIN); every MUTATION is PIN-gated and
@@ -31,6 +33,7 @@ const mut = (error: string): StepMutState => ({ ok: false, error });
 // ---- Step 2: organizations ---------------------------------------------------
 
 export async function loadAstralOrganizations(_prev: StepOrgsState | undefined, _formData: FormData): Promise<StepOrgsState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralOwner({ pin: false });
   if (!g.ok) return { ok: false, error: g.error };
   const conn = await getAstralConnection(g.companyId);
@@ -55,6 +58,7 @@ export async function loadAstralOrganizations(_prev: StepOrgsState | undefined, 
 /** Bind the selected Astral organization to a CLUB-OPS LegalEntity (PIN-gated). The
  * user confirms — we never auto-bind by matching ИНН. */
 export async function selectAstralOrganization(_prev: StepMutState | undefined, formData: FormData): Promise<StepMutState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralOwner({ pin: true });
   if (!g.ok) return mut(g.error);
   const organizationId = String(formData.get("organizationId") ?? "").trim();
@@ -76,6 +80,7 @@ export async function selectAstralOrganization(_prev: StepMutState | undefined, 
 // ---- Step 3: outlets (торговые точки) ----------------------------------------
 
 export async function loadAstralOutlets(_prev: StepOutletsState | undefined, _formData: FormData): Promise<StepOutletsState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralOwner({ pin: false });
   if (!g.ok) return { ok: false, error: g.error };
   const conn = await getAstralConnection(g.companyId);
@@ -90,6 +95,7 @@ export async function loadAstralOutlets(_prev: StepOutletsState | undefined, _fo
 // ---- Step 4: KKTs ------------------------------------------------------------
 
 export async function loadAstralKkts(_prev: StepKktsState | undefined, formData: FormData): Promise<StepKktsState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralOwner({ pin: false });
   if (!g.ok) return { ok: false, error: g.error };
   const conn = await getAstralConnection(g.companyId);
@@ -107,6 +113,7 @@ export async function loadAstralKkts(_prev: StepKktsState | undefined, formData:
 /** Bind one Astral KKT to a Club + LegalEntity (PIN-gated, tenant-checked). Creates or
  * re-activates an OfdCashRegisterMapping keyed by fnNumber = factoryFiscalDrive. */
 export async function bindAstralKkt(_prev: StepMutState | undefined, formData: FormData): Promise<StepMutState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralOwner({ pin: true });
   if (!g.ok) return mut(g.error);
   const externalKktId = String(formData.get("externalKktId") ?? "").trim();
@@ -206,6 +213,7 @@ export type StepImportState = { ok: boolean; error?: string; notice?: string; im
  * documents total against closed shifts + analytics. Writes NOTHING (dryRun). No PIN
  * (it does not change settings), owner/GD only. */
 export async function previewAstralImport(_prev: StepPreviewState | undefined, formData: FormData): Promise<StepPreviewState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralOwner({ pin: false });
   if (!g.ok) return { ok: false, error: g.error };
   const fnNumber = String(formData.get("fnNumber") ?? "").trim();
@@ -277,6 +285,7 @@ export async function previewAstralImport(_prev: StepPreviewState | undefined, f
 /** Step 5 import: really import a 1–3 day window for ONE KKT. Idempotent — re-running
  * creates no duplicates. Owner/GD. Refreshes dashboard/analytics/collections. */
 export async function runAstralImport(_prev: StepImportState | undefined, formData: FormData): Promise<StepImportState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralOwner({ pin: false });
   if (!g.ok) return { ok: false, error: g.error };
   const fnNumber = String(formData.get("fnNumber") ?? "").trim();
@@ -302,6 +311,7 @@ export async function runAstralImport(_prev: StepImportState | undefined, formDa
 
 /** Disable a KKT mapping (PIN-gated). Keeps the row (history) but frees the active key. */
 export async function unbindAstralKkt(_prev: StepMutState | undefined, formData: FormData): Promise<StepMutState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralOwner({ pin: true });
   if (!g.ok) return mut(g.error);
   const fnNumber = String(formData.get("fnNumber") ?? "").trim();

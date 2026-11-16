@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -26,6 +28,7 @@ type ProfileState = { ok: boolean; error?: string };
 /** Update the current user's first/last name (derives `name`). No OTP/password —
  * a low-risk change. Optimistic lock on updatedAt; a tombstoned user is refused. */
 export async function updateProfile(_prev: ProfileState | undefined, formData: FormData): Promise<ProfileState> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   const firstCheck = validateNameField(String(formData.get("firstName") ?? ""), "Имя");
   if (!firstCheck.ok) return { ok: false, error: firstCheck.error };
@@ -67,6 +70,7 @@ async function loadAuthUser(id: string) {
 /** Step 1: verify current password + new-password policy, then send an OTP to
  * the CURRENT email (purpose change_password). The new password is NOT stored. */
 export async function startPasswordChange(_prev: PwState | undefined, formData: FormData): Promise<PwState> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   if (!emailConfigured()) return { ok: false, stage: "form", error: EMAIL_DISABLED };
 
@@ -88,6 +92,7 @@ export async function startPasswordChange(_prev: PwState | undefined, formData: 
 }
 
 export async function resendPasswordOtp(): Promise<void> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   const user = await prisma.user.findUnique({ where: { id: current.id }, select: { email: true } });
   if (user) await startActionChallenge({ userId: current.id, deliverTo: user.email, purpose: "change_password", kind: "change_password" });
@@ -96,6 +101,7 @@ export async function resendPasswordOtp(): Promise<void> {
 /** Step 2: verify OTP + re-check current password & policy, then update the hash
  * atomically and revoke OTHER sessions (current session preserved). */
 export async function confirmPasswordChange(_prev: PwState | undefined, formData: FormData): Promise<PwState> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   const code = String(formData.get("code") ?? "").trim();
   const currentPassword = String(formData.get("currentPassword") ?? "");
@@ -176,6 +182,7 @@ async function emailTakenByOther(normalized: string, selfId: string): Promise<bo
 
 /** Stage 1: verify current password + new email, send OTP to the CURRENT email. */
 export async function startEmailChange(_prev: EmailState | undefined, formData: FormData): Promise<EmailState> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   if (!emailConfigured()) return { ok: false, stage: "form", error: EMAIL_DISABLED };
 
@@ -196,6 +203,7 @@ export async function startEmailChange(_prev: EmailState | undefined, formData: 
 }
 
 export async function resendEmailCurrentOtp(): Promise<void> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   const bind = await readEmailChangeCookie(current.id);
   const user = await prisma.user.findUnique({ where: { id: current.id }, select: { email: true } });
@@ -204,6 +212,7 @@ export async function resendEmailCurrentOtp(): Promise<void> {
 
 /** Stage 2: verify the CURRENT-email code, then send a SEPARATE code to the NEW email. */
 export async function confirmEmailChangeCurrent(_prev: EmailState | undefined, formData: FormData): Promise<EmailState> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   const code = String(formData.get("code") ?? "").trim();
   const bind = await readEmailChangeCookie(current.id);
@@ -226,6 +235,7 @@ export async function confirmEmailChangeCurrent(_prev: EmailState | undefined, f
 }
 
 export async function resendEmailNewOtp(): Promise<void> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   const bind = await readEmailChangeCookie(current.id);
   if (bind) await startActionChallenge({ userId: current.id, deliverTo: bind.next, purpose: "change_email_new", kind: "change_email_new" });
@@ -233,6 +243,7 @@ export async function resendEmailNewOtp(): Promise<void> {
 
 /** Stage 3: verify the NEW-email code and finalize the change atomically. */
 export async function confirmEmailChangeNew(_prev: EmailState | undefined, formData: FormData): Promise<EmailState> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   const code = String(formData.get("code") ?? "").trim();
   const bind = await readEmailChangeCookie(current.id);
@@ -281,6 +292,7 @@ export async function confirmEmailChangeNew(_prev: EmailState | undefined, formD
 
 /** Cancel any in-flight email change (clears cookie + challenges). */
 export async function cancelEmailChange(): Promise<void> {
+  assertNoDemoExternalAction();
   const current = await requireUser();
   await revokeActionChallenges(current.id, "change_email_current", "canceled");
   await revokeActionChallenges(current.id, "change_email_new", "canceled");

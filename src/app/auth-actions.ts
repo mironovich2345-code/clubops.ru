@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
@@ -25,6 +27,7 @@ export async function loginAction(
   _prev: AuthFormState | undefined,
   formData: FormData,
 ): Promise<AuthFormState> {
+  assertNoDemoExternalAction();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
 
@@ -66,6 +69,7 @@ export async function registerAction(
   _prev: AuthFormState | undefined,
   formData: FormData,
 ): Promise<AuthFormState> {
+  assertNoDemoExternalAction();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const firstName = String(formData.get("firstName") ?? "").trim();
@@ -120,6 +124,7 @@ export async function registerAction(
 }
 
 export async function logoutAction(): Promise<void> {
+  assertNoDemoExternalAction();
   await signOut();
   redirect("/login");
 }

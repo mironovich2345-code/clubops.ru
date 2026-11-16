@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNoDemoExternalAction } from "@/lib/demo/config";
+
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, userHasCompanyRole, recordAudit } from "@/lib/access";
@@ -30,6 +32,7 @@ async function requireAstralAdmin(pin: boolean): Promise<{ ok: true; companyId: 
 
 /** Save / update the Astral API key. Empty field = keep the previous key. PIN-gated. */
 export async function saveAstralApiKey(_prev: AstralState | undefined, formData: FormData): Promise<AstralState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralAdmin(true);
   if (!g.ok) return fail(g.error);
   const apiKey = String(formData.get("apiKey") ?? "").trim();
@@ -69,6 +72,7 @@ export async function saveAstralApiKey(_prev: AstralState | undefined, formData:
  * than pretending. No data is imported by a test.
  */
 export async function testAstralConnection(_prev: AstralState | undefined, _formData: FormData): Promise<AstralState> {
+  assertNoDemoExternalAction();
   const g = await requireAstralAdmin(false);
   if (!g.ok) return fail(g.error);
   const conn = await prisma.ofdConnection.findFirst({ where: { companyId: g.companyId, provider: "astral" } });
@@ -94,6 +98,7 @@ export async function testAstralConnection(_prev: AstralState | undefined, _form
 
 /** Enable / disable the Astral connection. PIN-gated. */
 export async function toggleAstralConnection(formData: FormData): Promise<void> {
+  assertNoDemoExternalAction();
   const g = await requireAstralAdmin(true);
   if (!g.ok) return;
   const conn = await prisma.ofdConnection.findFirst({ where: { companyId: g.companyId, provider: "astral" } });

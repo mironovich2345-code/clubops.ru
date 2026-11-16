@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getAppUrlSafe } from "@/lib/app-url";
 import { PwaBoot } from "@/components/pwa/PwaBoot";
 import "./globals.css";
+import { isDemo } from "@/lib/demo/config";
 
 // Runtime-resolved so metadataBase reflects the deployment's APP_URL
 // (https://pilot.clubops.ru in production) without baking a value at build time.
@@ -11,13 +12,14 @@ import "./globals.css";
 export function generateMetadata(): Metadata {
   const appUrl = getAppUrlSafe();
   return {
+    ...(isDemo() ? { robots: { index: false, follow: false } } : {}),
     ...(appUrl ? { metadataBase: new URL(appUrl) } : {}),
     applicationName: "CLUB-OPS",
     title: {
       default: "CLUB-OPS",
       template: "%s · CLUB-OPS",
     },
-    description: "Операционная система управления сетью фитнес-клубов",
+    description: "Операционная система управления сетью филиалов",
     // The web app manifest link is auto-injected by App Router src/app/manifest.ts.
     appleWebApp: {
       capable: true,
@@ -59,7 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         {children}
-        <PwaBoot />
+        {!isDemo() && <PwaBoot />}
       </body>
     </html>
   );
