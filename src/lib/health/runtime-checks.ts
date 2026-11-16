@@ -13,17 +13,20 @@ function now(): string {
 
 /** Detect the ACTUAL provider the live DB speaks, to catch a client/URL mismatch. */
 export async function detectDbProvider(prisma: RawClient): Promise<"postgresql" | "sqlite" | "unknown"> {
-  try {
-    await prisma.$queryRawUnsafe("SELECT sqlite_version() AS v");
-    return "sqlite";
-  } catch {
-    /* not sqlite */
-  }
-  try {
-    await prisma.$queryRawUnsafe("SELECT version() AS v");
-    return "postgresql";
-  } catch {
-    /* not postgres */
+  // The URL is only a hint for query ORDER, never trusted as the detected
+  // provider. Probe the expected dialect first so a healthy PostgreSQL demo
+  // does not emit a misleading Prisma error from SELECT sqlite_version().
+  const postgresExpected = /^postgres(?:ql)?:\\/\\//i.test(process.env.DATABASE_URL ?? "");
+  const probes: { sql: string; provider: "postgresql" | "sqlite" }[] = postgresExpected
+    ? [{ sql: "SELECT version() AS v", provider: "postgresql" }, { sql: "SELECT sqlite_version() AS v", provider: "sqlite" }]
+    : [{ sql: "SELECT sqlite_version() AS v", provider: "sqlite" }, { sql: "SELECT version() AS v", provider: "postgresql" }];
+  for (const probe of probes) {
+    try {
+      await prisma.$queryRawUnsafe(probe.sql);
+      return probe.provider;
+    } catch {
+      // Fall back to the alternate dialect and then report unknown.
+    }
   }
   return "unknown";
 }
