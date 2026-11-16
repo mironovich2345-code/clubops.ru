@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isDemo } from "@/lib/demo/config";
 import type { Role } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getCalculations, periodTotals, periodLabel, periodStatusLabel } from "@/lib/payroll/periods";
@@ -82,7 +83,9 @@ export async function PayrollWorkspace({
     const cat = payrollCategoryOfPosition(c.roleSnapshot);
     uiGroupByCalc.set(c.id, cat === "unknown" ? "administrative_card" : payrollUiGroupOfCategory(cat));
   }
-  const GROUPS: PayrollUiGroup[] = ["manager_card", "administrative_card", "gym_trainers_card", "group_trainers_card"];
+  const GROUPS: PayrollUiGroup[] = isDemo()
+    ? ["manager_card", "administrative_card"]
+    : ["manager_card", "administrative_card", "gym_trainers_card", "group_trainers_card"];
   const cardStatus = (count: number, filled: number, problems: number): string =>
     count === 0 ? "Не начато" : problems > 0 ? "Требует проверки" : filled >= count ? "Заполнено" : "Требует заполнения";
   const cards: CategoryCard[] = GROUPS.map((g): CategoryCard => {
@@ -111,7 +114,7 @@ export async function PayrollWorkspace({
       </div>
       {calcs.length > 0 ? <p className="-mt-3 mb-6 text-sm text-slate-500 dark:text-slate-400">Расчёт заполнен на {filledTotal} из {calcs.length} сотрудников.</p> : null}
 
-      {/* Five payroll cards (§5) */}
+      {/* Demo: only universal employee groups, no specialized industry calculations. */}
       {calcs.length > 0 ? <PeriodCategoryCards cards={cards} /> : null}
 
       {workflowActions.length > 0 ? (

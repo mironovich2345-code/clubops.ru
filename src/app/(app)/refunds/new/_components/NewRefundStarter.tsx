@@ -9,7 +9,7 @@ type Club = { id: string; name: string };
 export function NewRefundStarter({ clubs, defaultClubId }: { clubs: Club[]; defaultClubId: string }) {
   const router = useRouter();
   const [clubId, setClubId] = useState(defaultClubId);
-  const [returnType, setReturnType] = useState<string>("membership");
+  const returnType = "membership";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,17 +39,7 @@ export function NewRefundStarter({ clubs, defaultClubId }: { clubs: Club[]; defa
         <div className="text-sm text-slate-600">Филиал: <span className="font-medium text-slate-800">{clubs[0]?.name ?? "—"}</span></div>
       )}
 
-      <fieldset className="mt-4">
-        <legend className="mb-2 text-sm font-medium text-slate-700">Тип возврата</legend>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Тип возврата">
-          {[{ k: "membership", l: "Абонемент" }, { k: "personal_training", l: "Дополнительные услуги" }].map((t) => (
-            <button key={t.k} type="button" role="radio" aria-checked={returnType === t.k} onClick={() => setReturnType(t.k)}
-              className={`rounded-lg border px-4 py-3 text-left text-sm font-medium ${returnType === t.k ? "border-brand-500 bg-brand-50 text-brand-800 ring-1 ring-brand-300" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>
-              {t.l}
-            </button>
-          ))}
-        </div>
-      </fieldset>
+      <p className="mt-4 rounded-lg border border-slate-200 p-3 text-sm text-slate-700 dark:text-slate-200">Возврат по договору на услуги</p>
 
       <button type="button" disabled={busy || !clubId} onClick={onCreate} className="mt-4 w-full rounded-md bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
         {busy ? "Создание…" : "Создать черновик"}

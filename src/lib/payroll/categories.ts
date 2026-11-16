@@ -25,10 +25,10 @@ export const CALC_CATEGORY_LABELS: Record<PayrollCalcCategory, string> = {
   sales_manager: "Менеджер продаж",
   administrator: "Администратор",
   night_manager: "Ночной менеджер",
-  gym_head_trainer: "Старший тренер ТЗ",
-  gym_trainer: "Тренер ТЗ",
-  group_head_trainer: "Старший тренер ГП",
-  group_trainer: "Тренер ГП",
+  gym_head_trainer: "Специалист (специальная схема)",
+  gym_trainer: "Специалист (специальная схема)",
+  group_head_trainer: "Специалист (специальная схема)",
+  group_trainer: "Специалист (специальная схема)",
 };
 
 // The 5 UI cards (spec §2/§9). "advances_card" is cross-category (all active employees).
@@ -38,8 +38,8 @@ export type PayrollUiGroup = (typeof PAYROLL_UI_GROUPS)[number];
 export const UI_GROUP_LABELS: Record<PayrollUiGroup, string> = {
   manager_card: "Управляющий",
   administrative_card: "Административный состав",
-  gym_trainers_card: "Тренеры ТЗ",
-  group_trainers_card: "Тренеры ГП",
+  gym_trainers_card: "Специальные категории (не используются)",
+  group_trainers_card: "Отраслевые категории (не используются)",
   advances_card: "Аванс",
 };
 

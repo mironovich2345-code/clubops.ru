@@ -14,7 +14,7 @@ const TYPE_LABELS: Record<string, string> = {
   penalty: "Штраф",
   overpayment_recovery: "Удержание переплаты",
   shortage_recovery: "Удержание недостачи",
-  trainer_credit_recovery: "Удержание кредита тренера",
+  trainer_credit_recovery: "Удержание переплаты",
   correction: "Корректировка",
   other: "Прочее",
 };

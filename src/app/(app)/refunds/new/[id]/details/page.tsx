@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { isDemo } from "@/lib/demo/config";
 import { PageHeader } from "@/components/PageHeader";
 import { requirePageAccess, getCurrentAccessContext } from "@/lib/access";
 import { canCreateOperational } from "@/lib/auth";
@@ -36,6 +37,7 @@ export default async function RefundDetailsPage({ params }: { params: Promise<{ 
   const backHref = `/refunds/new/${id}`;
   const rt = refund.returnType;
   if (rt !== "membership" && rt !== "personal_training") redirect(backHref);
+  if (isDemo() && rt === "personal_training") redirect("/refunds");
 
   // Correction banner (regional returned it) + submit bar (manager-author only).
   const correctionReviewer = refund.status === "needs_correction" && refund.regionalReviewedByUserId
@@ -56,7 +58,7 @@ export default async function RefundDetailsPage({ params }: { params: Promise<{ 
   const active = await getActiveRefundDocuments(id);
   const docsComplete = isRefundDocumentSetComplete(rt, active.map((d) => d.documentType));
   const requisitesOk = hasCompleteRequisites(refund);
-  const title = rt === "membership" ? "Расчёт возврата по абонементу" : "Расчёт возврата по персональным тренировкам";
+  const title = rt === "membership" ? "Расчёт возврата по договору" : "Расчёт возврата по дополнительной услуге";
   if (!docsComplete || !requisitesOk) {
     return (
       <div>

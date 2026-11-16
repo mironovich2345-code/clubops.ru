@@ -153,10 +153,10 @@ export default async function RefundDetailPage({
             </dl>
           ) : (
             <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
-              <Row label="Тренер" value={refund.ptTrainerNameSnapshot ?? "—"} />
+              <Row label="Исполнитель" value={refund.ptTrainerNameSnapshot ?? "—"} />
               <Row label="Дата заявления" value={fmtD(refund.applicationDate)} />
               <Row label="Сумма договора" value={money(refund.contractAmountKopeks)} />
-              <Row label="Куплено тренировок" value={refund.ptContractSessionCount != null ? String(refund.ptContractSessionCount) : "—"} />
+              <Row label="Оплачено единиц услуги" value={refund.ptContractSessionCount != null ? String(refund.ptContractSessionCount) : "—"} />
               <Row label="Проведено" value={refund.ptUsedSessionCount != null ? String(refund.ptUsedSessionCount) : "—"} />
               <Row label="Стоимость при расторжении" value={money(refund.ptTerminationSessionPriceKopeks)} />
               <Row label="Способ расчёта" value={refund.ptCalculationMethod ? (PT_METHOD_LABELS[refund.ptCalculationMethod as keyof typeof PT_METHOD_LABELS] ?? refund.ptCalculationMethod) : "—"} />

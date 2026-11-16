@@ -6,8 +6,8 @@
 export const REFUND_RETURN_TYPES = ["membership", "personal_training"] as const;
 export type RefundReturnType = (typeof REFUND_RETURN_TYPES)[number];
 export const REFUND_RETURN_TYPE_LABELS: Record<RefundReturnType, string> = {
-  membership: "Абонемент",
-  personal_training: "Персональные тренировки",
+  membership: "Договор на основную услугу",
+  personal_training: "Специальный тип возврата (недоступен в демо)",
 };
 export function isRefundReturnType(v: string): v is RefundReturnType {
   return (REFUND_RETURN_TYPES as readonly string[]).includes(v);

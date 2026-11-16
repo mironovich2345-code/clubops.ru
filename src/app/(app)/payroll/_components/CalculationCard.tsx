@@ -62,13 +62,13 @@ const INPUT_FIELDS: Record<string, InputField[]> = {
   role_gym_trainer: [
     { name: "newSales", label: "Продажи новым клиентам, ₽", kind: "rub" },
     { name: "renewalSales", label: "Продажи по продлениям, ₽", kind: "rub" },
-    { name: "trainerCredit", label: "Кредит тренера (информационно), ₽", kind: "rub" },
+    { name: "trainerCredit", label: "Кредит сотрудника (информационно), ₽", kind: "rub" },
   ],
   role_gym_head_trainer: [
     { name: "newSales", label: "Продажи новым клиентам, ₽", kind: "rub" },
     { name: "renewalSales", label: "Продажи по продлениям, ₽", kind: "rub" },
     { name: "clubPtCompletion", label: "Выполнение общего плана ПТ филиала, %", kind: "int" },
-    { name: "trainerCredit", label: "Кредит тренера (информационно), ₽", kind: "rub" },
+    { name: "trainerCredit", label: "Кредит сотрудника (информационно), ₽", kind: "rub" },
   ],
   role_group_trainer: [
     { name: "hours", label: "Часы", kind: "int" },

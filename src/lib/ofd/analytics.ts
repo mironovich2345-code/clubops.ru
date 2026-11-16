@@ -76,9 +76,9 @@ export function aggByLegalEntity(rows: OfdSalesDay[], from: string, to: string):
 // --- Revenue categories (fixed CLUB-OPS order) -----------------------------
 export const OFD_ANALYTICS_CATEGORY_ORDER = ["membership", "personal_training", "group_training", "extra_services", "other"] as const;
 export const OFD_ANALYTICS_CATEGORY_NAMES: Record<string, string> = {
-  membership: "Абонементы",
-  personal_training: "Персональные тренировки",
-  group_training: "Групповые тренировки",
+  membership: "Основные услуги",
+  personal_training: "Дополнительные услуги",
+  group_training: "Групповые услуги",
   extra_services: "Доп. услуги",
   other: "Иное",
 };

@@ -276,6 +276,6 @@ export function categoryOfPosition(position: string): PayrollCategory | null {
 export const CATEGORY_LABELS: Record<PayrollCategory, string> = {
   manager: "Управляющий",
   admin: "Административный состав",
-  gym_trainer: "Тренеры ТЗ",
-  group_trainer: "Тренеры ГП",
+  gym_trainer: "Специальная категория (демо не использует)",
+  group_trainer: "Отраслевая категория (демо не использует)",
 };

@@ -25,17 +25,17 @@ const SCHEME_FIELDS: Record<string, Field[]> = {
     { name: "atPlanPercent", label: "% с продаж (план выполнен)", placeholder: "4", step: "0.1" },
   ],
   sales_percentage: [{ name: "ratePercent", label: "% с продаж", placeholder: "5", step: "0.1" }],
-  hourly: [{ name: "hourlyRateRubles", label: "Ставка за час/занятие, ₽", placeholder: "700" }],
+  hourly: [{ name: "hourlyRateRubles", label: "Ставка за час работы, ₽", placeholder: "700" }],
   plan_adjusted_salary: [
     { name: "subscriptionsBaseRubles", label: "Окладная часть — основные услуги, ₽", placeholder: "60000" },
-    { name: "ptBaseRubles", label: "Окладная часть — ПТ, ₽", placeholder: "30000" },
+    { name: "ptBaseRubles", label: "Окладная часть — дополнительные услуги, ₽", placeholder: "30000" },
     { name: "maxAdjustmentPercent", label: "Предел корректировки, %", placeholder: "40", step: "1" },
     { name: "manualReviewDeviationPercent", label: "Порог ручного решения, %", placeholder: "20", step: "1" },
   ],
   revenue_percentage: [
     { name: "fixedRubles", label: "Фиксированная часть, ₽", placeholder: "0" },
-    { name: "subsPercent", label: "% с абонементов", placeholder: "0", step: "0.1" },
-    { name: "ptPercent", label: "% с ПТ", placeholder: "0", step: "0.1" },
+    { name: "subsPercent", label: "% с основных услуг", placeholder: "0", step: "0.1" },
+    { name: "ptPercent", label: "% с дополнительных услуг", placeholder: "0", step: "0.1" },
   ],
   profit_percentage: [{ name: "profitPercent", label: "% от прибыли", placeholder: "0", step: "0.1" }],
 };

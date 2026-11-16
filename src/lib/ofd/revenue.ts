@@ -4,9 +4,9 @@
 
 /** The five OFD revenue categories used by CLUB-OPS. */
 export const OFD_REVENUE_CATEGORIES: { code: string; name: string }[] = [
-  { code: "membership", name: "Абонементы" },
-  { code: "personal_training", name: "Персональные тренировки" },
-  { code: "group_training", name: "Групповые тренировки" },
+  { code: "membership", name: "Основные услуги" },
+  { code: "personal_training", name: "Дополнительные услуги" },
+  { code: "group_training", name: "Групповые услуги" },
   { code: "extra_services", name: "Доп. услуги" },
   { code: "other", name: "Иное" },
 ];
@@ -78,16 +78,16 @@ export function cleanItemName(v: unknown): string {
 export const DEFAULT_CATEGORY_RULES: { code: string; name: string; matchType: MatchType; pattern: string }[] = [
   // Group training FIRST so any "группов*" line wins before the personal "тренер" stem
   // (e.g. "групповой тренер" → group, not personal). Conservative fitness-domain stems.
-  ...["групповая тренировка", "групповые тренировки", "групповое занятие", "групповые занятия", "мини-группа", "мини группа", "групповая", "групповые", "групповое", "групповой", "секция", "направление"].map((pattern) => ({ code: "group_training", name: "Групповые тренировки", matchType: "contains" as MatchType, pattern })),
-  { code: "group_training", name: "Групповые тренировки", matchType: "starts_with", pattern: "гт" },
+  ...["групповая тренировка", "групповые тренировки", "групповое занятие", "групповые занятия", "мини-группа", "мини группа", "групповая", "групповые", "групповое", "групповой", "секция", "направление"].map((pattern) => ({ code: "group_training", name: "Групповые услуги", matchType: "contains" as MatchType, pattern })),
+  { code: "group_training", name: "Групповые услуги", matchType: "starts_with", pattern: "гт" },
   // Personal training. "персональная"/"персональные" (fem/plural, almost always followed
   // by тренировка) + "тренер"; deliberately NOT bare "персональн"/"индивидуальн" so that a
   // "персональный/индивидуальный шкафчик" stays in Доп. услуги (better «Иное» than wrong).
-  ...["персональная тренировка", "персональные тренировки", "тренировка с тренером", "индивидуальная тренировка", "индивидуальные тренировки", "персональная", "персональные", "тренер"].map((pattern) => ({ code: "personal_training", name: "Персональные тренировки", matchType: "contains" as MatchType, pattern })),
-  { code: "personal_training", name: "Персональные тренировки", matchType: "starts_with", pattern: "пт" },
+  ...["персональная тренировка", "персональные тренировки", "тренировка с тренером", "индивидуальная тренировка", "индивидуальные тренировки", "персональная", "персональные", "тренер"].map((pattern) => ({ code: "personal_training", name: "Дополнительные услуги", matchType: "contains" as MatchType, pattern })),
+  { code: "personal_training", name: "Дополнительные услуги", matchType: "starts_with", pattern: "пт" },
   ...["заморозка", "разморозка", "продление", "переоформление", "переоформления", "восстановление карты", "аренда", "полотенце", "шкафчик", "солярий", "доп услуга", "доп услуги", "дополнительная услуга", "дополнительные услуги"].map((pattern) => ({ code: "extra_services", name: "Доп. услуги", matchType: "contains" as MatchType, pattern })),
   // Physical-culture/health services sold as memberships in CLUB-OPS.
-  ...["физкультурно оздоровительные услуги", "физкультурно оздоровительные", "физ оздоровительные услуги", "клубная карта", "карта клуба", "абонемент", "членство", "карта"].map((pattern) => ({ code: "membership", name: "Абонементы", matchType: "contains" as MatchType, pattern })),
+  ...["физкультурно оздоровительные услуги", "физкультурно оздоровительные", "физ оздоровительные услуги", "клубная карта", "карта клуба", "абонемент", "членство", "карта"].map((pattern) => ({ code: "membership", name: "Основные услуги", matchType: "contains" as MatchType, pattern })),
 ];
 
 function matchRule(matchType: string, normalizedPattern: string, normalizedName: string): boolean {
@@ -140,7 +140,7 @@ export function categorizeItem(normalizedName: string, dbRules: OfdCategoryRuleL
   // grouping normalization removes) is a membership. Uses the raw name for the check.
   const loose = normalizeItemName(rawName ?? normalizedName);
   if (loose.includes("физкультур") && loose.includes("договор") && loose.includes("контракт")) {
-    return { code: "membership", name: "Абонементы", ruleId: null };
+    return { code: "membership", name: "Основные услуги", ruleId: null };
   }
   return { ...OFD_OTHER_CATEGORY, ruleId: null };
 }

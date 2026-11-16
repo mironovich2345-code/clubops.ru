@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  changeRefundType, uploadRefundDocument, removeRefundDocument,
+  uploadRefundDocument, removeRefundDocument,
   saveRefundRequisites, proceedRefundDraft, cancelRefundDraft,
 } from "../refund-document-actions";
 import { DocumentLink } from "@/components/mobile/DocumentViewer";
@@ -136,18 +136,6 @@ export function RefundDraftEditor({ refundId, returnType, slots, requisites, can
   const [error, setError] = useState<string | null>(null);
   const [reqSaved, setReqSaved] = useState(false);
 
-  async function onChangeType(next: string) {
-    if (next === returnType || busy) return;
-    const hasDocs = slots.some((s) => s.doc);
-    if (hasDocs && !window.confirm("Смена типа удалит несовместимые документы. Продолжить?")) return;
-    setBusy(true); setError(null);
-    try {
-      const fd = new FormData(); fd.set("refundId", refundId); fd.set("returnType", next);
-      const res = await changeRefundType(undefined, fd);
-      if (!res.ok) setError(res.error ?? "Не удалось сменить тип."); else router.refresh();
-    } finally { setBusy(false); }
-  }
-
   async function onSaveDraft(form: HTMLFormElement) {
     setBusy(true); setError(null); setReqSaved(false);
     try {
@@ -185,21 +173,7 @@ export function RefundDraftEditor({ refundId, returnType, slots, requisites, can
 
   return (
     <div className="mx-auto w-full max-w-3xl pb-40 lg:pb-0">
-      {/* Type switcher */}
-      <fieldset className="mt-4">
-        <legend className="mb-2 text-sm font-medium text-slate-700">Тип возврата</legend>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Тип возврата">
-          {[{ k: "membership", l: "Абонемент" }, { k: "personal_training", l: "Дополнительные услуги" }].map((t) => (
-            <button
-              key={t.k} type="button" role="radio" aria-checked={returnType === t.k} disabled={busy}
-              onClick={() => onChangeType(t.k)}
-              className={`rounded-lg border px-4 py-3 text-left text-sm font-medium transition disabled:opacity-60 ${returnType === t.k ? "border-brand-500 bg-brand-50 text-brand-800 ring-1 ring-brand-300" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
-            >
-              {t.l}
-            </button>
-          ))}
-        </div>
-      </fieldset>
+      <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">Возврат по договору на основную услугу</div>
 
       {/* 2×2 document slots */}
       <div className="mt-6">

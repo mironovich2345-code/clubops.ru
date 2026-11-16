@@ -101,7 +101,7 @@ export default async function OfdIntegrationPage() {
 
   // Revenue by category for the current month (in the fixed CLUB-OPS order).
   const CATEGORY_ORDER = ["membership", "personal_training", "group_training", "extra_services", "other"] as const;
-  const CATEGORY_NAMES: Record<string, string> = { membership: "Основные услуги", personal_training: "Дополнительные услуги", group_training: "Групповые тренировки", extra_services: "Доп. услуги", other: "Иное" };
+  const CATEGORY_NAMES: Record<string, string> = { membership: "Основные услуги", personal_training: "Дополнительные услуги", group_training: "Групповые услуги", extra_services: "Доп. услуги", other: "Иное" };
   const catAgg = new Map<string, { income: number; ret: number; net: number; items: number; receipts: number }>();
   for (const s of categorySummaries) {
     const a = catAgg.get(s.categoryCode) ?? { income: 0, ret: 0, net: 0, items: 0, receipts: 0 };

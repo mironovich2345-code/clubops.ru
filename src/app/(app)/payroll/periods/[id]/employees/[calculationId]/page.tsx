@@ -13,6 +13,7 @@ import { getActiveClubLegalEntities } from "@/lib/legal-entities";
 import { CalculationCard, type BreakdownLine } from "../../../../_components/CalculationCard";
 import { AdjustmentsSection, type AdjustmentRow } from "../../../../_components/AdjustmentsSection";
 import { PaymentsSection, type PaymentRow, type AdvanceRow, type LegalEntityOption } from "../../../../_components/PaymentsSection";
+import { isDemo } from "@/lib/demo/config";
 import { TrainerPackages, type TrainerSummaryVM, type TrainerPackageVM } from "../../../../_components/TrainerPackages";
 import { ProposeChangeSection, type ProposeFieldOption, type ChangeRequestRow } from "../../../../_components/ProposeChangeSection";
 import { SalesAttributionSection, type SalesVM } from "../../../../_components/SalesAttributionSection";
@@ -148,7 +149,7 @@ export default async function PayrollEmployeeCalcPage({ params }: { params: Prom
           />
           {salesVM ? <SalesAttributionSection calculationId={c.id} periodId={period.id} vm={salesVM} canManage={canManage && !locked} /> : null}
           <AdjustmentsSection calculationId={c.id} adjustments={adjRows} canAdd={canAdjust} />
-          {snap?.schemeType === "gym_trainer" ? (
+          {!isDemo() && snap?.schemeType === "gym_trainer" ? (
             <TrainerPackages calculationId={c.id} summary={details.trainer} paidKopeks={c.paidKopeks} employeeDebtKopeks={c.employeeDebtKopeks} packages={packages} canManage={canManage} locked={locked} employeeDismissed={dismissed} />
           ) : null}
           <PaymentsSection

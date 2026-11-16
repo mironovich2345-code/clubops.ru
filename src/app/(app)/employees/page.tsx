@@ -27,7 +27,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
   const user = await requirePageAccess("employees");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) {
-    return <NoCompanyState title="Сотрудники" description="Управляющие, администраторы и тренеры филиалов" />;
+    return <NoCompanyState title="Сотрудники" description="Управляющие, менеджеры продаж и административный персонал филиалов" />;
   }
   const companyId = ctx.selectedCompanyId;
   const params = (await searchParams) ?? {};
@@ -66,7 +66,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
 
   return (
     <div className="mx-auto max-w-[1440px]">
-      <PageHeader title="Сотрудники" description="Управляющие, администраторы и тренеры филиалов" />
+      <PageHeader title="Сотрудники" description="Управляющие, менеджеры продаж и административный персонал филиалов" />
 
       {canManage ? (
         <div className={`mb-6 p-5 ${CARD}`}>

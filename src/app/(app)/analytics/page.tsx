@@ -351,7 +351,7 @@ export default async function AnalyticsPage({
           <KpiCard label="Выручка ОФД" value={formatKopeks(ofdRevenueKopeks)} sub={rangeLabel} accent="text-brand-700 dark:text-brand-400" />
         ) : null}
         <KpiCard
-          label={useOfd ? "Основные услуги (ОФД)" : "Продажи абонементов"}
+          label={useOfd ? "Основные услуги (ОФД)" : "Продажи основных услуг"}
           value={formatKopeks(abValue)}
           sub={rangeLabel}
           accent="text-emerald-600 dark:text-emerald-400"
@@ -359,7 +359,7 @@ export default async function AnalyticsPage({
           progress={report.planTotals.subscriptions}
         />
         <KpiCard
-          label={useOfd ? "Дополнительные услуги (ОФД)" : "Продажи персональных тренировок"}
+          label={useOfd ? "Дополнительные услуги (ОФД)" : "Продажи дополнительных услуг"}
           value={formatKopeks(ptValue)}
           sub={rangeLabel}
           accent="text-sky-600 dark:text-sky-400"

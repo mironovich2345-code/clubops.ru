@@ -24,10 +24,10 @@ export const PAYROLL_POSITION_LABELS: Record<string, string> = {
   sales_manager: "Менеджер продаж",
   administrator: "Администратор",
   night_manager: "Ночной менеджер",
-  head_gym_trainer: "Старший тренер тренажёрного зала",
-  gym_trainer: "Тренер тренажёрного зала",
-  senior_group_trainer: "Старший тренер групповых программ",
-  group_trainer: "Тренер групповых программ",
+  head_gym_trainer: "Специалист (специальная схема)",
+  gym_trainer: "Специалист (специальная схема)",
+  senior_group_trainer: "Специалист (специальная схема)",
+  group_trainer: "Специалист (специальная схема)",
   regional_director: "Региональный директор",
 };
 
@@ -77,16 +77,16 @@ export const PAYROLL_SCHEME_LABELS: Record<string, string> = {
   plan_adjusted_salary: "Оклад по плану-факту",
   revenue_percentage: "Процент от выручки",
   profit_percentage: "Процент от прибыли",
-  gym_trainer: "Тренер ТЗ (пакеты 40/50%)",
+  gym_trainer: "Специализированная схема (не для универсального демо)",
   mixed: "Смешанная",
-  role_club_manager: "Управляющий (АБ+ПТ, план-факт ±40%)",
+  role_club_manager: "Управляющий (план-факт по направлениям услуг)",
   role_administrator: "Администратор (ставка × смены)",
   role_sales_manager: "Менеджер продаж (оклад/15 + % по плану клуба)",
   role_night_manager: "Ночной менеджер (ставка × смены + %)",
-  role_gym_trainer: "Тренер ТЗ (новые/продления %)",
-  role_gym_head_trainer: "Старший тренер ТЗ (повышенный % по плану ПТ)",
-  role_group_trainer: "Тренер ГП (часы + личный %)",
-  role_group_head_trainer: "Старший тренер ГП (+фикс +доля ГП)",
+  role_gym_trainer: "Специализированная схема (не для универсального демо)",
+  role_gym_head_trainer: "Специализированная схема (не для универсального демо)",
+  role_group_trainer: "Специализированная схема (не для универсального демо)",
+  role_group_head_trainer: "Специализированная схема (не для универсального демо)",
 };
 
 // Payroll period status machine (spec §3.4). Transitions are guarded in period.ts.

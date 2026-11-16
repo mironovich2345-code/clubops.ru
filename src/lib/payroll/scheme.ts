@@ -124,7 +124,7 @@ export function validateSchemeParams(schemeType: string, raw: unknown): Validate
       const ptBaseKopeks = nonNegInt(p.ptBaseKopeks);
       const maxAdjustmentBp = bp(p.maxAdjustmentBp) ?? DEFAULT_MAX_ADJUSTMENT_BP;
       const manualReviewDeviationBp = bp(p.manualReviewDeviationBp) ?? DEFAULT_MANUAL_REVIEW_DEVIATION_BP;
-      if (subscriptionsBaseKopeks == null || ptBaseKopeks == null) return err("Укажите окладные части (абонементы и ПТ).");
+      if (subscriptionsBaseKopeks == null || ptBaseKopeks == null) return err("Укажите окладные части по основным и дополнительным услугам.");
       return { ok: true, scheme: { type: "plan_adjusted_salary", params: { subscriptionsBaseKopeks, ptBaseKopeks, maxAdjustmentBp, manualReviewDeviationBp } } };
     }
     case "revenue_percentage": {

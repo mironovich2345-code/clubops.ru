@@ -18,6 +18,7 @@ import {
 } from "@/lib/refund-document-storage";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
+import { isDemo } from "@/lib/demo/config";
 import {
   parseDateOnly, toLocalMidnight, parseContractAmountKopeks, computeMembershipRefund, REFUND_CALC_VERSION, diffDays, fromDate,
 } from "@/lib/refund-membership";
@@ -65,6 +66,7 @@ export async function createRefundDraft(_prev: State | undefined, formData: Form
   const returnType = String(formData.get("returnType") ?? "").trim();
   if (!returnType) return { ok: false, error: "Выберите тип возврата." };
   if (!isRefundReturnType(returnType)) return { ok: false, error: "Недопустимый тип возврата." };
+  if (isDemo() && returnType !== "membership") return { ok: false, error: "В универсальном демо доступен возврат по договору на услуги." };
 
   const refund = await prisma.refund.create({
     data: { companyId, clubId, createdByUserId: ctx.user.id, entryVersion: 2, returnType, status: "draft", confidence: "low" },
@@ -83,6 +85,7 @@ export async function changeRefundType(_prev: State | undefined, formData: FormD
   const { ctx, refund } = g;
   const newType = String(formData.get("returnType") ?? "").trim();
   if (!isRefundReturnType(newType)) return { ok: false, error: "Недопустимый тип возврата." };
+  if (isDemo() && newType !== "membership") return { ok: false, error: "Этот тип возврата не используется в демо." };
   if (newType === refund.returnType) return { ok: true, refundId };
 
   const validKeys = new Set(refundSlots(newType).map((s) => s.key));
@@ -409,7 +412,7 @@ export async function savePersonalTrainingInputs(_prev: State | undefined, formD
   if (amountRaw && X === null) return { ok: false, error: "Неверный формат суммы договора." };
   const priceRaw = String(formData.get("terminationPrice") ?? "").trim();
   const V = priceRaw ? parseContractAmountKopeks(priceRaw) : null;
-  if (priceRaw && V === null) return { ok: false, error: "Неверный формат стоимости тренировки." };
+  if (priceRaw && V === null) return { ok: false, error: "Неверный формат стоимости услуги." };
   const nRaw = String(formData.get("contractSessions") ?? "").trim();
   const N = nRaw ? parseIntStrict(nRaw) : null;
   if (nRaw && N === null) return { ok: false, error: "Количество тренировок должно быть целым числом." };

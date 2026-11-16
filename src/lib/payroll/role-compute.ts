@@ -91,8 +91,8 @@ export function computeRoleCategoryScheme(scheme: SchemeParams, input: PeriodInp
         { label: "Продажи по продлениям", valueKopeks: num(input.renewalSalesKopeks) },
         { label: "Процент по продлениям", text: pctText(scheme.params.renewalRateBp) },
         { label: "Начисление по продлениям", valueKopeks: r.renewalPartKopeks },
-        { label: "Кредит тренера (информационно)", valueKopeks: r.trainerCreditKopeks },
-        { label: "Итого начислено (тренер ТЗ)", valueKopeks: r.totalKopeks },
+        { label: "Кредит сотрудника (информационно)", valueKopeks: r.trainerCreditKopeks },
+        { label: "Итого начислено (специальная схема)", valueKopeks: r.totalKopeks },
       ];
       return { amountKopeks: r.totalKopeks, breakdown, flags: {}, warnings: [] };
     }
@@ -104,8 +104,8 @@ export function computeRoleCategoryScheme(scheme: SchemeParams, input: PeriodInp
         { label: "Выполнение общего плана ПТ клуба", text: pctText(num(input.clubPtCompletionBp)) },
         { label: "Применённый % (новые)", text: pctText(r.appliedNewBp) },
         { label: "Применённый % (продления)", text: pctText(r.appliedRenewalBp) },
-        { label: "Кредит тренера (информационно)", valueKopeks: r.trainerCreditKopeks },
-        { label: "Итого начислено (старший тренер ТЗ)", valueKopeks: r.totalKopeks },
+        { label: "Кредит сотрудника (информационно)", valueKopeks: r.trainerCreditKopeks },
+        { label: "Итого начислено (специальная схема)", valueKopeks: r.totalKopeks },
       ];
       return { amountKopeks: r.totalKopeks, breakdown, flags: {}, warnings: [] };
     }
@@ -118,7 +118,7 @@ export function computeRoleCategoryScheme(scheme: SchemeParams, input: PeriodInp
         { label: "Личные продажи", valueKopeks: num(input.personalSalesKopeks) },
         { label: "Личный процент", text: pctText(scheme.params.personalRateBp) },
         { label: "Начисление с личных продаж", valueKopeks: r.personalPartKopeks },
-        { label: "Итого начислено (тренер ГП)", valueKopeks: r.totalKopeks },
+        { label: "Итого начислено (специальная схема)", valueKopeks: r.totalKopeks },
       ];
       return { amountKopeks: r.totalKopeks, breakdown, flags: {}, warnings: [] };
     }
@@ -130,7 +130,7 @@ export function computeRoleCategoryScheme(scheme: SchemeParams, input: PeriodInp
         { label: "Начисление с личных продаж", valueKopeks: r.personalPartKopeks },
         { label: "Фиксированная доплата старшего", valueKopeks: r.fixedBonusKopeks },
         { label: `Доля от выручки ГП клуба (${pctText(scheme.params.clubShareBp)})`, valueKopeks: r.clubSharePartKopeks },
-        { label: "Итого начислено (старший тренер ГП)", valueKopeks: r.totalKopeks },
+        { label: "Итого начислено (специальная схема)", valueKopeks: r.totalKopeks },
       ];
       return { amountKopeks: r.totalKopeks, breakdown, flags: {}, warnings: [] };
     }

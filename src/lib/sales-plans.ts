@@ -49,8 +49,8 @@ export type PlanType = "total" | "subscriptions" | "personal_training";
 // Each plan type maps to a confirmed sales-report line for the "fact".
 export const PLAN_TYPES: ReadonlyArray<{ key: PlanType; label: string; factKey: string }> = [
   { key: "total", label: "Общий план", factKey: "total_revenue" },
-  { key: "subscriptions", label: "Абонементы", factKey: "subscriptions_ooo" },
-  { key: "personal_training", label: "Персональные", factKey: "personal_training_total" },
+  { key: "subscriptions", label: "Основные услуги", factKey: "subscriptions_ooo" },
+  { key: "personal_training", label: "Дополнительные услуги", factKey: "personal_training_total" },
 ];
 export const PLAN_TYPE_KEYS: PlanType[] = PLAN_TYPES.map((t) => t.key);
 export const PLAN_FACT_KEYS = PLAN_TYPES.map((t) => t.factKey);

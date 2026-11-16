@@ -7,8 +7,8 @@ import type { Role } from "@/lib/auth";
 // has no enums), so other values are technically allowed — these are the
 // suggested defaults.
 export const SALE_SOURCES = [
-  "Абонементы",
-  "Персональные тренировки",
+  "Основные услуги",
+  "Дополнительные услуги",
   "Продления",
   "Заморозки",
   "Товары",

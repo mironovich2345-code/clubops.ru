@@ -5,13 +5,12 @@ import { Prisma, type ClubEmployee } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/auth";
 
-export type EmployeePosition = "manager" | "administrator" | "gym_trainer" | "group_trainer" | "night_manager";
+export type EmployeePosition = "manager" | "sales_manager" | "administrator" | "gym_trainer" | "group_trainer" | "night_manager";
 
 export const EMPLOYEE_POSITIONS: ReadonlyArray<{ key: EmployeePosition; label: string }> = [
-  { key: "manager", label: "Менеджер" },
+  { key: "manager", label: "Управляющий" },
+  { key: "sales_manager", label: "Менеджер продаж" },
   { key: "administrator", label: "Администратор" },
-  { key: "gym_trainer", label: "Тренер ТЗ" },
-  { key: "group_trainer", label: "Тренер ГП" },
   { key: "night_manager", label: "Ночной менеджер" },
 ];
 export const EMPLOYEE_POSITION_LABELS: Record<string, string> = Object.fromEntries(
