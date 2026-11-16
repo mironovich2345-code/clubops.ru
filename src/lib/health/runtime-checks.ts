@@ -16,7 +16,8 @@ export async function detectDbProvider(prisma: RawClient): Promise<"postgresql" 
   // The URL is only a hint for query ORDER, never trusted as the detected
   // provider. Probe the expected dialect first so a healthy PostgreSQL demo
   // does not emit a misleading Prisma error from SELECT sqlite_version().
-  const postgresExpected = /^postgres(?:ql)?:\\/\\//i.test(process.env.DATABASE_URL ?? "");
+  const databaseUrl = (process.env.DATABASE_URL ?? "").toLowerCase();
+  const postgresExpected = databaseUrl.startsWith("postgresql://") || databaseUrl.startsWith("postgres://");
   const probes: { sql: string; provider: "postgresql" | "sqlite" }[] = postgresExpected
     ? [{ sql: "SELECT version() AS v", provider: "postgresql" }, { sql: "SELECT sqlite_version() AS v", provider: "sqlite" }]
     : [{ sql: "SELECT sqlite_version() AS v", provider: "sqlite" }, { sql: "SELECT version() AS v", provider: "postgresql" }];
