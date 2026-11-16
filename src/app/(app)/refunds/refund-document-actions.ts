@@ -606,7 +606,7 @@ export async function approveRefundByRegional(_prev: State | undefined, formData
   const now = new Date();
   const res = await prisma.refund.updateMany({
     where: { id: refundId, status: REFUND_V2_STATUS.PENDING_REGIONAL_REVIEW },
-    data: { status: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, regionalReviewedAt: now, regionalReviewedByUserId: ctx.user.id, accountingStartedAt: now },
+    data: { status: REFUND_V2_STATUS.ACCOUNTING_IN_PROGRESS, regionalReviewedAt: now, regionalReviewedByUserId: ctx.user.id, accountingStartedAt: now, refundDate: refund.refundDate ?? now },
   });
   if (res.count === 0) return { ok: false, error: "Статус возврата уже изменён. Обновите страницу." };
 

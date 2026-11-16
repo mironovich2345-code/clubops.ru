@@ -417,6 +417,12 @@ export async function transitionPeriod(
   const decision = applyPayrollAction(action, scope.period.status, scope.ctx.effectiveRoles);
   if (!decision.ok) return { ok: false, error: decision.error };
 
+  if (action === "mark_paid") {
+    const calcs = await prisma.payrollCalculation.findMany({ where: { payrollPeriodId: periodId }, select: { id: true, remainingKopeks: true } });
+    if (!calcs.length || calcs.some(c => c.remainingKopeks > 0)) return { ok: false, error: "Нельзя отметить период выплаченным: есть остаток к выплате сотрудникам." };
+    if (await prisma.payrollPayment.count({ where: { payrollCalculationId: { in: calcs.map(c => c.id) }, status: "pending" } })) return { ok: false, error: "Сначала подтвердите все выплаты." };
+  }
+
   if (action === "regional_approve" || action === "accounting_approve") {
     const drafts = await prisma.payrollCalculation.count({ where: { payrollPeriodId: periodId, status: "draft" } });
     if (drafts > 0) return { ok: false, error: "Нельзя согласовать: есть нерассчитанные позиции. Сначала рассчитайте всех сотрудников." };

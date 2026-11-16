@@ -13,6 +13,8 @@ import { APPROVED_UNPAID_STATUSES } from "@/lib/approval";
 export const RECOGNIZED_EXPENSE_FORMULA_VERSION = "rem-05.v1";
 export const PROFIT_FORMULA_VERSION = "rem-05.v1";
 export const BUDGET_FACT_FORMULA_VERSION = "rem-05.v1";
+// Payroll payouts are cash settlement of an accrual, never a second P&L cost.
+export const PAYROLL_CASH_EXPENSE_TYPE = "payroll_payment";
 
 /** Source kinds that contribute to a recognized expense. */
 export type RecognizedSourceType =
@@ -53,6 +55,7 @@ export function isRecognizedInvoiceStatus(status: string): boolean {
 // second expense. Draft/calculated (pre-approval) periods do NOT recognize.
 export const PAYROLL_RECOGNIZED_PERIOD_STATUSES: readonly string[] = [
   "regional_approved",
+  "accounting_review",
   "approved",
   "partially_paid",
   "paid",

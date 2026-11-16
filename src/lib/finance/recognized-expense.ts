@@ -7,7 +7,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/lib/db-client";
-import { invoiceExpensePeriod } from "@/lib/invoices";
+import { invoiceExpensePeriod, invoiceAnalyticsDate } from "@/lib/invoices";
 import {
   RECOGNIZED_EXPENSE_FORMULA_VERSION,
   EXPENSE_RECOGNIZED_STATUSES,
@@ -21,6 +21,7 @@ import {
   PAYROLL_BUDGET_CATEGORY,
   REFUND_BUDGET_CATEGORY,
   UNASSIGNED_CATEGORY,
+  PAYROLL_CASH_EXPENSE_TYPE,
   type RecognizedSourceType,
 } from "./recognition";
 
@@ -38,6 +39,7 @@ export type RecognizedExpenseInput = {
 };
 
 export type RecognizedRow = {
+  recognizedAt: Date;
   sourceType: RecognizedSourceType;
   sourceId: string;
   clubId: string;
@@ -110,7 +112,7 @@ export async function loadRecognizedExpenses(input: RecognizedExpenseInput): Pro
 
   // A. Ordinary Expense (v1 confirmed / v2 verified) — by expenseDate month.
   const expenses = await db.expense.findMany({
-    where: { companyId: input.companyId, clubId: { in: clubIds }, status: { in: [...EXPENSE_RECOGNIZED_STATUSES] }, ...(leFilter ? { legalEntityId: leFilter } : {}) },
+    where: { companyId: input.companyId, clubId: { in: clubIds }, type: { not: PAYROLL_CASH_EXPENSE_TYPE }, status: { in: [...EXPENSE_RECOGNIZED_STATUSES] }, ...(leFilter ? { legalEntityId: leFilter } : {}) },
     select: { id: true, clubId: true, legalEntityId: true, category: true, amountKopeks: true, expenseDate: true },
   });
   for (const e of expenses) {
@@ -118,7 +120,7 @@ export async function loadRecognizedExpenses(input: RecognizedExpenseInput): Pro
     if (!monthSet.has(month)) continue;
     const category = e.category || UNASSIGNED_CATEGORY;
     if (!e.category) unassignedCount++;
-    record({ sourceType: sourceTypeForExpense(e.category), sourceId: e.id, clubId: e.clubId, legalEntityId: e.legalEntityId ?? null, category, month, amountKopeks: e.amountKopeks });
+    record({ recognizedAt: e.expenseDate, sourceType: sourceTypeForExpense(e.category), sourceId: e.id, clubId: e.clubId, legalEntityId: e.legalEntityId ?? null, category, month, amountKopeks: e.amountKopeks });
   }
 
   // B. Invoice — FULL amount by expensePeriod, recognized statuses (incl. partially_paid).
@@ -132,7 +134,7 @@ export async function loadRecognizedExpenses(input: RecognizedExpenseInput): Pro
     const category = i.expenseCategory || UNASSIGNED_CATEGORY;
     if (!i.expenseCategory) unassignedCount++;
     const sourceType: RecognizedSourceType = isTaxCategory(i.expenseCategory) ? "tax" : "invoice";
-    record({ sourceType, sourceId: i.id, clubId: i.clubId, legalEntityId: i.legalEntityId ?? null, category, month, amountKopeks: i.amountKopeks });
+    record({ recognizedAt: invoiceAnalyticsDate(i), sourceType, sourceId: i.id, clubId: i.clubId, legalEntityId: i.legalEntityId ?? null, category, month, amountKopeks: i.amountKopeks });
   }
 
   // C. Payroll accrual — netPayable of calcs whose PERIOD is approved-or-beyond, by period month.
@@ -151,7 +153,7 @@ export async function loadRecognizedExpenses(input: RecognizedExpenseInput): Pro
       const p = periodById.get(c.payrollPeriodId);
       if (!p) continue;
       const month = `${p.year}-${String(p.month).padStart(2, "0")}`;
-      record({ sourceType: "payroll_accrual", sourceId: c.id, clubId: c.clubId, legalEntityId: c.legalEntityId ?? null, category: PAYROLL_BUDGET_CATEGORY, month, amountKopeks: c.netPayableKopeks });
+      record({ recognizedAt: new Date(p.year, p.month - 1, 1), sourceType: "payroll_accrual", sourceId: c.id, clubId: c.clubId, legalEntityId: c.legalEntityId ?? null, category: PAYROLL_BUDGET_CATEGORY, month, amountKopeks: c.netPayableKopeks });
     }
   }
 
@@ -164,7 +166,7 @@ export async function loadRecognizedExpenses(input: RecognizedExpenseInput): Pro
     if (!isRecognizedRefund(r)) continue;
     const month = monthKeyLocal(r.refundDate ?? r.paidAt ?? r.createdAt);
     if (!monthSet.has(month)) continue;
-    record({ sourceType: "refund", sourceId: r.id, clubId: r.clubId, legalEntityId: r.legalEntityId ?? null, category: REFUND_BUDGET_CATEGORY, month, amountKopeks: refundRecognizedAmountKopeks(r) });
+    record({ recognizedAt: r.refundDate ?? r.paidAt ?? r.createdAt, sourceType: "refund", sourceId: r.id, clubId: r.clubId, legalEntityId: r.legalEntityId ?? null, category: REFUND_BUDGET_CATEGORY, month, amountKopeks: refundRecognizedAmountKopeks(r) });
   }
 
   if (unassignedCount > 0) warnings.push(`unassigned_category:${unassignedCount}`);

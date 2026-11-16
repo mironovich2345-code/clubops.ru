@@ -80,37 +80,12 @@ export async function computeUsedKopeks(
   category: string,
   month: string,
 ): Promise<number> {
-  const range = monthRange(month);
-  if (!range) return 0;
-  const inRange = (date: Date) => {
-    const t = date.getTime();
-    return t >= range.start && t < range.end;
-  };
-
-  let used = 0;
-
-  const invoices = await prisma.invoice.findMany({
-    where: { clubId, expenseCategory: category, status: { in: APPROVED_INVOICE_STATUSES } },
-    select: { amountKopeks: true, expensePeriod: true, invoiceDate: true, paidAt: true, createdAt: true },
-  });
-  // Invoices count in their accounting month (expensePeriod), not the payment date.
-  for (const i of invoices) if (invoiceExpensePeriod(i) === month) used += i.amountKopeks;
-
-  const expenses = await prisma.expense.findMany({
-    where: { clubId, category, status: { in: [...EXPENSE_REALIZED_STATUSES] } },
-    select: { amountKopeks: true, expenseDate: true },
-  });
-  for (const e of expenses) if (inRange(e.expenseDate)) used += e.amountKopeks;
-
-  if (category === "refunds") {
-    const refunds = await prisma.refund.findMany({
-      where: { clubId, status: { in: APPROVED_REFUND_STATUSES } },
-      select: { amountKopeks: true, refundDate: true, createdAt: true },
-    });
-    for (const r of refunds) if (inRange(r.refundDate ?? r.createdAt)) used += r.amountKopeks;
-  }
-
-  return used;
+  if (!monthRange(month)) return 0;
+  const club = await prisma.club.findUnique({ where: { id: clubId }, select: { companyId: true } });
+  if (!club) return 0;
+  // Import lazily: recognition's pure status constants also reference this module.
+  const { loadRecognizedExpenses } = await import("@/lib/finance/recognized-expense");
+  return (await loadRecognizedExpenses({ companyId: club.companyId, allowedClubIds: [clubId], months: [month], category })).totalKopeks;
 }
 
 export type BudgetRow = {
@@ -286,7 +261,7 @@ type FactRefund = {
  */
 export function computeBudgetFactReport(
   budgets: Array<{ category: string; limitAmountKopeks: number }>,
-  data: { expenses: FactExpense[]; invoices: FactInvoice[]; refunds: FactRefund[] },
+  data: { expenses: FactExpense[]; invoices: FactInvoice[]; refunds: FactRefund[]; recognized?: Array<{ category: string; amountKopeks: number; date: Date }> },
   month: string,
   opts?: { categories?: readonly string[] },
 ): BudgetFactReport {
@@ -312,17 +287,21 @@ export function computeBudgetFactReport(
   // REM-05 (BD-04): FACT = recognized expenses (accrual), not paid-only. Realize v1
   // confirmed + v2 verified; recognize invoices in full by expensePeriod (approved-
   // unpaid + partially_paid + paid); recognize refunds in their approved-or-paid state.
-  for (const e of data.expenses) {
-    if (EXPENSE_REALIZED_STATUSES.includes(e.status as (typeof EXPENSE_REALIZED_STATUSES)[number]) && inR(e.expenseDate)) add(e.category, e.amountKopeks);
-  }
-  for (const i of data.invoices) {
-    // Count in the accounting month (expensePeriod), not the payment date.
-    if (APPROVED_INVOICE_STATUSES.includes(i.status) && i.expenseCategory && invoiceExpensePeriod(i) === month) {
-      add(i.expenseCategory, i.amountKopeks);
+  if (data.recognized) {
+    for (const row of data.recognized) if (inR(row.date)) add(row.category, row.amountKopeks);
+  } else {
+    for (const e of data.expenses) {
+      if (EXPENSE_REALIZED_STATUSES.includes(e.status as (typeof EXPENSE_REALIZED_STATUSES)[number]) && inR(e.expenseDate)) add(e.category, e.amountKopeks);
     }
-  }
-  for (const r of data.refunds) {
-    if (APPROVED_REFUND_STATUSES.includes(r.status) && inR(r.refundDate ?? r.paidAt ?? r.createdAt)) add("refunds", r.amountKopeks);
+    for (const i of data.invoices) {
+      // Count in the accounting month (expensePeriod), not the payment date.
+      if (APPROVED_INVOICE_STATUSES.includes(i.status) && i.expenseCategory && invoiceExpensePeriod(i) === month) {
+        add(i.expenseCategory, i.amountKopeks);
+      }
+    }
+    for (const r of data.refunds) {
+      if (APPROVED_REFUND_STATUSES.includes(r.status) && inR(r.refundDate ?? r.paidAt ?? r.createdAt)) add("refunds", r.amountKopeks);
+    }
   }
 
   const rows: BudgetFactRow[] = [];
@@ -356,26 +335,18 @@ export async function getBudgetFactReportForScope(
   opts?: { categories?: readonly string[] },
 ): Promise<BudgetFactReport> {
   if (clubIds.length === 0) return [];
-  const [budgets, expenses, invoices, refunds] = await Promise.all([
-    prisma.budget.findMany({
-      where: { companyId, clubId: { in: clubIds }, month },
-      select: { category: true, limitAmountKopeks: true },
-    }),
-    prisma.expense.findMany({
-      where: { clubId: { in: clubIds }, status: { in: [...EXPENSE_REALIZED_STATUSES] } },
-      select: { category: true, amountKopeks: true, expenseDate: true, status: true },
-    }),
-    prisma.invoice.findMany({
-      // REM-05: load recognized invoices (approved-unpaid + partially_paid + paid), not paid-only.
-      where: { clubId: { in: clubIds }, status: { in: APPROVED_INVOICE_STATUSES } },
-      select: { expenseCategory: true, amountKopeks: true, expensePeriod: true, paidAt: true, invoiceDate: true, createdAt: true, status: true },
-    }),
-    prisma.refund.findMany({
-      where: { clubId: { in: clubIds }, status: { in: APPROVED_REFUND_STATUSES } },
-      select: { amountKopeks: true, paidAt: true, refundDate: true, createdAt: true, status: true },
-    }),
+  const { loadRecognizedExpenses } = await import("@/lib/finance/recognized-expense");
+  const [budgets, recognized] = await Promise.all([
+    prisma.budget.findMany({ where: { companyId, clubId: { in: clubIds }, month }, select: { category: true, limitAmountKopeks: true } }),
+    loadRecognizedExpenses({ companyId, allowedClubIds: clubIds, months: [month] }),
   ]);
-  return computeBudgetFactReport(budgets, { expenses, invoices, refunds }, month, opts);
+  const plans = new Map<string, number>();
+  for (const budget of budgets) plans.set(budget.category, (plans.get(budget.category) ?? 0) + budget.limitAmountKopeks);
+  return [...plans].filter(([category, plan]) => plan > 0 && (!opts?.categories || opts.categories.includes(category))).map(([category, budgetKopeks]) => {
+    const actualKopeks = recognized.byCategory[category] ?? 0;
+    const completionPercent = actualKopeks / budgetKopeks * 100;
+    return { category, label: budgetCategoryLabel(category), budgetKopeks, actualKopeks, differenceKopeks: actualKopeks - budgetKopeks, completionPercent, status: budgetFactStatus(completionPercent) };
+  }).sort((a, b) => b.completionPercent - a.completionPercent);
 }
 
 /** Dashboard alerts for categories exceeding 120% of plan (max `max`). */

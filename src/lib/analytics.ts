@@ -164,6 +164,7 @@ export function resolveMonthPeriod(month: string, now: Date): ResolvedPeriod {
 const APPROVED_UNPAID = APPROVED_UNPAID_STATUSES;
 
 export type AnalyticsData = {
+  recognizedSpend?: Array<{ clubId: string; category: string; amountKopeks: number; date: Date }>;
   clubs: Array<{ id: string; name: string }>;
   sales: Array<{ clubId: string; amountKopeks: number; saleDate: Date }>;
   expenses: Array<{ clubId: string; category: string; amountKopeks: number; expenseDate: Date; status: string }>;
@@ -195,6 +196,8 @@ export async function loadAnalyticsData(
   const lo = period.prevStart;
   const hi = period.end;
   const inClubs = { in: clubIds };
+  const { loadRecognizedExpenses } = await import("@/lib/finance/recognized-expense");
+  const recognized = await loadRecognizedExpenses({ companyId, allowedClubIds: clubIds, months: monthsBetween(lo, hi), includeBreakdown: true });
 
   const [clubs, sales, reports, expenses, invoices, refunds, budgets, plans, pendingSalesCount, debtInvoices, debtRefunds] =
     await Promise.all([
@@ -238,6 +241,7 @@ export async function loadAnalyticsData(
 
   return {
     clubs,
+    recognizedSpend: (recognized.rows ?? []).map(r => ({ clubId: r.clubId, category: r.category, amountKopeks: r.amountKopeks, date: r.recognizedAt })),
     sales: [...sales, ...reportSales],
     expenses,
     invoices,
@@ -261,6 +265,7 @@ function salesEvents(data: AnalyticsData): SalesEvent[] {
 }
 
 function spendEvents(data: AnalyticsData): SpendEvent[] {
+  if (data.recognizedSpend) return data.recognizedSpend;
   return [
     ...data.expenses.map((e) => ({ clubId: e.clubId, category: e.category, amountKopeks: e.amountKopeks, date: e.expenseDate })),
     // Invoices contribute to their accounting month (expensePeriod), not the
@@ -735,7 +740,7 @@ export function buildAnalyticsReport(
   // Block 7: budget performance (reuse existing budget report for the period's month)
   const budgetPerformance = computeBudgetFactReport(
     data.budgets,
-    { expenses: data.expenses, invoices: data.invoices, refunds: data.refunds },
+    { expenses: data.expenses, invoices: data.invoices, refunds: data.refunds, recognized: data.recognizedSpend },
     period.primaryMonth,
     opts?.categories ? { categories: opts.categories } : undefined,
   );

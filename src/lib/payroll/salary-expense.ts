@@ -9,8 +9,9 @@ import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/lib/db-client";
 import { recordExpenseMovement } from "@/lib/cash-wallets";
 import { reverseCashOutflow } from "@/lib/payroll/payments";
+import { PAYROLL_CASH_EXPENSE_TYPE } from "@/lib/finance/recognition";
 
-export const SALARY_EXPENSE_TYPE = "payroll_payment"; // distinct from legacy "payroll_statement"
+export const SALARY_EXPENSE_TYPE = PAYROLL_CASH_EXPENSE_TYPE; // settlement, not a second accrual
 export const SALARY_EXPENSE_CATEGORY = "salary";
 const SALARY_EXPENSE_REVERSAL = "payroll_expense_reversal";
 

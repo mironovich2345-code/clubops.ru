@@ -74,4 +74,8 @@ export async function recomputeCalculationTotals(calculationId: string, db: DbCl
       companyDebtKopeks: agg.companyDebtKopeks,
     },
   });
+  // Every payment/advance/adjustment changes the same calendar balance. Rebuild
+  // with the caller's transaction so a committed payout cannot leave stale debt.
+  const { generateObligationsForPeriod } = await import("@/lib/payroll/payment-obligation");
+  await generateObligationsForPeriod(calc.payrollPeriodId, new Date(), db);
 }
