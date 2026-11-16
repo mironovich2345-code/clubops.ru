@@ -42,11 +42,12 @@ async function visitor(ip) {
   return { context, page, companyId };
 }
 async function switchRole(page, role, branch = "0") {
-  await page.locator("#demo-role").selectOption(role);
-  await page.locator("#demo-club").selectOption(branch);
-  await page.getByRole("button", { name: "Сменить роль", exact: true }).click();
+  await page.goto("/demo");
+  await page.locator('select[name="role"]').selectOption(role);
+  await page.locator('select[name="club"]').selectOption(branch);
+  await page.getByRole("button", { name: "Посмотреть демо", exact: true }).click();
   await page.waitForURL(role === "accountant" ? "**/workspace" : "**/dashboard?month=2026-11");
-  await page.waitForFunction(r => document.querySelector("#demo-role")?.value === r, role);
+  await page.waitForLoadState("networkidle");
 }
 try {
   const ready = await (await fetch(`${origin}/api/health/ready`)).json();
@@ -57,6 +58,13 @@ try {
   const a = await visitor(`192.0.2.${qaIp}`);
   const b = await visitor(`192.0.2.${qaIp + 1}`);
   assert.notEqual(a.companyId, b.companyId); pass("Two browsers receive separate tenants");
+  // Financial summary must never be injected by the shared layout into other modules.
+  assert.equal(await a.page.getByRole("region", { name: "Демонстрационный период" }).count(), 1);
+  await a.page.goto("/refunds");
+  assert.equal(await a.page.getByRole("region", { name: "Демонстрационный период" }).count(), 0);
+  assert.equal(await a.page.locator('aside[aria-label="Демонстрационная версия"]').count(), 1);
+  pass("Financial summary only on dashboard; compact demo strip on other screens");
+  await a.page.goto("/dashboard?month=2026-11");
   if (process.env.DEMO_QA_WORKFLOWS_ONLY === "1") console.log("SKIP responsive matrix (workflow-only diagnostic run)");
   for (const width of process.env.DEMO_QA_WORKFLOWS_ONLY === "1" ? [] : [375, 390, 768, 1024, 1440]) {
     await a.page.setViewportSize({ width, height: 900 });
@@ -115,9 +123,10 @@ try {
   assert.equal(grant.length, 1); pass("Manager switching grants exactly one branch");
   const denied = await browserGet(a.page, "/analytics/ofd-sales");
   assert(!denied.url.endsWith("/analytics/ofd-sales")); pass("Manager cannot enter role-restricted OFD analytics");
+  await a.page.goto("/demo");
   await Promise.all([
     a.page.waitForResponse(r => r.url().endsWith("/api/demo/session") && r.request().method() === "POST"),
-    a.page.getByRole("button", { name: "Сбросить демо", exact: true }).click(),
+    a.page.getByRole("button", { name: "Сбросить данные и начать заново", exact: true }).click(),
   ]);
   await a.page.waitForURL("**/dashboard?month=2026-11");
   await a.page.waitForFunction(() => document.readyState === "complete");
