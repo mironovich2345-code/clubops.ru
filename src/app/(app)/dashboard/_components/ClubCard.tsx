@@ -82,7 +82,7 @@ function ClubCard({ card, showSales, showExpenses, showCash, daysLeft, showCompa
       {showSales ? (
         <div className="grid grid-cols-2 gap-4">
           <MetricBlock label="Основные услуги" value={subs} pct={subsPct} plan={card.subsPlan} daysLeft={daysLeft} accent="text-emerald-600 dark:text-emerald-400" />
-          <MetricBlock label="ПТ" value={pt} pct={ptPct} plan={card.ptPlan} daysLeft={daysLeft} accent="text-sky-600 dark:text-sky-400" />
+          <MetricBlock label="Дополнительные услуги" value={pt} pct={ptPct} plan={card.ptPlan} daysLeft={daysLeft} accent="text-sky-600 dark:text-sky-400" />
         </div>
       ) : null}
 

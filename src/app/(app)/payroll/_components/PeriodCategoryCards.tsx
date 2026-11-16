@@ -23,7 +23,7 @@ const STATUS_CLS: Record<string, string> = {
  * grid on desktop. Each card is a summary + «Открыть» into the category view. */
 export function PeriodCategoryCards({ cards }: { cards: CategoryCard[] }) {
   return (
-    <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <div className={`mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 ${cards.length <= 3 ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}>
       {cards.map((c) => (
         <Link key={c.group} href={c.href} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/40">
           <div className="mb-1 flex items-start justify-between gap-2">
