@@ -33,11 +33,11 @@ export function OnboardingForm() {
       </div>
 
       <div>
-        <div className="mb-2 text-sm font-semibold text-slate-700">Шаг 2. Первый клуб</div>
+        <div className="mb-2 text-sm font-semibold text-slate-700">Шаг 2. Первый филиал</div>
         <div className="space-y-3">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Название клуба</span>
-            <input name="clubName" required className="input" placeholder="Фитнес-клуб на Ленина" />
+            <span className="mb-1 block text-sm font-medium text-slate-700">Название филиала</span>
+            <input name="clubName" required className="input" placeholder="Филиал на Ленина" />
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Город</span>

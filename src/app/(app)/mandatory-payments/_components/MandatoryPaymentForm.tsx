@@ -63,7 +63,7 @@ export function MandatoryPaymentForm({
       <form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
 
-        <Field label="Клуб">
+        <Field label="Филиал">
           <select name="clubId" defaultValue={editing?.clubId ?? ""} required className="input">
             <option value="" disabled>Выберите</option>
             {clubs.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}

@@ -66,7 +66,7 @@ export function Sidebar({ items }: SidebarProps) {
     <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white">
       <div className="px-6 py-5 border-b border-slate-200">
         <div className="text-lg font-semibold tracking-tight text-slate-900">Club Ops</div>
-        <div className="text-xs text-slate-500 mt-0.5">Управление клубами</div>
+        <div className="text-xs text-slate-500 mt-0.5">Управление филиалами</div>
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-1">

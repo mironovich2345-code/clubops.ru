@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createSimplifiedExpenseDraft, submitExpense } from "../simplified-actions";
 import { uploadExpenseDocuments } from "../document-actions";
 import { StickyActions } from "@/components/mobile/StickyActions";
+import { fillDemoDocuments } from "@/app/demo/actions";
 
 type Category = { key: string; name: string };
 
@@ -47,7 +48,7 @@ function validateFile(f: File): string | null {
   return null;
 }
 
-export function SimpleExpenseForm({ categories, payerName }: { categories: Category[]; payerName: string }) {
+export function SimpleExpenseForm({ categories, payerName, demo = false }: { categories: Category[]; payerName: string; demo?: boolean }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   // A draft is created at most once; a repeated click reuses this id (no dupes).
@@ -107,7 +108,7 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
     if (busy) return; // guard against double-click / repeated submit
     setError(null);
     setRejections([]);
-    if (files.length < 1) { setError("Прикрепите хотя бы один документ."); return; }
+    if (!demo && files.length < 1) { setError("Прикрепите хотя бы один документ."); return; }
     if (files.some((f) => f.error)) { setError("Уберите некорректные файлы перед созданием."); return; }
 
     setBusy(true);
@@ -122,6 +123,11 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
         draftIdRef.current = id;
       }
 
+      if (demo) {
+        const fd = new FormData(); fd.set("kind", "expense"); fd.set("id", id);
+        const result = await fillDemoDocuments(undefined, fd);
+        if (!result.ok) { setError(result.error ?? "Не удалось подготовить демодокумент."); setBusy(false); return; }
+      } else {
       // 2. Upload each not-yet-uploaded file; keep successes on partial failure.
       let anyFailed = false;
       const updated = [...files];
@@ -146,6 +152,7 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
         setBusy(false);
         return;
       }
+      }
 
       // 3. All files uploaded → submit to the regional director in the SAME flow (no
       // separate "Отправить" step). Idempotent: submitExpense's compare-and-set means a
@@ -167,6 +174,7 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl pb-28 lg:pb-0">
+      {demo && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm">Демо: при создании будет прикреплён вымышленный PDF. Реальные файлы не загружаются.</p>}
       {/* Category name carried so the title is built from the human label. */}
       <input type="hidden" name="categoryName" value={categories.find((c) => c.key === category)?.name ?? ""} />
 
@@ -263,7 +271,7 @@ export function SimpleExpenseForm({ categories, payerName }: { categories: Categ
                 multiple
                 accept="image/jpeg,image/png,image/webp,application/pdf"
                 onChange={onPick}
-                disabled={busy || atMax}
+                disabled={demo || busy || atMax}
                 className="block w-full text-sm"
               />
             </label>

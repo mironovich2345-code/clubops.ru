@@ -1,3 +1,4 @@
+import { reportingNow } from "@/lib/demo/reporting";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
@@ -61,7 +62,7 @@ export default async function DashboardPage({
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {
-    return <NoCompanyState title="Дашборд" description="Обзор клубов" />;
+    return <NoCompanyState title="Дашборд" description="Обзор филиалов" />;
   }
   const companyId = scope.company.id;
   const companyName = scope.company.name;
@@ -82,7 +83,7 @@ export default async function DashboardPage({
   // (the ofd_sales page-access grant). Manager / accountant / marketer never see it.
   const canSeeOfdSales = canAnyRoleAccessPage(roles, "ofd_sales");
 
-  const now = new Date();
+  const now = reportingNow();
 
   // --- Selected analytical month (?month=YYYY-MM, validated; fallback current) ---
   const sp = await searchParams;
@@ -172,7 +173,7 @@ export default async function DashboardPage({
           <div>
             <PageHeader title="Дашборд" description={scopeHeading} />
             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Сетей: {strategic.filteredCompanyIds.length} · Клубов: {strategic.filteredClubs.length}
+              Сетей: {strategic.filteredCompanyIds.length} · Филиалов: {strategic.filteredClubs.length}
               {strategic.selectedCity ? ` · Город: ${strategic.selectedCity}` : ""} · {monthLabel}
             </div>
           </div>
@@ -200,7 +201,7 @@ export default async function DashboardPage({
             статьи доходов) остаются в Аналитике и /analytics/ofd-sales. */}
         {strategic.accessibleClubs.length === 0 ? (
           <div className={`px-4 py-16 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>
-            Нет доступных сетей или клубов
+            Нет доступных сетей или филиалов
           </div>
         ) : (
           <ClubCardsGrid
@@ -271,7 +272,7 @@ export default async function DashboardPage({
   return (
     <div className="mx-auto max-w-[1440px]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <PageHeader title="Дашборд" description="Обзор клубов" />
+        <PageHeader title="Дашборд" description="Обзор филиалов" />
         <div className="w-full sm:w-auto">
           <DashboardMonthSelector monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} isCurrent={isCurrentMonth} />
         </div>

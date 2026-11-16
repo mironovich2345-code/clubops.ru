@@ -116,7 +116,7 @@ export default async function MandatoryPaymentsPage({ searchParams }: { searchPa
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr>
-                  <Th>Клуб</Th>
+                  <Th>Филиал</Th>
                   <Th>Категория</Th>
                   <Th>Название</Th>
                   <Th className="text-right">Сумма</Th>

@@ -1,3 +1,4 @@
+import { reportingNow } from "@/lib/demo/reporting";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
@@ -34,7 +35,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const companyId = ctx.selectedCompanyId;
   const clubs = (await getUserClubs(user.id, companyId)).map((c) => ({ id: c.id, name: c.name }));
   const clubIds = clubs.map((c) => c.id);
-  const now = new Date();
+  const now = reportingNow();
   const sp = await searchParams;
   const navMode = payrollNavMode(ctx.effectiveRoles);
 
@@ -45,7 +46,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
         <div className="mx-auto max-w-[1100px]">
           <PageHeader title="Зарплата (ФОТ)" description="Начисления и выплаты" />
           <PayrollNav mode="manager" />
-          <div className={`px-4 py-10 text-center text-sm text-slate-500 ${CARD}`}>Нет доступных клубов.</div>
+          <div className={`px-4 py-10 text-center text-sm text-slate-500 ${CARD}`}>Нет доступных филиалов.</div>
         </div>
       );
     }
@@ -101,7 +102,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="mx-auto max-w-[1440px]">
-      <PageHeader title="Зарплата (ФОТ)" description="Обзор: настройка, начисления, авансы и выплаты по клубам." />
+      <PageHeader title="Зарплата (ФОТ)" description="Обзор: настройка, начисления, авансы и выплаты по филиалам." />
       <PayrollNav mode="full" />
 
       <form method="get" className="mb-4 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:items-end lg:gap-2">

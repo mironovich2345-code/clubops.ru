@@ -22,7 +22,7 @@ export function AssignmentForm({ employeeId, clubs }: { employeeId: string; club
     <form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <input type="hidden" name="employeeId" value={employeeId} />
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Клуб</span>
+        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Филиал</span>
         <select name="clubId" defaultValue={clubs.length === 1 ? clubs[0]?.id : ""} required className="input w-full">
           {clubs.length === 1 ? null : <option value="" disabled>Выберите</option>}
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

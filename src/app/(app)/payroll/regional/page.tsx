@@ -49,7 +49,7 @@ export default async function RegionalPayrollPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <PageHeader title="Зарплата (ФОТ)" description="Регионал: единое начисление на город и месяц; выплаты частями из клубов города. Схему и процент утверждает собственник." />
+      <PageHeader title="Зарплата (ФОТ)" description="Регионал: единое начисление на город и месяц; выплаты частями из филиалов города. Схему и процент утверждает собственник." />
       <PayrollNav mode="full" />
 
       {canManage && cities.length > 0 ? (
@@ -82,7 +82,7 @@ export default async function RegionalPayrollPage() {
 
                 {byClub.size > 0 ? (
                   <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                    Выплачено по клубам: {[...byClub.entries()].map(([cid, amt]) => `${clubName.get(cid) ?? cid} ${formatKopeks(amt)}`).join(" · ")}
+                    Выплачено по филиалам: {[...byClub.entries()].map(([cid, amt]) => `${clubName.get(cid) ?? cid} ${formatKopeks(amt)}`).join(" · ")}
                   </div>
                 ) : null}
 

@@ -30,8 +30,8 @@ export function SalesDynamicsChart({ buckets, height = 200 }: { buckets: SplitTr
       {/* Legend + axis max */}
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-5 text-xs font-medium text-slate-600 dark:text-slate-300">
-          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Абонементы</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Персональные тренировки</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Основные услуги</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Дополнительные услуги</span>
         </div>
         <span className="text-[11px] text-slate-400 dark:text-slate-500">макс: {formatKopeksShort(maxAbs)}</span>
       </div>
@@ -68,7 +68,7 @@ export function SalesDynamicsChart({ buckets, height = 200 }: { buckets: SplitTr
       </div>
       {/* Period totals under the chart so the numbers are always visible */}
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-        <span>Абонементы за период: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatKopeks(subsTotal)}</span></span>
+        <span>Основные услуги за период: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatKopeks(subsTotal)}</span></span>
         <span>Персональные за период: <span className="font-semibold text-sky-600 dark:text-sky-400">{formatKopeks(ptTotal)}</span></span>
       </div>
     </div>

@@ -147,9 +147,9 @@ export default async function WorkspacePage({
       </div>
 
       {/* Part 4.1 — club cards */}
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Клубы</h2>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Филиалы</h2>
       {clubCards.length === 0 ? (
-        <div className={`mb-6 px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>Нет доступных клубов</div>
+        <div className={`mb-6 px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400 ${CARD}`}>Нет доступных филиалов</div>
       ) : (
         <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {clubCards.map((c) => (

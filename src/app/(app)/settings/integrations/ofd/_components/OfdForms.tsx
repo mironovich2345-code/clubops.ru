@@ -241,9 +241,9 @@ export function OfdMappingForm({ connections, clubs, entities }: { connections: 
       <Field label="ФН"><input name="fnNumber" required placeholder="номер ФН" className="input" /></Field>
       <Field label="РНМ ККТ (необязательно)"><input name="kktRegNumber" className="input" /></Field>
       <Field label="Название кассы (необязательно)"><input name="kktName" className="input" /></Field>
-      <Field label="Клуб">
+      <Field label="Филиал">
         <select name="clubId" required defaultValue="" className="input">
-          <option value="" disabled>Выберите клуб</option>
+          <option value="" disabled>Выберите филиал</option>
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </Field>
@@ -255,14 +255,14 @@ export function OfdMappingForm({ connections, clubs, entities }: { connections: 
       </Field>
       <Field label="Тип кассы">
         <select name="registerKind" value={kind} onChange={(e) => setKind(e.target.value)} className="input">
-          <option value="club_cashbox">Касса клуба</option>
+          <option value="club_cashbox">Касса филиала</option>
           <option value="online_cashbox">Онлайн-касса</option>
         </select>
       </Field>
       <p className="text-xs text-slate-500 md:col-span-3">
         {kind === "online_cashbox"
           ? "Используется для чеков онлайн-оплат. Источник будет отмечен как онлайн-касса."
-          : "Обычная касса клуба/ресепшена. Юрлицо задаётся ДЛЯ КАЖДОЙ кассы — один кабинет Такском может содержать кассы разных юрлиц."}
+          : "Обычная касса филиала/ресепшена. Юрлицо задаётся ДЛЯ КАЖДОЙ кассы — один кабинет Такском может содержать кассы разных юрлиц."}
       </p>
       <div className="flex items-end justify-between gap-3 md:col-span-3">
         <Msg s={state} />
@@ -321,7 +321,7 @@ export function OfdImportForm({ connections }: { connections: ConnOpt[] }) {
       <div className="w-full"><Msg s={state} /></div>
       {state.ok && state.perClub && state.perClub.length ? (
         <div className="w-full rounded-lg border border-slate-200">
-          <div className="border-b border-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">Итог по клубам</div>
+          <div className="border-b border-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">Итог по филиалам</div>
           {state.perClub.map((c, i) => (
             <div key={i} className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-sm">
               <span><b>{c.clubName}</b>{c.legalName ? <span className="ml-1 text-xs text-slate-500">· {c.legalName}</span> : null}</span>
@@ -331,7 +331,7 @@ export function OfdImportForm({ connections }: { connections: ConnOpt[] }) {
         </div>
       ) : null}
       {state.clubNote ? <p className="w-full text-xs text-slate-500">{state.clubNote}</p> : null}
-      <p className="w-full text-xs text-slate-500">Импорт идёт по всему кабинету (всем активным кассам подключения) — каждый чек разносится по своему клубу и юрлицу. Кассы без юрлица пропускаются до привязки.</p>
+      <p className="w-full text-xs text-slate-500">Импорт идёт по всему кабинету (всем активным кассам подключения) — каждый чек разносится по своему филиалу и юрлицу. Кассы без юрлица пропускаются до привязки.</p>
     </form>
   );
 }

@@ -1,3 +1,4 @@
+import { reportingNow } from "@/lib/demo/reporting";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import {
@@ -125,7 +126,7 @@ export default async function ExpensesPage({
         }))
     : [];
 
-  const now = new Date();
+  const now = reportingNow();
 
   // Single ИП cash view for the SELECTED Club (single active ИП), aligned to the
   // fact-balance logic (src/lib/cash-balances.ts). Needs one Club; a multi-Club /
@@ -192,7 +193,7 @@ export default async function ExpensesPage({
         {cardClubId ? (
           <IpCashFactBlock companyId={scope.company.id} club={{ id: cardClubId, name: clubs.find((c) => c.id === cardClubId)?.name ?? "" }} today={iso(now)} />
         ) : (
-          <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900">Выберите один клуб, чтобы увидеть фактический остаток наличных ИП.</div>
+          <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900">Выберите один филиал, чтобы увидеть фактический остаток наличных ИП.</div>
         )}
       </div>
 
@@ -313,7 +314,7 @@ export default async function ExpensesPage({
                     meta={[
                       { label: "Дата", value: dateFormatter.format(expense.expenseDate) },
                       { label: "Тип", value: EXPENSE_TYPE_LABELS[expense.type] ?? expense.type },
-                      { label: "Клуб", value: `${multiCompany && expense.companyName ? expense.companyName + " · " : ""}${expense.club.name}` },
+                      { label: "Филиал", value: `${multiCompany && expense.companyName ? expense.companyName + " · " : ""}${expense.club.name}` },
                       ...(contra ? [{ label: "Контрагент", value: contra }] : []),
                     ]}
                     action={groups ? (
@@ -486,7 +487,7 @@ async function IpCashFactBlock({ companyId, club, today }: { companyId: string; 
           «На проверке» + «Требуют исправления» из общего списка. Поэтому суммы карточки и
           общего списка расходов совпадать не обязаны (общий список шире по клубам/юрлицам). */}
       <p className="mt-2 text-xs text-slate-400">
-        Только наличные расходы ИП этого клуба (на проверке = ожидают проверки и на исправлении). Общий список расходов ниже шире — по всем клубам и юрлицам в выборке.
+        Только наличные расходы ИП этого филиала (на проверке = ожидают проверки и на исправлении). Общий список расходов ниже шире — по всем филиалам и юрлицам в выборке.
       </p>
       <details className="mt-3">
         <summary className="cursor-pointer text-xs font-medium text-brand-700">Задать контрольный остаток ИП</summary>

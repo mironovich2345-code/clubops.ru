@@ -16,7 +16,7 @@ export function RegionalTaskPanel({ base, rows, hasDue, resetHref, clubChip }: {
     <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">Задачи регионала: на проверке</span>
-        {clubChip ? <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">Клуб: {clubChip}</span> : null}
+        {clubChip ? <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">Филиал: {clubChip}</span> : null}
         <Link href={resetHref} className="text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400">Сбросить фильтр</Link>
         <span className="ml-auto text-xs text-slate-400">{rows.length} задач(и)</span>
       </div>
@@ -27,7 +27,7 @@ export function RegionalTaskPanel({ base, rows, hasDue, resetHref, clubChip }: {
         <>
           <div className="hidden overflow-x-auto rounded-lg border border-slate-200 lg:block dark:border-slate-800">
             <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
-              <thead className="bg-slate-50 dark:bg-slate-800/50"><tr><Th>Клуб</Th><Th>Объект</Th><Th>Сумма</Th><Th>Срок</Th><Th>Действие</Th></tr></thead>
+              <thead className="bg-slate-50 dark:bg-slate-800/50"><tr><Th>Филиал</Th><Th>Объект</Th><Th>Сумма</Th><Th>Срок</Th><Th>Действие</Th></tr></thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
                 {rows.map((r) => (
                   <tr key={r.id}>

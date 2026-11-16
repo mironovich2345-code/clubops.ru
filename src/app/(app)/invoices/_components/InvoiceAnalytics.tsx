@@ -60,7 +60,7 @@ export function InvoiceAnalytics({ rows, todayISO, showCompany = false }: { rows
         ) : (
           <Breakdown title="По статьям" rows={byCategory.map((x) => ({ label: expenseCategoryLabel(x.key), amountKopeks: x.amountKopeks }))} total={totalKopeks} />
         )}
-        <Breakdown title="По клубам" rows={byClub.map((x) => ({ label: x.key, amountKopeks: x.amountKopeks }))} total={totalKopeks} />
+        <Breakdown title="По филиалам" rows={byClub.map((x) => ({ label: x.key, amountKopeks: x.amountKopeks }))} total={totalKopeks} />
         <div className={`overflow-hidden ${CARD}`}>
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Ближайшие платежи</div>
           {upcoming.length === 0 ? (

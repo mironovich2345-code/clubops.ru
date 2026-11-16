@@ -62,7 +62,7 @@ export function CreateSaleForm({ clubs }: { clubs: ClubOption[] }) {
           className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
         >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="Клуб" error={fe.clubId}>
+            <Field label="Филиал" error={fe.clubId}>
               <select
                 name="clubId"
                 required
@@ -70,7 +70,7 @@ export function CreateSaleForm({ clubs }: { clubs: ClubOption[] }) {
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
               >
                 <option value="" disabled>
-                  Выберите клуб
+                  Выберите филиал
                 </option>
                 {clubs.map((club) => (
                   <option key={club.id} value={club.id}>

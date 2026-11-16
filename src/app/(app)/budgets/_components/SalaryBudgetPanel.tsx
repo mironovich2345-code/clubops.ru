@@ -65,7 +65,7 @@ export async function SalaryBudgetPanel({
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs text-slate-500 dark:border-slate-700">
-                <th className="py-2 pr-3">Клуб</th>
+                <th className="py-2 pr-3">Филиал</th>
                 <th className="px-3 py-2 text-right" title="Планируемый ФОТ из активных схем">Прогноз</th>
                 <th className="px-3 py-2 text-right" title="Утверждённый лимит бюджета">Бюджет</th>
                 <th className="px-3 py-2 text-right" title="Начислено в утверждённых периодах">Начислено</th>

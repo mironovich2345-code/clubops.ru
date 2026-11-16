@@ -239,7 +239,7 @@ function ByClubBlock({ view }: { view: InvoicesView }) {
   const rows = [...byClub.values()].sort((a, b) => b.amountKopeks - a.amountKopeks);
   const total = rows.reduce((s, r) => s + r.amountKopeks, 0);
   return (
-    <Panel title="По клубам">
+    <Panel title="По филиалам">
       {rows.length === 0 ? (
         <div className="px-4 py-6 text-center text-sm text-slate-500">Нет данных за выбранный период</div>
       ) : (
@@ -358,7 +358,7 @@ function ReviewQueue({ view }: { view: InvoicesView }) {
           <div className="hidden overflow-x-auto lg:block">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
-                <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Управляющий</Th><Th>Клуб</Th><Th>Отправлен</Th><Th>Срок оплаты</Th><Th>Действия</Th></tr>
+                <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Управляющий</Th><Th>Филиал</Th><Th>Отправлен</Th><Th>Срок оплаты</Th><Th>Действия</Th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {rows.map((r) => (
@@ -389,7 +389,7 @@ function ReviewQueue({ view }: { view: InvoicesView }) {
                 status={<StatusBadge tone="warning">Ожидает проверки</StatusBadge>}
                 meta={[
                   ...(r.invoiceNumber ? [{ label: "№", value: r.invoiceNumber }] : []),
-                  { label: "Клуб", value: r.clubName },
+                  { label: "Филиал", value: r.clubName },
                   { label: "Управляющий", value: r.createdByName },
                   { label: "Срок оплаты", value: r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—" },
                 ]}
@@ -412,7 +412,7 @@ function MainList({ view }: { view: InvoicesView }) {
       <div className="hidden overflow-x-auto lg:block">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
-            <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Статья</Th><Th>Статус</Th><Th>Клуб</Th><Th>Срок / Оплачен</Th><Th>Действия</Th></tr>
+            <tr><Th>Контрагент</Th><Th className="text-right">Сумма</Th><Th>Статья</Th><Th>Статус</Th><Th>Филиал</Th><Th>Срок / Оплачен</Th><Th>Действия</Th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {rows.length === 0 ? (
@@ -452,7 +452,7 @@ function MainList({ view }: { view: InvoicesView }) {
               meta={[
                 ...(r.invoiceNumber ? [{ label: "№", value: r.invoiceNumber }] : []),
                 { label: "Статья", value: expenseCategoryLabel(r.expenseCategory) },
-                { label: "Клуб", value: r.clubName },
+                { label: "Филиал", value: r.clubName },
                 { label: r.status === "paid" ? "Оплачен" : "Срок", value: r.status === "paid" ? (r.paidAt ? dateFmt.format(new Date(r.paidAt)) : "оплачен") : r.dueDate ? dateFmt.format(new Date(r.dueDate)) : "—" },
               ]}
               action={r.status === "draft" ? (

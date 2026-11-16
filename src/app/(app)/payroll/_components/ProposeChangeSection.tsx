@@ -163,7 +163,7 @@ export function ProposeChangeSection({
                     Область:
                     <select name="schemeScope" defaultValue="employee" className="input text-xs">
                       <option value="employee">Этот сотрудник</option>
-                      <option value="payroll_category">Вся категория клуба</option>
+                      <option value="payroll_category">Вся категория филиала</option>
                     </select>
                   </label>
                 </>

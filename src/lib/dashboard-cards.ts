@@ -11,6 +11,7 @@ import { dayStart, addDays } from "@/lib/payments";
 import { loadOfdManagementOverview, ofdCardFields, type OfdCardFields } from "@/lib/analytics/ofd-management";
 import { loadClubCashBalances } from "@/lib/cash-collections";
 import { loadRecognizedExpenses } from "@/lib/finance/recognized-expense";
+import { isDemo } from "@/lib/demo/config";
 
 export type ClubCard = {
   id: string;
@@ -118,7 +119,7 @@ export async function loadCompanyClubCards(
       ptFact: split?.personal_training.factKopeks ?? 0,
       ptPlan: split?.personal_training.planKopeks ?? 0,
       ptPct: split?.personal_training.percent ?? null,
-      expensesKopeks: expensesByClub.get(c.id) ?? 0,
+      expensesKopeks: isDemo() ? recognized?.byClub[c.id] ?? 0 : expensesByClub.get(c.id) ?? 0,
       recognizedExpensesKopeks: recognized?.byClub[c.id] ?? 0,
       breakEvenKopeks: budgetByClub.get(c.id) ?? 0,
       oooKopeks,
@@ -127,7 +128,7 @@ export async function loadCompanyClubCards(
       ipRisk: riskFor(ipKopeks, obl.ip),
       oooFactKopeks: factCash.get(c.id)?.ooo ?? 0,
       ipFactKopeks: factCash.get(c.id)?.ip ?? 0,
-      ofd: ofdCardFields(ofdMgmt?.perClub.get(c.id)),
+      ofd: { ...ofdCardFields(ofdMgmt?.perClub.get(c.id)), ...(isDemo() ? { ofdRevenueKopeks: ofdMgmt?.perClub.get(c.id)?.netKopeks ?? 0 } : {}) },
     };
   });
 }

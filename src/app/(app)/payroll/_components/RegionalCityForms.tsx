@@ -63,7 +63,7 @@ export function RegionalPaymentForm({ payrollId, clubs }: { payrollId: string; c
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-2 dark:bg-slate-800/40">
       <input type="hidden" name="regionalCityPayrollId" value={payrollId} />
       <label className="block">
-        <span className="mb-1 block text-[11px] text-slate-500">Клуб-источник</span>
+        <span className="mb-1 block text-[11px] text-slate-500">Филиал-источник</span>
         <select name="clubId" defaultValue={clubs.length === 1 ? clubs[0]?.id : ""} required className="input text-sm">
           {clubs.length === 1 ? null : <option value="" disabled>Выберите</option>}
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -83,7 +83,7 @@ export function RegionalPaymentForm({ payrollId, clubs }: { payrollId: string; c
       <label className="flex items-center gap-1 pt-5 text-[11px] text-slate-600">
         <input type="checkbox" name="allowOverpayment" className="h-3.5 w-3.5" /> оформить переплату долгом
       </label>
-      <Submit label="Выплатить из клуба" />
+      <Submit label="Выплатить из филиала" />
       {state.ok ? <span className="w-full text-xs text-emerald-600">{state.notice}</span> : state.error ? <span className="w-full text-xs text-rose-600">{state.error}</span> : null}
     </form>
   );

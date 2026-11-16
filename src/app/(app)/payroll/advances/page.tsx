@@ -102,7 +102,7 @@ export default async function PayrollAdvancesPage({ searchParams }: { searchPara
       <form method="get" className="mb-4 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
         <MonthField label="Месяц" name="month" defaultValue={month} />
         {clubs.length > 1 ? (
-          <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Клуб</span>
+          <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Филиал</span>
             <select name="club" defaultValue={clubFilter ?? ""} className="input w-full"><option value="">все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         ) : null}
         <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Статус</span>
@@ -143,7 +143,7 @@ export default async function PayrollAdvancesPage({ searchParams }: { searchPara
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50"><tr>
-                <Th>Сотрудник</Th><Th>Клуб</Th><Th>Должность</Th><Th>Дата</Th>
+                <Th>Сотрудник</Th><Th>Филиал</Th><Th>Должность</Th><Th>Дата</Th>
                 <Th className="text-right">Запрошено</Th><Th className="text-right">Заработано</Th><Th className="text-right">Выплачено</Th>
                 <Th>Способ</Th><Th>Статус</Th><Th className="text-right">Действие</Th>
               </tr></thead>

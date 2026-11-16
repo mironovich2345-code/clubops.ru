@@ -34,7 +34,7 @@ export function EmployeeForm({ clubs }: { clubs: Array<{ id: string; name: strin
         {state.fieldErrors?.position ? <span className="mt-1 block text-xs text-rose-600">{state.fieldErrors.position}</span> : null}
       </label>
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Клуб</span>
+        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Филиал</span>
         <select name="clubId" defaultValue={clubs.length === 1 ? clubs[0]?.id : ""} required className="input w-full">
           {clubs.length === 1 ? null : <option value="" disabled>Выберите</option>}
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

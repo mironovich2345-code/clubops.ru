@@ -27,7 +27,7 @@ const SCHEME_FIELDS: Record<string, Field[]> = {
   sales_percentage: [{ name: "ratePercent", label: "% с продаж", placeholder: "5", step: "0.1" }],
   hourly: [{ name: "hourlyRateRubles", label: "Ставка за час/занятие, ₽", placeholder: "700" }],
   plan_adjusted_salary: [
-    { name: "subscriptionsBaseRubles", label: "Окладная часть — абонементы, ₽", placeholder: "60000" },
+    { name: "subscriptionsBaseRubles", label: "Окладная часть — основные услуги, ₽", placeholder: "60000" },
     { name: "ptBaseRubles", label: "Окладная часть — ПТ, ₽", placeholder: "30000" },
     { name: "maxAdjustmentPercent", label: "Предел корректировки, %", placeholder: "40", step: "1" },
     { name: "manualReviewDeviationPercent", label: "Порог ручного решения, %", placeholder: "20", step: "1" },
@@ -69,7 +69,7 @@ export function PaySchemeForm({
       <input type="hidden" name="employeeId" value={employeeId} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Клуб</span>
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Филиал</span>
           <select name="clubId" defaultValue={defaultClubId} required className="input w-full">
             {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>

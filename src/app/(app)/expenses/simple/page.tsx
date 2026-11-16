@@ -7,6 +7,7 @@ import { ensureExpenseCategoriesSeeded, getActiveExpenseCategories } from "@/lib
 import { isCashForbiddenCategory } from "@/lib/expenses";
 import { formatUserDisplayName } from "@/lib/user-display";
 import { SimpleExpenseForm } from "./SimpleExpenseForm";
+import { isDemo } from "@/lib/demo/config";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +33,10 @@ export default async function SimpleExpensePage() {
 
   return (
     <div>
-      <PageHeader title="Новый расход" description="Упрощённый расход клуба (оплата наличными из ИП клуба)" />
+      <PageHeader title="Новый расход" description="Упрощённый расход филиала (оплата наличными из ИП филиала)" />
       <div className="mt-4">
         <SimpleExpenseForm
+          demo={isDemo()}
           categories={cashCategories.map((c) => ({ key: c.key, name: c.name }))}
           payerName={payer ? formatUserDisplayName(payer) : "Текущий пользователь"}
         />

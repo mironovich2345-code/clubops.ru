@@ -88,9 +88,9 @@ export function CompanyEditor({ company }: { company: CompanyView }) {
 
       {/* Clubs */}
       <div className="mt-5 border-t border-slate-200 pt-4">
-        <div className="mb-3 text-sm font-medium text-slate-700">Клубы</div>
+        <div className="mb-3 text-sm font-medium text-slate-700">Филиалы</div>
         {company.clubs.length === 0 ? (
-          <div className="mb-3 text-sm text-slate-500">Пока нет клубов.</div>
+          <div className="mb-3 text-sm text-slate-500">Пока нет филиалов.</div>
         ) : (
           <div className="space-y-3">
             {company.clubs.map((club) => (
@@ -103,7 +103,7 @@ export function CompanyEditor({ company }: { company: CompanyView }) {
         <form action={clubAction} className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <input type="hidden" name="companyId" value={company.id} />
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Клуб</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Филиал</span>
             <input name="name" required className="input w-full" placeholder="Чапаева" />
           </label>
           <label className="block">
@@ -111,7 +111,7 @@ export function CompanyEditor({ company }: { company: CompanyView }) {
             <input name="city" required className="input w-full" placeholder="Рязань" />
           </label>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">ООО клуба</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">ООО филиала</span>
             <select name="oooId" defaultValue="" required className="input w-full" disabled={company.oooOptions.length === 0}>
               <option value="" disabled>{company.oooOptions.length === 0 ? "Нет активных ООО" : "Выберите ООО"}</option>
               {company.oooOptions.map((o) => (
@@ -120,7 +120,7 @@ export function CompanyEditor({ company }: { company: CompanyView }) {
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">ИП клуба</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">ИП филиала</span>
             <select name="ipId" defaultValue="" required className="input w-full" disabled={company.ipOptions.length === 0}>
               <option value="" disabled>{company.ipOptions.length === 0 ? "Нет активных ИП" : "Выберите ИП"}</option>
               {company.ipOptions.map((o) => (
@@ -129,12 +129,12 @@ export function CompanyEditor({ company }: { company: CompanyView }) {
             </select>
           </label>
           <div className="flex items-center gap-3 sm:col-span-2">
-            <Submit label="Добавить клуб" />
+            <Submit label="Добавить филиал" />
             <Status state={clubState} />
           </div>
           {company.oooOptions.length === 0 || company.ipOptions.length === 0 ? (
             <div className="text-xs text-amber-700 sm:col-span-2">
-              Для создания клуба нужно хотя бы одно активное ООО и одно активное ИП в этой сети. Добавьте юрлица выше.
+              Для создания филиала нужно хотя бы одно активное ООО и одно активное ИП в этой сети. Добавьте юрлица выше.
             </div>
           ) : null}
         </form>
@@ -167,7 +167,7 @@ function ClubEditor({ club, oooOptions, ipOptions }: { club: ClubView; oooOption
       <form action={action} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="clubId" value={club.id} />
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Название клуба</span>
+          <span className="mb-1 block text-xs font-medium text-slate-600">Название филиала</span>
           <input name="name" defaultValue={club.name} required className="input" disabled={!club.isActive} />
         </label>
         <label className="block">
@@ -180,8 +180,8 @@ function ClubEditor({ club, oooOptions, ipOptions }: { club: ClubView; oooOption
 
       {club.isActive ? (
         <div className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-200 pt-3 sm:grid-cols-2">
-          <ReplaceEntityForm clubId={club.id} type="ooo" field="ООО клуба" currentId={club.oooId} currentName={club.oooName} options={oooOptions} />
-          <ReplaceEntityForm clubId={club.id} type="ip" field="ИП клуба" currentId={club.ipId} currentName={club.ipName} options={ipOptions} />
+          <ReplaceEntityForm clubId={club.id} type="ooo" field="ООО филиала" currentId={club.oooId} currentName={club.oooName} options={oooOptions} />
+          <ReplaceEntityForm clubId={club.id} type="ip" field="ИП филиала" currentId={club.ipId} currentName={club.ipName} options={ipOptions} />
         </div>
       ) : null}
 

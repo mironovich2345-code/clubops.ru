@@ -9,6 +9,9 @@ import { MobileShell } from "./_components/MobileShell";
 import { AccountSwitcher } from "./_components/AccountSwitcher";
 import { listDeviceAccounts } from "@/lib/account-container";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { isDemo } from "@/lib/demo/config";
+import { DemoSummary } from "@/components/DemoSummary";
+import { DemoToolbar } from "@/components/DemoToolbar";
 
 // This layout reads the database and the session, so the whole (app) subtree
 // must be rendered on demand, never statically prerendered at build time.
@@ -17,6 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Effective-role gate: unauthenticated -> /login; no effective access -> /no-access.
   const ctx = await getCurrentAccessContext();
+  const demo = isDemo();
   if (!ctx) redirect("/login");
   if (!ctx.selectedCompanyId || ctx.effectiveRoles.length === 0) redirect("/onboarding");
   const user = ctx.user;
@@ -59,13 +63,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const accountSlot = (
     <div className="flex flex-wrap items-center gap-3">
       <div className="w-full min-w-0 sm:w-64">
-        <AccountSwitcher
+          {demo ? <div className="text-sm font-medium">{roleLabel} · Сфера (демо)</div> : <AccountSwitcher
           current={{ name: user.name, roleLabel, companyName: selectedCompanyName }}
           accounts={switcherAccounts}
-        />
+        />}
       </div>
       <ThemeToggle />
-      <Link href="/settings/security" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Безопасность</Link>
+      {!demo && <Link href="/settings/security" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Безопасность</Link>}
     </div>
   );
 
@@ -76,6 +80,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Sidebar items={visibleItems} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
+        {demo && <DemoToolbar role={ctx.effectiveRole ?? "owner"} />}
         {/* Desktop header */}
         <header className="hidden h-16 items-center justify-between border-b border-slate-200 bg-white px-6 lg:flex">
           {scopeSlot}
@@ -83,7 +88,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </header>
         {/* Mobile shell: sticky top bar + drawer + bottom nav */}
         <MobileShell items={visibleItems.map((i) => ({ page: i.page, href: i.href, label: i.label }))} header={scopeSlot} account={accountSlot} />
-        <main className="min-w-0 flex-1 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] lg:px-8 lg:py-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] lg:px-8 lg:py-8">{demo && strategic && <DemoSummary companyId={ctx.selectedCompanyId} clubIds={ctx.allowedClubIds} />}{children}</main>
       </div>
     </div>
   );

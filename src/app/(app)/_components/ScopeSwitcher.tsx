@@ -80,7 +80,7 @@ export function ScopeSwitcher({
 
       {clubs.length > 0 ? (
         <label className="block min-w-0 lg:w-48">
-          <span className="mb-1 block text-xs font-medium text-[var(--text-muted)] lg:sr-only">Клуб</span>
+          <span className="mb-1 block text-xs font-medium text-[var(--text-muted)] lg:sr-only">Филиал</span>
           <span className="flex h-12 w-full items-center rounded-md border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 lg:h-9">
             <select
               value={clubId}
@@ -88,7 +88,7 @@ export function ScopeSwitcher({
               disabled={isPending}
               className="min-w-0 flex-1 truncate border-0 bg-transparent p-0 font-medium text-[var(--text-primary)] focus:outline-none focus:ring-0 disabled:opacity-60"
             >
-              <option value="">Все клубы</option>
+              <option value="">Все филиалы</option>
               {clubs.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}

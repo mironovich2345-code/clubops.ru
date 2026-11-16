@@ -28,7 +28,7 @@ export function ClubCardsGrid(p: ClubCardsGridProps) {
   if (p.cards.length === 0) {
     return (
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-16 text-center text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-        Нет доступных клубов
+        Нет доступных филиалов
       </div>
     );
   }
@@ -81,7 +81,7 @@ function ClubCard({ card, showSales, showExpenses, showCash, daysLeft, showCompa
 
       {showSales ? (
         <div className="grid grid-cols-2 gap-4">
-          <MetricBlock label="Абонементы" value={subs} pct={subsPct} plan={card.subsPlan} daysLeft={daysLeft} accent="text-emerald-600 dark:text-emerald-400" />
+          <MetricBlock label="Основные услуги" value={subs} pct={subsPct} plan={card.subsPlan} daysLeft={daysLeft} accent="text-emerald-600 dark:text-emerald-400" />
           <MetricBlock label="ПТ" value={pt} pct={ptPct} plan={card.ptPlan} daysLeft={daysLeft} accent="text-sky-600 dark:text-sky-400" />
         </div>
       ) : null}

@@ -24,7 +24,7 @@ export type CashRegisterVM = {
 };
 
 const initial = { ok: false as boolean, error: undefined as string | undefined, notice: undefined as string | undefined };
-const KIND_LABEL: Record<string, string> = { club_cashbox: "Касса клуба", online_cashbox: "Онлайн-касса" };
+const KIND_LABEL: Record<string, string> = { club_cashbox: "Касса филиала", online_cashbox: "Онлайн-касса" };
 const STATUS: Record<string, { label: string; cls: string }> = {
   active: { label: "Активна", cls: "bg-emerald-50 text-emerald-700" },
   disabled: { label: "Выключена", cls: "bg-slate-100 text-slate-500" },
@@ -49,8 +49,8 @@ function EditForm({ vm, clubs, entities, connections }: { vm: CashRegisterVM; cl
         <label className="block"><span className="mb-1 block text-[11px] text-slate-500">Название</span><input name="kktName" defaultValue={vm.kktName ?? ""} className="input w-full text-sm" /></label>
         <label className="block"><span className="mb-1 block text-[11px] text-slate-500">Подключение</span><select name="connectionId" defaultValue={vm.connectionId} className="input w-full text-sm">{connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <label className="block"><span className="mb-1 block text-[11px] text-slate-500">Юрлицо</span><select name="legalEntityId" defaultValue={vm.legalEntityId ?? ""} className="input w-full text-sm"><option value="">— не задано —</option>{entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
-        <label className="block"><span className="mb-1 block text-[11px] text-slate-500">Клуб</span><select name="clubId" defaultValue={vm.clubId} className="input w-full text-sm">{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <label className="block"><span className="mb-1 block text-[11px] text-slate-500">Тип кассы</span><select name="registerKind" defaultValue={vm.registerKind} className="input w-full text-sm"><option value="club_cashbox">Касса клуба</option><option value="online_cashbox">Онлайн-касса</option></select></label>
+        <label className="block"><span className="mb-1 block text-[11px] text-slate-500">Филиал</span><select name="clubId" defaultValue={vm.clubId} className="input w-full text-sm">{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label className="block"><span className="mb-1 block text-[11px] text-slate-500">Тип кассы</span><select name="registerKind" defaultValue={vm.registerKind} className="input w-full text-sm"><option value="club_cashbox">Касса филиала</option><option value="online_cashbox">Онлайн-касса</option></select></label>
         <label className="block"><span className="mb-1 block text-[11px] text-slate-500">Действует с</span><input type="date" name="effectiveFrom" defaultValue={todayISO()} className="input w-full text-sm" /></label>
       </div>
       <p className="text-[11px] text-slate-500">Изменение привязки закрывает предыдущую и открывает новую с указанной даты. Прошлые чеки не меняются.</p>

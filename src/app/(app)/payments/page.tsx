@@ -1,3 +1,4 @@
+import { reportingNow } from "@/lib/demo/reporting";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
@@ -85,7 +86,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const companyId = scope.company.id;
   const sp = await searchParams;
 
-  const now = new Date();
+  const now = reportingNow();
   const today = dayStart(now);
 
   // Part 2 — selected month (default: current).
@@ -647,7 +648,7 @@ function CitySummaryCard({ rows }: { rows: { city: string; toPayKopeks: number; 
 
 function ClubSummaryCard({ rows }: { rows: { clubId: string; clubName: string; toPayKopeks: number }[] }) {
   return (
-    <PanelCard title="По клубам">
+    <PanelCard title="По филиалам">
       {rows.length === 0 ? (
         <Empty text="Нет данных" />
       ) : (

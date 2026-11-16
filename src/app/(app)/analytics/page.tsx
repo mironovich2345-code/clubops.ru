@@ -1,3 +1,4 @@
+import { reportingNow, reportingRevenue } from "@/lib/demo/reporting";
 import Link from "next/link";
 import { CompactPageHeader, MobileDataCard } from "@/components/mobile/density";
 import { DateField } from "@/components/mobile/DateField";
@@ -79,11 +80,11 @@ export default async function AnalyticsPage({
   const user = await requirePageAccess("analytics");
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {
-    return <NoCompanyState title="Аналитика" description="Бизнес-обзор клуба" />;
+    return <NoCompanyState title="Аналитика" description="Бизнес-обзор филиала" />;
   }
   const ctx = await getCurrentAccessContext();
   if (!ctx) {
-    return <NoCompanyState title="Аналитика" description="Бизнес-обзор клуба" />;
+    return <NoCompanyState title="Аналитика" description="Бизнес-обзор филиала" />;
   }
 
   const roles = ctx.effectiveRoles;
@@ -97,7 +98,7 @@ export default async function AnalyticsPage({
     ? (sp.period as AnalyticsPeriodKey)
     : "current_month";
 
-  const now = new Date();
+  const now = reportingNow();
   const period = resolvePeriod(periodKey, now, parseDay(sp.from), parseDay(sp.to));
   const granularity = granularityFor(period.key, period.months.length);
   const drillFrom = isoLocal(period.start);
@@ -129,7 +130,7 @@ export default async function AnalyticsPage({
         clubs: p.g.clubIds.length,
         ab: useOfd ? p.ofd!.totals.subscriptionsKopeks : p.r.summary.subscriptionsKopeks,
         pt: useOfd ? p.ofd!.totals.personalTrainingKopeks : p.r.summary.personalTrainingKopeks,
-        rev: p.ofd?.totals.incomeKopeks ?? 0,
+        rev: reportingRevenue(p.ofd?.totals),
         exp: p.r.summary.expensesKopeks,
       };
     });
@@ -162,7 +163,7 @@ export default async function AnalyticsPage({
           <KpiCard label="Продажи АБ (все сети)" value={formatKopeks(tAb)} accent="text-emerald-600 dark:text-emerald-400" />
           <KpiCard label="Продажи ПТ (все сети)" value={formatKopeks(tPt)} accent="text-sky-600 dark:text-sky-400" />
           {financials ? <KpiCard label="Расходы (все сети)" value={formatKopeks(tExp)} accent="text-rose-600 dark:text-rose-400" /> : null}
-          <KpiCard label="Клубов в выборке" value={String(groups.filteredClubIds.length)} />
+          <KpiCard label="Филиалов в выборке" value={String(groups.filteredClubIds.length)} />
         </div>
         {/* Mobile: one card per network (no clipped table). Desktop: the full table. */}
         <div className="space-y-3 lg:hidden">
@@ -176,7 +177,7 @@ export default async function AnalyticsPage({
                 { label: "Продажи ПТ", value: formatKopeks(r.pt) },
                 ...(financials ? [{ label: "Расходы", value: formatKopeks(r.exp) }] : []),
                 ...(financials && anyOfd ? [{ label: "Результат", value: formatKopeks(r.rev - r.exp), strong: true, tone: (r.rev - r.exp) < 0 ? "danger" as const : "success" as const }] : []),
-                { label: "Клубов", value: String(r.clubs) },
+                { label: "Филиалов", value: String(r.clubs) },
               ]}
             />
           ))}
@@ -224,7 +225,7 @@ export default async function AnalyticsPage({
   const useOfd = !!ofd && ofd.hasData;
   const abValue = useOfd ? ofd!.totals.subscriptionsKopeks : s.subscriptionsKopeks;
   const ptValue = useOfd ? ofd!.totals.personalTrainingKopeks : s.personalTrainingKopeks;
-  const ofdRevenueKopeks = ofd?.totals.incomeKopeks ?? 0;
+  const ofdRevenueKopeks = reportingRevenue(ofd?.totals);
   // REM-05A — the ONE official profit for every live financial card/stat:
   // calculateProfit = canonical OFD net revenue − recognized expenses (payroll accrual
   // + partially_paid invoices in FULL + refunds + taxes). No legacy Sale/SalesReport
@@ -292,7 +293,7 @@ export default async function AnalyticsPage({
     <div className="mx-auto max-w-[1440px]">
       {/* Header + period selector */}
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <CompactPageHeader title="Аналитика" subtitle="Бизнес-обзор клуба" />
+        <CompactPageHeader title="Аналитика" subtitle="Бизнес-обзор филиала" />
         {/* Mobile: one column, full-width controls + full-width primary on its own row
             (no button/date overlap, §5). Desktop: compact horizontal row. */}
         <form method="get" className={`grid grid-cols-1 gap-3 p-4 ${CARD} lg:flex lg:flex-wrap lg:items-end lg:gap-2 lg:p-2`}>
@@ -350,7 +351,7 @@ export default async function AnalyticsPage({
           <KpiCard label="Выручка ОФД" value={formatKopeks(ofdRevenueKopeks)} sub={rangeLabel} accent="text-brand-700 dark:text-brand-400" />
         ) : null}
         <KpiCard
-          label={useOfd ? "Абонементы (ОФД)" : "Продажи абонементов"}
+          label={useOfd ? "Основные услуги (ОФД)" : "Продажи абонементов"}
           value={formatKopeks(abValue)}
           sub={rangeLabel}
           accent="text-emerald-600 dark:text-emerald-400"
@@ -358,7 +359,7 @@ export default async function AnalyticsPage({
           progress={report.planTotals.subscriptions}
         />
         <KpiCard
-          label={useOfd ? "Персональные тренировки (ОФД)" : "Продажи персональных тренировок"}
+          label={useOfd ? "Дополнительные услуги (ОФД)" : "Продажи персональных тренировок"}
           value={formatKopeks(ptValue)}
           sub={rangeLabel}
           accent="text-sky-600 dark:text-sky-400"

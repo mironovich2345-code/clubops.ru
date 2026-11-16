@@ -92,7 +92,7 @@ export function SalesReportForm({
             {state.fieldErrors?.reportDate ? <span className="mt-1 block text-xs text-rose-600">{state.fieldErrors.reportDate}</span> : null}
           </label>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Клуб</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Филиал</span>
             <select name="clubId" value={clubId} onChange={(e) => setClubId(e.target.value)} className="input w-full">
               {clubs.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
@@ -110,7 +110,7 @@ export function SalesReportForm({
             </select>
             {managerOptions.length === 0 ? (
               <span className="mt-1 block text-xs text-amber-600">
-                Нет активных менеджеров в этом клубе — добавьте сотрудника на странице «Сотрудники».
+                Нет активных менеджеров в этом филиале — добавьте сотрудника на странице «Сотрудники».
               </span>
             ) : null}
           </label>

@@ -1,3 +1,4 @@
+import { reportingNow } from "@/lib/demo/reporting";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
@@ -85,7 +86,7 @@ export default async function BudgetsPage({
   const sp = await searchParams;
   const selectedClubId =
     sp.clubId && clubs.some((c) => c.id === sp.clubId) ? sp.clubId : scope.club?.id ?? clubs[0].id;
-  const now = new Date();
+  const now = reportingNow();
   const month = sp.month && isValidMonth(sp.month) ? sp.month : currentMonthKey(now);
   const tab: RequestTab = REQUEST_TABS.some((t) => t.key === sp.tab)
     ? (sp.tab as RequestTab)
@@ -149,7 +150,7 @@ export default async function BudgetsPage({
       {/* Club + month selector — full-width stack on mobile, inline row on desktop. */}
       <form method="get" className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4 shadow-sm lg:flex lg:flex-wrap lg:items-end lg:gap-3 lg:p-3">
         <label className="block min-w-0 lg:w-56">
-          <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Клуб</span>
+          <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Филиал</span>
           <select name="clubId" defaultValue={selectedClubId} className="input w-full">
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -282,7 +283,7 @@ export default async function BudgetsPage({
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
-              <Th>Клуб</Th>
+              <Th>Филиал</Th>
               <Th>Статья</Th>
               <Th className="text-right">Сумма</Th>
               <Th className="text-right">Бюджет</Th>

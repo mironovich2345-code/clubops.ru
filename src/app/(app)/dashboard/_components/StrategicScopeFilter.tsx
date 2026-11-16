@@ -87,9 +87,9 @@ export function StrategicScopeFilter({ companies, clubs, mode, companyId, city, 
     </select>,
   );
   const ClubField = Field(
-    "Клуб",
+    "Филиал",
     <select className={selectCls} value={clubId ?? ALL} onChange={(e) => navigate({ clubId: e.target.value })}>
-      <option value={ALL}>Все клубы</option>
+      <option value={ALL}>Все филиалы</option>
       {clubPool.map((c) => (<option key={c.id} value={c.id}>{c.name}{c.city ? ` · ${c.city}` : ""}</option>))}
     </select>,
   );

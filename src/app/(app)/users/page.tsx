@@ -1,3 +1,4 @@
+import { isDemo } from "@/lib/demo/config";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import {
@@ -32,7 +33,7 @@ export default async function UsersPage() {
 
   const scope = await getCurrentCompanyAndClub(user);
   if (!scope.company) {
-    return <NoCompanyState title="Пользователи" description="Сотрудники, роли и доступ к клубам" />;
+    return <NoCompanyState title="Пользователи" description="Сотрудники, роли и доступ к филиалам" />;
   }
   const companyId = scope.company.id;
   const companyName = scope.company.name;
@@ -129,6 +130,7 @@ export default async function UsersPage() {
   // Actions column — identical on desktop table + mobile card (spec §11: no critical
   // access info hidden behind overflow).
   const MemberActions = ({ member }: { member: CompanyMember }) => {
+    if (isDemo()) return <span className="text-xs text-slate-500">Демо · управление доступом отключено</span>;
     const removable = canRemove(member);
     const showAdmin = showsAdminBlock(member);
     return (
@@ -158,9 +160,9 @@ export default async function UsersPage() {
 
   return (
     <div>
-      <PageHeader title="Пользователи" description="Сотрудники, роли и доступ к клубам" />
+      <PageHeader title="Пользователи" description="Сотрудники, роли и доступ к филиалам" />
 
-      {roleOptions.length > 0 ? (
+      {roleOptions.length > 0 && !isDemo() ? (
         <InviteForm roles={roleOptions} clubs={clubs} companyName={scope.company.name} clubScopedRoles={clubScopedRoles} />
       ) : null}
 

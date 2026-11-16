@@ -139,9 +139,9 @@ export function PayrollUpload({ clubs, companyName }: { clubs: ClubOption[]; com
         <Field label="Компания">
           <input value={companyName} disabled className="input bg-slate-50 text-slate-500" />
         </Field>
-        <Field label="Клуб">
+        <Field label="Филиал">
           <select name="clubId" required value={clubId} onChange={(e) => setClubId(e.target.value)} className="input">
-            <option value="" disabled>Выберите клуб</option>
+            <option value="" disabled>Выберите филиал</option>
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} — {c.city}

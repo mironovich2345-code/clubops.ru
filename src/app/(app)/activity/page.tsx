@@ -135,7 +135,7 @@ export default async function ActivityPage({
         <input type="date" name="to" defaultValue={sp.to ?? ""} className="input w-full" /></label>
       <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Пользователь</span>
         <select name="userId" defaultValue={filters.userId ?? ""} className="input w-full"><option value="">Все</option>{userOptions.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
-      <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Клуб</span>
+      <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Филиал</span>
         <select name="clubId" defaultValue={filters.clubId ?? ""} className="input w-full"><option value="">Все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
       <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">Тип</span>
         <select name="type" defaultValue={type} className="input w-full">{ACTIVITY_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select></label>
@@ -185,7 +185,7 @@ export default async function ActivityPage({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Клуб</span>
+          <span className="mb-1 block text-xs font-medium text-slate-600">Филиал</span>
           <select name="clubId" defaultValue={filters.clubId ?? ""} className="input w-full">
             <option value="">Все</option>
             {clubs.map((c) => (
@@ -227,7 +227,7 @@ export default async function ActivityPage({
                 <Th>Пользователь</Th>
                 <Th>Роль</Th>
                 <Th>Компания</Th>
-                <Th>Клуб</Th>
+                <Th>Филиал</Th>
                 <Th>Действие</Th>
                 <Th>Объект</Th>
                 <Th>Результат</Th>
@@ -275,7 +275,7 @@ export default async function ActivityPage({
                   { label: "Когда", value: dtFormatter.format(row.createdAt), tone: "muted" },
                   { label: "Кто", value: row.userName, strong: true },
                   { label: "Роль", value: row.roleLabel },
-                  { label: "Клуб", value: row.clubName },
+                  { label: "Филиал", value: row.clubName },
                 ]}
                 details={<div className="break-anywhere text-slate-600">Объект: {row.objectLabel}</div>}
               />

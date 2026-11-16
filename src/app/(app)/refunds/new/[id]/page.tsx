@@ -6,6 +6,8 @@ import { getRefundForContext, getActiveRefundDocuments } from "@/lib/refunds";
 import { refundSlots, isRefundDocumentSetComplete, hasCompleteRequisites, REFUND_RETURN_TYPE_LABELS, type RefundReturnType } from "@/lib/refund-documents";
 import { canPreviewInline } from "@/lib/refund-document-storage";
 import { RefundDraftEditor } from "../../_components/RefundDraftEditor";
+import { isDemo } from "@/lib/demo/config";
+import { DemoDocumentButton } from "@/components/DemoDocumentButton";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +53,7 @@ export default async function RefundDraftPage({ params }: { params: Promise<{ id
   return (
     <div>
       <PageHeader title="Новый возврат" description={`Черновик · ${REFUND_RETURN_TYPE_LABELS[returnType]}`} />
+      {isDemo() && isCreator && <DemoDocumentButton kind="refund" id={id} />}
       <RefundDraftEditor refundId={id} returnType={returnType} slots={slots} requisites={requisites} canProceed={canProceed} />
     </div>
   );

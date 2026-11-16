@@ -1,3 +1,4 @@
+import { reportingNow } from "@/lib/demo/reporting";
 // Phase 1 «Счета»: the single server-side data contract for the invoices page.
 // Everything here is derived and re-checked on the server — the client cannot
 // influence company/club/city/month/creator. Reporting month is COMPUTED from
@@ -95,7 +96,7 @@ export type InvoiceViewParams = { year?: string | number | null; month?: string 
 
 function pad2(n: number): string { return String(n).padStart(2, "0"); }
 
-export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams = {}, now: Date = new Date()): Promise<InvoicesView> {
+export async function getInvoicesView(ctx: AccessContext, raw: InvoiceViewParams = {}, now: Date = reportingNow()): Promise<InvoicesView> {
   const roles = ctx.effectiveRoles;
   const isElevated = roles.some((r) => ELEVATED_ROLES.includes(r));
   const isManager = roles.includes("manager");

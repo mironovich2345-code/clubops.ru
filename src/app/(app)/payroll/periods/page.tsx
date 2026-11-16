@@ -37,7 +37,7 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
   const user = await requirePageAccess("payroll");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) {
-    return <NoCompanyState title="Расчётные периоды" description="Начисления зарплаты по клубам и месяцам" />;
+    return <NoCompanyState title="Расчётные периоды" description="Начисления зарплаты по филиалам и месяцам" />;
   }
   const companyId = ctx.selectedCompanyId;
   const sp = await searchParams;
@@ -81,7 +81,7 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
 
   return (
     <div className="mx-auto max-w-[1200px]">
-      <PageHeader title="Зарплата (ФОТ)" description="Расчётные периоды по клубам и месяцам. Один период на клуб и месяц." />
+      <PageHeader title="Зарплата (ФОТ)" description="Расчётные периоды по филиалам и месяцам. Один период на филиал и месяц." />
       <PayrollNav mode="full" />
 
       {canManagePayrollAssignments(ctx.effectiveRoles) && clubs.length > 0 ? (
@@ -97,7 +97,7 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
       <form method="get" className="mb-4 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
         <MonthField label="Месяц" name="month" defaultValue={monthF ?? ""} />
         {clubs.length > 1 ? (
-          <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Клуб</span>
+          <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Филиал</span>
             <select name="club" defaultValue={clubF ?? ""} className="input w-full"><option value="">все</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         ) : null}
         <label className="block min-w-0"><span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Статус</span>
@@ -116,7 +116,7 @@ export default async function PayrollPeriodsPage({ searchParams }: { searchParam
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr>
-                  <Th>Клуб</Th>
+                  <Th>Филиал</Th>
                   <Th>Месяц</Th>
                   <Th>Статус</Th>
                   <Th className="text-right">Сотрудников</Th>

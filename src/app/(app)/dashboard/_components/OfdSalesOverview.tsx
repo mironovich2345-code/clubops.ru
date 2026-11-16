@@ -15,7 +15,7 @@ export async function OfdSalesOverview({ companyId, clubIds, now }: { companyId:
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">ОФД-продажи</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Фактическая выручка по чекам ОФД: сегодня, вчера, текущий месяц, статьи доходов и клубы.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Фактическая выручка по чекам ОФД: сегодня, вчера, текущий месяц, статьи доходов и филиалы.</p>
         </div>
         <Link href="/analytics/ofd-sales" className="shrink-0 text-xs font-medium text-brand-700 hover:underline dark:text-brand-400">Открыть подробную аналитику ОФД-продаж →</Link>
       </div>
@@ -46,7 +46,7 @@ export async function OfdSalesOverview({ companyId, clubIds, now }: { companyId:
           ) : null}
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Panel title="Клубы за текущий месяц">
+            <Panel title="Филиалы за текущий месяц">
               {o.byClub.length === 0 ? (
                 <Empty />
               ) : (
@@ -54,7 +54,7 @@ export async function OfdSalesOverview({ companyId, clubIds, now }: { companyId:
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        <Th>Клуб</Th><Th>Приход</Th><Th>Наличные</Th><Th>Безнал</Th><Th>Возвраты</Th><Th>Чеков</Th><Th>Ср. чек</Th>
+                        <Th>Филиал</Th><Th>Приход</Th><Th>Наличные</Th><Th>Безнал</Th><Th>Возвраты</Th><Th>Чеков</Th><Th>Ср. чек</Th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

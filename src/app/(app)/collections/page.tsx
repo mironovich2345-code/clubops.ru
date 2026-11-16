@@ -171,7 +171,7 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
               const reconEntities: ReconEntity[] = entities.map((e) => ({ legalEntityType: e.legalEntityType, name: e.name, ofdCashRevenueKopeks: e.ofdCashRevenueKopeks, expectedCashBalanceKopeks: e.expectedCashBalanceKopeks, actualKopeks: e.existing ? e.existing.actualCashBalanceKopeks : null, status: e.existing?.status ?? null }));
               return (
                 <div key={club.id}>
-                  {clubs.length > 1 ? <div className="mb-2 text-xs font-semibold text-slate-600">Клуб: {club.name}</div> : null}
+                  {clubs.length > 1 ? <div className="mb-2 text-xs font-semibold text-slate-600">Филиал: {club.name}</div> : null}
                   <ReconciliationForm clubId={club.id} businessDateLabel={dfmt.format(businessDate)} entities={reconEntities} />
                 </div>
               );
@@ -184,7 +184,7 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
 
       {/* 3. Карточки текущих остатков ООО/ИП (Сейчас) */}
       {perClub.length === 0 ? (
-        <div className="mb-8 rounded-lg border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500 shadow-sm">Нет доступных клубов.</div>
+        <div className="mb-8 rounded-lg border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500 shadow-sm">Нет доступных филиалов.</div>
       ) : (
         perClub.map(({ club, res }) => (
           <Section key={club.id} title={`Остатки сейчас · ${club.name}`}>
@@ -197,7 +197,7 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
       {/* 4. Контрольный остаток */}
       <AccordionItem id="control" title="Контрольный остаток" subtitle="Фактическая сумма наличных на дату — новая база расчёта (это НЕ ежедневная сверка)">
         <p className="mb-3 text-xs text-slate-500">Текущий остаток считается от последней применимой контрольной точки (effectiveDate ≤ сегодня) плюс движения после неё. Можно добавить более раннюю точку — она меняет только исторический интервал до следующей точки. Append-only: сумма правится только через «Скорректировать»; «Отменить» делает точку неприменимой, но не удаляет её.</p>
-        {maySnapshot ? <OpeningBalanceForm clubs={clubs} today={today} /> : <p className="text-xs text-slate-400">Создавать контрольную точку может управляющий клуба, региональный директор с доступом к клубу или бухгалтер с доступом к компании.</p>}
+        {maySnapshot ? <OpeningBalanceForm clubs={clubs} today={today} /> : <p className="text-xs text-slate-400">Создавать контрольную точку может управляющий филиала, региональный директор с доступом к филиалу или бухгалтер с доступом к компании.</p>}
         {timelines.length > 0 ? (
           <div className="mt-5 space-y-5">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Хронология контрольных точек</div>
@@ -316,7 +316,7 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
             {/* Desktop table */}
             <div className="hidden overflow-x-auto rounded-lg border border-slate-200 lg:block">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Тип</Th><Th>Юрлицо</Th><Th>Сумма</Th><Th>Клуб</Th><Th>Источник/получатель</Th><Th>Статус</Th><Th>Автор</Th><Th>Подтвердил</Th><Th>Действия</Th></tr></thead>
+                <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Тип</Th><Th>Юрлицо</Th><Th>Сумма</Th><Th>Филиал</Th><Th>Источник/получатель</Th><Th>Статус</Th><Th>Автор</Th><Th>Подтвердил</Th><Th>Действия</Th></tr></thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {filteredRows.map((r) => (
                     <tr key={`${r.kind}-${r.id}`}>
@@ -343,7 +343,7 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
                   rows={[
                     { label: "Сумма", value: r.sign === "fact" ? `Факт ${formatKopeks(r.amountKopeks)}` : r.sign === "in" ? `+${formatKopeks(r.amountKopeks)}` : `−${formatKopeks(r.amountKopeks)}`, strong: true, tone: r.sign === "out" ? "danger" as const : r.sign === "in" ? "success" as const : undefined },
                     { label: "Юрлицо", value: r.entity ? r.entity.toUpperCase() : "—" },
-                    { label: "Клуб", value: clubName.get(r.clubId) ?? "—" },
+                    { label: "Филиал", value: clubName.get(r.clubId) ?? "—" },
                     ...(r.counterparty ? [{ label: "Источник/получатель", value: counterpartyText(r) }] : []),
                     { label: "Автор", value: authorName.get(r.createdById) ?? "—" },
                     ...(r.confirmedById ? [{ label: "Подтвердил", value: authorName.get(r.confirmedById) ?? "—" }] : []),
@@ -362,7 +362,7 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
           <AccordionItem id="recon-history" title="Сверки — проверка и закрытие" subtitle="История ежедневных сверок и их согласование">
             <div className="overflow-x-auto rounded-lg border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Клуб</Th><Th>Юрлицо</Th><Th>Ожидалось</Th><Th>Факт</Th><Th>Расхожд.</Th><Th>Статус</Th><Th>Кто</Th><Th>Действия</Th></tr></thead>
+                <thead className="bg-slate-50"><tr><Th>Дата</Th><Th>Филиал</Th><Th>Юрлицо</Th><Th>Ожидалось</Th><Th>Факт</Th><Th>Расхожд.</Th><Th>Статус</Th><Th>Кто</Th><Th>Действия</Th></tr></thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {reconHistory.map((r) => {
                     const overdue = isReconciliationOverdue(r.status, r.businessDate, now);

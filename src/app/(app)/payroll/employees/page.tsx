@@ -83,7 +83,7 @@ export default async function PayrollEmployeesPage() {
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr>
                   <Th>ФИО</Th>
-                  {showClub ? <Th>Клуб</Th> : null}
+                  {showClub ? <Th>Филиал</Th> : null}
                   <Th>Должность</Th>
                   <Th>Текущая схема</Th>
                   <Th>Схема с</Th>

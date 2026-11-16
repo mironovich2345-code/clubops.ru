@@ -62,7 +62,7 @@ export default async function CashierIdentityPage({ params }: { params: Promise<
       {suggestion.status === "ambiguous" ? (
         <div className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">Несколько кандидатов с таким ФИО — выберите сотрудника вручную. Чеки не распределяются, пока сопоставление не подтверждено.</div>
       ) : suggestion.status === "unmatched" ? (
-        <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-800/40">Точного совпадения ФИО с активным сотрудником клуба нет — назначьте вручную.</div>
+        <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-800/40">Точного совпадения ФИО с активным сотрудником филиала нет — назначьте вручную.</div>
       ) : suggestedEmployeeId ? (
         <div className="mb-4 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">Предложение: {nameBy.get(suggestedEmployeeId) ?? clubEmployees.find((e) => e.id === suggestedEmployeeId)?.fullName} (точное совпадение ФИО). Подтвердите, чтобы распределять чеки.</div>
       ) : null}

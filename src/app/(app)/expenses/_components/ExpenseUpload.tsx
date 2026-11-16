@@ -169,7 +169,7 @@ function DocumentExpenseForm({
         <Field label="Компания">
           <input value={companyName} disabled className="input bg-slate-50 text-slate-500" />
         </Field>
-        <Field label="Клуб">
+        <Field label="Филиал">
           <select
             name="clubId"
             required
@@ -177,7 +177,7 @@ function DocumentExpenseForm({
             onChange={(e) => setClubId(e.target.value)}
             className="input"
           >
-            <option value="" disabled>Выберите клуб</option>
+            <option value="" disabled>Выберите филиал</option>
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} — {c.city}
@@ -406,7 +406,7 @@ function PaymentEntityFields({
         {isCash ? (
           <>
             <input
-              value={ip ? `${ip.name} (ИП)` : "ИП не привязан к клубу"}
+              value={ip ? `${ip.name} (ИП)` : "ИП не привязан к филиалу"}
               disabled
               className={`input ${ip ? "bg-slate-50 text-slate-600" : "bg-rose-50 text-rose-700"}`}
             />
@@ -443,7 +443,7 @@ function PaymentEntityFields({
           Наличные расходы автоматически относятся к ИП.
           {!ip ? (
             <span className="ml-1 font-medium text-rose-600">
-              Для наличного расхода необходимо привязать ИП к клубу.
+              Для наличного расхода необходимо привязать ИП к филиалу.
             </span>
           ) : null}
         </div>

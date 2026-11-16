@@ -60,9 +60,9 @@ export function RefundUpload({
         <Field label="Компания">
           <input value={companyName} disabled className="input bg-slate-50 text-slate-500" />
         </Field>
-        <Field label="Клуб">
+        <Field label="Филиал">
           <select name="clubId" required defaultValue={clubs.length === 1 ? clubs[0].id : ""} className="input">
-            {clubs.length !== 1 ? <option value="" disabled>Выберите клуб</option> : null}
+            {clubs.length !== 1 ? <option value="" disabled>Выберите филиал</option> : null}
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} — {c.city}

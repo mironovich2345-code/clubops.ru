@@ -52,7 +52,7 @@ export function PtCalcForm({ refundId, expectedUpdatedAt, info, trainers, defaul
     <div className="mx-auto w-full max-w-3xl">
       <div className="mt-4 grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm sm:grid-cols-2">
         <div><span className="text-slate-500">Клиент: </span>{info.clientName}</div>
-        <div><span className="text-slate-500">Клуб: </span>{info.clubName}</div>
+        <div><span className="text-slate-500">Филиал: </span>{info.clubName}</div>
         <div className="sm:col-span-2"><span className="text-emerald-700">✓ Документы готовы</span><span className="ml-3 text-emerald-700">✓ Реквизиты заполнены</span></div>
       </div>
 

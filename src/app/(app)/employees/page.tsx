@@ -27,7 +27,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
   const user = await requirePageAccess("employees");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) {
-    return <NoCompanyState title="Сотрудники" description="Управляющие, администраторы и тренеры клубов" />;
+    return <NoCompanyState title="Сотрудники" description="Управляющие, администраторы и тренеры филиалов" />;
   }
   const companyId = ctx.selectedCompanyId;
   const params = (await searchParams) ?? {};
@@ -66,13 +66,13 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
 
   return (
     <div className="mx-auto max-w-[1440px]">
-      <PageHeader title="Сотрудники" description="Управляющие, администраторы и тренеры клубов" />
+      <PageHeader title="Сотрудники" description="Управляющие, администраторы и тренеры филиалов" />
 
       {canManage ? (
         <div className={`mb-6 p-5 ${CARD}`}>
           <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Добавить сотрудника</div>
           {clubs.length === 0 ? (
-            <div className="text-sm text-slate-500 dark:text-slate-400">Нет доступных клубов.</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400">Нет доступных филиалов.</div>
           ) : (
             <EmployeeForm clubs={clubs} />
           )}
@@ -87,9 +87,9 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
       <form method="get" className="mb-6 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
         {showClubColumn ? (
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Клуб</span>
+            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Филиал</span>
             <select name="club" defaultValue={clubFilter} className="input">
-              <option value="">Все клубы</option>
+              <option value="">Все филиалы</option>
               {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
@@ -130,7 +130,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
                   <thead className="bg-slate-50 dark:bg-slate-800/50">
                     <tr>
                       <Th>ФИО</Th>
-                      {showClubColumn ? <Th>Клуб</Th> : null}
+                      {showClubColumn ? <Th>Филиал</Th> : null}
                       <Th>Статус</Th>
                       <Th>Комментарий</Th>
                       {canManage ? <Th className="text-right">Действия</Th> : null}
@@ -173,7 +173,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams?: P
                       ? <StatusBadge tone="neutral">Уволен{e.dismissedAt ? ` · ${dateFmt.format(e.dismissedAt)}` : ""}</StatusBadge>
                       : <StatusBadge tone="success">Активен</StatusBadge>}
                     rows={[
-                      ...(showClubColumn ? [{ label: "Клуб", value: e.clubName }] : []),
+                      ...(showClubColumn ? [{ label: "Филиал", value: e.clubName }] : []),
                       ...(e.comment ? [{ label: "Комментарий", value: e.comment }] : []),
                     ]}
                     footer={canManage && e.status === "active" ? <div className="flex justify-end"><DismissEmployeeButton id={e.id} name={e.fullName} /></div> : undefined}

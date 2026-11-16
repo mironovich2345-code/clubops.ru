@@ -23,7 +23,7 @@ export function CreatePeriodForm({ clubs }: { clubs: Array<{ id: string; name: s
     // Mobile: 2-col grid; desktop: inline row. Full-width CTA on its own row on mobile.
     <form action={action} className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
       <label className="block min-w-0">
-        <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Клуб</span>
+        <span className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Филиал</span>
         <select name="clubId" defaultValue={clubs.length === 1 ? clubs[0]?.id : ""} required className="input w-full">
           {clubs.length === 1 ? null : <option value="" disabled>Выберите</option>}
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

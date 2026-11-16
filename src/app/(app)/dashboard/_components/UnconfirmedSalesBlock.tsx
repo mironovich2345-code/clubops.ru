@@ -64,7 +64,7 @@ export function UnconfirmedSalesBlock({
           <div className="grid grid-cols-2 gap-px bg-slate-100 dark:bg-slate-800 sm:grid-cols-4">
             <Stat label="Отчётов" value={String(count)} />
             <Stat label="Выручка" value={formatKopeks(totalKopeks)} />
-            <Stat label="Клубов" value={String(clubsAffected)} />
+            <Stat label="Филиалов" value={String(clubsAffected)} />
             <Stat
               label="Старейший"
               value={oldestDate ? dtf.format(new Date(oldestDate)) : "—"}

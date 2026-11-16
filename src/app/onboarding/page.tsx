@@ -27,12 +27,12 @@ export default async function OnboardingPage() {
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <div className="text-xl font-semibold tracking-tight text-slate-900">Club Ops</div>
-          <div className="mt-1 text-sm text-slate-500">Создание компании и первого клуба</div>
+          <div className="mt-1 text-sm text-slate-500">Создание компании и первого филиала</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="mb-1 text-lg font-semibold text-slate-900">Добро пожаловать!</h1>
           <p className="mb-4 text-sm text-slate-500">
-            Создайте свою компанию и первый клуб — вы станете их владельцем.
+            Создайте свою компанию и первый филиал — вы станете их владельцем.
           </p>
           <OnboardingForm />
         </div>

@@ -48,7 +48,7 @@ export function PlanImportPanel({ month }: { month: string }) {
             <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  <Th>Клуб</Th><Th>Текущий АБ</Th><Th>Новый АБ</Th><Th>Текущий ПТ</Th><Th>Новый ПТ</Th><Th>Текущий общий</Th><Th>Новый общий</Th><Th>Статус</Th>
+                  <Th>Филиал</Th><Th>Текущий АБ</Th><Th>Новый АБ</Th><Th>Текущий ПТ</Th><Th>Новый ПТ</Th><Th>Текущий общий</Th><Th>Новый общий</Th><Th>Статус</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">

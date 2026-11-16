@@ -44,9 +44,9 @@ function Msg({ s }: { s: CashState }) {
 function ClubSelect({ clubs }: { clubs: ClubOpt[] }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">Клуб</span>
+      <span className="mb-1 block text-sm font-medium text-slate-700">Филиал</span>
       <select name="clubId" required defaultValue={clubs.length === 1 ? clubs[0].id : ""} className="input">
-        {clubs.length === 1 ? null : <option value="" disabled>Выберите клуб</option>}
+        {clubs.length === 1 ? null : <option value="" disabled>Выберите филиал</option>}
         {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
     </label>

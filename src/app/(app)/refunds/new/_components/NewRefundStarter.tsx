@@ -30,19 +30,19 @@ export function NewRefundStarter({ clubs, defaultClubId }: { clubs: Club[]; defa
     <div className="mx-auto mt-4 w-full max-w-lg rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       {clubs.length > 1 ? (
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Клуб</span>
+          <span className="mb-1 block text-sm font-medium text-slate-700">Филиал</span>
           <select value={clubId} onChange={(e) => setClubId(e.target.value)} className="input w-full">
             {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
       ) : (
-        <div className="text-sm text-slate-600">Клуб: <span className="font-medium text-slate-800">{clubs[0]?.name ?? "—"}</span></div>
+        <div className="text-sm text-slate-600">Филиал: <span className="font-medium text-slate-800">{clubs[0]?.name ?? "—"}</span></div>
       )}
 
       <fieldset className="mt-4">
         <legend className="mb-2 text-sm font-medium text-slate-700">Тип возврата</legend>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Тип возврата">
-          {[{ k: "membership", l: "Абонемент" }, { k: "personal_training", l: "Персональные тренировки" }].map((t) => (
+          {[{ k: "membership", l: "Абонемент" }, { k: "personal_training", l: "Дополнительные услуги" }].map((t) => (
             <button key={t.k} type="button" role="radio" aria-checked={returnType === t.k} onClick={() => setReturnType(t.k)}
               className={`rounded-lg border px-4 py-3 text-left text-sm font-medium ${returnType === t.k ? "border-brand-500 bg-brand-50 text-brand-800 ring-1 ring-brand-300" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>
               {t.l}

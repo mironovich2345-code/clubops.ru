@@ -66,7 +66,7 @@ export function PayrollScopeBar({
           value={club}
           onChange={(e) => go({ club: e.target.value })}
           className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
-          aria-label="Клуб"
+          aria-label="Филиал"
         >
           {clubs.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>

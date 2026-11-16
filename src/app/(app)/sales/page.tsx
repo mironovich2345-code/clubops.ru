@@ -102,7 +102,7 @@ export default async function SalesPage({
           <thead className="bg-slate-50">
             <tr>
               <Th>Дата</Th>
-              <Th>Клуб</Th>
+              <Th>Филиал</Th>
               <Th>Менеджер</Th>
               <Th className="text-right">Общая выручка</Th>
               <Th className="text-right">Документы</Th>

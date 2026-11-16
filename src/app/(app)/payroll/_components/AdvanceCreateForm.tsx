@@ -55,7 +55,7 @@ export function AdvanceCreateForm({ employees, defaultMonth, canManage }: { empl
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Клуб</span>
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Филиал</span>
           <input value={emp?.clubName ?? ""} disabled className="input w-full opacity-70" />
         </label>
         <label className="block">
@@ -87,7 +87,7 @@ export function AdvanceCreateForm({ employees, defaultMonth, canManage }: { empl
         {state.ok ? <span className="text-sm text-emerald-700">{state.notice}</span> : state.error ? <span className="text-sm text-rose-600">{state.error}</span> : null}
       </div>
       <p className="mt-2 text-xs text-slate-400">
-        Аванс можно создать до расчётного периода. Если расчёт за месяц уже готов — сумма ограничена заработанным автоматически и аванс сразу привязывается к расчёту (без повторного расхода). Юрлицо и источник денег определяются по клубу и вашей роли. Наличный аванс проводит управляющий/регионал, безналичный — бухгалтер; ручная база управляющего требует подтверждения регионала.
+        Аванс можно создать до расчётного периода. Если расчёт за месяц уже готов — сумма ограничена заработанным автоматически и аванс сразу привязывается к расчёту (без повторного расхода). Юрлицо и источник денег определяются по филиалу и вашей роли. Наличный аванс проводит управляющий/регионал, безналичный — бухгалтер; ручная база управляющего требует подтверждения регионала.
       </p>
     </form>
   );

@@ -124,7 +124,7 @@ export function LegalEntities({
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Юридические лица</div>
-      <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">Допустимо одно активное ООО и одно активное ИП на клуб.</div>
+      <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">Допустимо одно активное ООО и одно активное ИП на филиал.</div>
 
       {entities.length === 0 ? (
         <div className="mb-3 text-sm text-slate-500 dark:text-slate-400">Юрлица не добавлены.</div>
@@ -154,7 +154,7 @@ export function LegalEntities({
               {/* Attached clubs */}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {e.clubs.length === 0 ? (
-                  <span className="text-xs text-slate-400 dark:text-slate-500">Не привязано к клубам</span>
+                  <span className="text-xs text-slate-400 dark:text-slate-500">Не привязано к филиалам</span>
                 ) : (
                   e.clubs.map((c) => (
                     <span key={c.clubId} className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
@@ -221,9 +221,9 @@ function AttachForm({ entityId, clubs }: { entityId: string; clubs: ClubView[] }
     <form action={attachLegalEntityToClub} className="flex items-end gap-2">
       <input type="hidden" name="legalEntityId" value={entityId} />
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-slate-600">Привязать к клубу</span>
+        <span className="mb-1 block text-xs font-medium text-slate-600">Привязать к филиалу</span>
         <select name="clubId" defaultValue="" className="input" required>
-          <option value="" disabled>Выберите клуб</option>
+          <option value="" disabled>Выберите филиал</option>
           {clubs.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}

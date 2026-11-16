@@ -34,7 +34,7 @@ export function BudgetImportPanel({ month }: { month: string }) {
           <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}>Загрузить бюджеты</button>
         </form>
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Бюджет клуба за месяц = сумма строк по статьям. Суммы можно писать как 2 500 000, 2.500.000 или 2500000. Пустые суммы пропускаются.</p>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Бюджет филиала за месяц = сумма строк по статьям. Суммы можно писать как 2 500 000, 2.500.000 или 2500000. Пустые суммы пропускаются.</p>
 
       {preview.error ? <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{preview.error}</p> : null}
       {applied.applied ? (
@@ -48,7 +48,7 @@ export function BudgetImportPanel({ month }: { month: string }) {
             <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  <Th>Клуб</Th><Th>Статья</Th><Th>Текущая сумма</Th><Th>Новая сумма</Th><Th>Изменение</Th><Th>Статус</Th>
+                  <Th>Филиал</Th><Th>Статья</Th><Th>Текущая сумма</Th><Th>Новая сумма</Th><Th>Изменение</Th><Th>Статус</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">

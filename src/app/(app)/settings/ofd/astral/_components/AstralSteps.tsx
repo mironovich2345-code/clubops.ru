@@ -112,7 +112,7 @@ export function AstralOutletStep() {
           </div>
         )
       ) : null}
-      <p className="text-[11px] text-slate-400">Привязка точки к клубу выполняется на шаге 4 (для каждой кассы точки выбирается клуб и юрлицо).</p>
+      <p className="text-[11px] text-slate-400">Привязка точки к филиалу выполняется на шаге 4 (для каждой кассы точки выбирается филиал и юрлицо).</p>
     </div>
   );
 }
@@ -158,7 +158,7 @@ export function AstralKktStep({ legalEntities, clubs, boundLegalEntityId, boundK
                 <input type="hidden" name="kktName" value={k.nameModelKKT ?? k.alias ?? ""} />
                 <span className="text-sm"><b>{k.numberKKT ?? k.factoryFiscalDrive ?? k.externalKktId}</b> <span className="text-xs text-slate-500">{k.nameModelKKT ?? ""} · ФН {k.factoryFiscalDrive ?? "—"} · {k.statusOfd ?? ""}</span></span>
                 <select name="clubId" className="input py-1 text-sm" defaultValue="">
-                  <option value="">клуб…</option>
+                  <option value="">филиал…</option>
                   {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
                 <select name="legalEntityId" className="input py-1 text-sm" defaultValue={boundLegalEntityId ?? ""}>

@@ -52,7 +52,7 @@ function PromoteForm({ userId, userName, clubs, onClose }: { userId: string; use
   return (
     <form action={action} className="space-y-2">
       <input type="hidden" name="userId" value={userId} />
-      <div className="text-xs font-semibold text-slate-700">Клубы регионального директора</div>
+      <div className="text-xs font-semibold text-slate-700">Филиалы регионального директора</div>
       <div className="max-h-40 space-y-1 overflow-y-auto">
         {clubs.map((c) => (
           <label key={c.id} className="flex items-center gap-2 text-sm text-slate-700">
@@ -62,7 +62,7 @@ function PromoteForm({ userId, userName, clubs, onClose }: { userId: string; use
         ))}
       </div>
       <p className="text-[11px] text-slate-500">
-        {userName} потеряет роль управляющего и получит доступ регионального директора к выбранным клубам
+        {userName} потеряет роль управляющего и получит доступ регионального директора к выбранным филиалам
         {selected.length > 0 ? `: ${clubs.filter((c) => selected.includes(c.id)).map((c) => c.name).join(", ")}` : ""}.
       </p>
       <div className="flex flex-wrap items-center gap-2">
@@ -82,14 +82,14 @@ function DemoteForm({ userId, userName, clubs, onClose }: { userId: string; user
     <form action={action} className="space-y-2">
       <input type="hidden" name="userId" value={userId} />
       <label className="block text-xs font-semibold text-slate-700">
-        Клуб управляющего
+        Филиал управляющего
         <select name="clubIds" value={clubId} onChange={(e) => setClubId(e.target.value)} className="input mt-1">
-          <option value="" disabled>Выберите клуб</option>
+          <option value="" disabled>Выберите филиал</option>
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </label>
       <p className="text-[11px] text-slate-500">
-        {userName} потеряет доступ регионального директора и станет управляющим клуба
+        {userName} потеряет доступ регионального директора и станет управляющим филиала
         {clubId ? `: ${clubs.find((c) => c.id === clubId)?.name}` : ""}.
       </p>
       <div className="flex flex-wrap items-center gap-2">

@@ -19,7 +19,7 @@ export default async function NoAccessPage() {
         <h1 className="text-lg font-semibold text-slate-900">Доступ не назначен</h1>
         <p className="mt-2 text-sm text-slate-600">
           Вы вошли как <span className="font-medium">{user.email}</span>, но у вашей учётной
-          записи пока нет доступа ни к одной компании или клубу.
+          записи пока нет доступа ни к одной компании или филиалу.
         </p>
         <p className="mt-2 text-sm text-slate-500">
           Попросите владельца компании отправить вам приглашение, затем откройте ссылку-приглашение.

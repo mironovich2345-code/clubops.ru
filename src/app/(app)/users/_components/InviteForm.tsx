@@ -89,17 +89,17 @@ export function InviteForm({
           ) : isClubScoped ? (
             noClubs ? (
               <div className="flex min-h-[44px] items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-                Нет активных клубов для назначения
+                Нет активных филиалов для назначения
               </div>
             ) : (
               <>
                 <select name="clubId" defaultValue="" required className={CONTROL}>
-                  <option value="" disabled>Выберите клуб</option>
+                  <option value="" disabled>Выберите филиал</option>
                   {clubs.map((club) => (
                     <option key={club.id} value={club.id}>{club.name} — {club.city}</option>
                   ))}
                 </select>
-                <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">Управляющий закрепляется за одним клубом</span>
+                <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">Управляющий закрепляется за одним филиалом</span>
               </>
             )
           ) : (

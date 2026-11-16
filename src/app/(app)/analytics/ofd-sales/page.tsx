@@ -1,3 +1,4 @@
+import { reportingNow } from "@/lib/demo/reporting";
 import { redirect } from "next/navigation";
 import { CompactPageHeader, DataSummaryCard, MobileDataCard, SectionHeader, EmptyState } from "@/components/mobile/density";
 import { MonthNav } from "@/components/mobile/MonthNav";
@@ -37,7 +38,7 @@ export default async function OfdSalesAnalyticsPage({ searchParams }: { searchPa
   // Scope to the clubs this user may see (regional_director → only their clubs).
   const clubIds = ctx.allowedClubIds;
 
-  const now = new Date();
+  const now = reportingNow();
   const curMonth = currentMonth(now);
   const sp = await searchParams;
   const month = clampMonth(sp.month, curMonth);
@@ -101,8 +102,8 @@ export default async function OfdSalesAnalyticsPage({ searchParams }: { searchPa
         <div className="mt-4"><EmptyState>Нет продаж ОФД за {monthLabel(month)}.</EmptyState></div>
       ) : (
         <>
-          <SectionHeader>По клубам</SectionHeader>
-          <MoneyBreakdown firstHeader="Клуб" rows={byClub.map(([id, a]) => ({ label: clubName.get(id) ?? "—", agg: a }))} />
+          <SectionHeader>По филиалам</SectionHeader>
+          <MoneyBreakdown firstHeader="Филиал" rows={byClub.map(([id, a]) => ({ label: clubName.get(id) ?? "—", agg: a }))} />
 
           <SectionHeader>По юрлицам</SectionHeader>
           <MoneyBreakdown firstHeader="Юрлицо" rows={byLegal.map(([key, a]) => ({ label: key === "none" ? "Без юрлица" : legalName.get(key) ?? "—", agg: a }))} />

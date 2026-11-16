@@ -138,7 +138,7 @@ export default async function ExpenseDrilldownPage({ searchParams }: { searchPar
         <input type="hidden" name="to" value={sp.to ?? ""} />
         <Select name="pay" label="Тип оплаты" value={pay} options={[{ value: "all", label: "Все" }, { value: "cash", label: "Наличные" }, { value: "noncash", label: "Безналичные" }]} />
         <Select name="source" label="Источник" value={source} options={[{ value: "all", label: "Все" }, { value: "expense", label: "Расход" }, { value: "invoice", label: "Счёт" }, { value: "refund", label: "Возврат" }]} />
-        <Select name="club" label="Клуб" value={wantClub ?? ""} options={[{ value: "", label: "Все" }, ...clubs.map((c) => ({ value: c.id, label: c.name }))]} />
+        <Select name="club" label="Филиал" value={wantClub ?? ""} options={[{ value: "", label: "Все" }, ...clubs.map((c) => ({ value: c.id, label: c.name }))]} />
         <Select name="entity" label="Юрлицо" value={wantEntity ?? ""} options={[{ value: "", label: "Все" }, ...entities.map((e) => ({ value: e.id, label: e.name }))]} />
         <button type="submit" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700">Показать</button>
       </form>
@@ -170,7 +170,7 @@ function Section({ title, rows, showCompany = false, strategic = false, returnQu
               <tr>
                 <Th>Дата</Th>
                 {showCompany ? <Th>Сеть</Th> : null}
-                <Th>Клуб</Th>
+                <Th>Филиал</Th>
                 <Th>Юрлицо</Th>
                 <Th>Контрагент</Th>
                 <Th>Комментарий</Th>

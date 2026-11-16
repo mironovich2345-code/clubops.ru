@@ -55,7 +55,7 @@ export function PayrollEmptyPeriod({
         Расчётный период за {monthTitle} ещё не создан
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Клуб" value={clubName} />
+        <Stat label="Филиал" value={clubName} />
         <Stat label="Месяц" value={monthTitle} />
         <Stat label="Активных сотрудников" value={String(activeEmployees)} />
         <Stat label="Без схемы / проблемы" value={String(withoutScheme)} accent={withoutScheme > 0} />

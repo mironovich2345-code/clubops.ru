@@ -65,7 +65,7 @@ function TaskCard({ card, title, base, hasDue }: { card: RegionalTaskCard; title
                   </span>
                 </li>
               ))}
-              {moreClubs > 0 ? <li className="text-xs text-slate-400 dark:text-slate-500">Ещё {moreClubs} клуб(ов)</li> : null}
+              {moreClubs > 0 ? <li className="text-xs text-slate-400 dark:text-slate-500">Ещё {moreClubs} филиал(ов)</li> : null}
             </ul>
           ) : null}
         </>

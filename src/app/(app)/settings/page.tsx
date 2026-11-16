@@ -1,3 +1,4 @@
+import { isDemo } from "@/lib/demo/config";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requirePageAccess("settings");
+  const demo = isDemo();
 
   // Companies where the user is an owner (no cross-company leakage).
   const [access, accessibleClubs, leAccess] = await Promise.all([
@@ -71,10 +73,11 @@ export default async function SettingsPage() {
   );
 
   return (
-    <div>
-      <PageHeader title="Настройки" description="Организации и клубы" />
+    <fieldset disabled={demo} className="min-w-0">
+      {demo && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm">Демо: настройки доступны для просмотра. Почта, ОФД, Telegram, ИИ и управление учётными данными отключены.</p>}
+      <PageHeader title="Настройки" description="Организации и филиалы" />
 
-      {leAccess.length > 0 ? (
+      {leAccess.length > 0 && !demo ? (
         <div className="mb-8">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">Интеграции</h2>
           <Link href="/settings/ofd" className="inline-flex flex-col rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm hover:bg-slate-50">
@@ -142,7 +145,7 @@ export default async function SettingsPage() {
           ))}
         </div>
       )}
-    </div>
+    </fieldset>
   );
 }
 
@@ -150,18 +153,18 @@ function AvailableClubsSection({ clubs }: { clubs: AccessibleClubRow[] }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-        Доступные клубы
+        Доступные филиалы
       </div>
       {clubs.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-slate-500">
-          У вас пока нет доступных клубов.
+          У вас пока нет доступных филиалов.
         </div>
       ) : (
         <table className="min-w-full divide-y divide-slate-200">
           <thead>
             <tr>
               <Th>Компания</Th>
-              <Th>Клуб</Th>
+              <Th>Филиал</Th>
               <Th>Город</Th>
               <Th>Роль</Th>
               <Th>Статус</Th>

@@ -91,7 +91,7 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
       </section>
 
       {/* Закрепления — secondary, collapsible. */}
-      <AccordionSection title="Закрепления за клубами" hint={`${assignments.length}`}>
+      <AccordionSection title="Закрепления за филиалами" hint={`${assignments.length}`}>
         {assignments.length === 0 ? (
           <div className="mb-4 text-sm text-slate-500 dark:text-slate-400">Нет закреплений.</div>
         ) : (
@@ -124,7 +124,7 @@ export default async function PayrollEmployeePage({ params }: { params: Promise<
             <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
               <thead className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <tr>
-                  <th className="px-2 py-1.5 text-left">Клуб</th>
+                  <th className="px-2 py-1.5 text-left">Филиал</th>
                   <th className="px-2 py-1.5 text-left">Тип</th>
                   <th className="px-2 py-1.5 text-left">Действует с</th>
                   <th className="px-2 py-1.5 text-left">По</th>

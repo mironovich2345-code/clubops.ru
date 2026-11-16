@@ -106,7 +106,7 @@ export default async function RefundDetailPage({
         <Section title="Общая информация">
           <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
             <Row label="Клиент" value={refund.clientName ?? "—"} />
-            <Row label="Клуб" value={refund.club.name} />
+            <Row label="Филиал" value={refund.club.name} />
             <Row label="Тип возврата" value={REFUND_RETURN_TYPE_LABELS[rt]} />
             <Row label="Статус" value={statusLabel} />
             <Row label="Отправил" value={submitter ?? "—"} />

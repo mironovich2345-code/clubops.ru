@@ -26,8 +26,8 @@ const MODE_LABELS: Record<string, string> = {
 const modeLabel = (mode: string) => MODE_LABELS[mode] ?? mode;
 
 // Cash-register source labels (NOT a legal entity).
-const REGISTER_KIND_LABELS: Record<string, string> = { club_cashbox: "Касса клуба", online_cashbox: "Онлайн-касса" };
-const registerKindLabel = (kind: string | null | undefined) => REGISTER_KIND_LABELS[kind ?? "club_cashbox"] ?? "Касса клуба";
+const REGISTER_KIND_LABELS: Record<string, string> = { club_cashbox: "Касса филиала", online_cashbox: "Онлайн-касса" };
+const registerKindLabel = (kind: string | null | undefined) => REGISTER_KIND_LABELS[kind ?? "club_cashbox"] ?? "Касса филиала";
 
 type ConnCard = { id: string; displayName: string; serverBaseUrl: string; contractNumber: string | null; authType: string; legalEntityId: string | null; isActive: boolean; hasLogin: boolean; hasPassword: boolean; hasToken: boolean };
 // Static connection status derived from stored config (a live ЛК check is done by
@@ -101,7 +101,7 @@ export default async function OfdIntegrationPage() {
 
   // Revenue by category for the current month (in the fixed CLUB-OPS order).
   const CATEGORY_ORDER = ["membership", "personal_training", "group_training", "extra_services", "other"] as const;
-  const CATEGORY_NAMES: Record<string, string> = { membership: "Абонементы", personal_training: "Персональные тренировки", group_training: "Групповые тренировки", extra_services: "Доп. услуги", other: "Иное" };
+  const CATEGORY_NAMES: Record<string, string> = { membership: "Основные услуги", personal_training: "Дополнительные услуги", group_training: "Групповые тренировки", extra_services: "Доп. услуги", other: "Иное" };
   const catAgg = new Map<string, { income: number; ret: number; net: number; items: number; receipts: number }>();
   for (const s of categorySummaries) {
     const a = catAgg.get(s.categoryCode) ?? { income: 0, ret: 0, net: 0, items: 0, receipts: 0 };
@@ -254,7 +254,7 @@ export default async function OfdIntegrationPage() {
           {hasConnections ? (
             <>
               {/* 2) Кассы ККТ */}
-              <Collapsible title="Кассы ККТ" subtitle="ФН, юрлицо, клуб и тип кассы">
+              <Collapsible title="Кассы ККТ" subtitle="ФН, юрлицо, филиал и тип кассы">
                 <OfdMappingForm connections={connOptions} clubs={clubs} entities={entities} />
                 <div className="mt-4">
                   <CashRegisterManager
@@ -319,12 +319,12 @@ export default async function OfdIntegrationPage() {
                 <SalesBlock title="Сегодня" agg={aggFor(today, today)} clubName={clubName} />
                 <SalesBlock title="Вчера" agg={aggFor(yesterday, yesterday)} clubName={clubName} />
                 <SalesBlock title="Июль 2026" agg={aggFor("2026-07-01", "2026-07-31")} clubName={clubName} />
-                <p className="mt-1 text-xs text-slate-500">Источник чеков задаётся в настройках кассы: «Касса клуба» или «Онлайн-касса». Онлайн-оплаты попадают в продажи выбранного клуба, но отмечены как онлайн-касса.</p>
+                <p className="mt-1 text-xs text-slate-500">Источник чеков задаётся в настройках кассы: «Касса филиала» или «Онлайн-касса». Онлайн-оплаты попадают в продажи выбранного филиала, но отмечены как онлайн-касса.</p>
                 <Link href="/analytics/ofd-sales" className="mt-3 inline-block text-sm font-medium text-brand-700 hover:underline">Подробная аналитика ОФД-продаж →</Link>
               </Collapsible>
 
               {/* 5) Статьи доходов ОФД */}
-              <Collapsible title="Статьи доходов ОФД" subtitle="Абонементы, персональные тренировки, группы, доп. услуги и Иное">
+              <Collapsible title="Статьи доходов ОФД" subtitle="Основные услуги, дополнительные услуги, группы, доп. услуги и Иное">
                 <div className="mb-2 text-sm font-medium text-slate-600">Текущий месяц ({month})</div>
                 {!hasNomenclature ? (
                   <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -417,7 +417,7 @@ function SalesBlock({ title, agg, clubName }: { title: string; agg: Map<string, 
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50"><tr><Th>Клуб</Th><Th>Наличные</Th><Th>Безнал</Th><Th>Возвраты</Th><Th>Итог</Th></tr></thead>
+            <thead className="bg-slate-50"><tr><Th>Филиал</Th><Th>Наличные</Th><Th>Безнал</Th><Th>Возвраты</Th><Th>Итог</Th></tr></thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {rows.map(([clubId, a]) => (
                 <tr key={clubId}>

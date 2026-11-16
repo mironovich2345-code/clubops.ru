@@ -119,7 +119,7 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
         <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${SALES_REPORT_STATUS_TONE[report.status] ?? "bg-slate-100 text-slate-600 ring-slate-200"}`}>
           {SALES_REPORT_STATUS_LABELS[report.status] ?? report.status}
         </span>
-        <span className="text-slate-500">Клуб: <span className="font-medium text-slate-900">{report.club.name}</span></span>
+        <span className="text-slate-500">Филиал: <span className="font-medium text-slate-900">{report.club.name}</span></span>
         <span className="text-slate-500">Менеджер: <span className="font-medium text-slate-900">{report.managerName ?? report.createdBy.name}</span></span>
         <span className="text-slate-500">Общая выручка: <span className="font-semibold text-slate-900">{formatKopeks(byKey[REVENUE_LINE_KEY] ?? 0)}</span></span>
         {report.status === "rejected" && report.rejectionReason ? (

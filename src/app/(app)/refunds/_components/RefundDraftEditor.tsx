@@ -189,7 +189,7 @@ export function RefundDraftEditor({ refundId, returnType, slots, requisites, can
       <fieldset className="mt-4">
         <legend className="mb-2 text-sm font-medium text-slate-700">Тип возврата</legend>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Тип возврата">
-          {[{ k: "membership", l: "Абонемент" }, { k: "personal_training", l: "Персональные тренировки" }].map((t) => (
+          {[{ k: "membership", l: "Абонемент" }, { k: "personal_training", l: "Дополнительные услуги" }].map((t) => (
             <button
               key={t.k} type="button" role="radio" aria-checked={returnType === t.k} disabled={busy}
               onClick={() => onChangeType(t.k)}

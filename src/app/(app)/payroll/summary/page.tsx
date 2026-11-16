@@ -16,7 +16,7 @@ export default async function PayrollSummaryPage() {
   const user = await requirePageAccess("payroll");
   const ctx = await getCurrentAccessContext();
   if (!ctx || !ctx.selectedCompanyId) {
-    return <NoCompanyState title="Сводка по ФОТ" description="Общий фонд оплаты труда по клубам" />;
+    return <NoCompanyState title="Сводка по ФОТ" description="Общий фонд оплаты труда по филиалам" />;
   }
   // Company-wide ФОТ summary is not a club-manager screen — send them to their one screen.
   if (payrollNavMode(ctx.effectiveRoles) === "manager") redirect("/payroll");
@@ -56,7 +56,7 @@ export default async function PayrollSummaryPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <PageHeader title="Зарплата (ФОТ)" description="Сводка ФОТ по клубам за всё время (начислено / выплачено / остаток) и открытые взаимные долги." />
+      <PageHeader title="Зарплата (ФОТ)" description="Сводка ФОТ по филиалам за всё время (начислено / выплачено / остаток) и открытые взаимные долги." />
       <PayrollNav mode="full" />
 
       <div className={`mb-6 grid grid-cols-2 gap-4 p-5 sm:grid-cols-3 ${CARD}`}>
@@ -80,7 +80,7 @@ export default async function PayrollSummaryPage() {
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr>
-                  <Th>Клуб</Th>
+                  <Th>Филиал</Th>
                   <Th className="text-right">Позиций</Th>
                   <Th className="text-right">Начислено</Th>
                   <Th className="text-right">Выплачено</Th>

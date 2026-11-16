@@ -22,7 +22,7 @@ export function OpeningBalanceForm({ ipOptions, defaultDate, clubName }: { ipOpt
   return (
     <form action={action} className="flex flex-col gap-3">
       {/* Клуб — из серверного scope, только для показа (нельзя подменить clubId). */}
-      <div className="text-xs text-slate-600">Клуб: <span className="font-medium text-slate-800">{clubName ?? "—"}</span></div>
+      <div className="text-xs text-slate-600">Филиал: <span className="font-medium text-slate-800">{clubName ?? "—"}</span></div>
 
       {/* ИП — единственное подставляется автоматически; иначе выбор. */}
       <label className="block">
@@ -91,8 +91,8 @@ export function TransferForm({ regionals, canCreateToRegional, canCreateToClub }
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600">Направление</span>
           <select name="direction" value={direction} onChange={(e) => setDirection(e.target.value)} className="input">
-            {canCreateToRegional ? <option value="to_regional">Клуб → Директор</option> : null}
-            {canCreateToClub ? <option value="to_club">Директор → Клуб</option> : null}
+            {canCreateToRegional ? <option value="to_regional">Филиал → Директор</option> : null}
+            {canCreateToClub ? <option value="to_club">Директор → Филиал</option> : null}
           </select>
         </label>
         {showRecipient ? (
@@ -104,7 +104,7 @@ export function TransferForm({ regionals, canCreateToRegional, canCreateToClub }
             </select>
           </label>
         ) : (
-          <div className="text-xs text-slate-500">Получатель: клуб</div>
+          <div className="text-xs text-slate-500">Получатель: филиал</div>
         )}
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600">Сумма, ₽</span>

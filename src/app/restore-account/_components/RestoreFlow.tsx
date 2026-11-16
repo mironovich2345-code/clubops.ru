@@ -45,7 +45,7 @@ export function RestoreFlow({ token, masked }: { token: string; masked: string }
       <input type="hidden" name="token" value={token} />
       <p className="text-sm text-slate-600">
         Восстановление аккаунта {maskedEmail}. Мы отправим код подтверждения на исходный email.
-        Права доступа к компаниям и клубам после восстановления нужно будет запросить заново.
+        Права доступа к компаниям и филиалам после восстановления нужно будет запросить заново.
       </p>
       <Submit label="Отправить код" />
       {startState.error ? <p className="text-sm text-rose-600">{startState.error}</p> : null}

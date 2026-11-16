@@ -48,7 +48,7 @@ export function SalesPlanForm({
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Клуб</span>
+          <span className="mb-1 block text-xs font-medium text-slate-600">Филиал</span>
           <select
             name="clubId"
             defaultValue={defaultClubId}
@@ -60,8 +60,8 @@ export function SalesPlanForm({
           </select>
         </label>
         <AmountField name="amount_total" label="Общий план" />
-        <AmountField name="amount_subscriptions" label="План абонементы" />
-        <AmountField name="amount_personal_training" label="План персональные тренировки" />
+        <AmountField name="amount_subscriptions" label="План основные услуги" />
+        <AmountField name="amount_personal_training" label="План дополнительные услуги" />
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <SaveButton />

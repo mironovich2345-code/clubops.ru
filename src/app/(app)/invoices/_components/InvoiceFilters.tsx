@@ -71,9 +71,9 @@ export function InvoiceFilters({
 
         {canFilterByClub ? (
           <label className="block min-w-0">
-            <span id="inv-club-label" className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Клуб</span>
+            <span id="inv-club-label" className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Филиал</span>
             <select aria-labelledby="inv-club-label" value={selectedClub ?? ""} disabled={pending} onChange={(e) => apply({ clubId: e.target.value || null })} className="input w-full">
-              <option value="">Все клубы</option>
+              <option value="">Все филиалы</option>
               {clubOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>

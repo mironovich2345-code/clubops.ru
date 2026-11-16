@@ -14,7 +14,7 @@ export function NoCompanyState({
       <div className="rounded-lg border border-slate-200 bg-white p-10 text-center shadow-sm">
         <div className="text-sm font-medium text-slate-700">Нет доступной компании</div>
         <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-          У вашей учётной записи пока нет доступа ни к одной компании или клубу.
+          У вашей учётной записи пока нет доступа ни к одной компании или филиалу.
           Обратитесь к владельцу, чтобы он назначил доступ.
         </p>
       </div>

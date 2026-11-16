@@ -105,7 +105,7 @@ function RefundTable({ rows, empty }: { rows: RefundWithClub[]; empty: string })
       <div className="hidden overflow-x-auto lg:block">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
-            <tr><Th>Клиент</Th><Th className="text-right">Сумма</Th><Th>Статус</Th><Th>Клуб</Th><Th>Создан</Th><Th>Действия</Th></tr>
+            <tr><Th>Клиент</Th><Th className="text-right">Сумма</Th><Th>Статус</Th><Th>Филиал</Th><Th>Создан</Th><Th>Действия</Th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {rows.length === 0 ? (
@@ -141,7 +141,7 @@ function RefundTable({ rows, empty }: { rows: RefundWithClub[]; empty: string })
               amount={formatKopeks(r.amountKopeks)}
               status={<StatusBadge tone={refundTone(r.status)}>{statusLabel(r)}</StatusBadge>}
               meta={[
-                { label: "Клуб", value: r.club.name },
+                { label: "Филиал", value: r.club.name },
                 { label: "Создан", value: dateFormatter.format(r.createdAt) },
               ]}
             />

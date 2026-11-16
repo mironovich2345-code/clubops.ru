@@ -47,9 +47,9 @@ export function RegionalTransferForm({ clubs, directorsByClub, today }: { clubs:
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
       <label className="block">
-        <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Клуб</span>
+        <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Филиал</span>
         <select name="clubId" required value={clubId} onChange={(e) => setClubId(e.target.value)} className="input w-full">
-          {clubs.length === 1 ? null : <option value="" disabled>Выберите клуб</option>}
+          {clubs.length === 1 ? null : <option value="" disabled>Выберите филиал</option>}
           {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </label>
@@ -61,7 +61,7 @@ export function RegionalTransferForm({ clubs, directorsByClub, today }: { clubs:
           {directors.length === 1 ? null : <option value="" disabled>Выберите получателя</option>}
           {directors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        {clubId && directors.length === 0 ? <span className="mt-1 block text-xs text-amber-700 dark:text-amber-400">Нет активных региональных директоров с доступом к этому клубу.</span> : null}
+        {clubId && directors.length === 0 ? <span className="mt-1 block text-xs text-amber-700 dark:text-amber-400">Нет активных региональных директоров с доступом к этому филиалу.</span> : null}
       </label>
       <label className="block md:col-span-2"><span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Комментарий (необязательно)</span><input name="comment" className="input w-full" /></label>
       <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

@@ -21,6 +21,8 @@ import { getExpenseAttachments, isExpenseDocumentsEditable } from "@/lib/expense
 import { MAX_SIMPLIFIED_EXPENSE_DOCUMENTS } from "@/lib/expense-document-storage";
 import { ExpenseEditForm } from "./_components/ExpenseEditForm";
 import { ExpenseAttachments } from "./_components/ExpenseAttachments";
+import { isDemo } from "@/lib/demo/config";
+import { DemoDocumentButton } from "@/components/DemoDocumentButton";
 import { CancelExpenseForm } from "./_components/CancelExpenseForm";
 
 const dateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -182,7 +184,7 @@ export default async function ExpenseDetailPage({
           <div className="font-semibold text-slate-900">{expense.generatedTitle}</div>
           <div className="mt-2 grid grid-cols-1 gap-1 text-slate-600 sm:grid-cols-2">
             <div>Сумма: <span className="font-medium text-slate-900">{formatKopeks(expense.amountKopeks)}</span></div>
-            <div>Оплата: Наличные (ИП клуба)</div>
+            <div>Оплата: Наличные (ИП филиала)</div>
             <div>Дата: {isoDay(expense.expenseDate)}</div>
             <div>Статья: {EXPENSE_CATEGORY_OPTIONS.find((c) => c.key === expense.category)?.label ?? expense.category}</div>
           </div>
@@ -199,7 +201,8 @@ export default async function ExpenseDetailPage({
         <ExpenseEditForm expense={view} categories={EXPENSE_CATEGORY_OPTIONS} readOnly={!canMutateOperationalRecords(ctx.effectiveRoles)} />
       )}
 
-      <ExpenseAttachments expenseId={expense.id} attachments={attachmentsView} editable={docsEditable} maxDocuments={isV2 ? MAX_SIMPLIFIED_EXPENSE_DOCUMENTS : undefined} />
+      {isDemo() && docsEditable && expense.createdByUserId === ctx.user.id && <DemoDocumentButton kind="expense" id={expense.id} />}
+      <ExpenseAttachments expenseId={expense.id} attachments={attachmentsView} editable={docsEditable && !isDemo()} maxDocuments={isV2 ? MAX_SIMPLIFIED_EXPENSE_DOCUMENTS : undefined} />
 
       {isV2 && flags ? (
         <WorkflowActions

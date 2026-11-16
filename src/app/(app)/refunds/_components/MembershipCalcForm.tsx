@@ -54,7 +54,7 @@ export function MembershipCalcForm({
       {/* Summary */}
       <div className="mt-4 grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm sm:grid-cols-2">
         <div><span className="text-slate-500">Клиент: </span>{info.clientName}</div>
-        <div><span className="text-slate-500">Клуб: </span>{info.clubName}</div>
+        <div><span className="text-slate-500">Филиал: </span>{info.clubName}</div>
         <div><span className="text-slate-500">Тип возврата: </span>{info.returnTypeLabel}</div>
         <div>
           <span className="text-emerald-700">✓ Документы готовы</span>

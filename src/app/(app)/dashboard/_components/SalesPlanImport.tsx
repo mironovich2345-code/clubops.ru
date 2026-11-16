@@ -11,17 +11,17 @@ type PlanRow = { clubName: string; month: string; total: string; subscriptions: 
 export function SalesPlanImport({ rows }: { rows: PlanRow[] }) {
   return (
     <div className="mt-4 border-t border-slate-200 pt-4">
-      <div className="mb-3 text-sm font-semibold text-slate-700">Планы продаж по клубам</div>
+      <div className="mb-3 text-sm font-semibold text-slate-700">Планы продаж по филиалам</div>
 
       {rows.length > 0 ? (
         <div className="mt-2 overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200">
             <thead>
               <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="py-2 pr-3 text-left">Клуб</th>
+                <th className="py-2 pr-3 text-left">Филиал</th>
                 <th className="py-2 pr-3 text-left">Месяц</th>
                 <th className="py-2 pr-3 text-right">Общий</th>
-                <th className="py-2 pr-3 text-right">Абонементы</th>
+                <th className="py-2 pr-3 text-right">Основные услуги</th>
                 <th className="py-2 text-right">Персональные</th>
               </tr>
             </thead>
@@ -39,7 +39,7 @@ export function SalesPlanImport({ rows }: { rows: PlanRow[] }) {
           </table>
         </div>
       ) : (
-        <p className="mt-3 text-sm text-slate-500">Планы по клубам ещё не заданы. Задайте план в форме выше.</p>
+        <p className="mt-3 text-sm text-slate-500">Планы по филиалам ещё не заданы. Задайте план в форме выше.</p>
       )}
     </div>
   );

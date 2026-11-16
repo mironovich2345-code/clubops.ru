@@ -27,7 +27,7 @@ export default async function CashPage() {
         Управление кассой перенесено в Финансы → Инкассация. Контрольные остатки, инкассации и изъятия — на одной странице.
         <Link href="/collections" className="ml-1 font-medium text-brand-700 underline">Перейти в «Инкассация»</Link>
       </div>
-      {clubId ? <IpBlock companyId={companyId} clubId={clubId} /> : <div className="mt-4 text-sm text-slate-500">Выберите клуб, чтобы увидеть остаток.</div>}
+      {clubId ? <IpBlock companyId={companyId} clubId={clubId} /> : <div className="mt-4 text-sm text-slate-500">Выберите филиал, чтобы увидеть остаток.</div>}
     </div>
   );
 }

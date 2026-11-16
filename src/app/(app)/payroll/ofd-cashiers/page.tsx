@@ -99,7 +99,7 @@ export default async function OfdCashiersPage({ searchParams }: { searchParams: 
         {clubs.length > 1 ? (
           <>
             <span className="mx-1 text-slate-300">·</span>
-            <FilterLink href={qs({ club: null })} active={!clubFilter}>Все клубы</FilterLink>
+            <FilterLink href={qs({ club: null })} active={!clubFilter}>Все филиалы</FilterLink>
             {clubs.map((c) => <FilterLink key={c.id} href={qs({ club: c.id })} active={clubFilter === c.id}>{c.name}</FilterLink>)}
           </>
         ) : null}
@@ -113,7 +113,7 @@ export default async function OfdCashiersPage({ searchParams }: { searchParams: 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] text-sm">
                 <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900/60">
-                  <tr><th className="px-4 py-2 font-medium">Кассир (ОФД)</th><th className="px-4 py-2 font-medium">Клуб</th><th className="px-4 py-2 font-medium">Сотрудник</th><th className="px-4 py-2 font-medium">Чеков</th><th className="px-4 py-2 font-medium">Продажи</th><th className="px-4 py-2 font-medium">Статус</th><th className="px-4 py-2" /></tr>
+                  <tr><th className="px-4 py-2 font-medium">Кассир (ОФД)</th><th className="px-4 py-2 font-medium">Филиал</th><th className="px-4 py-2 font-medium">Сотрудник</th><th className="px-4 py-2 font-medium">Чеков</th><th className="px-4 py-2 font-medium">Продажи</th><th className="px-4 py-2 font-medium">Статус</th><th className="px-4 py-2" /></tr>
                 </thead>
                 <tbody>
                   {rows.map(({ i, m, status }) => (

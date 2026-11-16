@@ -42,7 +42,7 @@ export function HistoricalInvoiceForm({
 
       <form action={action} className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Клуб</span>
+          <span className="mb-1 block text-xs font-medium text-slate-600">Филиал</span>
           <select name="clubId" value={clubId} onChange={(e) => setClubId(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
