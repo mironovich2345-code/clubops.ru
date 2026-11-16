@@ -10,7 +10,6 @@ import { AccountSwitcher } from "./_components/AccountSwitcher";
 import { listDeviceAccounts } from "@/lib/account-container";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { isDemo } from "@/lib/demo/config";
-import { DemoSummary } from "@/components/DemoSummary";
 import { DemoToolbar } from "@/components/DemoToolbar";
 
 // This layout reads the database and the session, so the whole (app) subtree
@@ -86,9 +85,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {scopeSlot}
           {accountSlot}
         </header>
-        {/* Mobile shell: sticky top bar + drawer + bottom nav */}
+        {/* Mobile shell: sticky top bar + drawer */}
         <MobileShell items={visibleItems.map((i) => ({ page: i.page, href: i.href, label: i.label }))} header={scopeSlot} account={accountSlot} />
-        <main className="min-w-0 flex-1 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] lg:px-8 lg:py-8">{demo && strategic && <DemoSummary companyId={ctx.selectedCompanyId} clubIds={ctx.allowedClubIds} />}{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] lg:px-8 lg:py-8">{children}</main>
       </div>
     </div>
   );

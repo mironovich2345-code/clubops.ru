@@ -1,4 +1,6 @@
 import { reportingNow } from "@/lib/demo/reporting";
+import { isDemo } from "@/lib/demo/config";
+import { DemoSummary } from "@/components/DemoSummary";
 import { PageHeader } from "@/components/PageHeader";
 import { NoCompanyState } from "@/components/NoCompanyState";
 import { formatKopeks } from "@/lib/money";
@@ -169,6 +171,7 @@ export default async function DashboardPage({
 
     return (
       <div className="mx-auto max-w-[1440px]">
+        {isDemo() && <DemoSummary companyId={companyId} clubIds={ctx.allowedClubIds} />}
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <PageHeader title="Дашборд" description={scopeHeading} />
