@@ -12,7 +12,7 @@ export function isPtMethod(v: string): v is PtMethod {
 }
 export const PT_METHOD_LABELS: Record<PtMethod, string> = {
   contract_rate: "Согласно условиям договора",
-  average_rate: "По средней стоимости тренировки",
+  average_rate: "По средней стоимости единицы услуги",
 };
 
 export const PT_CALC_VERSION = {
@@ -56,12 +56,12 @@ export type PtResult =
 export function computePersonalTrainingRefund(input: PtInput): PtResult {
   const { contractAmountKopeks: X, contractSessions: N, usedSessions: Eraw, terminationPriceKopeks: V, method, serviceNotProvided } = input;
   if (!Number.isInteger(X) || X <= 0) return { ok: false, error: "Сумма договора должна быть больше нуля." };
-  if (!Number.isInteger(N) || N <= 0) return { ok: false, error: "Количество тренировок по договору должно быть целым числом больше нуля." };
-  if (!Number.isInteger(Eraw) || Eraw < 0) return { ok: false, error: "Количество проведённых тренировок должно быть целым неотрицательным числом." };
-  if (!Number.isInteger(V) || V <= 0) return { ok: false, error: "Стоимость тренировки при расторжении должна быть больше нуля." };
+  if (!Number.isInteger(N) || N <= 0) return { ok: false, error: "Количество единиц услуги по договору должно быть целым числом больше нуля." };
+  if (!Number.isInteger(Eraw) || Eraw < 0) return { ok: false, error: "Количество проведённых единиц услуги должно быть целым неотрицательным числом." };
+  if (!Number.isInteger(V) || V <= 0) return { ok: false, error: "Стоимость единицы услуги при расторжении должна быть больше нуля." };
   // Service-not-provided normalizes E to 0 (client value is not trusted).
   const E = serviceNotProvided ? 0 : Eraw;
-  if (E > N) return { ok: false, error: "Количество проведённых тренировок не может превышать количество тренировок по договору." };
+  if (E > N) return { ok: false, error: "Количество проведённых единиц услуги не может превышать количество единиц услуги по договору." };
   if (!serviceNotProvided && !isPtMethod(method)) return { ok: false, error: "Неверный способ расчёта." };
 
   const { base, planned, adjustmentReason } = computePlannedRefundDate(input.application);
@@ -84,7 +84,7 @@ export function computePersonalTrainingRefund(input: PtInput): PtResult {
         rawResultKopeks: raw, usedAmountKopeks: V * E, resultAmountKopeks: null, zeroRemaining: false,
         base, planned, adjustmentReason,
         refusalDraftText: buildRefusalDraft(X, V, E, raw),
-        unavailableReason: "Стоимость использованных тренировок превышает сумму договора; сумма к возврату отсутствует.",
+        unavailableReason: "Стоимость использованных единиц услуги превышает сумму договора; сумма к возврату отсутствует.",
       };
     }
     return {
@@ -113,9 +113,9 @@ const rub = (k: number) => (k / 100).toLocaleString("ru-RU", { minimumFractionDi
 /** Neutral, reproducible refusal draft for a negative contract-rate result. */
 export function buildRefusalDraft(X: number, V: number, E: number, rawKopeks: number): string {
   return (
-    "По результатам расчёта стоимость использованных персональных тренировок превышает сумму договора. " +
-    "Сумма к возврату отсутствует. Расчёт: сумма договора − стоимость одной тренировки при расторжении × количество проведённых тренировок. " +
-    `Сумма договора: ${rub(X)} ₽; стоимость тренировки при расторжении: ${rub(V)} ₽; проведено тренировок: ${E}; результат расчёта: ${rub(rawKopeks)} ₽. ` +
+    "По результатам расчёта стоимость использованных дополнительных единиц услуги превышает сумму договора. " +
+    "Сумма к возврату отсутствует. Расчёт: сумма договора − стоимость одной единицы услуги при расторжении × количество проведённых единиц услуги. " +
+    `Сумма договора: ${rub(X)} ₽; стоимость единицы услуги при расторжении: ${rub(V)} ₽; проведено единиц услуги: ${E}; результат расчёта: ${rub(rawKopeks)} ₽. ` +
     "Проект ответа требует проверки сотрудником перед отправкой клиенту."
   );
 }

@@ -46,8 +46,8 @@ function AddPackageForm({ calculationId }: { calculationId: string }) {
       <Field name="contractNumber" label="№ договора" />
       <Field name="saleDate" label="Дата продажи" type="date" />
       <Field name="contractAmount" label="Сумма договора, ₽" type="number" />
-      <Field name="sessionCount" label="Тренировок в пакете" type="number" />
-      <Field name="trainerRatePercent" label="Ставка тренера, % (опц.)" type="number" placeholder="40 / 50" />
+      <Field name="sessionCount" label="Единиц услуги в пакете" type="number" />
+      <Field name="trainerRatePercent" label="Ставка исполнителя, % (опц.)" type="number" placeholder="40 / 50" />
       <Field name="providedSessions" label="Проведено" type="number" />
       <Field name="returnedSessions" label="Возвращено" type="number" />
       <Field name="refund" label="Сумма возврата, ₽" type="number" />
@@ -100,18 +100,18 @@ export function TrainerPackages({
   const s = summary;
   return (
     <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800/70">
-      <div className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Тренер ТЗ · пакеты</div>
+      <div className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Пакеты услуг (специальный расчёт)</div>
 
       {s ? (
         <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
           <Metric label="Продано пакетов" value={String(s.soldPackages)} />
           <Metric label="Сумма продаж" value={formatKopeks(s.salesTotalKopeks)} />
-          <Metric label="Начисление тренера" value={formatKopeks(s.accrualKopeks)} />
-          <Metric label="Проведено тренировок" value={`${s.providedSessions} / ${s.totalSessions}`} />
+          <Metric label="Начисление сотрудника" value={formatKopeks(s.accrualKopeks)} />
+          <Metric label="Оказано единиц услуги" value={`${s.providedSessions} / ${s.totalSessions}`} />
           <Metric label="Стоимость проведённых" value={formatKopeks(s.allowedPayoutKopeks)} />
           <Metric label="Уже выплачено" value={formatKopeks(paidKopeks)} />
           <Metric label="Допустимо к выплате" value={formatKopeks(s.allowedPayoutKopeks)} />
-          <Metric label="Кредит тренера" value={formatKopeks(s.creditKopeks)} accent={s.creditKopeks > 0} />
+          <Metric label="Переплата сотруднику" value={formatKopeks(s.creditKopeks)} accent={s.creditKopeks > 0} />
           <Metric label="Возвраты" value={formatKopeks(s.refundsTotalKopeks)} />
           <Metric label="Остаточный долг" value={formatKopeks(employeeDebtKopeks)} accent={employeeDebtKopeks > 0} />
         </div>

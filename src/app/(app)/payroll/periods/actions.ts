@@ -673,7 +673,7 @@ async function pickPaymentLegalEntity(
 ): Promise<{ legalEntityId: string; walletId: string | null } | { error: string }> {
   const { ooo, ip } = await getActiveClubLegalEntities(clubId);
   if (method === "cash") {
-    if (!ip) return { error: "У клуба нет активного ИП для наличной выплаты." };
+    if (!ip) return { error: "У филиала нет активного ИП для наличной выплаты." };
     if (chosenId && chosenId !== ip.id) return { error: "Наличная выплата возможна только из ИП." };
     const walletId = roles.includes("regional_director")
       ? await ensureRegionalCashWallet(companyId, clubId, ip.id, userId)
@@ -682,7 +682,7 @@ async function pickPaymentLegalEntity(
   }
   // bank: ООО or ИП of the club
   const allowed = [ooo?.id, ip?.id].filter((x): x is string => Boolean(x));
-  if (allowed.length === 0) return { error: "У клуба нет активного юрлица для безналичной выплаты." };
+  if (allowed.length === 0) return { error: "У филиала нет активного юрлица для безналичной выплаты." };
   if (chosenId && !allowed.includes(chosenId)) return { error: "Выбранное юрлицо не относится к клубу." };
   return { legalEntityId: chosenId ?? ooo?.id ?? ip!.id, walletId: null };
 }

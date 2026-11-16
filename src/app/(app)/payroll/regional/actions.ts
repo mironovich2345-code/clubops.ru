@@ -130,7 +130,7 @@ export async function recordRegionalCityPayment(_prev: RegionalState | undefined
   const { ooo, ip } = await getActiveClubLegalEntities(clubId);
   let legalEntityId: string; let walletId: string | null = null;
   if (method === "cash") {
-    if (!ip) return fail("У клуба нет активного ИП для наличной выплаты.");
+    if (!ip) return fail("У филиала нет активного ИП для наличной выплаты.");
     const chosen = String(formData.get("legalEntityId") ?? "").trim();
     if (chosen && chosen !== ip.id) return fail("Наличная выплата возможна только из ИП.");
     legalEntityId = ip.id;
@@ -138,7 +138,7 @@ export async function recordRegionalCityPayment(_prev: RegionalState | undefined
   } else {
     const chosen = String(formData.get("legalEntityId") ?? "").trim();
     const allowed = [ooo?.id, ip?.id].filter((x): x is string => Boolean(x));
-    if (allowed.length === 0) return fail("У клуба нет активного юрлица для безналичной выплаты.");
+    if (allowed.length === 0) return fail("У филиала нет активного юрлица для безналичной выплаты.");
     if (chosen && !allowed.includes(chosen)) return fail("Выбранное юрлицо не относится к клубу.");
     legalEntityId = chosen || (ooo?.id ?? ip!.id);
   }

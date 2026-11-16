@@ -80,19 +80,19 @@ export async function addTrainerPackage(_prev: TrainerState | undefined, formDat
   if (isPayrollPeriodLocked(scope.period.status)) return fail("Период закрыт для изменений расчёта");
 
   const scheme = snapshotToSchemeParams(scope.calc.schemeSnapshotJson);
-  if (!scheme || scheme.type !== "gym_trainer") return fail("Схема сотрудника — не «Тренер ТЗ». Задайте её и пересоздайте расчёт.");
+  if (!scheme || scheme.type !== "gym_trainer") return fail("Схема сотрудника — не «Специальная схема». Задайте её и пересоздайте расчёт.");
 
   const contractAmountKopeks = rub(formData, "contractAmount");
   const sessionCount = int(formData, "sessionCount");
   if (contractAmountKopeks <= 0) return fail("Укажите сумму договора.");
-  if (sessionCount <= 0) return fail("Укажите количество тренировок в пакете.");
+  if (sessionCount <= 0) return fail("Укажите количество единиц услуги в пакете.");
   const providedSessions = int(formData, "providedSessions");
   if (providedSessions > sessionCount) return fail("Проведено не может превышать количество в пакете.");
   const returnedSessions = int(formData, "returnedSessions");
   const refundKopeks = rub(formData, "refund");
   if (refundKopeks > contractAmountKopeks) return fail("Возврат не может превышать сумму договора.");
   const trainerRateBp = pctBp(formData, "trainerRatePercent");
-  if (trainerRateBp != null && (trainerRateBp < 0 || trainerRateBp > 10000)) return fail("Ставка тренера должна быть 0–100%.");
+  if (trainerRateBp != null && (trainerRateBp < 0 || trainerRateBp > 10000)) return fail("Ставка исполнителя должна быть 0–100%.");
   const sessionPriceKopeks = sessionCount > 0 ? Math.round(contractAmountKopeks / sessionCount) : 0;
   const source = String(formData.get("source") ?? "manual").trim();
 
@@ -176,21 +176,21 @@ export async function recordTrainerFinalSettlement(_prev: TrainerState | undefin
     return fail(locked ? "После утверждения окончательный расчёт проводит бухгалтер" : "Недостаточно прав");
   }
   const scheme = snapshotToSchemeParams(scope.calc.schemeSnapshotJson);
-  if (!scheme || scheme.type !== "gym_trainer") return fail("Окончательный расчёт по кредиту доступен только для тренера ТЗ.");
+  if (!scheme || scheme.type !== "gym_trainer") return fail("Окончательный расчёт по кредиту доступен только для специальной схемы.");
 
   const employee = await prisma.clubEmployee.findUnique({ where: { id: scope.calc.employeeId }, select: { status: true } });
   if (employee?.status !== "dismissed") return fail("Окончательный расчёт по кредиту доступен только для уволенного сотрудника.");
 
   const pkgs = await prisma.payrollTrainerPackage.findMany({ where: { payrollCalculationId: calculationId } });
   const summary = computeTrainerSummary(scheme.params, pkgs);
-  if (summary.creditKopeks <= 0) return { ok: true, notice: "Кредита тренера нет — удержание не требуется." };
+  if (summary.creditKopeks <= 0) return { ok: true, notice: "Переплаты сотруднику нет — удержание не требуется." };
 
   // Idempotent: don't stack the recovery adjustment.
   const existing = await prisma.payrollAdjustment.findFirst({
     where: { payrollCalculationId: calculationId, type: "trainer_credit_recovery", status: "approved" },
     select: { id: true },
   });
-  if (existing) return { ok: true, notice: "Удержание кредита тренера уже оформлено." };
+  if (existing) return { ok: true, notice: "Удержание переплаты сотруднику уже оформлено." };
 
   const now = new Date();
   const closed = await monthClosedError(scope.companyId, scope.calc.clubId, now);
@@ -206,7 +206,7 @@ export async function recordTrainerFinalSettlement(_prev: TrainerState | undefin
       direction: "debit",
       amountKopeks: summary.creditKopeks,
       reason: "trainer_credit_recovery",
-      comment: "Окончательный расчёт при увольнении: удержание кредита тренера (непроведённые занятия).",
+      comment: "Окончательный расчёт при увольнении: удержание переплаты сотруднику (неоказанные единицы услуги).",
       status: "approved",
       createdByUserId: scope.ctx.user.id,
       approvedByUserId: scope.ctx.user.id,
@@ -217,5 +217,5 @@ export async function recordTrainerFinalSettlement(_prev: TrainerState | undefin
     await recordAudit({ action: "payroll.trainer_final_settlement", entityType: "PayrollCalculation", entityId: calculationId, companyId: scope.companyId, clubId: scope.calc.clubId, userId: scope.ctx.user.id, metadata: { creditKopeks: summary.creditKopeks } });
   } catch { /* ignore */ }
   revalidatePath(`/payroll/periods/${scope.calc.payrollPeriodId}`);
-  return { ok: true, notice: "Кредит тренера удержан из доступной зарплаты; остаток станет долгом сотрудника при закрытии." };
+  return { ok: true, notice: "Переплата сотруднику удержан из доступной зарплаты; остаток станет долгом сотрудника при закрытии." };
 }

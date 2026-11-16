@@ -21,7 +21,7 @@ type Result = {
 };
 
 const fmtDate = (isoStr: string | null) => { if (!isoStr) return "—"; const m = isoStr.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}.${m[2]}.${m[1]}` : isoStr; };
-const METHOD_LABEL: Record<string, string> = { contract_rate: "Согласно условиям договора", average_rate: "По средней стоимости тренировки", not_provided: "Услуга не оказывалась" };
+const METHOD_LABEL: Record<string, string> = { contract_rate: "Согласно условиям договора", average_rate: "По средней стоимости единицы услуги", not_provided: "Услуга не оказывалась" };
 
 export function PtCalcForm({ refundId, expectedUpdatedAt, info, trainers, defaults, result, backHref }: {
   refundId: string; expectedUpdatedAt: string; info: Info; trainers: Trainer[];
@@ -67,17 +67,17 @@ export function PtCalcForm({ refundId, expectedUpdatedAt, info, trainers, defaul
 
           <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Сумма договора, ₽</span>
             <input name="contractAmount" inputMode="decimal" defaultValue={defaults.contractAmountRub} placeholder="0,00" className="input w-full" /></label>
-          <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Стоимость тренировки при расторжении, ₽</span>
+          <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Стоимость единицы услуги при расторжении, ₽</span>
             <input name="terminationPrice" inputMode="decimal" defaultValue={defaults.terminationPriceRub} placeholder="0,00" className="input w-full" /></label>
 
-          <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Количество тренировок по договору</span>
+          <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Количество единиц услуги по договору</span>
             <input name="contractSessions" inputMode="numeric" defaultValue={defaults.contractSessions} className="input w-full" /></label>
-          <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Проведено тренировок</span>
+          <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Проведено единиц услуги</span>
             <input name="usedSessions" inputMode="numeric" defaultValue={defaults.usedSessions} className="input w-full" /></label>
 
-          <label className="block sm:col-span-2"><span className="mb-1 block text-sm font-medium text-slate-700">Тренер</span>
+          <label className="block sm:col-span-2"><span className="mb-1 block text-sm font-medium text-slate-700">Исполнитель</span>
             <select name="trainerEmployeeId" defaultValue={defaults.trainerEmployeeId} className="input w-full">
-              <option value="" disabled>Выберите тренера</option>
+              <option value="" disabled>Выберите исполнителя</option>
               {trainers.map((t) => <option key={t.id} value={t.id}>{t.fullName}{t.dismissed ? " — Уволен" : ""}</option>)}
             </select></label>
         </div>
@@ -86,8 +86,8 @@ export function PtCalcForm({ refundId, expectedUpdatedAt, info, trainers, defaul
         <fieldset className="mt-4">
           <legend className="mb-2 text-sm font-medium text-slate-700">Способ расчёта</legend>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Способ расчёта">
-            {[{ k: "contract_rate", l: "Согласно условиям договора", h: "Используется стоимость одной тренировки при расторжении, указанная в договоре." },
-              { k: "average_rate", l: "По средней стоимости тренировки", h: "Стоимость одной тренировки рассчитывается как сумма договора, делённая на количество тренировок." }].map((v) => (
+            {[{ k: "contract_rate", l: "Согласно условиям договора", h: "Используется стоимость одной единицы услуги при расторжении, указанная в договоре." },
+              { k: "average_rate", l: "По средней стоимости единицы услуги", h: "Стоимость одной единицы услуги рассчитывается как сумма договора, делённая на количество единиц услуги." }].map((v) => (
               <label key={v.k} className={`cursor-pointer rounded-lg border px-4 py-3 text-sm ${method === v.k ? "border-brand-500 bg-brand-50 ring-1 ring-brand-300" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
                 <input type="radio" name="calculationMethod" value={v.k} checked={method === v.k} onChange={() => setMethod(v.k)} className="sr-only" />
                 <div className="font-medium text-slate-800">{v.l}</div>
@@ -100,7 +100,7 @@ export function PtCalcForm({ refundId, expectedUpdatedAt, info, trainers, defaul
         {method === "average_rate" && !notProvided ? (
           <label className="mt-4 block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Почему выбран этот способ расчёта</span>
-            <textarea name="alternativeReason" defaultValue={defaults.alternativeReason} rows={2} maxLength={2000} className="input w-full" placeholder="Объясните, почему не применяется стоимость тренировки при расторжении из договора" />
+            <textarea name="alternativeReason" defaultValue={defaults.alternativeReason} rows={2} maxLength={2000} className="input w-full" placeholder="Объясните, почему не применяется стоимость единицы услуги при расторжении из договора" />
           </label>
         ) : (
           <input type="hidden" name="alternativeReason" value={defaults.alternativeReason} />
@@ -120,9 +120,9 @@ export function PtCalcForm({ refundId, expectedUpdatedAt, info, trainers, defaul
             <div className="inline-flex rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-800">Возврат не принимается</div>
             <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
               <Row label="Сумма договора" value={formatKopeks(result.contractAmountKopeks)} />
-              <Row label="Тренер" value={result.trainerName} />
-              <Row label="Стоимость тренировки при расторжении" value={formatKopeks(result.perSessionKopeks)} />
-              <Row label="Проведено тренировок" value={String(result.usedSessions)} />
+              <Row label="Исполнитель" value={result.trainerName} />
+              <Row label="Стоимость единицы услуги при расторжении" value={formatKopeks(result.perSessionKopeks)} />
+              <Row label="Проведено единиц услуги" value={String(result.usedSessions)} />
               <Row label="Результат расчёта" value={formatKopeks(result.preRoundKopeks)} />
             </dl>
             {result.unavailableReason ? <p className="mt-2 text-sm text-rose-700">{result.unavailableReason}</p> : null}
@@ -139,15 +139,15 @@ export function PtCalcForm({ refundId, expectedUpdatedAt, info, trainers, defaul
             {result.mode === "not_provided" ? (
               <p className="mt-2 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">Услуга не оказывалась — к возврату рассчитана полная сумма договора.</p>
             ) : result.zeroRemaining ? (
-              <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">Все тренировки по договору использованы. Расчётная сумма возврата равна 0 ₽.</p>
+              <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">Все единицы услуги по договору использованы. Расчётная сумма возврата равна 0 ₽.</p>
             ) : null}
             <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
               <Row label="Сумма договора" value={formatKopeks(result.contractAmountKopeks)} />
-              <Row label="Тренер" value={result.trainerName} />
-              <Row label="Куплено тренировок" value={String(result.contractSessions)} />
-              <Row label="Проведено тренировок" value={String(result.usedSessions)} />
+              <Row label="Исполнитель" value={result.trainerName} />
+              <Row label="Куплено единиц услуги" value={String(result.contractSessions)} />
+              <Row label="Проведено единиц услуги" value={String(result.usedSessions)} />
               <Row label="Способ расчёта" value={METHOD_LABEL[result.mode]} />
-              {result.mode !== "not_provided" ? <Row label={result.mode === "average_rate" ? "Средняя стоимость (справочно)" : "Стоимость тренировки"} value={formatKopeks(result.perSessionKopeks)} /> : null}
+              {result.mode !== "not_provided" ? <Row label={result.mode === "average_rate" ? "Средняя стоимость (справочно)" : "Стоимость единицы услуги"} value={formatKopeks(result.perSessionKopeks)} /> : null}
               {result.mode !== "not_provided" ? <Row label="Использованная сумма" value={formatKopeks(result.usedAmountKopeks)} /> : null}
               {result.mode !== "not_provided" ? <Row label="Сумма до округления" value={formatKopeks(result.preRoundKopeks)} /> : null}
             </dl>
