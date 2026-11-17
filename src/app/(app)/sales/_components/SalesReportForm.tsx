@@ -220,7 +220,7 @@ function Section({
       </div>
       {sectionKey === "ip" ? (
         <div className="border-b border-slate-100 bg-violet-50/40 px-3 py-1.5 text-[11px] text-violet-700">
-          Выручка ИП автоматически учитывается как ПТ
+          Выручка ИП автоматически учитывается как дополнительные услуги
         </div>
       ) : null}
       <div className="divide-y divide-slate-100">

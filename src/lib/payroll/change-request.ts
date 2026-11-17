@@ -84,14 +84,14 @@ const WHITELIST: Record<string, FieldSpec[]> = {
   sales_percentage: [F.pct("rateBp", "Процент с продаж")],
   hourly: [F.base("hourlyRateKopeks", "Ставка за час")],
   plan_adjusted_salary: [
-    F.base("subscriptionsBaseKopeks", "Оклад (абонементы)"),
-    F.base("ptBaseKopeks", "Оклад (ПТ)"),
+    F.base("subscriptionsBaseKopeks", "Оклад (основные услуги)"),
+    F.base("ptBaseKopeks", "Оклад (дополнительные услуги)"),
     F.pct("maxAdjustmentBp", "Максимальная корректировка"),
   ],
   revenue_percentage: [
     F.base("fixedKopeks", "Фикс. часть"),
-    F.pct("subsPercentBp", "Процент (абонементы)"),
-    F.pct("ptPercentBp", "Процент (ПТ)"),
+    F.pct("subsPercentBp", "Процент (основные услуги)"),
+    F.pct("ptPercentBp", "Процент (дополнительные услуги)"),
   ],
   profit_percentage: [F.pct("percentBp", "Процент от прибыли")],
   gym_trainer: [
@@ -102,8 +102,8 @@ const WHITELIST: Record<string, FieldSpec[]> = {
   ],
   // role-categories engine v2
   role_club_manager: [
-    F.base("abBaseKopeks", "Оклад (абонементы)"),
-    F.base("ptBaseKopeks", "Оклад (ПТ)"),
+    F.base("abBaseKopeks", "Оклад (основные услуги)"),
+    F.base("ptBaseKopeks", "Оклад (дополнительные услуги)"),
     F.pct("limitBp", "Лимит корректировки (±)"),
   ],
   role_administrator: [F.base("shiftRateKopeks", "Ставка за смену")],

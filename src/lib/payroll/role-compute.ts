@@ -24,21 +24,21 @@ export function computeRoleCategoryScheme(scheme: SchemeParams, input: PeriodInp
         limitBp: scheme.params.limitBp,
       });
       const warnings: string[] = [];
-      if (!(input.subscriptions?.planKopeks)) warnings.push("АБ: план не задан.");
-      if (!(input.personalTraining?.planKopeks)) warnings.push("ПТ: план не задан.");
+      if (!(input.subscriptions?.planKopeks)) warnings.push("Основные услуги: план не задан.");
+      if (!(input.personalTraining?.planKopeks)) warnings.push("Дополнительные услуги: план не задан.");
       const breakdown: BreakdownLine[] = [
-        { label: "АБ: окладная часть", valueKopeks: scheme.params.abBaseKopeks },
-        { label: "АБ: план", valueKopeks: num(input.subscriptions?.planKopeks) },
-        { label: "АБ: факт", valueKopeks: num(input.subscriptions?.factKopeks) },
-        { label: "АБ: выполнение", text: pctText(r.ab.completionBp) },
-        { label: "АБ: прибавка/вычет", text: `${r.ab.adjustmentBp >= 0 ? "+" : ""}${pctText(r.ab.adjustmentBp)}` },
-        { label: "АБ: скорректированная часть", valueKopeks: r.ab.adjustedKopeks },
-        { label: "ПТ: окладная часть", valueKopeks: scheme.params.ptBaseKopeks },
-        { label: "ПТ: план", valueKopeks: num(input.personalTraining?.planKopeks) },
-        { label: "ПТ: факт", valueKopeks: num(input.personalTraining?.factKopeks) },
-        { label: "ПТ: выполнение", text: pctText(r.pt.completionBp) },
-        { label: "ПТ: прибавка/вычет", text: `${r.pt.adjustmentBp >= 0 ? "+" : ""}${pctText(r.pt.adjustmentBp)}` },
-        { label: "ПТ: скорректированная часть", valueKopeks: r.pt.adjustedKopeks },
+        { label: "Основные услуги: окладная часть", valueKopeks: scheme.params.abBaseKopeks },
+        { label: "Основные услуги: план", valueKopeks: num(input.subscriptions?.planKopeks) },
+        { label: "Основные услуги: факт", valueKopeks: num(input.subscriptions?.factKopeks) },
+        { label: "Основные услуги: выполнение", text: pctText(r.ab.completionBp) },
+        { label: "Основные услуги: прибавка/вычет", text: `${r.ab.adjustmentBp >= 0 ? "+" : ""}${pctText(r.ab.adjustmentBp)}` },
+        { label: "Основные услуги: скорректированная часть", valueKopeks: r.ab.adjustedKopeks },
+        { label: "Дополнительные услуги: окладная часть", valueKopeks: scheme.params.ptBaseKopeks },
+        { label: "Дополнительные услуги: план", valueKopeks: num(input.personalTraining?.planKopeks) },
+        { label: "Дополнительные услуги: факт", valueKopeks: num(input.personalTraining?.factKopeks) },
+        { label: "Дополнительные услуги: выполнение", text: pctText(r.pt.completionBp) },
+        { label: "Дополнительные услуги: прибавка/вычет", text: `${r.pt.adjustmentBp >= 0 ? "+" : ""}${pctText(r.pt.adjustmentBp)}` },
+        { label: "Дополнительные услуги: скорректированная часть", valueKopeks: r.pt.adjustedKopeks },
         { label: "Итого начислено (управляющий)", valueKopeks: r.totalKopeks },
       ];
       return { amountKopeks: r.totalKopeks, breakdown, flags: {}, warnings };
@@ -101,7 +101,7 @@ export function computeRoleCategoryScheme(scheme: SchemeParams, input: PeriodInp
       const breakdown: BreakdownLine[] = [
         { label: "Продажи новым клиентам", valueKopeks: num(input.newSalesKopeks) },
         { label: "Продажи по продлениям", valueKopeks: num(input.renewalSalesKopeks) },
-        { label: "Выполнение общего плана ПТ клуба", text: pctText(num(input.clubPtCompletionBp)) },
+        { label: "Выполнение общего плана дополнительных услуг филиала", text: pctText(num(input.clubPtCompletionBp)) },
         { label: "Применённый % (новые)", text: pctText(r.appliedNewBp) },
         { label: "Применённый % (продления)", text: pctText(r.appliedRenewalBp) },
         { label: "Кредит сотрудника (информационно)", valueKopeks: r.trainerCreditKopeks },
@@ -129,7 +129,7 @@ export function computeRoleCategoryScheme(scheme: SchemeParams, input: PeriodInp
         { label: "Личные продажи", valueKopeks: num(input.personalSalesKopeks) },
         { label: "Начисление с личных продаж", valueKopeks: r.personalPartKopeks },
         { label: "Фиксированная доплата старшего", valueKopeks: r.fixedBonusKopeks },
-        { label: `Доля от выручки ГП клуба (${pctText(scheme.params.clubShareBp)})`, valueKopeks: r.clubSharePartKopeks },
+        { label: `Доля от выручки пакетных услуг филиала (${pctText(scheme.params.clubShareBp)})`, valueKopeks: r.clubSharePartKopeks },
         { label: "Итого начислено (специальная схема)", valueKopeks: r.totalKopeks },
       ];
       return { amountKopeks: r.totalKopeks, breakdown, flags: {}, warnings: [] };

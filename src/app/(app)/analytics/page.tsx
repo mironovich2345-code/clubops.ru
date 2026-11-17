@@ -160,8 +160,8 @@ export default async function AnalyticsPage({
         </div>
         <div className="mb-4 grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4">
           {anyOfd ? <KpiCard label="Выручка ОФД (все сети)" value={formatKopeks(tRev)} accent="text-brand-700 dark:text-brand-400" /> : null}
-          <KpiCard label="Продажи АБ (все сети)" value={formatKopeks(tAb)} accent="text-emerald-600 dark:text-emerald-400" />
-          <KpiCard label="Продажи ПТ (все сети)" value={formatKopeks(tPt)} accent="text-sky-600 dark:text-sky-400" />
+          <KpiCard label="Продажи основных услуг (все сети)" value={formatKopeks(tAb)} accent="text-emerald-600 dark:text-emerald-400" />
+          <KpiCard label="Продажи дополнительных услуг (все сети)" value={formatKopeks(tPt)} accent="text-sky-600 dark:text-sky-400" />
           {financials ? <KpiCard label="Расходы (все сети)" value={formatKopeks(tExp)} accent="text-rose-600 dark:text-rose-400" /> : null}
           <KpiCard label="Филиалов в выборке" value={String(groups.filteredClubIds.length)} />
         </div>
@@ -173,8 +173,8 @@ export default async function AnalyticsPage({
               title={r.companyName}
               rows={[
                 ...(anyOfd ? [{ label: "Выручка ОФД", value: formatKopeks(r.rev), strong: true }] : []),
-                { label: "Продажи АБ", value: formatKopeks(r.ab) },
-                { label: "Продажи ПТ", value: formatKopeks(r.pt) },
+                { label: "Продажи основных услуг", value: formatKopeks(r.ab) },
+                { label: "Продажи дополнительных услуг", value: formatKopeks(r.pt) },
                 ...(financials ? [{ label: "Расходы", value: formatKopeks(r.exp) }] : []),
                 ...(financials && anyOfd ? [{ label: "Результат", value: formatKopeks(r.rev - r.exp), strong: true, tone: (r.rev - r.exp) < 0 ? "danger" as const : "success" as const }] : []),
                 { label: "Филиалов", value: String(r.clubs) },
@@ -186,7 +186,7 @@ export default async function AnalyticsPage({
           <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">По сетям</div>
           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
             <thead className="bg-slate-50 dark:bg-slate-800/50">
-              <tr><Th>Сеть</Th>{anyOfd ? <Th className="text-right">Выручка ОФД</Th> : null}<Th className="text-right">Продажи АБ</Th><Th className="text-right">Продажи ПТ</Th>{financials ? <Th className="text-right">Расходы</Th> : null}</tr>
+              <tr><Th>Сеть</Th>{anyOfd ? <Th className="text-right">Выручка ОФД</Th> : null}<Th className="text-right">Продажи основных услуг</Th><Th className="text-right">Продажи дополнительных услуг</Th>{financials ? <Th className="text-right">Расходы</Th> : null}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
               {netRows.map((r) => (
@@ -680,10 +680,10 @@ function WeekdaySalesBlock({ rows }: { rows: WeekdayRow[] }) {
             <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr>
                 <Th>День недели</Th>
-                <Th className="text-right">Продажи АБ</Th>
-                <Th className="text-right">Продажи ПТ</Th>
-                <Th className="text-right">Средняя АБ</Th>
-                <Th className="text-right">Средняя ПТ</Th>
+                <Th className="text-right">Продажи основных услуг</Th>
+                <Th className="text-right">Продажи дополнительных услуг</Th>
+                <Th className="text-right">Средняя выручка основных услуг</Th>
+                <Th className="text-right">Средняя выручка дополнительных услуг</Th>
                 <Th className="text-right">Общая выручка</Th>
               </tr>
             </thead>
@@ -720,10 +720,10 @@ function ManagerSalesBlock({ rows }: { rows: ManagerRow[] }) {
             <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr>
                 <Th>Менеджер</Th>
-                <Th className="text-right">Продажи АБ</Th>
-                <Th className="text-right">Продажи ПТ</Th>
-                <Th className="text-right">Средняя АБ</Th>
-                <Th className="text-right">Средняя ПТ</Th>
+                <Th className="text-right">Продажи основных услуг</Th>
+                <Th className="text-right">Продажи дополнительных услуг</Th>
+                <Th className="text-right">Средняя выручка основных услуг</Th>
+                <Th className="text-right">Средняя выручка дополнительных услуг</Th>
                 <Th className="text-right">Общая выручка</Th>
                 <Th className="text-right">Средняя за смену</Th>
               </tr>

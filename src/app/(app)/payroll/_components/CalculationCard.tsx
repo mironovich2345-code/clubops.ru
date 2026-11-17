@@ -23,12 +23,12 @@ const INPUT_FIELDS: Record<string, InputField[]> = {
   plan_adjusted_salary: [
     { name: "subsPlan", label: "Основные услуги — план, ₽", kind: "rub" },
     { name: "subsFact", label: "Основные услуги — факт, ₽", kind: "rub" },
-    { name: "ptPlan", label: "ПТ — план, ₽", kind: "rub" },
-    { name: "ptFact", label: "ПТ — факт, ₽", kind: "rub" },
+    { name: "ptPlan", label: "Дополнительные услуги — план, ₽", kind: "rub" },
+    { name: "ptFact", label: "Дополнительные услуги — факт, ₽", kind: "rub" },
   ],
   revenue_percentage: [
     { name: "subsRevenue", label: "Выручка основные услуги, ₽", kind: "rub" },
-    { name: "ptRevenue", label: "Выручка ПТ, ₽", kind: "rub" },
+    { name: "ptRevenue", label: "Выручка дополнительных услуг, ₽", kind: "rub" },
   ],
   profit_percentage: [{ name: "cityProfit", label: "Прибыль города, ₽", kind: "rub" }],
   // The 70% payout gate (this month's sales-plan completion). Packages are entered below.
@@ -36,10 +36,10 @@ const INPUT_FIELDS: Record<string, InputField[]> = {
   mixed: [{ name: "manualAmount", label: "Сумма (ручной ввод), ₽", kind: "rub" }],
   // --- role-categories engine v2 (STAGE 3–8) — field names match collectPeriodInput ---
   role_club_manager: [
-    { name: "subsPlan", label: "АБ — план, ₽", kind: "rub" },
-    { name: "subsFact", label: "АБ — факт, ₽", kind: "rub" },
-    { name: "ptPlan", label: "ПТ — план, ₽", kind: "rub" },
-    { name: "ptFact", label: "ПТ — факт, ₽", kind: "rub" },
+    { name: "subsPlan", label: "основные услуги — план, ₽", kind: "rub" },
+    { name: "subsFact", label: "основные услуги — факт, ₽", kind: "rub" },
+    { name: "ptPlan", label: "Дополнительные услуги — план, ₽", kind: "rub" },
+    { name: "ptFact", label: "Дополнительные услуги — факт, ₽", kind: "rub" },
     { name: "actualShifts", label: "Смен", kind: "int" },
     { name: "normShifts", label: "Норма смен (контроль)", kind: "int" },
   ],
@@ -67,7 +67,7 @@ const INPUT_FIELDS: Record<string, InputField[]> = {
   role_gym_head_trainer: [
     { name: "newSales", label: "Продажи новым клиентам, ₽", kind: "rub" },
     { name: "renewalSales", label: "Продажи по продлениям, ₽", kind: "rub" },
-    { name: "clubPtCompletion", label: "Выполнение общего плана ПТ филиала, %", kind: "int" },
+    { name: "clubPtCompletion", label: "Выполнение общего плана дополнительных услуг филиала, %", kind: "int" },
     { name: "trainerCredit", label: "Кредит сотрудника (информационно), ₽", kind: "rub" },
   ],
   role_group_trainer: [
@@ -77,7 +77,7 @@ const INPUT_FIELDS: Record<string, InputField[]> = {
   role_group_head_trainer: [
     { name: "hours", label: "Часы", kind: "int" },
     { name: "personalSales", label: "Личные продажи, ₽", kind: "rub" },
-    { name: "clubGroupSales", label: "Вся выручка ГП филиала, ₽", kind: "rub" },
+    { name: "clubGroupSales", label: "Вся выручка пакетных услуг филиала, ₽", kind: "rub" },
   ],
 };
 

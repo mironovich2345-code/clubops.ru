@@ -60,8 +60,8 @@ export function SalesPlanForm({
           </select>
         </label>
         <AmountField name="amount_total" label="Общий план" />
-        <AmountField name="amount_subscriptions" label="План основные услуги" />
-        <AmountField name="amount_personal_training" label="План дополнительные услуги" />
+        <AmountField name="amount_subscriptions" label="План основных услуг" />
+        <AmountField name="amount_personal_training" label="План дополнительных услуг" />
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <SaveButton />

@@ -22,7 +22,7 @@ export function SalesPlanImport({ rows }: { rows: PlanRow[] }) {
                 <th className="py-2 pr-3 text-left">Месяц</th>
                 <th className="py-2 pr-3 text-right">Общий</th>
                 <th className="py-2 pr-3 text-right">Основные услуги</th>
-                <th className="py-2 text-right">Персональные</th>
+                <th className="py-2 text-right">Дополнительные услуги</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

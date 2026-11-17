@@ -415,10 +415,10 @@ export async function savePersonalTrainingInputs(_prev: State | undefined, formD
   if (priceRaw && V === null) return { ok: false, error: "Неверный формат стоимости услуги." };
   const nRaw = String(formData.get("contractSessions") ?? "").trim();
   const N = nRaw ? parseIntStrict(nRaw) : null;
-  if (nRaw && N === null) return { ok: false, error: "Количество тренировок должно быть целым числом." };
+  if (nRaw && N === null) return { ok: false, error: "Количество единиц услуги должно быть целым числом." };
   const eRaw = String(formData.get("usedSessions") ?? "").trim();
   const E = eRaw ? parseIntStrict(eRaw) : null;
-  if (eRaw && E === null) return { ok: false, error: "Количество проведённых тренировок должно быть целым числом." };
+  if (eRaw && E === null) return { ok: false, error: "Количество проведённых единиц услуги должно быть целым числом." };
   const serviceNotProvided = ["on", "true"].includes(String(formData.get("serviceNotProvided") ?? ""));
   const methodRaw = String(formData.get("calculationMethod") ?? "").trim();
   const method = isPtMethod(methodRaw) ? methodRaw : null;
@@ -429,7 +429,7 @@ export async function savePersonalTrainingInputs(_prev: State | undefined, formD
   let ptTrainerEmployeeId: string | null = null, ptTrainerNameSnapshot: string | null = null;
   if (trainerId) {
     const t = await getClubTrainer(refund.clubId, trainerId);
-    if (!t) return { ok: false, error: "Выбранный тренер недоступен для этого клуба." };
+    if (!t) return { ok: false, error: "Выбранный исполнитель недоступен для этого клуба." };
     ptTrainerEmployeeId = t.id; ptTrainerNameSnapshot = t.fullName;
   }
 
@@ -464,9 +464,9 @@ export async function calculatePersonalTrainingRefund(_prev: State | undefined, 
 
   // Trainer (required in all cases).
   const trainerId = String(formData.get("trainerEmployeeId") ?? "").trim();
-  if (!trainerId) return { ok: false, error: "Выберите тренера." };
+  if (!trainerId) return { ok: false, error: "Выберите исполнителя." };
   const trainer = await getClubTrainer(refund.clubId, trainerId);
-  if (!trainer) return { ok: false, error: "Выбранный тренер недоступен для этого клуба." };
+  if (!trainer) return { ok: false, error: "Выбранный исполнитель недоступен для этого клуба." };
 
   const application = parseDateOnly(String(formData.get("applicationDate") ?? ""));
   if (!application) return { ok: false, error: "Укажите дату написания заявления." };
@@ -474,11 +474,11 @@ export async function calculatePersonalTrainingRefund(_prev: State | undefined, 
   const X = parseContractAmountKopeks(String(formData.get("contractAmount") ?? ""));
   if (X === null) return { ok: false, error: "Неверный формат суммы договора." };
   const V = parseContractAmountKopeks(String(formData.get("terminationPrice") ?? ""));
-  if (V === null) return { ok: false, error: "Неверный формат стоимости тренировки." };
+  if (V === null) return { ok: false, error: "Неверный формат стоимости единицы услуги." };
   const N = parseIntStrict(String(formData.get("contractSessions") ?? ""));
-  if (N === null) return { ok: false, error: "Укажите количество тренировок по договору (целое число)." };
+  if (N === null) return { ok: false, error: "Укажите количество единиц услуги по договору (целое число)." };
   const E = parseIntStrict(String(formData.get("usedSessions") ?? ""));
-  if (E === null) return { ok: false, error: "Укажите количество проведённых тренировок (целое число)." };
+  if (E === null) return { ok: false, error: "Укажите количество проведённых единиц услуги (целое число)." };
   const serviceNotProvided = ["on", "true"].includes(String(formData.get("serviceNotProvided") ?? ""));
   const methodRaw = String(formData.get("calculationMethod") ?? "").trim();
   const method = (isPtMethod(methodRaw) ? methodRaw : "contract_rate") as PtMethod;

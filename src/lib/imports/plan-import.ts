@@ -29,14 +29,14 @@ export type RawPlanRow = { rowNum: number; clubIdCell: unknown; clubNameCell: un
 // name never collide.
 const PLAN_COLUMNS: ColumnSpec[] = [
   { key: "clubId", headers: ["clubId", "ID клуба"], required: true },
-  { key: "clubName", headers: ["Клуб", "clubName"] },
+  { key: "clubName", headers: ["Филиал", "Клуб", "clubName"] },
   { key: "city", headers: ["Город", "cityName"] },
   { key: "month", headers: ["Месяц", "planMonth", "month"] },
-  { key: "subs", headers: ["План АБ", "membershipPlan", "Абонементы"], required: true },
-  { key: "pt", headers: ["План ПТ", "personalTrainingPlan", "Персональные тренировки"], required: true },
+  { key: "subs", headers: ["План основных услуг", "План АБ", "membershipPlan", "Абонементы"], required: true },
+  { key: "pt", headers: ["План дополнительных услуг", "План ПТ", "personalTrainingPlan", "Персональные тренировки"], required: true },
 ];
 
-export const PLAN_TEMPLATE_HEADER = ["clubId", "Клуб", "Город", "Месяц", "План АБ", "План ПТ"];
+export const PLAN_TEMPLATE_HEADER = ["clubId", "Филиал", "Город", "Месяц", "План основных услуг", "План дополнительных услуг"];
 
 /** Build the XLSX plan template for a month + the scope's clubs. Returns a Buffer. */
 export function buildPlanTemplateBuffer(month: string, clubs: PlanScopeClub[]): Buffer {
@@ -107,8 +107,8 @@ export function buildPlanPreview(input: { rawRows: RawPlanRow[]; scopeClubs: Pla
     if (monthCell && monthCell !== input.month) { anyError = true; rows.push(mkErr(`Месяц в строке (${monthCell}) не совпадает с выбранным (${input.month})`)); continue; }
     const s = amount(raw.subsCell);
     const p = amount(raw.ptCell);
-    if ("error" in s) { anyError = true; rows.push(mkErr("План АБ: неверная сумма")); continue; }
-    if ("error" in p) { anyError = true; rows.push(mkErr("План ПТ: неверная сумма")); continue; }
+    if ("error" in s) { anyError = true; rows.push(mkErr("План основных услуг: неверная сумма")); continue; }
+    if ("error" in p) { anyError = true; rows.push(mkErr("План дополнительных услуг: неверная сумма")); continue; }
     seen.add(club.id);
     const cur = curById.get(club.id);
     const currentSubs = cur?.subsKopeks ?? 0;

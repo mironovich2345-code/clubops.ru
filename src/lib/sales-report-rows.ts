@@ -24,7 +24,7 @@ export const SALES_REPORT_ROWS: ReadonlyArray<ReportRow> = [
   { key: "link_ooo", label: "Ссылка ООО", section: "ooo", calc: false },
   { key: "revenue_ooo", label: "Выручка ООО", section: "ooo", calc: true },
   { key: "subscriptions_ooo", label: "Аб-ты + доп. ООО", section: "ooo", calc: false },
-  { key: "personal_training_ooo", label: "ПТ + ГП ООО", section: "ooo", calc: false },
+  { key: "personal_training_ooo", label: "Дополнительные услуги ООО", section: "ooo", calc: false },
   { key: "encashment_ooo", label: "Инкассация ООО", section: "ooo", calc: false },
   { key: "withdrawal", label: "Изъятие", section: "ooo", calc: false },
   // ИП
@@ -34,7 +34,7 @@ export const SALES_REPORT_ROWS: ReadonlyArray<ReportRow> = [
   { key: "cashless_ip", label: "Безнал ИП", section: "ip", calc: true },
   { key: "revenue_ip", label: "Выручка ИП", section: "ip", calc: true },
   // Итоги
-  { key: "personal_training_total", label: "Общее ПТ", section: "totals", calc: true },
+  { key: "personal_training_total", label: "Всего дополнительных услуг", section: "totals", calc: true },
   { key: "total_revenue", label: "Общая выручка", section: "totals", calc: true },
 ];
 

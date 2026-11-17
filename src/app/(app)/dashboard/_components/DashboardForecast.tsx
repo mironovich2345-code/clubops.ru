@@ -91,7 +91,7 @@ export function DashboardForecast({
           </div>
         ) : (
           <Metric
-            label={mode === "future" ? "В т.ч. план АБ / ПТ" : "Факт АБ / ПТ"}
+            label={mode === "future" ? "В т.ч. план основных / дополнительных услуг" : "Факт основных / дополнительных услуг"}
             value={mode === "future" ? `${formatKopeks(abPlan)} / ${formatKopeks(ptPlan)}` : `${formatKopeks(abFact)} / ${formatKopeks(ptFact)}`}
             accent="text-slate-700 dark:text-slate-300"
           />

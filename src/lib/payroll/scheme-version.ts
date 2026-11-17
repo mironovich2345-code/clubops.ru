@@ -144,9 +144,9 @@ export function frozenFieldTouched(patch: Record<string, unknown>): string | nul
 
 // --- presentational param formatting / diff (client-safe) --------------------
 const PARAM_LABELS: Record<string, string> = {
-  abBaseKopeks: "Оклад (абонементы)",
-  ptBaseKopeks: "Оклад (ПТ)",
-  subscriptionsBaseKopeks: "Оклад (абонементы)",
+  abBaseKopeks: "Оклад (основные услуги)",
+  ptBaseKopeks: "Оклад (дополнительные услуги)",
+  subscriptionsBaseKopeks: "Оклад (основные услуги)",
   baseKopeks: "Оклад",
   salaryFor15Kopeks: "Оклад за 15 смен",
   shiftRateKopeks: "Ставка за смену",
@@ -161,8 +161,8 @@ const PARAM_LABELS: Record<string, string> = {
   percentBp: "Процент от прибыли",
   belowPlanRateBp: "Процент ниже плана",
   atPlanRateBp: "Процент при выполнении плана",
-  subsPercentBp: "Процент (абонементы)",
-  ptPercentBp: "Процент (ПТ)",
+  subsPercentBp: "Процент (основные услуги)",
+  ptPercentBp: "Процент (дополнительные услуги)",
   newRateBp: "Процент (новые)",
   renewalRateBp: "Процент (продления)",
   personalRateBp: "Личный процент",

@@ -51,12 +51,12 @@ export function SalesDynamicsChart({ buckets, height = 200 }: { buckets: SplitTr
                   <div
                     className="w-1/2 max-w-[20px] rounded-t-sm bg-emerald-500"
                     style={{ height: subPx }}
-                    title={`${b.label}: абонементы ${formatKopeks(b.subsKopeks)}`}
+                    title={`${b.label}: основные услуги ${formatKopeks(b.subsKopeks)}`}
                   />
                   <div
                     className="w-1/2 max-w-[20px] rounded-t-sm bg-sky-500"
                     style={{ height: ptPx }}
-                    title={`${b.label}: персональные ${formatKopeks(b.ptKopeks)}`}
+                    title={`${b.label}: дополнительные услуги ${formatKopeks(b.ptKopeks)}`}
                   />
                 </div>
                 <div className="mt-1.5 w-full truncate text-center text-[11px] font-medium text-slate-600 dark:text-slate-300">{b.label}</div>
@@ -69,7 +69,7 @@ export function SalesDynamicsChart({ buckets, height = 200 }: { buckets: SplitTr
       {/* Period totals under the chart so the numbers are always visible */}
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
         <span>Основные услуги за период: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatKopeks(subsTotal)}</span></span>
-        <span>Персональные за период: <span className="font-semibold text-sky-600 dark:text-sky-400">{formatKopeks(ptTotal)}</span></span>
+        <span>Дополнительные услуги за период: <span className="font-semibold text-sky-600 dark:text-sky-400">{formatKopeks(ptTotal)}</span></span>
       </div>
     </div>
   );

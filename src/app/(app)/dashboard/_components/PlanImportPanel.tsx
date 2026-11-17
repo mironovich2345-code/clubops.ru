@@ -34,7 +34,7 @@ export function PlanImportPanel({ month }: { month: string }) {
           <button type="submit" className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}>Загрузить планы</button>
         </form>
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Общий план считается автоматически = План АБ + План ПТ. Суммы можно писать как 2 500 000, 2.500.000 или 2500000.</p>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Общий план считается автоматически = План основных услуг + План дополнительных услуг. Суммы можно писать как 2 500 000, 2.500.000 или 2500000.</p>
 
       {preview.error ? <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{preview.error}</p> : null}
       {applied.applied ? (
@@ -48,7 +48,7 @@ export function PlanImportPanel({ month }: { month: string }) {
             <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  <Th>Филиал</Th><Th>Текущий АБ</Th><Th>Новый АБ</Th><Th>Текущий ПТ</Th><Th>Новый ПТ</Th><Th>Текущий общий</Th><Th>Новый общий</Th><Th>Статус</Th>
+                  <Th>Филиал</Th><Th>Текущий план осн. услуг</Th><Th>Новый план осн. услуг</Th><Th>Текущий план доп. услуг</Th><Th>Новый план доп. услуг</Th><Th>Текущий общий</Th><Th>Новый общий</Th><Th>Статус</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">

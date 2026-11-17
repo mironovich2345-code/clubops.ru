@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "CLUB-OPS",
     short_name: "Club Ops",
-    description: "Операционная система управления сетью фитнес-клубов",
+    description: "Операционная система управления сетью филиалов",
     start_url: "/",
     scope: "/",
     display: "standalone",

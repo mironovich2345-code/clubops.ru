@@ -234,7 +234,7 @@ export default async function SalesReportDetailPage({ params }: { params: Promis
               </div>
               {section.key === "ip" ? (
                 <div className="border-b border-slate-100 bg-violet-50/40 px-4 py-1.5 text-[11px] text-violet-700">
-                  Выручка ИП автоматически учитывается как ПТ
+                  Выручка ИП автоматически учитывается как дополнительные услуги
                 </div>
               ) : null}
               <table className="min-w-full divide-y divide-slate-100">

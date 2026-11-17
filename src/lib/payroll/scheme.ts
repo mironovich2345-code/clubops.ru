@@ -154,7 +154,7 @@ export function validateSchemeParams(schemeType: string, raw: unknown): Validate
       const abBaseKopeks = nonNegInt(p.abBaseKopeks);
       const ptBaseKopeks = nonNegInt(p.ptBaseKopeks);
       const limitBp = bp(p.limitBp) ?? DEFAULT_MAX_ADJUSTMENT_BP;
-      if (abBaseKopeks == null || ptBaseKopeks == null) return err("Укажите окладные части АБ и ПТ.");
+      if (abBaseKopeks == null || ptBaseKopeks == null) return err("Укажите окладные части по основным и дополнительным услугам.");
       return { ok: true, scheme: { type: "role_club_manager", params: { abBaseKopeks, ptBaseKopeks, limitBp } } };
     }
     case "role_administrator": {
@@ -185,7 +185,7 @@ export function validateSchemeParams(schemeType: string, raw: unknown): Validate
     }
     case "role_gym_head_trainer": {
       const newTiers = tiers(p.newTiers), renewalTiers = tiers(p.renewalTiers);
-      if (!newTiers || !renewalTiers) return err("Укажите уровни процентов (новые/продления) по выполнению плана ПТ.");
+      if (!newTiers || !renewalTiers) return err("Укажите уровни процентов (новые/продления) по выполнению плана дополнительных услуг.");
       return { ok: true, scheme: { type: "role_gym_head_trainer", params: { newTiers, renewalTiers } } };
     }
     case "role_group_trainer": {
