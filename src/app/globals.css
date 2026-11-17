@@ -13,7 +13,7 @@
   --card: #ffffff;            /* cards / topbar / sidebar */
   --card-foreground: #0f172a;
   --muted: #f1f5f9;           /* subtle surfaces (slate-100) */
-  --muted-foreground: #64748b;/* secondary text (slate-500) */
+  --muted-foreground: #526174;/* AA secondary text on white and muted surfaces */
   --border: #e2e8f0;          /* borders (slate-200) */
   --input: #ffffff;           /* input background */
   --primary: #2563eb;         /* brand-600 */
@@ -162,7 +162,12 @@ body {
 .dark .bg-amber-50,
 .dark .bg-amber-50\/40 { background-color: rgba(245, 158, 11, 0.12) !important; }
 .dark .bg-sky-50 { background-color: rgba(56, 189, 248, 0.12) !important; }
+.dark .bg-rose-100 { background-color: rgba(244, 63, 94, 0.16) !important; }
+.dark .bg-amber-100 { background-color: rgba(245, 158, 11, 0.16) !important; }
+.dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.16) !important; }
 
+.dark .text-brand-600,
+.dark .text-blue-600 { color: #93c5fd !important; }
 .dark .text-brand-700 { color: #93c5fd !important; }
 .dark .text-emerald-700,
 .dark .text-emerald-800 { color: #6ee7b7 !important; }
@@ -186,6 +191,14 @@ body {
 .dark .border-rose-300 { border-color: rgba(244, 63, 94, 0.35) !important; }
 .dark .border-amber-200,
 .dark .border-amber-300 { border-color: rgba(245, 158, 11, 0.35) !important; }
+
+/* Small financial labels and statuses need 4.5:1, including muted cards.
+   Keep these light-only so the existing dark palette retains its brighter text. */
+:root:not(.dark) .text-slate-400,
+:root:not(.dark) .text-slate-500 { color: #526174; }
+:root:not(.dark) .text-emerald-600 { color: #047857; }
+:root:not(.dark) .text-amber-600 { color: #92400e; }
+:root:not(.dark) .text-sky-600 { color: #0369a1; }
 
 /* ---------------------------------------------------------------------------
    Mobile + PWA foundation (WAVE 1). Systemic, theme-agnostic. Desktop unaffected
