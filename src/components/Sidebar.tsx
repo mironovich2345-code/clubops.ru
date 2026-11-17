@@ -21,7 +21,8 @@ const itemClass = (active: boolean) =>
 
 export function Sidebar({ items }: SidebarProps) {
   const pathname = usePathname();
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const activeHref = items.filter(i => pathname === i.href || pathname.startsWith(`${i.href}/`)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const isActive = (href: string) => href === activeHref;
 
   // Resolve each section against the access-filtered items the layout passes in.
   // A page/group the user cannot access is simply absent here — no access logic
@@ -49,15 +50,15 @@ export function Sidebar({ items }: SidebarProps) {
       setOpenGroup(activeGroup);
       return;
     }
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
-    setOpenGroup(saved || null);
+    try { setOpenGroup(window.localStorage.getItem(STORAGE_KEY) || null); }
+    catch { setOpenGroup(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
   const toggle = (id: string) => {
     setOpenGroup((cur) => {
       const next = cur === id ? null : id; // open this one (closing any other), or collapse
-      if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, next ?? "");
+      try { window.localStorage.setItem(STORAGE_KEY, next ?? ""); } catch { /* navigation works without storage */ }
       return next;
     });
   };
@@ -76,7 +77,7 @@ export function Sidebar({ items }: SidebarProps) {
               if (!item) return null;
               return (
                 <li key={item.href}>
-                  <Link href={item.href} className={itemClass(isActive(item.href))}>
+                  <Link href={item.href} aria-current={isActive(item.href) ? "page" : undefined} className={itemClass(isActive(item.href))}>
                     {item.label}
                   </Link>
                 </li>
@@ -113,7 +114,7 @@ export function Sidebar({ items }: SidebarProps) {
                   <ul className="mt-1 space-y-1 border-l border-slate-200 pl-3">
                     {children.map((item) => (
                       <li key={item.href}>
-                        <Link href={item.href} className={itemClass(isActive(item.href))}>
+                        <Link href={item.href} aria-current={isActive(item.href) ? "page" : undefined} className={itemClass(isActive(item.href))}>
                           {item.label}
                         </Link>
                       </li>

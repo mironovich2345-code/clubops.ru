@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { NAV_SECTIONS } from "@/lib/navigation";
 import { NavIcon, MenuIcon, CloseIcon, ChevronDownIcon } from "@/components/mobile/icons";
@@ -19,9 +19,12 @@ const OPEN_KEY = "clubops:mnav:open";
 export function MobileShell({ items, header, account }: { items: Item[]; header: React.ReactNode; account: React.ReactNode }) {
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLButtonElement>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const activeHref = items.filter(i => pathname === i.href || pathname.startsWith(i.href + "/")).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const isActive = (href: string) => href === activeHref;
   const byPage = new Map(items.map((i) => [i.page, i]));
 
   const activeGroupId = (NAV_SECTIONS.find((s) => s.type === "group" && s.pages.some((p) => { const it = byPage.get(p); return it && isActive(it.href); })) as { id: string } | undefined)?.id ?? null;
@@ -44,6 +47,22 @@ export function MobileShell({ items, header, account }: { items: Item[]; header:
 
   useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; return () => { document.body.style.overflow = ""; }; }, [open]);
   useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const drawer = drawerRef.current;
+    const focusable = () => Array.from(drawer?.querySelectorAll<HTMLElement>('a[href], button, select, input, [tabindex="0"]') ?? []).filter(el => !el.hasAttribute("disabled") && el.getClientRects().length > 0);
+    focusable()[0]?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
+      if (event.key === "Tab") {
+        const elements = focusable();
+        const target = event.shiftKey ? elements.at(-1) : elements[0];
+        if ((event.shiftKey && document.activeElement === elements[0]) || (!event.shiftKey && document.activeElement === elements.at(-1))) { event.preventDefault(); target?.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); menuRef.current?.focus(); };
+  }, [open]);
 
   // Native anchors guarantee navigation on mobile browsers/webviews even when
   // client-side router transitions or prefetching are unreliable.
@@ -59,7 +78,7 @@ export function MobileShell({ items, header, account }: { items: Item[]; header:
       {/* Symmetric top bar: 44px menu / centered title / 44px spacer (§16) */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white pt-safe lg:hidden">
         <div className="grid h-12 grid-cols-[44px_1fr_44px] items-center px-2">
-          <button type="button" aria-label="Меню" aria-controls="clubops-mobile-drawer" aria-expanded={open} onClick={() => setOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100">
+          <button ref={menuRef} type="button" aria-label="Меню" aria-controls="clubops-mobile-drawer" aria-expanded={open} onClick={() => setOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100">
             <MenuIcon className="h-6 w-6" />
           </button>
           <span className="text-center text-sm font-semibold tracking-tight text-slate-900">CLUB<span className="text-brand-600">-OPS</span></span>
@@ -71,7 +90,7 @@ export function MobileShell({ items, header, account }: { items: Item[]; header:
         <div className="fixed inset-0 z-[100] lg:hidden">
           <div className="absolute inset-0 bg-slate-900/50" onClick={() => setOpen(false)} />
           {/* Bounded drawer: within viewport, no horizontal overflow, full-width children (§4) */}
-          <div id="clubops-mobile-drawer" role="dialog" aria-modal="true" aria-label="Разделы CLUB OPS" className="absolute inset-y-0 left-0 flex w-[min(88vw,360px)] max-w-full flex-col overflow-x-hidden bg-white pt-safe shadow-xl">
+          <div ref={drawerRef} id="clubops-mobile-drawer" role="dialog" aria-modal="true" aria-label="Разделы CLUB OPS" className="absolute inset-y-0 left-0 flex w-[min(88vw,360px)] max-w-full flex-col overflow-x-hidden bg-white pt-safe shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <span className="text-sm font-semibold text-slate-900">Меню</span>
               <button type="button" aria-label="Закрыть" onClick={() => setOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100">
@@ -93,7 +112,7 @@ export function MobileShell({ items, header, account }: { items: Item[]; header:
                 const isOpen = openGroups[section.id] ?? false;
                 return (
                   <div key={section.id} className="min-w-0">
-                    <button type="button" onClick={() => toggleGroup(section.id)} className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-md px-3 text-sm font-medium text-slate-600 hover:bg-slate-100">
+                    <button type="button" aria-expanded={openGroups[section.id] ?? false} onClick={() => toggleGroup(section.id)} className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-md px-3 text-sm font-medium text-slate-600 hover:bg-slate-100">
                       <span>{section.label}</span>
                       <ChevronDownIcon className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
                     </button>

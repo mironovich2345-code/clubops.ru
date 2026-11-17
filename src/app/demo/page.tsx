@@ -2,12 +2,18 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { assertDemoRequest, isDemo, DEMO_ROLES } from "@/lib/demo/config";
 import { ROLE_LABELS } from "@/lib/navigation";
+import { getCurrentAccessContext } from "@/lib/access";
+import { currentDemoVisit } from "@/lib/demo/visits";
 
 export const dynamic = "force-dynamic";
 
 export default async function DemoPage() {
   if (!isDemo()) notFound();
   assertDemoRequest((await headers()).get("host"));
+  const [ctx, visit] = await Promise.all([getCurrentAccessContext(), currentDemoVisit()]);
+  const ownVisit = visit && ctx?.selectedCompanyId === visit.companyId;
+  const selectedRole = ownVisit && DEMO_ROLES.some(role => role === ctx.effectiveRole) ? ctx.effectiveRole! : "owner";
+  const selectedClub = ownVisit ? Math.max(0, (JSON.parse(visit.clubsJson) as string[]).indexOf(ctx.selectedClubId ?? "")) : 0;
 
   const controlClass = "min-h-[48px] w-full min-w-0 rounded-lg border border-[var(--border-strong)] bg-[var(--input)] px-3 py-2 text-base font-medium text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]";
   return (
@@ -25,13 +31,13 @@ export default async function DemoPage() {
         <form action="/api/demo/session" method="post" className="grid gap-4">
           <label className="grid gap-2 text-sm font-semibold text-[var(--text-primary)]">
             Роль
-            <select name="role" defaultValue="owner" className={controlClass}>
+            <select name="role" defaultValue={selectedRole} className={controlClass}>
               {DEMO_ROLES.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
             </select>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-[var(--text-primary)]">
             Филиал управляющего
-            <select name="club" defaultValue="0" className={controlClass}>
+            <select name="club" defaultValue={String(selectedClub)} className={controlClass}>
               <option value="0">Центральный</option>
               <option value="1">Северный</option>
               <option value="2">Южный</option>
