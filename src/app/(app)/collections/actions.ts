@@ -1,6 +1,6 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAccessContext, recordAudit } from "@/lib/access";
@@ -11,6 +11,9 @@ import { runSyncNowForCompany } from "@/lib/ofd/daily";
 import { validateAndStoreCashDocument, type StoredCashDocument, MIN_CASH_OPERATION_DOCUMENTS, MAX_CASH_OPERATION_DOCUMENTS } from "@/lib/cash-document-storage";
 import { isUploadedFile } from "@/lib/uploaded-file";
 import { getActiveSnapshotOnDate, isExplicitClubManager, getEligibleRegionalDirectorsForClub } from "@/lib/cash-transfers";
+
+import { isDemo } from "@/lib/demo/config";
+import { demoReceiptPdf } from "@/lib/demo/document";
 
 export type CashState = { ok: boolean; error?: string; notice?: string; sync?: { found: number; imported: number; skipped: number } };
 
@@ -50,6 +53,12 @@ function parseDate(raw: string | null): Date | null {
  * operations where documents are optional (e.g. Приход «Иное»). */
 async function collectDocuments(formData: FormData, min: number = MIN_CASH_OPERATION_DOCUMENTS): Promise<{ ok: true; docs: StoredCashDocument[] } | { ok: false; error: string }> {
   const files = formData.getAll("documents").filter(isUploadedFile);
+  if (isDemo()) {
+    if (files.length) return { ok: false, error: "Демо: загрузка файлов отключена. Используйте синтетическое подтверждение." };
+    if (min === 0) return { ok: true, docs: [] };
+    const pdf = demoReceiptPdf();
+    return { ok: true, docs: [{ storageKey: `cash-docs/dede${randomBytes(30).toString("hex")}.pdf`, originalFilename: "SYNTHETIC-DEMO.pdf", safeFilename: "SYNTHETIC-DEMO.pdf", mimeType: "application/pdf", sizeBytes: pdf.length, sha256: createHash("sha256").update(pdf).digest("hex") }] };
+  }
   if (files.length < min) return { ok: false, error: "Прикрепите хотя бы один подтверждающий документ." };
   if (files.length > MAX_CASH_OPERATION_DOCUMENTS) return { ok: false, error: `Не более ${MAX_CASH_OPERATION_DOCUMENTS} документов.` };
   const stored: StoredCashDocument[] = [];

@@ -1,3 +1,4 @@
+import { isDemo } from "@/lib/demo/config";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CompactPageHeader, MobileDataCard } from "@/components/mobile/density";
@@ -252,8 +253,8 @@ export default async function CollectionsPage({ searchParams }: { searchParams: 
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">ООО</div>
               <AccordionGroup>
-                <AccordionItem id="collect" title="Инкассировать ООО" subtitle="Сдать наличные ООО. Уменьшает остаток ООО"><CollectionForm clubs={clubs} today={today} /></AccordionItem>
-                <AccordionItem id="withdraw" title="Изъять из ООО в ИП" subtitle="Перенос наличных из ООО в ИП. Не продажа и не доход"><WithdrawalForm clubs={clubs} today={today} /></AccordionItem>
+                <AccordionItem id="collect" title="Инкассировать ООО" subtitle="Сдать наличные ООО. Уменьшает остаток ООО"><CollectionForm demo={isDemo()} clubs={clubs} today={today} /></AccordionItem>
+                <AccordionItem id="withdraw" title="Изъять из ООО в ИП" subtitle="Перенос наличных из ООО в ИП. Не продажа и не доход"><WithdrawalForm demo={isDemo()} clubs={clubs} today={today} /></AccordionItem>
               </AccordionGroup>
             </div>
             <div>

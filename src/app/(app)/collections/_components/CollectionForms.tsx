@@ -107,7 +107,7 @@ export function IpCashSyncButton() {
   );
 }
 
-export function CollectionForm({ clubs, today }: { clubs: ClubOpt[]; today: string }) {
+export function CollectionForm({ clubs, today, demo = false }: { clubs: ClubOpt[]; today: string; demo?: boolean }) {
   const [state, action] = useFormState(createCashCollection, initial);
   return (
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -117,7 +117,7 @@ export function CollectionForm({ clubs, today }: { clubs: ClubOpt[]; today: stri
       <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий</span><input name="comment" className="input" /></label>
       <label className="block md:col-span-2">
         <span className="mb-1 block text-sm font-medium text-slate-700">Подтверждающие документы (1–3: JPG, PNG, WEBP, PDF)</span>
-        <MobileFileField name="documents" maxFiles={3} required />
+        {demo ? <p className="text-sm text-slate-600">Демо: синтетическое PDF-подтверждение создаётся автоматически. Загрузка файлов отключена.</p> : <MobileFileField name="documents" maxFiles={3} required />}
       </label>
       <div className="md:col-span-2 flex items-center justify-between gap-3">
         <Msg s={state} />
@@ -127,7 +127,7 @@ export function CollectionForm({ clubs, today }: { clubs: ClubOpt[]; today: stri
   );
 }
 
-export function WithdrawalForm({ clubs, today }: { clubs: ClubOpt[]; today: string }) {
+export function WithdrawalForm({ clubs, today, demo = false }: { clubs: ClubOpt[]; today: string; demo?: boolean }) {
   const [state, action] = useFormState(createCashWithdrawal, initial);
   return (
     <form action={action} className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -137,7 +137,7 @@ export function WithdrawalForm({ clubs, today }: { clubs: ClubOpt[]; today: stri
       <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Комментарий</span><input name="comment" className="input" /></label>
       <label className="block md:col-span-2">
         <span className="mb-1 block text-sm font-medium text-slate-700">Подтверждающий документ (1–3: JPG, PNG, WEBP, PDF)</span>
-        <MobileFileField name="documents" maxFiles={3} required />
+        {demo ? <p className="text-sm text-slate-600">Демо: синтетическое PDF-подтверждение создаётся автоматически. Загрузка файлов отключена.</p> : <MobileFileField name="documents" maxFiles={3} required />}
       </label>
       <div className="md:col-span-2 flex items-center justify-between gap-3">
         <Msg s={state} />

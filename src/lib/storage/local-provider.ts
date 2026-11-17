@@ -27,7 +27,7 @@ export function createLocalStorageProvider(): StorageProvider {
     },
 
     async get(key) {
-      if (isDemo() && /^(?:expense-docs|refund-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return demoReceiptPdf(key.startsWith("refund-docs/") ? key : "");
+      if (isDemo() && /^(?:expense-docs|refund-docs|cash-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return demoReceiptPdf(key.startsWith("refund-docs/") ? key : "");
       let path: string;
       try {
         path = resolve(key);
@@ -42,7 +42,7 @@ export function createLocalStorageProvider(): StorageProvider {
     },
 
     async exists(key) {
-      if (isDemo() && /^(?:expense-docs|refund-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return true;
+      if (isDemo() && /^(?:expense-docs|refund-docs|cash-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return true;
       let path: string;
       try {
         path = resolve(key);
@@ -57,7 +57,7 @@ export function createLocalStorageProvider(): StorageProvider {
     },
 
     async head(key) {
-      if (isDemo() && /^(?:expense-docs|refund-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return { size: demoReceiptPdf(key.startsWith("refund-docs/") ? key : "").length, etag: null };
+      if (isDemo() && /^(?:expense-docs|refund-docs|cash-docs)\/dede[a-f0-9]{60}\.pdf$/.test(key)) return { size: demoReceiptPdf(key.startsWith("refund-docs/") ? key : "").length, etag: null };
       let path: string;
       try {
         path = resolve(key);
