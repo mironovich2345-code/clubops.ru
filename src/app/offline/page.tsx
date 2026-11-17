@@ -15,6 +15,7 @@ export default function OfflinePage() {
         Данные не обновлены. CLUB-OPS — финансовая система и не показывает устаревшие суммы как
         актуальные. Проверьте соединение и повторите.
       </p>
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Offline retry must perform a full document request without hydration. */}
       <a href="/" className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand-600 px-5 text-sm font-medium text-white hover:bg-brand-700">
         Повторить
       </a>

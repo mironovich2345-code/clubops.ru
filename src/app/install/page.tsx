@@ -18,6 +18,7 @@ export default function InstallPage() {
         </div>
       </div>
       <InstallGuide />
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Public fallback must navigate without the client router. */}
       <p className="mt-4 text-center text-xs text-slate-400"><a href="/" className="hover:underline">← Вернуться</a></p>
     </main>
   );

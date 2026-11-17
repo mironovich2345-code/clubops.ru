@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {mkdirSync,writeFileSync} from 'node:fs';
+process.loadEnvFile('.env.demo.local');
+const require=createRequire(import.meta.url),{origin,local}=require('jiti')(import.meta.url)('../src/lib/demo/config.ts').demoConfig();
+assert(local,'Public-surface QA uses the existing local test environment');
+const {chromium}=require('playwright'),{PrismaClient}=await import('@prisma/client');const db=new PrismaClient();
+const browser=await chromium.launch({headless:true,executablePath:process.env.DEMO_CHROMIUM_PATH||'/usr/bin/chromium'}),rows=[],external=[];
+const ctx=await browser.newContext({baseURL:origin,javaScriptEnabled:false,viewport:{width:375,height:1000},extraHTTPHeaders:{'x-forwarded-for':`203.0.113.${20+process.pid%200}`}});ctx.on('request',r=>{if(new URL(r.url()).origin!==origin)external.push(r.url())});const page=await ctx.newPage();
+try{
+ for(const route of ['/','/login','/register','/login/verify','/onboarding','/restore-account','/accept-invite','/system-admin/accounts','/offline','/install','/no-access','/demo']){const r=await page.goto(route);rows.push({route,status:r.status(),actual:new URL(page.url()).pathname,heading:(await page.locator('h1').allTextContents()).join(';')});assert(r.status()<500,route)}
+ await page.goto('/demo');await page.locator('[name="role"]').selectOption('owner');await page.getByRole('button',{name:'Посмотреть демо',exact:true}).click();await page.waitForURL('**/dashboard?month=2026-11');assert.equal(await page.locator('aside[aria-label="Демонстрационная версия"]').count(),1);rows.push({scenario:'No-JavaScript demo admission',result:'PASS'});
+ const companyId=(await ctx.cookies()).find(c=>c.name==='scope_company').value;
+ const runtime=await browser.newContext({baseURL:origin,storageState:await ctx.storageState()});const p=await runtime.newPage();await p.goto('/dashboard');
+ const [invoice,expense,refund,doc]=await Promise.all([db.invoice.findFirst({where:{companyId}}),db.expense.findFirst({where:{companyId}}),db.refund.findFirst({where:{companyId}}),db.expenseDocument.findFirst({where:{companyId}})]);
+ const paths=['/api/health','/api/health/ready','/api/health/live','/api/health/dependencies','/api/me/access','/api/export/expenses','/api/analytics/expenses/export?category=household&from=2026-11-01&to=2026-11-30','/api/expenses/template','/api/invoices/template','/api/budgets/template','/api/sales-plans/template?month=2026-11','/api/sales-reports/template',`/api/invoices/${invoice.id}/file`,`/api/expenses/${expense.id}/file`,`/api/refunds/${refund.id}/file`,`/api/sales-reports/missing/file`,`/api/expenses/${doc.expenseId}/documents/${doc.id}`];
+ for(const path of paths){const result=await p.evaluate(async path=>{const r=await fetch(path);return{status:r.status,type:r.headers.get('content-type'),bytes:(await r.arrayBuffer()).byteLength}},path);assert(result.status<500,path);if(path==='/api/health/ready')assert.equal(result.status,200);if(path.includes('/documents/'))assert.equal(result.status,200);if(path==='/api/export/expenses')assert.equal(result.status,404);rows.push({path,...result})}
+ for(const path of ['/api/telegram/webhook','/api/internal/notifications/drain','/api/cron/ofd/daily','/api/demo/cleanup']){const status=await p.evaluate(async path=>(await fetch(path,{method:'POST'})).status,path);assert.equal(status,403,path);rows.push({path,method:'POST',status})}
+ const invalid=await p.evaluate(async()=>(await fetch('/api/demo/session',{method:'POST',body:new URLSearchParams({role:'system_admin',club:'0'})})).status);assert.equal(invalid,400);rows.push({path:'/api/demo/session',method:'POST',status:invalid});
+ assert.equal((await p.request.post(origin+'/api/demo/session',{headers:{Origin:'https://foreign.invalid'},form:{role:'owner'}})).status(),403);rows.push({scenario:'Cross-origin admission rejected',result:'PASS'});
+ for(const theme of ['light','dark'])for(const width of [375,390,768,1024,1440]){await p.addInitScript(v=>localStorage.setItem('theme',v),theme);await p.setViewportSize({width,height:1000});await p.goto('/demo');assert.equal(await p.locator('html').getAttribute('data-theme'),theme);assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false);if([375,1440].includes(width))await p.screenshot({path:`artifacts/final-audit/entry-${theme}-${width}.png`,fullPage:true})}
+
+ for(const role of ['owner','general_director','regional_director','manager','accountant']){
+  await page.goto('/demo');await page.locator('[name="role"]').selectOption(role);await page.getByRole('button',{name:'Посмотреть демо',exact:true}).click();await page.waitForURL(role==='accountant'?'**/workspace':'**/dashboard?month=2026-11');
+  const hrefs=await page.locator('nav[aria-label="Все разделы CLUB OPS"] a').evaluateAll(a=>a.map(x=>x.getAttribute('href')));
+  for(const href of hrefs){await page.locator('summary').filter({hasText:'Разделы'}).click();await page.locator(`nav[aria-label="Все разделы CLUB OPS"] a[href="${href}"]`).click();assert.equal(new URL(page.url()).pathname,href==='/balances'?'/collections':href);assert(await page.locator('h1').count());rows.push({scenario:'Every native menu link without JavaScript',role,href,actual:new URL(page.url()).pathname,result:'PASS'})}
+ }
+ await runtime.close();assert.deepEqual(external,[]);
+ console.log(`${rows.length} public/API/no-JavaScript checks passed; entry checked at 10 theme/width combinations`);
+}finally{mkdirSync('artifacts/final-audit',{recursive:true});writeFileSync('artifacts/final-audit/public-audit.json',JSON.stringify(rows,null,2));const companyId=(await ctx.cookies()).find(c=>c.name==='scope_company')?.value;if(companyId)await db.demoVisit.updateMany({where:{companyId},data:{expiresAt:new Date(0)}});await fetch(origin+'/api/demo/cleanup',{method:'POST',headers:{Origin:origin,Authorization:`Bearer ${process.env.DEMO_CLEANUP_SECRET}`}}).catch(()=>{});await ctx.close();await browser.close();await db.$disconnect()}
