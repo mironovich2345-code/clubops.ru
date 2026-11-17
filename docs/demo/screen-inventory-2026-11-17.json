@@ -1,0 +1,3590 @@
+[
+  {
+    "file": "src/app/(app)/activity/page.tsx",
+    "route": "/activity",
+    "kind": "screen",
+    "purpose": "История действий",
+    "guards": [
+      "activity"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "История действий",
+      "Кто, что и когда сделал",
+      "Фильтры",
+      "Закрыть"
+    ],
+    "forms": 3,
+    "buttons": 5,
+    "links": [
+      "/activity"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/activity"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/analytics/expenses/page.tsx",
+    "route": "/analytics/expenses",
+    "kind": "screen",
+    "purpose": "Расходы по статье",
+    "guards": [
+      "analytics"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "marketer"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Расходы по статье",
+      "Всего",
+      "Наличные",
+      "Безналичные",
+      "Количество",
+      "Тип оплаты",
+      "Источник",
+      "Филиал",
+      "Юрлицо",
+      "Наличные расходы",
+      "Безналичные расходы"
+    ],
+    "forms": 3,
+    "buttons": 5,
+    "links": [
+      "/analytics"
+    ],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/expenses",
+      "@/lib/strategic-pages",
+      "@/lib/strategic-return",
+      "@/lib/expense-drilldown"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/analytics/ofd-sales/page.tsx",
+    "route": "/analytics/ofd-sales",
+    "kind": "screen",
+    "purpose": "ОФД-продажи",
+    "guards": [
+      "ofd_sales"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "ОФД-продажи",
+      "Детализация и сверка чеков ОФД: наличные, безнал, ОФД-возвраты (фискальные коррекции по кассе — не клиентские возвраты), юрлица и статьи доходов.",
+      "Сегодня",
+      "Вчера",
+      "Предыдущий месяц",
+      "Следующий месяц",
+      "Следующий месяц недоступен",
+      "Название",
+      "Адрес сервера (https://…)",
+      "https://server.taxcom.ru",
+      "Тип авторизации",
+      "Номер договора Такском",
+      "CD-25/45507",
+      "Юрлицо (ООО)",
+      "Токен интеграции",
+      "••••••",
+      "Логин",
+      "Пароль",
+      "Integrator ID",
+      "Подключение Такском",
+      "ФН",
+      "номер ФН",
+      "РНМ ККТ (необязательно)",
+      "Название кассы (необязательно)",
+      "Филиал",
+      "Юрлицо кассы",
+      "Тип кассы",
+      "Подключение (кабинет)",
+      "Дата от",
+      "Дата до",
+      "ФД",
+      "номер ФД"
+    ],
+    "forms": 11,
+    "buttons": 12,
+    "links": [],
+    "sources": [
+      "@/lib/demo/reporting",
+      "@/lib/money",
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/ofd/analytics"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/analytics/page.tsx",
+    "route": "/analytics",
+    "kind": "screen",
+    "purpose": "Аналитика",
+    "guards": [
+      "analytics"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "marketer"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Аналитика",
+      "Все доступные сети",
+      "Выручка ОФД (все сети)",
+      "Продажи основных услуг (все сети)",
+      "Продажи дополнительных услуг (все сети)",
+      "Расходы (все сети)",
+      "Филиалов в выборке",
+      "Бизнес-обзор филиала",
+      "С даты",
+      "По дату",
+      "Выручка ОФД",
+      "Фактические расходы",
+      "Прибыль (ОФД − признанные расходы)",
+      "Долги / обязательства",
+      "Прогноз ООО",
+      "Прогноз ИП",
+      "Риск ООО",
+      "Риск ИП",
+      "Динамика продаж",
+      "к предыдущему периоду",
+      "Продажи по дням недели",
+      "Продажи по менеджерам",
+      "Статистика по статьям расхода"
+    ],
+    "forms": 1,
+    "buttons": 6,
+    "links": [],
+    "sources": [
+      "@/lib/demo/reporting",
+      "@/lib/money",
+      "@/lib/forecast",
+      "@/lib/balance-snapshots",
+      "@/lib/payment-obligations",
+      "@/lib/balance",
+      "@/lib/payments",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/analytics/ofd-management",
+      "@/lib/finance/profit",
+      "@/lib/cash-collections",
+      "@/lib/strategic-pages",
+      "@/lib/analytics"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/balances/page.tsx",
+    "route": "/balances",
+    "kind": "screen",
+    "purpose": "/balances",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/budgets/page.tsx",
+    "route": "/budgets",
+    "kind": "screen",
+    "purpose": "Бюджеты",
+    "guards": [
+      "budgets"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Бюджеты",
+      "Месячные лимиты по статьям и согласование перерасхода",
+      "Месяц",
+      "Планируемый ФОТ из активных схем",
+      "Утверждённый лимит бюджета",
+      "Начислено в утверждённых периодах",
+      "Фактически выплачено",
+      "Остаток к выплате",
+      "Бюджет − Прогноз",
+      "Прогноз неполный",
+      "не задан"
+    ],
+    "forms": 9,
+    "buttons": 15,
+    "links": [],
+    "sources": [
+      "@/lib/demo/reporting",
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/budgets",
+      "@/lib/auth"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/collections/page.tsx",
+    "route": "/collections",
+    "kind": "screen",
+    "purpose": "Инкассация",
+    "guards": [
+      "collections"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Инкассация",
+      "Наличные ООО и ИП. Текущие остатки — «Сейчас»; история и итоги — за выбранный месяц.",
+      "Фактические деньги — сверка наличных",
+      "Ежедневный пересчёт реальных денег в кассе (это НЕ контрольная точка)",
+      "Контрольный остаток",
+      "Фактическая сумма наличных на дату — новая база расчёта (это НЕ ежедневная сверка)",
+      "Инкассировать ООО",
+      "Сдать наличные ООО. Уменьшает остаток ООО",
+      "Изъять из ООО в ИП",
+      "Перенос наличных из ООО в ИП. Не продажа и не доход",
+      "Пополнить ИП — приход «Иное»",
+      "Внесение наличных от регионала/собственника/директора. Это и есть возврат денег от регионала",
+      "Передать деньги региональному директору",
+      "Наличные ИП переданы регионалу. Уменьшает остаток ИП только после подтверждения управляющим",
+      "ОФД нал. ООО",
+      "ОФД нал. ИП",
+      "Инкассации",
+      "Изъятия ООО→ИП",
+      "Приход «Иное»",
+      "Передачи (подтв.)",
+      "Расходы ИП (нал.)",
+      "Сверок",
+      "Тип",
+      "Юрлицо",
+      "Статус",
+      "Автор",
+      "Сверки — проверка и закрытие",
+      "История ежедневных сверок и их согласование",
+      "Приход ООО вчера (ОФД)",
+      "Приход ООО сегодня (ОФД)",
+      "ОФД наличные после контрольной точки",
+      "ОФД наличные за месяц",
+      "Инкассации на проверке",
+      "Подтверждённые инкассации",
+      "Изъятия ООО→ИП на проверке",
+      "Приход ИП вчера (ОФД)",
+      "Приход ИП сегодня (ОФД)",
+      "Изъятия из ООО",
+      "Передано регионалу (подтв.)",
+      "Расходы ИП на проверке",
+      "Подтверждённые расходы ИП",
+      "Предыдущий месяц",
+      "Следующий месяц",
+      "Следующий месяц недоступен",
+      "Дата контрольного остатка",
+      "0",
+      "Дата инкассации",
+      "Дата изъятия",
+      "Дата поступления",
+      "Причина отмены (необязательно)",
+      "Дата передачи",
+      "Новая сумма, ₽",
+      "Причина корректировки (обязательно)",
+      "Причина отмены (обязательно)",
+      "По ОФД наличными",
+      "Ожидаемый остаток",
+      "Расхождение",
+      "Решение / примечание"
+    ],
+    "forms": 18,
+    "buttons": 20,
+    "links": [],
+    "sources": [
+      "@/lib/demo/config",
+      "@/lib/money",
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/legal-entities",
+      "@/lib/cash-collections",
+      "@/lib/cash-transfers",
+      "@/lib/collections-history",
+      "@/lib/cash-balances",
+      "@/lib/cash-reconciliation"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/dashboard/page.tsx",
+    "route": "/dashboard",
+    "kind": "screen",
+    "purpose": "Дашборд",
+    "guards": [
+      "dashboard"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "marketer"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Дашборд",
+      "Месяц",
+      "Демонстрационный период",
+      "Основные услуги",
+      "Дополнительные услуги",
+      "Фактические расходы",
+      "Результат",
+      "Наличные ООО",
+      "Наличные ИП",
+      "Общий план",
+      "План основные услуги",
+      "План дополнительные услуги",
+      "—",
+      "Причина отклонения",
+      "Предыдущий месяц",
+      "Следующий месяц",
+      "Следующий месяц недоступен"
+    ],
+    "forms": 7,
+    "buttons": 14,
+    "links": [
+      "/dashboard"
+    ],
+    "sources": [
+      "@/lib/demo/reporting",
+      "@/lib/demo/config",
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/ofd/health",
+      "@/lib/ofd/providers/status",
+      "@/lib/strategic-scope",
+      "@/lib/dashboard-cards",
+      "@/lib/month-reopen",
+      "@/lib/analytics",
+      "@/lib/sales-plans",
+      "@/lib/month-reopen",
+      "@/lib/regional-tasks"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/demo/reconciliation/page.tsx",
+    "route": "/demo/reconciliation",
+    "kind": "screen",
+    "purpose": "/demo/reconciliation",
+    "guards": [
+      "ofd_sales"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/demo/config",
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/money"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/documents/page.tsx",
+    "route": "/documents",
+    "kind": "screen",
+    "purpose": "Документы",
+    "guards": [
+      "documents"
+    ],
+    "roles": [
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Документы"
+    ],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/auth"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/employees/page.tsx",
+    "route": "/employees",
+    "kind": "screen",
+    "purpose": "Сотрудники",
+    "guards": [
+      "employees"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Сотрудники",
+      "Иванов Иван"
+    ],
+    "forms": 3,
+    "buttons": 6,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/club-employees"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/expenses/[id]/page.tsx",
+    "route": "/expenses/[id]",
+    "kind": "screen",
+    "purpose": "Расход",
+    "guards": [
+      "expenses"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Расход",
+      "Причина",
+      "Изменить дату",
+      "Отправить",
+      "Согласовать (РД)",
+      "Согласовать (собственник)",
+      "Проверить (бухгалтерия)",
+      "Вернуть на исправление",
+      "Отменить",
+      "Тип",
+      "Статья расходов",
+      "Магазин",
+      "Получатель перевода",
+      "Комментарий перевода",
+      "Сумма, ₽",
+      "Валюта",
+      "Дата покупки",
+      "Адрес",
+      "Список покупок (по строке на позицию)",
+      "Примечания",
+      "Открыть в новой вкладке",
+      "Скачать",
+      "Закрыть",
+      "Например: ошибочный расход"
+    ],
+    "forms": 8,
+    "buttons": 12,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/money",
+      "@/lib/expense-simplified",
+      "@/lib/expenses",
+      "@/lib/strategic-return",
+      "@/lib/expense-attachments",
+      "@/lib/expense-document-storage",
+      "@/lib/demo/config"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/expenses/cash/page.tsx",
+    "route": "/expenses/cash",
+    "kind": "screen",
+    "purpose": "Касса ИП",
+    "guards": [
+      "expenses"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Касса ИП",
+      "Приход ИП вчера (ОФД)",
+      "Изъятия из ООО",
+      "Приход «Иное»",
+      "Расходы ИП на проверке"
+    ],
+    "forms": 0,
+    "buttons": 0,
+    "links": [
+      "/collections"
+    ],
+    "sources": [
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/cash-collections"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/expenses/page.tsx",
+    "route": "/expenses",
+    "kind": "screen",
+    "purpose": "Расходы",
+    "guards": [
+      "expenses"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Расходы",
+      "Приход ИП вчера (ОФД)",
+      "Приход ИП сегодня (ОФД)",
+      "ОФД наличные за месяц",
+      "Изъятия из ООО",
+      "Приход «Иное»",
+      "Передано регионалу (подтв.)",
+      "Расходы ИП на проверке",
+      "Подтверждённые расходы ИП",
+      "Дата контрольного остатка",
+      "0",
+      "Дата инкассации",
+      "Дата изъятия",
+      "Дата поступления",
+      "Причина отмены (необязательно)",
+      "Есть документы"
+    ],
+    "forms": 13,
+    "buttons": 15,
+    "links": [
+      "/collections",
+      "/expenses/simple"
+    ],
+    "sources": [
+      "@/lib/demo/reporting",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/strategic-pages",
+      "@/lib/strategic-return",
+      "@/lib/money",
+      "@/lib/expenses",
+      "@/lib/expense-simplified",
+      "@/lib/expense-status",
+      "@/lib/regional-tasks",
+      "@/lib/cash-collections"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/expenses/simple/page.tsx",
+    "route": "/expenses/simple",
+    "kind": "screen",
+    "purpose": "Новый расход",
+    "guards": [
+      "expenses"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Новый расход",
+      "0,00",
+      "Например: ручки, мыло и т. д."
+    ],
+    "forms": 1,
+    "buttons": 3,
+    "links": [],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/expense-categories",
+      "@/lib/expenses",
+      "@/lib/user-display",
+      "@/lib/demo/config"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/invoices/[id]/page.tsx",
+    "route": "/invoices/[id]",
+    "kind": "screen",
+    "purpose": "Счёт",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "Счёт",
+      "Вернуть на исправление",
+      "Что нужно исправить управляющему",
+      "Контрагент",
+      "ИНН",
+      "КПП",
+      "Банк",
+      "БИК",
+      "Расчётный счёт",
+      "Корр. счёт",
+      "Статья расходов",
+      "Сумма, ₽",
+      "Валюта",
+      "Номер счёта",
+      "Дата счёта",
+      "Период расхода",
+      "Срок оплаты",
+      "Примечания",
+      "Открыть в новой вкладке",
+      "Скачать",
+      "Закрыть",
+      "Основное",
+      "Плательщик",
+      "ИНН плательщика",
+      "КПП плательщика",
+      "Реквизиты",
+      "Назначение",
+      "Назначение платежа",
+      "Комментарий проверки",
+      "Сумма",
+      "Например: ошибочный счёт",
+      "Сумма счёта",
+      "Оплачено",
+      "Осталось",
+      "Статус",
+      "0,00",
+      "Сохранить оплату",
+      "Причина сторно (обязательно)"
+    ],
+    "forms": 8,
+    "buttons": 14,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/invoices",
+      "@/lib/prisma",
+      "@/lib/invoice-storage",
+      "@/lib/expenses",
+      "@/lib/strategic-return",
+      "@/lib/invoices",
+      "@/lib/invoice-payments"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/invoices/page.tsx",
+    "route": "/invoices",
+    "kind": "screen",
+    "purpose": "Счета",
+    "guards": [
+      "invoices"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Счета",
+      "Ожидает оплаты",
+      "Просрочено",
+      "Всего счетов отправлено",
+      "Сумма счетов",
+      "Оплачено",
+      "Счетов",
+      "По статьям",
+      "По филиалам",
+      "Ближайшие платежи",
+      "Компания",
+      "Филиал",
+      "Файл (JPG, PNG, WEBP, PDF — до 10 МБ)",
+      "Контрагент",
+      "ИНН",
+      "КПП",
+      "Банк",
+      "БИК",
+      "Расчётный счёт",
+      "Корр. счёт",
+      "Статья расходов",
+      "Юрлицо",
+      "Сумма, ₽",
+      "Валюта",
+      "Номер счёта",
+      "Дата счёта",
+      "Срок оплаты",
+      "Примечания",
+      "0",
+      "Предыдущий месяц",
+      "Следующий месяц",
+      "Есть документы"
+    ],
+    "forms": 3,
+    "buttons": 7,
+    "links": [],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/invoice-view",
+      "@/lib/invoices",
+      "@/lib/expenses",
+      "@/lib/legal-entities",
+      "@/lib/regional-tasks"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/mandatory-payments/page.tsx",
+    "route": "/mandatory-payments",
+    "kind": "screen",
+    "purpose": "Обязательные платежи",
+    "guards": [
+      "mandatory_payments"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Обязательные платежи",
+      "Пауза",
+      "Возобновить",
+      "Отменить",
+      "Филиал",
+      "Категория",
+      "Название",
+      "Напр. Аренда зала",
+      "Сумма, ₽",
+      "Повтор",
+      "День оплаты (1–31)",
+      "Дата оплаты",
+      "Юрлицо (кто платит)",
+      "Ответственный",
+      "Заметки"
+    ],
+    "forms": 2,
+    "buttons": 2,
+    "links": [
+      "/mandatory-payments"
+    ],
+    "sources": [
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/legal-entities",
+      "@/lib/mandatory-payments"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payments/page.tsx",
+    "route": "/payments",
+    "kind": "screen",
+    "purpose": "Календарь платежей",
+    "guards": [
+      "payments"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Календарь платежей",
+      "Сегодня к оплате",
+      "На этой неделе",
+      "До конца месяца",
+      "Просрочено",
+      "Остаток ООО",
+      "Остаток ИП",
+      "Всего доступно",
+      "Платежи дня",
+      "Остаток",
+      "Обязательства (30 дн.)",
+      "Ближайшие платежи",
+      "По городам",
+      "По филиалам",
+      "Предыдущий месяц",
+      "Следующий месяц",
+      "Следующий месяц недоступен"
+    ],
+    "forms": 1,
+    "buttons": 6,
+    "links": [
+      "/mandatory-payments",
+      "/collections"
+    ],
+    "sources": [
+      "@/lib/demo/reporting",
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/strategic-pages",
+      "@/lib/strategic-return",
+      "@/lib/sales-reports",
+      "@/lib/payments",
+      "@/lib/payment-obligations",
+      "@/lib/balance",
+      "@/lib/balance-snapshots"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/advances/[id]/page.tsx",
+    "route": "/payroll/advances/[id]",
+    "kind": "screen",
+    "purpose": "Аванс",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Аванс",
+      "Зарплата (ФОТ)",
+      "Выплатить транш",
+      "Причина сторно",
+      "Подтвердить сторно",
+      "Согласовать"
+    ],
+    "forms": 3,
+    "buttons": 5,
+    "links": [
+      "/payroll/advances"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/payroll/advance-tranche-calc",
+      "@/lib/payroll/enums",
+      "@/lib/payroll/access"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/advances/page.tsx",
+    "route": "/payroll/advances",
+    "kind": "screen",
+    "purpose": "Авансы",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Авансы",
+      "Зарплата (ФОТ)",
+      "Ожидают подтверждения",
+      "Согласовано",
+      "Выплачено",
+      "Отклонено",
+      "К выплате, сумма",
+      "Выплачено за месяц",
+      "Месяц",
+      "Отменить/сторнировать",
+      "вручную",
+      "обязателен для ручной базы"
+    ],
+    "forms": 4,
+    "buttons": 9,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/club-employees",
+      "@/lib/payroll/access",
+      "@/lib/payroll/enums",
+      "@/lib/money"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/change-requests/[id]/page.tsx",
+    "route": "/payroll/change-requests/[id]",
+    "kind": "screen",
+    "purpose": "Заявка на изменение",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Заявка на изменение",
+      "Параметр",
+      "Было",
+      "Станет",
+      "Влияние на начисление",
+      "Действует с",
+      "Область",
+      "Причина / обоснование",
+      "Комментарий регионала",
+      "Комментарий согласующего",
+      "Комментарий (необязательно)",
+      "Согласовать и применить",
+      "Что доработать (обязательно)",
+      "Вернуть на доработку",
+      "Причина отклонения (обязательно)",
+      "Отклонить",
+      "Создать версию схемы",
+      "Комментарий к доработке",
+      "Отправить повторно",
+      "Отменить заявку"
+    ],
+    "forms": 6,
+    "buttons": 1,
+    "links": [
+      "/payroll/change-requests"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/payroll/access",
+      "@/lib/payroll/change-request"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/change-requests/page.tsx",
+    "route": "/payroll/change-requests",
+    "kind": "screen",
+    "purpose": "Согласования зарплаты",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Согласования зарплаты",
+      "На согласовании",
+      "На доработке",
+      "Применено",
+      "Отклонено"
+    ],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/payroll/access",
+      "@/lib/payroll/change-request"
+    ],
+    "states": {
+      "loading": true,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/debts/page.tsx",
+    "route": "/payroll/debts",
+    "kind": "screen",
+    "purpose": "/payroll/debts",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/employees/[id]/page.tsx",
+    "route": "/payroll/employees/[id]",
+    "kind": "screen",
+    "purpose": "Зарплата (ФОТ)",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Зарплата (ФОТ)",
+      "Закрепления за филиалами",
+      "Схема оплаты",
+      "Авансы",
+      "Долги и обязательства",
+      "100",
+      "вручную",
+      "Выдать аванс"
+    ],
+    "forms": 7,
+    "buttons": 10,
+    "links": [
+      "/payroll/employees",
+      "/payroll/obligations"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/club-employees",
+      "@/lib/legal-entities",
+      "@/lib/payroll/assignments",
+      "@/lib/payroll/obligations",
+      "@/lib/payroll/schemes",
+      "@/lib/payroll/access",
+      "@/lib/payroll/enums",
+      "@/lib/money",
+      "@/lib/prisma"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/employees/page.tsx",
+    "route": "/payroll/employees",
+    "kind": "screen",
+    "purpose": "Сотрудники и схемы",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Сотрудники и схемы",
+      "Зарплата (ФОТ)"
+    ],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/payroll/access",
+      "@/lib/prisma",
+      "@/lib/club-employees",
+      "@/lib/payroll/assignments",
+      "@/lib/payroll/schemes",
+      "@/lib/payroll/periods",
+      "@/lib/payroll/enums"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/obligations/page.tsx",
+    "route": "/payroll/obligations",
+    "kind": "screen",
+    "purpose": "Долги и обязательства",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Долги и обязательства",
+      "Зарплата (ФОТ)",
+      "Сумма",
+      "Погасить",
+      "Списать"
+    ],
+    "forms": 2,
+    "buttons": 2,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/payroll/obligations",
+      "@/lib/payroll/access",
+      "@/lib/money"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/ofd-cashiers/[id]/page.tsx",
+    "route": "/payroll/ofd-cashiers/[id]",
+    "kind": "screen",
+    "purpose": "Кассир ОФД",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Кассир ОФД",
+      "Нормализовано",
+      "Чеков",
+      "Продажи",
+      "Появления",
+      "Подтвердить сопоставление",
+      "Исключить"
+    ],
+    "forms": 2,
+    "buttons": 1,
+    "links": [
+      "/payroll/ofd-cashiers"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/payroll/access",
+      "@/lib/ofd/cashier-identity"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/ofd-cashiers/page.tsx",
+    "route": "/payroll/ofd-cashiers",
+    "kind": "screen",
+    "purpose": "Кассиры ОФД",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Кассиры ОФД",
+      "Всего",
+      "Подтверждено",
+      "Авто",
+      "Спорных",
+      "Без сопоставления",
+      "Выручка без атрибуции"
+    ],
+    "forms": 1,
+    "buttons": 1,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/payroll/access"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/overview/page.tsx",
+    "route": "/payroll/overview",
+    "kind": "screen",
+    "purpose": "/payroll/overview",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/page.tsx",
+    "route": "/payroll",
+    "kind": "screen",
+    "purpose": "Зарплата (ФОТ)",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Зарплата (ФОТ)",
+      "Месяц",
+      "Сотрудников с активной схемой",
+      "Не настроено",
+      "Периодов в черновике",
+      "На согласовании",
+      "Требуют решения",
+      "Выплачено",
+      "Остаток к выплате",
+      "Активные долги",
+      "Сотрудников",
+      "Начислено",
+      "К выплате",
+      "Причина возврата / примечание",
+      "Предыдущий месяц",
+      "Следующий месяц",
+      "Филиал",
+      "Активных сотрудников",
+      "Без схемы / проблемы"
+    ],
+    "forms": 6,
+    "buttons": 13,
+    "links": [
+      "/payroll/employees",
+      "/payroll/periods",
+      "/payroll/payments",
+      "/payroll/obligations",
+      "/payroll/advances"
+    ],
+    "sources": [
+      "@/lib/demo/reporting",
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/payroll/access",
+      "@/lib/payroll/periods",
+      "@/lib/money",
+      "@/lib/payroll/overview"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/payments/page.tsx",
+    "route": "/payroll/payments",
+    "kind": "screen",
+    "purpose": "Выплаты",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Выплаты",
+      "Зарплата (ФОТ)",
+      "К выплате",
+      "Частично выплачено",
+      "Выплачено (позиций)",
+      "Наличными",
+      "Безналом",
+      "Сторно",
+      "Месяц"
+    ],
+    "forms": 1,
+    "buttons": 4,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/payroll/periods",
+      "@/lib/money",
+      "@/lib/payroll/access"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/periods/[id]/employees/[calculationId]/page.tsx",
+    "route": "/payroll/periods/[id]/employees/[calculationId]",
+    "kind": "screen",
+    "purpose": "Расчёт сотрудника",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Расчёт сотрудника",
+      "Начислено",
+      "Выплачено",
+      "Остаток",
+      "Долг",
+      "Ведомость",
+      "Выплатить",
+      "Клиент (ID/ФИО)",
+      "№ договора",
+      "Дата продажи",
+      "Сумма договора, ₽",
+      "Единиц услуги в пакете",
+      "Ставка исполнителя, % (опц.)",
+      "40 / 50",
+      "Проведено",
+      "Возвращено",
+      "Сумма возврата, ₽",
+      "Документ/подпись (опц.)",
+      "Добавить пакет",
+      "Продано пакетов",
+      "Сумма продаж",
+      "Начисление сотрудника",
+      "Оказано единиц услуги",
+      "Стоимость проведённых",
+      "Уже выплачено",
+      "Допустимо к выплате",
+      "Переплата сотруднику",
+      "Возвраты",
+      "Остаточный долг",
+      "Продажи ОФД",
+      "Автоматически (нетто)",
+      "Ручная корректировка",
+      "Эффективная выручка",
+      "Чеков",
+      "Обновить продажи из ОФД",
+      "Сохранить"
+    ],
+    "forms": 13,
+    "buttons": 15,
+    "links": [
+      "/payroll/advances"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/payroll/periods",
+      "@/lib/payroll/period",
+      "@/lib/payroll/access",
+      "@/lib/payroll/enums",
+      "@/lib/money",
+      "@/lib/legal-entities",
+      "@/lib/demo/config",
+      "@/lib/payroll/access",
+      "@/lib/payroll/change-request",
+      "@/lib/payroll/recompute",
+      "@/lib/payroll/sales-attribution"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/periods/[id]/page.tsx",
+    "route": "/payroll/periods/[id]",
+    "kind": "screen",
+    "purpose": "Расчётный период",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Расчётный период",
+      "Сотрудников",
+      "Начислено",
+      "К выплате",
+      "Требуют решения",
+      "Причина возврата / примечание"
+    ],
+    "forms": 4,
+    "buttons": 6,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/payroll/periods",
+      "@/lib/payroll/access"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/periods/page.tsx",
+    "route": "/payroll/periods",
+    "kind": "screen",
+    "purpose": "Расчётные периоды",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Расчётные периоды",
+      "Зарплата (ФОТ)",
+      "Месяц"
+    ],
+    "forms": 2,
+    "buttons": 5,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/payroll/periods",
+      "@/lib/payroll/access",
+      "@/lib/money"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/regional/page.tsx",
+    "route": "/payroll/regional",
+    "kind": "screen",
+    "purpose": "Зарплата регионала",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Зарплата регионала",
+      "Зарплата (ФОТ)",
+      "Сохранить (черновик)",
+      "Выплатить из филиала"
+    ],
+    "forms": 4,
+    "buttons": 3,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/payroll/access",
+      "@/lib/payroll/regional"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/schemes/[id]/page.tsx",
+    "route": "/payroll/schemes/[id]",
+    "kind": "screen",
+    "purpose": "Цепочка версий схемы",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Цепочка версий схемы",
+      "Отправить на согласование",
+      "Согласовать и активировать",
+      "Комментарий",
+      "Вернуть",
+      "Отклонить",
+      "Архивировать"
+    ],
+    "forms": 5,
+    "buttons": 1,
+    "links": [
+      "/payroll/schemes"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/payroll/access",
+      "@/lib/payroll/enums",
+      "@/lib/payroll/scheme-version"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/schemes/page.tsx",
+    "route": "/payroll/schemes",
+    "kind": "screen",
+    "purpose": "Схемы и версии",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Схемы и версии",
+      "Конфликт версий"
+    ],
+    "forms": 0,
+    "buttons": 0,
+    "links": [
+      "/payroll/schemes"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/prisma",
+      "@/lib/payroll/access",
+      "@/lib/payroll/enums",
+      "@/lib/payroll/scheme-version"
+    ],
+    "states": {
+      "loading": true,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/payroll/summary/page.tsx",
+    "route": "/payroll/summary",
+    "kind": "screen",
+    "purpose": "Сводка по ФОТ",
+    "guards": [
+      "payroll"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Сводка по ФОТ",
+      "Зарплата (ФОТ)",
+      "Начислено (всего)",
+      "Выплачено",
+      "Остаток к выплате",
+      "Сотрудники должны компании",
+      "Компания должна сотрудникам"
+    ],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/payroll/access",
+      "@/lib/prisma",
+      "@/lib/money"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/refunds/[id]/page.tsx",
+    "route": "/refunds/[id]",
+    "kind": "screen",
+    "purpose": "Возврат",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "Возврат",
+      "Общая информация",
+      "Клиент",
+      "Филиал",
+      "Тип возврата",
+      "Статус",
+      "Отправил",
+      "Дата отправки",
+      "Согласовал/вернул",
+      "Передан в бухгалтерию",
+      "Документы",
+      "Реквизиты для возврата",
+      "ФИО получателя",
+      "Банк",
+      "БИК",
+      "Расчётный счёт",
+      "Корреспондентский счёт",
+      "Расчёт",
+      "Дата начала",
+      "Дата окончания",
+      "Дата заявления",
+      "Сумма договора",
+      "Общий срок",
+      "Оставшиеся дни",
+      "Плановая дата возврата",
+      "Перенос",
+      "Исполнитель",
+      "Оплачено единиц услуги",
+      "Проведено",
+      "Стоимость при расторжении",
+      "Способ расчёта",
+      "Обоснование",
+      "Оплата",
+      "Дата оплаты",
+      "Юридическое лицо",
+      "Отметил оплату",
+      "Комментарий",
+      "Открыть в новой вкладке",
+      "Скачать",
+      "Закрыть",
+      "Необязательно",
+      "Телефон клиента",
+      "Сумма, ₽",
+      "Валюта",
+      "Номер договора",
+      "Дата возврата",
+      "Получатель (банк)",
+      "Счёт получателя",
+      "Причина возврата",
+      "Примечания",
+      "Опишите, что нужно исправить"
+    ],
+    "forms": 3,
+    "buttons": 14,
+    "links": [],
+    "sources": [
+      "@/lib/demo/config",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/money",
+      "@/lib/user-display",
+      "@/lib/refunds",
+      "@/lib/approval",
+      "@/lib/refund-workflow",
+      "@/lib/refund-documents",
+      "@/lib/refund-membership",
+      "@/lib/refund-personal-training",
+      "@/lib/strategic-return"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/refunds/new/[id]/details/page.tsx",
+    "route": "/refunds/new/[id]/details",
+    "kind": "screen",
+    "purpose": "0,00",
+    "guards": [
+      "refunds"
+    ],
+    "roles": [
+      "owner",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "0,00",
+      "Сумма договора",
+      "Общий срок услуги",
+      "Оставшиеся дни",
+      "Стоимость дня (справочно)",
+      "Сумма до округления",
+      "Базовая дата возврата",
+      "Плановая дата возврата",
+      "Способ расчёта",
+      "Объясните, почему не применяется стоимость единицы услуги при расторжении из договора",
+      "Исполнитель",
+      "Стоимость единицы услуги при расторжении",
+      "Проведено единиц услуги",
+      "Результат расчёта",
+      "Куплено единиц услуги",
+      "Использованная сумма",
+      "Опишите, что нужно исправить"
+    ],
+    "forms": 2,
+    "buttons": 9,
+    "links": [],
+    "sources": [
+      "@/lib/demo/config",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/refunds",
+      "@/lib/refund-documents",
+      "@/lib/refund-membership",
+      "@/lib/refund-workflow",
+      "@/lib/prisma",
+      "@/lib/user-display"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/refunds/new/[id]/page.tsx",
+    "route": "/refunds/new/[id]",
+    "kind": "screen",
+    "purpose": "Новый возврат",
+    "guards": [
+      "refunds"
+    ],
+    "roles": [
+      "owner",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Новый возврат",
+      "9 цифр",
+      "20 цифр",
+      "Открыть в новой вкладке",
+      "Скачать",
+      "Закрыть"
+    ],
+    "forms": 2,
+    "buttons": 13,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/refunds",
+      "@/lib/refund-documents",
+      "@/lib/refund-document-storage",
+      "@/lib/demo/config"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/refunds/new/page.tsx",
+    "route": "/refunds/new",
+    "kind": "screen",
+    "purpose": "Новый возврат",
+    "guards": [
+      "refunds"
+    ],
+    "roles": [
+      "owner",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Новый возврат"
+    ],
+    "forms": 0,
+    "buttons": 1,
+    "links": [],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/auth"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/refunds/page.tsx",
+    "route": "/refunds",
+    "kind": "screen",
+    "purpose": "Возвраты",
+    "guards": [
+      "refunds"
+    ],
+    "roles": [
+      "owner",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Возвраты",
+      "Требуют исправления",
+      "Ожидают моей проверки",
+      "В работе у бухгалтерии",
+      "Есть документы"
+    ],
+    "forms": 0,
+    "buttons": 0,
+    "links": [
+      "/refunds/new"
+    ],
+    "sources": [
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/refunds",
+      "@/lib/approval",
+      "@/lib/refund-workflow",
+      "@/lib/regional-tasks"
+    ],
+    "states": {
+      "loading": true,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/sales/page.tsx",
+    "route": "/sales",
+    "kind": "screen",
+    "purpose": "Продажи",
+    "guards": [
+      "sales"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Продажи",
+      "Выручка за месяц (подтверждённая)",
+      "Прошлый месяц",
+      "Изменение",
+      "Главный источник"
+    ],
+    "forms": 1,
+    "buttons": 1,
+    "links": [
+      "/analytics/ofd-sales"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/money",
+      "@/lib/sales",
+      "@/lib/access",
+      "@/lib/sales-reports"
+    ],
+    "states": {
+      "loading": true,
+      "error": false,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/sales/reports/[id]/page.tsx",
+    "route": "/sales/reports/[id]",
+    "kind": "screen",
+    "purpose": "Общая выручка",
+    "guards": [
+      "sales"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director",
+      "manager",
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Общая выручка",
+      "Инкассация",
+      "Изъятия",
+      "Остаток наличности",
+      "Наличные ООО",
+      "Инкассация ООО",
+      "Например: проверено, расхождений нет",
+      "Что не так с отчётом",
+      "Например: подтверждено по ошибке / найдено расхождение"
+    ],
+    "forms": 3,
+    "buttons": 8,
+    "links": [
+      "/sales"
+    ],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/sales-reports"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/settings/integrations/ofd/page.tsx",
+    "route": "/settings/integrations/ofd",
+    "kind": "screen",
+    "purpose": "ОФД Такском",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "ОФД Такском",
+      "Подключения Такском",
+      "Кассы ККТ",
+      "ФН, юрлицо, филиал и тип кассы",
+      "Синхронизация продаж",
+      "Ручная синхронизация, импорт за период и статус автоимпорта",
+      "ОФД продажи",
+      "Краткий итог по сегодняшним и вчерашним чекам",
+      "Сегодня",
+      "Вчера",
+      "Июль 2026",
+      "Статьи доходов ОФД",
+      "Основные услуги, дополнительные услуги, группы, доп. услуги и Иное",
+      "История синхронизаций",
+      "Последние запуски импорта ОФД",
+      "Расширенная диагностика",
+      "Технический блок для отладки Taxcom и DocumentInfo",
+      "Название",
+      "Адрес сервера (https://…)",
+      "https://server.taxcom.ru",
+      "Тип авторизации",
+      "Номер договора Такском",
+      "CD-25/45507",
+      "Юрлицо (ООО)",
+      "Токен интеграции",
+      "••••••",
+      "Логин",
+      "Пароль",
+      "Integrator ID",
+      "Подключение Такском",
+      "ФН",
+      "номер ФН",
+      "РНМ ККТ (необязательно)",
+      "Название кассы (необязательно)",
+      "Филиал",
+      "Юрлицо кассы",
+      "Тип кассы",
+      "Подключение (кабинет)",
+      "Дата от",
+      "Дата до",
+      "ФД",
+      "номер ФД",
+      "Сохранить"
+    ],
+    "forms": 15,
+    "buttons": 19,
+    "links": [
+      "/settings",
+      "/settings/ofd",
+      "/analytics/ofd-sales"
+    ],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/ofd/config"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/settings/ofd/astral/page.tsx",
+    "route": "/settings/ofd/astral",
+    "kind": "screen",
+    "purpose": "ОФД Астрал",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "ОФД Астрал",
+      "API-ключ",
+      "Организация",
+      "Торговая точка",
+      "Кассы",
+      "Тестовая синхронизация",
+      "Сохранить ключ",
+      "Проверить подключение",
+      "Загрузить организации",
+      "Сохранить привязку",
+      "Загрузить торговые точки",
+      "Отвязать",
+      "id точки (необязательно)",
+      "Загрузить кассы",
+      "Привязать",
+      "Предпросмотр",
+      "Импортировать"
+    ],
+    "forms": 10,
+    "buttons": 2,
+    "links": [
+      "/settings",
+      "/settings/ofd",
+      "/settings/security"
+    ],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/ofd/config",
+      "@/lib/settings-pin"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/settings/ofd/page.tsx",
+    "route": "/settings/ofd",
+    "kind": "screen",
+    "purpose": "Подключение ОФД",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "Подключение ОФД",
+      "Организаций",
+      "Касс",
+      "Последняя синхронизация"
+    ],
+    "forms": 0,
+    "buttons": 0,
+    "links": [
+      "/settings"
+    ],
+    "sources": [
+      "@/lib/access",
+      "@/lib/ofd/config",
+      "@/lib/ofd/providers/status"
+    ],
+    "states": {
+      "loading": false,
+      "error": true,
+      "empty": false,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/settings/page.tsx",
+    "route": "/settings",
+    "kind": "screen",
+    "purpose": "Настройки",
+    "guards": [
+      "settings"
+    ],
+    "roles": [
+      "owner",
+      "general_director"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Настройки",
+      "ООО «Новая компания»",
+      "Сохранить",
+      "Чапаева",
+      "Рязань",
+      "Добавить филиал",
+      "Восстановить",
+      "Отвязать",
+      "ООО «Сфера»",
+      "Добавить"
+    ],
+    "forms": 12,
+    "buttons": 9,
+    "links": [
+      "/settings/ofd"
+    ],
+    "sources": [
+      "@/lib/demo/config",
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/navigation",
+      "@/lib/legal-entities"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/settings/security/page.tsx",
+    "route": "/settings/security",
+    "kind": "screen",
+    "purpose": "Безопасность",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "Безопасность",
+      "Разблокировать",
+      "УДАЛИТЬ",
+      "Удалить аккаунт",
+      "Личные данные",
+      "Изменение пароля",
+      "Текущий пароль",
+      "Новый пароль",
+      "Повторите новый пароль",
+      "Код подтверждения",
+      "000000",
+      "Изменение email",
+      "Новый email",
+      "Код с текущей почты",
+      "Код с новой почты"
+    ],
+    "forms": 17,
+    "buttons": 14,
+    "links": [],
+    "sources": [
+      "@/lib/auth",
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/settings-pin",
+      "@/lib/otp",
+      "@/lib/email",
+      "@/lib/session",
+      "@/lib/telegram/config",
+      "@/lib/telegram/linking"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/users/page.tsx",
+    "route": "/users",
+    "kind": "screen",
+    "purpose": "Пользователи",
+    "guards": [
+      "users"
+    ],
+    "roles": [
+      "owner",
+      "general_director",
+      "regional_director"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Пользователи",
+      "Компания",
+      "Email",
+      "user@example.com",
+      "Роль",
+      "Область доступа",
+      "Отправить повторно",
+      "Скопировать новую ссылку",
+      "Отозвать",
+      "Завершить все сессии",
+      "Отключить",
+      "Включить",
+      "Код",
+      "Подтвердить удаление",
+      "Ваш пароль",
+      "Продолжить",
+      "Подтвердить"
+    ],
+    "forms": 11,
+    "buttons": 14,
+    "links": [],
+    "sources": [
+      "@/lib/demo/config",
+      "@/lib/access",
+      "@/lib/session",
+      "@/lib/invites",
+      "@/lib/navigation",
+      "@/lib/prisma",
+      "@/lib/employee-roles"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/(app)/workspace/page.tsx",
+    "route": "/workspace",
+    "kind": "screen",
+    "purpose": "Рабочий стол",
+    "guards": [
+      "workspace"
+    ],
+    "roles": [
+      "accountant",
+      "chief_accountant"
+    ],
+    "roleNote": "Page ACL plus object/branch/workflow restrictions",
+    "controls": [
+      "Рабочий стол",
+      "Проверить продажи",
+      "Ближайшие оплаты",
+      "Возвраты",
+      "Наличные расходы",
+      "Комментарий (необязательно)",
+      "Причина переоткрытия"
+    ],
+    "forms": 4,
+    "buttons": 2,
+    "links": [
+      "/payments",
+      "/refunds",
+      "/expenses"
+    ],
+    "sources": [
+      "@/lib/money",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/expenses",
+      "@/lib/refunds",
+      "@/lib/sales-reports",
+      "@/lib/approval",
+      "@/lib/payments",
+      "@/lib/payment-obligations",
+      "@/lib/cash-collections",
+      "@/lib/month-close",
+      "@/lib/month-reopen"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "src/app/(app)/error.tsx"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/accept-invite/page.tsx",
+    "route": "/accept-invite",
+    "kind": "screen",
+    "purpose": "Email",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "Email",
+      "Роль",
+      "Доступ"
+    ],
+    "forms": 2,
+    "buttons": 2,
+    "links": [],
+    "sources": [
+      "@/lib/auth",
+      "@/lib/prisma",
+      "@/lib/invites"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/analytics/expenses/export/route.ts",
+    "route": "/api/analytics/expenses/export",
+    "kind": "api",
+    "purpose": "/api/analytics/expenses/export",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/budgets/template/route.ts",
+    "route": "/api/budgets/template",
+    "kind": "api",
+    "purpose": "/api/budgets/template",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/sales-plans",
+      "@/lib/budgets",
+      "@/lib/imports/budget-import"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/cron/ofd/daily/route.ts",
+    "route": "/api/cron/ofd/daily",
+    "kind": "api",
+    "purpose": "/api/cron/ofd/daily",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/ofd/config",
+      "@/lib/ofd/daily",
+      "@/lib/security/security-event"
+    ],
+    "states": {
+      "loading": false,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/demo/cleanup/route.ts",
+    "route": "/api/demo/cleanup",
+    "kind": "api",
+    "purpose": "/api/demo/cleanup",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/demo/config",
+      "@/lib/demo/visits"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/demo/session/route.ts",
+    "route": "/api/demo/session",
+    "kind": "api",
+    "purpose": "/api/demo/session",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/demo/visits",
+      "@/lib/demo/config"
+    ],
+    "states": {
+      "loading": false,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/expenses/[id]/documents/[docId]/route.ts",
+    "route": "/api/expenses/[id]/documents/[docId]",
+    "kind": "api",
+    "purpose": "/api/expenses/[id]/documents/[docId]",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/expenses",
+      "@/lib/expense-document-storage",
+      "@/lib/document-access"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/expenses/[id]/file/route.ts",
+    "route": "/api/expenses/[id]/file",
+    "kind": "api",
+    "purpose": "/api/expenses/[id]/file",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/expenses",
+      "@/lib/expense-storage",
+      "@/lib/document-access"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/expenses/template/route.ts",
+    "route": "/api/expenses/template",
+    "kind": "api",
+    "purpose": "/api/expenses/template",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/export/[type]/route.ts",
+    "route": "/api/export/[type]",
+    "kind": "api",
+    "purpose": "/api/export/[type]",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/health/dependencies/route.ts",
+    "route": "/api/health/dependencies",
+    "kind": "api",
+    "purpose": "/api/health/dependencies",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/deployment-version",
+      "@/lib/health/dependencies"
+    ],
+    "states": {
+      "loading": false,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/health/live/route.ts",
+    "route": "/api/health/live",
+    "kind": "api",
+    "purpose": "/api/health/live",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/deployment-version"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/health/ready/route.ts",
+    "route": "/api/health/ready",
+    "kind": "api",
+    "purpose": "/api/health/ready",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/deployment-version",
+      "@/lib/health/readiness"
+    ],
+    "states": {
+      "loading": false,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/health/route.ts",
+    "route": "/api/health",
+    "kind": "api",
+    "purpose": "/api/health",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/deployment-version",
+      "@/lib/storage",
+      "@/lib/email",
+      "@/lib/ai/openai-client",
+      "@/lib/telegram/config",
+      "@/lib/ofd/config"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/internal/notifications/drain/route.ts",
+    "route": "/api/internal/notifications/drain",
+    "kind": "api",
+    "purpose": "/api/internal/notifications/drain",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/telegram/config",
+      "@/lib/secure-compare",
+      "@/lib/notifications/outbox"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/invoices/[id]/file/route.ts",
+    "route": "/api/invoices/[id]/file",
+    "kind": "api",
+    "purpose": "/api/invoices/[id]/file",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/invoices",
+      "@/lib/invoice-storage",
+      "@/lib/document-access"
+    ],
+    "states": {
+      "loading": false,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/invoices/template/route.ts",
+    "route": "/api/invoices/template",
+    "kind": "api",
+    "purpose": "/api/invoices/template",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/me/access/route.ts",
+    "route": "/api/me/access",
+    "kind": "api",
+    "purpose": "/api/me/access",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/auth"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/refunds/[id]/file/route.ts",
+    "route": "/api/refunds/[id]/file",
+    "kind": "api",
+    "purpose": "/api/refunds/[id]/file",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/refunds",
+      "@/lib/refund-storage",
+      "@/lib/refund-document-storage",
+      "@/lib/document-access"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/sales-plans/template/route.ts",
+    "route": "/api/sales-plans/template",
+    "kind": "api",
+    "purpose": "/api/sales-plans/template",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/sales-plans",
+      "@/lib/imports/plan-import"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/sales-reports/[id]/file/route.ts",
+    "route": "/api/sales-reports/[id]/file",
+    "kind": "api",
+    "purpose": "/api/sales-reports/[id]/file",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/access",
+      "@/lib/auth",
+      "@/lib/sales-reports",
+      "@/lib/sales-report-storage",
+      "@/lib/document-access"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/sales-reports/template/route.ts",
+    "route": "/api/sales-reports/template",
+    "kind": "api",
+    "purpose": "/api/sales-reports/template",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/api/telegram/webhook/route.ts",
+    "route": "/api/telegram/webhook",
+    "kind": "api",
+    "purpose": "/api/telegram/webhook",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/telegram/config",
+      "@/lib/secure-compare",
+      "@/lib/telegram/linking",
+      "@/lib/telegram/client"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/demo/page.tsx",
+    "route": "/demo",
+    "kind": "screen",
+    "purpose": "/demo",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 1,
+    "buttons": 2,
+    "links": [],
+    "sources": [
+      "@/lib/demo/config",
+      "@/lib/navigation",
+      "@/lib/access",
+      "@/lib/demo/visits"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/install/page.tsx",
+    "route": "/install",
+    "kind": "screen",
+    "purpose": "/install",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 1,
+    "links": [
+      "/"
+    ],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/login/page.tsx",
+    "route": "/login",
+    "kind": "screen",
+    "purpose": "/login",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 1,
+    "buttons": 1,
+    "links": [
+      "/"
+    ],
+    "sources": [
+      "@/lib/auth",
+      "@/lib/seed",
+      "@/lib/safe-redirect"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": true,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/login/verify/page.tsx",
+    "route": "/login/verify",
+    "kind": "screen",
+    "purpose": "______",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "______"
+    ],
+    "forms": 3,
+    "buttons": 3,
+    "links": [],
+    "sources": [
+      "@/lib/login-challenge",
+      "@/lib/otp"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/no-access/page.tsx",
+    "route": "/no-access",
+    "kind": "screen",
+    "purpose": "/no-access",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 1,
+    "buttons": 1,
+    "links": [],
+    "sources": [
+      "@/lib/auth",
+      "@/lib/access"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/offline/page.tsx",
+    "route": "/offline",
+    "kind": "screen",
+    "purpose": "/offline",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [
+      "/"
+    ],
+    "sources": [],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": true,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/onboarding/page.tsx",
+    "route": "/onboarding",
+    "kind": "screen",
+    "purpose": "ООО «Мой бизнес»",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "ООО «Мой бизнес»",
+      "Филиал на Ленина",
+      "Москва"
+    ],
+    "forms": 1,
+    "buttons": 1,
+    "links": [],
+    "sources": [
+      "@/lib/auth",
+      "@/lib/access",
+      "@/lib/prisma"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/page.tsx",
+    "route": "/page.tsx",
+    "kind": "screen",
+    "purpose": "/page.tsx",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 0,
+    "buttons": 0,
+    "links": [],
+    "sources": [
+      "@/lib/auth",
+      "@/lib/access"
+    ],
+    "states": {
+      "loading": false,
+      "error": false,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/register/page.tsx",
+    "route": "/register",
+    "kind": "screen",
+    "purpose": "/register",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [],
+    "forms": 1,
+    "buttons": 1,
+    "links": [],
+    "sources": [
+      "@/lib/auth",
+      "@/lib/safe-redirect"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Synthetic tenant, ordinary ACL, uploads/external transports blocked",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/restore-account/page.tsx",
+    "route": "/restore-account",
+    "kind": "screen",
+    "purpose": "000000",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "000000",
+      "Восстановить аккаунт",
+      "Отправить код"
+    ],
+    "forms": 2,
+    "buttons": 1,
+    "links": [],
+    "sources": [
+      "@/lib/account-restore"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  },
+  {
+    "file": "src/app/system-admin/accounts/page.tsx",
+    "route": "/system-admin/accounts",
+    "kind": "screen",
+    "purpose": "Отправить письмо восстановления",
+    "guards": [],
+    "roles": [],
+    "roleNote": "Custom gate, inherited session or public route; inspect source",
+    "controls": [
+      "Отправить письмо восстановления",
+      "Код",
+      "Новый пароль",
+      "Восстановить",
+      "Новый email",
+      "Отправить код"
+    ],
+    "forms": 3,
+    "buttons": 2,
+    "links": [],
+    "sources": [
+      "@/lib/prisma",
+      "@/lib/system-role",
+      "@/lib/user-display",
+      "@/lib/normalize-email",
+      "@/lib/account-recovery"
+    ],
+    "states": {
+      "loading": true,
+      "error": true,
+      "empty": false,
+      "boundary": "local or framework boundary"
+    },
+    "demoLimit": "Blocked by demo middleware",
+    "coverage": "Source inventory only; see browser-audit results, not an HTTP-200 acceptance"
+  }
+]
